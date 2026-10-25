@@ -31,6 +31,7 @@ pub use sikemux_wire::grid;
 pub use sikemux_wire::protocol;
 #[cfg(unix)]
 pub mod push;
+pub mod release_feed;
 pub mod releases;
 pub mod runtime;
 #[cfg(unix)]

@@ -94,11 +94,11 @@ for (const [name, text] of [["scripts/build-mac.sh", macBuild], ["scripts/build-
 if (!macBuild.includes("this test kit has no answer for that") || !macBuild.includes("window driver could not listen")) {
     fail("macOS build no longer refuses a binary built with a test kit's feature");
 }
-const updates = fs.readFileSync("src-tauri/crates/sikemux-core/src/server/updates.rs", "utf8");
+const updates = fs.readFileSync("src-tauri/crates/sikemux-core/src/release_feed.rs", "utf8");
 if (!updates.includes('"https://github.com/nodelike/sikemux/releases/latest/download/latest.json"')) {
   fail("the stable update feed is not the expected HTTPS latest.json URL");
 }
-if (!updates.includes('include_str!("../../../sikemux-gpui/Cargo.toml")')) fail("the core does not take the updater key from the GPUI app's Cargo.toml");
+if (!updates.includes('include_str!("../../sikemux-gpui/Cargo.toml")')) fail("the core does not take the updater key from the GPUI app's Cargo.toml");
 const publicKeyText = Buffer.from(app["updater-key"], "base64").toString("utf8").trim();
 const publicLines = publicKeyText.split("\n");
 if (publicLines.length !== 2 || !publicLines[0].startsWith("untrusted comment:")) fail("invalid updater public-key envelope");
@@ -107,7 +107,7 @@ if (packet.length !== 42 || packet.subarray(0, 2).toString("ascii") !== "Ed") fa
 NODE
 
 # Shipped clients resolve this exact URL, so the endpoint is a fixed contract.
-grep -Fq 'releases/download/nightly/latest.json' src-tauri/crates/sikemux-core/src/server/updates.rs || {
+grep -Fq 'releases/download/nightly/latest.json' src-tauri/crates/sikemux-core/src/release_feed.rs || {
   echo "nightly updater endpoint is missing" >&2
   exit 1
 }

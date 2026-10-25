@@ -4,17 +4,12 @@
 //! says the update is ready, the windows start again into it, and the new
 //! build takes over this core with its agents still running.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use base64::Engine;
-use futures_util::StreamExt;
-use minisign_verify::{PublicKey, Signature};
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 use tokio::sync::Notify;
@@ -24,21 +19,13 @@ use super::connection::blocking;
 use super::{Core, CoreError, CoreResult};
 use crate::frozen::UpdateBlocker;
 use crate::protocol::UpdateChannel;
+use crate::release_feed::{self, platform, Newest};
 use crate::releases::{bundled_credits, ReleaseCredits};
 
-const STABLE_FEED: &str =
-    "https://github.com/nodelike/sikemux/releases/latest/download/latest.json";
-const NIGHTLY_FEED: &str =
-    "https://github.com/nodelike/sikemux/releases/download/nightly/latest.json";
 const FIRST_CHECK: Duration = Duration::from_secs(4);
 const CHECK_EVERY: Duration = Duration::from_secs(30 * 60);
-const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const BLOCKERS_EVERY: Duration = Duration::from_secs(2);
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
-/// The release scripts check updates against the key the app's Cargo.toml
-/// names, so the core reads the same one.
-const APP_MANIFEST: &str = include_str!("../../../sikemux-gpui/Cargo.toml");
 
 /// Where an update stands, as every client shows it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -119,20 +106,6 @@ pub(crate) struct Updates {
     wake: Notify,
 }
 
-#[derive(Deserialize)]
-struct Feed {
-    version: String,
-    notes: Option<String>,
-    pub_date: Option<String>,
-    platforms: std::collections::HashMap<String, Asset>,
-}
-
-#[derive(Deserialize)]
-struct Asset {
-    signature: String,
-    url: String,
-}
-
 /// The app an update replaces.
 #[derive(Clone)]
 enum OwnApp {
@@ -161,14 +134,6 @@ fn own_app() -> Option<OwnApp> {
         .map(OwnApp::AppImage)
 }
 
-fn platform() -> String {
-    let system = match std::env::consts::OS {
-        "macos" => "darwin",
-        other => other,
-    };
-    format!("{system}-{}", std::env::consts::ARCH)
-}
-
 /// A published Linux app that is a deb or an rpm was put in place by the
 /// installer, which updates it.
 fn installer_command(channel: UpdateChannel) -> Option<String> {
@@ -183,30 +148,6 @@ fn installer_command(channel: UpdateChannel) -> Option<String> {
     Some(format!(
         "curl -fsSL https://sikemux.com/install | {channel}sh -s -- --app"
     ))
-}
-
-fn feeds(channel: UpdateChannel) -> &'static [&'static str] {
-    match channel {
-        UpdateChannel::Stable => &[STABLE_FEED],
-        // A stable release can overtake the newest nightly, so nightly follows both.
-        UpdateChannel::Nightly => &[NIGHTLY_FEED, STABLE_FEED],
-    }
-}
-
-/// The key every release is signed with.
-fn release_key() -> Result<PublicKey, String> {
-    let manifest: toml::Value = toml::from_str(APP_MANIFEST).map_err(|error| error.to_string())?;
-    let encoded = manifest
-        .get("package")
-        .and_then(|package| package.get("metadata"))
-        .and_then(|metadata| metadata.get("sikemux"))
-        .and_then(|app| app.get("updater-key"))
-        .and_then(toml::Value::as_str)
-        .ok_or("the app's Cargo.toml has no update key")?;
-    let text = base64::engine::general_purpose::STANDARD
-        .decode(encoded)
-        .map_err(|error| error.to_string())?;
-    PublicKey::decode(&String::from_utf8_lossy(&text)).map_err(|error| error.to_string())
 }
 
 impl Updates {
@@ -244,26 +185,6 @@ pub(crate) async fn serve(core: Arc<Core>) {
     }
 }
 
-/// A feed's release, and the feed as it was, which carries the release's credits.
-async fn read_feed(url: &'static str) -> Result<(Version, Feed, Value), String> {
-    let client = crate::http::client().map_err(|error| error.to_string())?;
-    let raw: Value = client
-        .get(url)
-        .header("Accept", "application/json")
-        .timeout(CHECK_TIMEOUT)
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|error| error.to_string())?
-        .json()
-        .await
-        .map_err(|error| error.to_string())?;
-    let feed: Feed = serde_json::from_value(raw.clone()).map_err(|error| error.to_string())?;
-    let version = Version::parse(feed.version.trim_start_matches('v'))
-        .map_err(|error| format!("the feed's version: {error}"))?;
-    Ok((version, feed, raw))
-}
-
 /// Looks for a release newer than this one on the person's channel. One feed
 /// that does not answer must not hide a release the other one offers.
 pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
@@ -284,31 +205,12 @@ pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
     }
     let current =
         Version::parse(&status.current).map_err(|error| CoreError::from(error.to_string()))?;
-    let reads: Vec<_> = feeds(channel)
-        .iter()
-        .map(|url| tokio::spawn(read_feed(url)))
-        .collect();
-    let mut newest: Option<(Version, Feed, Value)> = None;
-    let mut failure = None;
-    for read in reads {
-        match read
-            .await
-            .map_err(|error| error.to_string())
-            .and_then(|read| read)
-        {
-            Ok(read) if newest.as_ref().is_none_or(|(best, _, _)| read.0 > *best) => {
-                newest = Some(read);
-            }
-            Ok(_) => {}
-            Err(error) => {
-                failure.get_or_insert(error);
-            }
-        }
-    }
-    let error = failure.filter(|_| newest.is_none());
-    let release = newest
-        .filter(|(version, _, _)| *version > current)
-        .and_then(|(_, feed, raw)| {
+    let (newest, error) = match release_feed::newest(channel).await {
+        Ok(newest) => (Some(newest), None),
+        Err(error) => (None, Some(error)),
+    };
+    let release = newest.filter(|newest| newest.version > current).and_then(
+        |Newest { feed, raw, .. }| {
             let found = feed.platforms.get(&platform()).map(|asset| Found {
                 url: asset.url.clone(),
                 signature: asset.signature.clone(),
@@ -326,7 +228,8 @@ pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
                 },
                 found,
             ))
-        });
+        },
+    );
     core.updates.edit(core, |held| {
         held.status.checked = Some(UpdateCheck {
             at: epoch_ms(),
@@ -417,7 +320,7 @@ async fn put_in_place(
     if installed {
         return Ok(());
     }
-    let key = release_key()?;
+    let key = release_feed::release_key()?;
     let archive = match app {
         OwnApp::Bundle(_) => {
             std::env::temp_dir().join(format!("sikemux-update-{}.tar.gz", std::process::id()))
@@ -426,11 +329,12 @@ async fn put_in_place(
         OwnApp::AppImage(file) => beside(file, "update")?,
     };
     let mut last = Instant::now();
-    let fetched = fetch_verified(
+    let fetched = release_feed::fetch_verified(
         &found.url,
         &found.signature,
         &key,
         &archive,
+        None,
         |done, total| {
             if last.elapsed() >= PROGRESS_EVERY || total == Some(done) {
                 last = Instant::now();
@@ -499,48 +403,6 @@ async fn wait_for_chats(core: &Core) {
         }
         tokio::time::sleep(BLOCKERS_EVERY).await;
     }
-}
-
-/// Downloads `url` to `to`, checking it against the release's `signature` as
-/// it comes, and reports each step as bytes done of the whole.
-pub(crate) async fn fetch_verified(
-    url: &str,
-    signature: &str,
-    key: &PublicKey,
-    to: &Path,
-    mut progress: impl FnMut(u64, Option<u64>),
-) -> Result<(), String> {
-    let text = base64::engine::general_purpose::STANDARD
-        .decode(signature.trim())
-        .map_err(|error| format!("the release's signature: {error}"))?;
-    let signature = Signature::decode(&String::from_utf8_lossy(&text))
-        .map_err(|error| format!("the release's signature: {error}"))?;
-    let mut verifier = key
-        .verify_stream(&signature)
-        .map_err(|_| "the release is signed with another key".to_owned())?;
-    let client = crate::http::client().map_err(|error| error.to_string())?;
-    let response = client
-        .get(url)
-        .timeout(DOWNLOAD_TIMEOUT)
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|error| format!("download: {error}"))?;
-    let total = response.content_length();
-    let mut file = std::fs::File::create(to).map_err(|error| error.to_string())?;
-    let mut done = 0u64;
-    let mut body = response.bytes_stream();
-    while let Some(chunk) = body.next().await {
-        let chunk = chunk.map_err(|error| format!("download: {error}"))?;
-        verifier.update(&chunk);
-        file.write_all(&chunk).map_err(|error| error.to_string())?;
-        done += chunk.len() as u64;
-        progress(done, total);
-    }
-    file.flush().map_err(|error| error.to_string())?;
-    verifier
-        .finalize()
-        .map_err(|_| "the download does not match the release's signature".to_owned())
 }
 
 /// `.<name>.<suffix>` in the folder `file` is in.
