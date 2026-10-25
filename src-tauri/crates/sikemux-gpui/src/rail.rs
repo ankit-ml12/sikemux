@@ -18,7 +18,7 @@ use crate::keymap;
 use crate::tabs;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, Button, Group, IconButton, Row, Tone, Variant};
-use crate::workbench::{AgentRow, Edge, RailWidth, Strip, Workbench};
+use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, Workbench};
 
 pub const SIDE_RAIL: RailWidth = RailWidth {
     min: 180.,
@@ -413,7 +413,7 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                                 .disabled(!has_project)
                                 .on_click(on(|bench, key, cx| {
                                     bench.choose_host(HostChoice::Account(key.to_owned()), cx);
-                                    bench.show_rail_page(crate::workbench::RailPage::Files, cx);
+                                    bench.show_rail_page(RailPage::Files, cx);
                                 })),
                         )
                         .separator()
@@ -684,16 +684,37 @@ fn project_tree(
         ))
         .children(close);
     div().flex().flex_col().child(row).when(active, |tree| {
-        tree.pb(px(4.)).child(surfaces(
-            project,
-            bench
-                .tab()
-                .and_then(|tab| tabs::first_view(&tab.pane))
-                .map(|(kind, _)| kind),
-            bench.area,
-            cx,
-        ))
+        tree.pb(px(4.))
+            .child(surfaces(project, lit_surface(bench), bench.area, cx))
     })
+}
+
+/// The surface the project tree lights: the tab rail's page while it is open, unless the
+/// tab in front is a surface the tab rail has no page for, such as Git.
+fn lit_surface(bench: &Workbench) -> Option<PaneKind> {
+    let front = bench
+        .tab()
+        .and_then(|tab| tabs::first_view(&tab.pane))
+        .map(|(kind, _)| kind);
+    let paged = front.is_none_or(|kind| page_of(kind).is_some());
+    if !(bench.tab_rail_open && paged) {
+        return front;
+    }
+    Some(match bench.rail_page {
+        RailPage::Agents => PaneKind::Agent,
+        RailPage::Terminals => PaneKind::Terminal,
+        RailPage::Files => PaneKind::Files,
+    })
+}
+
+/// The tab rail's page that lists a surface's tabs.
+fn page_of(kind: PaneKind) -> Option<RailPage> {
+    match kind {
+        PaneKind::Agent => Some(RailPage::Agents),
+        PaneKind::Terminal => Some(RailPage::Terminals),
+        PaneKind::Files => Some(RailPage::Files),
+        _ => None,
+    }
 }
 
 /// The hover group of a project's row, whose × shows on hover.
@@ -910,9 +931,10 @@ fn surfaces(
     project: &ProjectInfo,
     front: Option<PaneKind>,
     area: Area,
-    cx: &App,
+    cx: &Context<Workbench>,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
+    let bench = cx.entity().downgrade();
     let rows = surface_rows(project);
     let last = rows.len() - 1;
     div()
@@ -927,11 +949,19 @@ fn surfaces(
                 let in_git = kind == Some(PaneKind::Git);
                 let lit = kind.is_some() && kind == front && (!in_git || opens == area);
                 let spine = div().absolute().left_0().top_0();
+                let bench = bench.clone();
                 div()
                     .id(SharedString::from(format!("surface-{index}")))
                     .relative()
                     .h(px(25.))
                     .on_click(move |_, window, cx| {
+                        if let Some(page) = kind.and_then(page_of) {
+                            let _ = bench.update(cx, |bench, cx| {
+                                if bench.tab_rail_open {
+                                    bench.show_rail_page(page, cx);
+                                }
+                            });
+                        }
                         if in_git {
                             window.dispatch_action(Box::new(OpenArea { area: opens }), cx);
                         } else {
