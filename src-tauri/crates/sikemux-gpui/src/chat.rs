@@ -1556,6 +1556,14 @@ impl Chat {
         })
     }
 
+    /// The command `text` starts with when this session lists commands and not that one.
+    pub fn unknown_command<'a>(&self, text: &'a str) -> Option<&'a str> {
+        let commands = &self.state.as_ref()?.commands;
+        let name = text.strip_prefix('/')?.split_whitespace().next()?;
+        (!commands.is_empty() && !commands.iter().any(|command| command.name == name))
+            .then_some(name)
+    }
+
     /// What the composer's text asks of the core: the answer to the question it answers, or
     /// words for the agent, which steer a running turn unless queued behind it.
     pub fn sent(
