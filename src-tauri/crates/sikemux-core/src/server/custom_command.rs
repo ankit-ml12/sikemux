@@ -70,7 +70,9 @@ pub(crate) async fn run(params: CommandParams) -> CoreResult<CommandResult> {
 
 #[derive(Deserialize)]
 pub(crate) struct RunCustomParams {
-    project: String,
+    /// The strip in front it runs for: a project, the terminals of no project or an SSH host's.
+    #[serde(flatten)]
+    at: At,
     /// The command, by its id in the person's preferences.
     #[serde(default)]
     id: Option<String>,
@@ -130,15 +132,54 @@ async fn project_action(core: &Arc<Core>, project: &Path, id: &str) -> CoreResul
     })
 }
 
-/// Runs one of the person's custom commands in `project`, as its placement
-/// says. A split or replacing command with no view to go beside opens a tab.
+/// Where a command runs for the strip it was run in, and what it is told of that strip: its
+/// folder, and the session id, name and kind and project folder its environment carries.
+struct Running {
+    cwd: Option<PathBuf>,
+    session: (String, String, &'static str),
+    project: Option<PathBuf>,
+}
+
+fn running(core: &Core, at: &At) -> CoreResult<Running> {
+    let home = || sikemux_process::user_environment::var_os("HOME").map(PathBuf::from);
+    match (&at.host, at.terminals) {
+        (_, true) => Ok(Running {
+            cwd: home(),
+            session: ("terminals".into(), "Terminals".into(), "command"),
+            project: None,
+        }),
+        (Some(host), false) => Ok(Running {
+            cwd: home(),
+            session: (format!("ssh:{host}"), host.clone(), "ssh"),
+            project: None,
+        }),
+        (None, false) => {
+            let project = core
+                .workspaces
+                .project_info(&at.project)
+                .ok_or_else(|| CoreError::from("that project is not on this host"))?;
+            Ok(Running {
+                cwd: Some(project.path.clone()),
+                session: (project.id, project.name, "project"),
+                project: Some(project.path),
+            })
+        }
+    }
+}
+
+/// Runs one of the person's custom commands for the strip in front, as its placement says: a
+/// project's in its folder, the others in the home folder of this host. A split or replacing
+/// command with no view to go beside opens a tab.
 pub(crate) async fn run_custom(core: &Arc<Core>, params: RunCustomParams) -> CoreResult<Ran> {
-    let project = core
-        .workspaces
-        .project_info(&params.project)
-        .ok_or_else(|| CoreError::from("that project is not on this host"))?;
+    let running = running(core, &params.at)?;
     let command = match (&params.action, &params.id) {
-        (Some(action), _) => project_action(core, &project.path, action).await?,
+        (Some(action), _) => {
+            let project = running
+                .project
+                .as_deref()
+                .ok_or("a sikemux.json action runs in its project")?;
+            project_action(core, project, action).await?
+        }
         (None, Some(id)) => core
             .preferences
             .get()
@@ -148,11 +189,12 @@ pub(crate) async fn run_custom(core: &Arc<Core>, params: RunCustomParams) -> Cor
             .ok_or_else(|| CoreError::from("that custom command is no longer in Settings"))?,
         (None, None) => return Err("name a custom command or a sikemux.json action".into()),
     };
+    let at = params.at;
     let beside = params.tab.zip(params.pane);
     match (command.placement, beside) {
         (CustomCommandPlacement::Background, _) => {}
         (CustomCommandPlacement::Popup, _) => {
-            let id = super::spare::command_shell(core, &project.id, command.command).await?;
+            let id = super::spare::strip_command_shell(core, &at, command.command).await?;
             return Ok(Ran {
                 popup: Some(id),
                 ..Ran::default()
@@ -162,41 +204,37 @@ pub(crate) async fn run_custom(core: &Arc<Core>, params: RunCustomParams) -> Cor
             placement @ (CustomCommandPlacement::Split | CustomCommandPlacement::Replace),
             Some((tab, pane)),
         ) => {
-            let id = super::spare::command_shell(core, &project.id, command.command).await?;
+            let id = super::spare::strip_command_shell(core, &at, command.command).await?;
             let replace = placement == CustomCommandPlacement::Replace;
-            let tab = super::layout::place_terminal(
-                core,
-                At::project(&project.id),
-                tab,
-                &pane,
-                id,
-                replace,
-            )?;
+            let tab = super::layout::place_terminal(core, at, tab, &pane, id, replace)?;
             return Ok(Ran {
                 tab: Some(tab),
                 ..Ran::default()
             });
         }
         _ => {
-            let tab =
-                super::spare::command_terminal(core, project.id, command.title, command.command)
-                    .await?;
+            let id = super::spare::strip_command_shell(core, &at, command.command).await?;
+            let tab = super::layout::show_terminal(core, at, id, Some(command.title))?;
             return Ok(Ran {
                 tab: Some(tab),
                 ..Ran::default()
             });
         }
     }
-    let path = project.path.to_string_lossy().into_owned();
+    let (id, name, kind) = running.session;
+    let folder = running
+        .project
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let env = HashMap::from([
-        ("SIKEMUX_SESSION_ID".to_owned(), project.id),
-        ("SIKEMUX_SESSION_NAME".to_owned(), project.name),
-        ("SIKEMUX_SESSION_KIND".to_owned(), "project".to_owned()),
-        ("SIKEMUX_PROJECT".to_owned(), path.clone()),
+        ("SIKEMUX_SESSION_ID".to_owned(), id),
+        ("SIKEMUX_SESSION_NAME".to_owned(), name),
+        ("SIKEMUX_SESSION_KIND".to_owned(), kind.to_owned()),
+        ("SIKEMUX_PROJECT".to_owned(), folder),
     ]);
     let result = run(CommandParams {
         command: command.command,
-        cwd: Some(PathBuf::from(path)),
+        cwd: running.cwd,
         env,
     })
     .await?;

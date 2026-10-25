@@ -250,14 +250,18 @@ impl Workbench {
         );
         rows.extend(self.task_rows());
         rows.extend(self.plugin_palette_rows());
-        if let Some(Strip::Project(_)) = self.strip() {
+        if let Some(strip) = self.strip() {
+            let kind = match strip {
+                Strip::Project(_) => "project",
+                Strip::Host(_) => "ssh",
+                Strip::Terminals => "command",
+            };
             let custom = self
                 .preferences()
                 .custom_commands
                 .into_iter()
                 .filter(|command| {
-                    command.contexts.is_empty()
-                        || command.contexts.iter().any(|kind| kind == "project")
+                    command.contexts.is_empty() || command.contexts.iter().any(|at| at == kind)
                 });
             rows.extend(custom.map(|command| {
                 Row::new(format!("{CUSTOM}{}", command.id), command.title)
@@ -562,7 +566,7 @@ impl Workbench {
         .detach();
     }
 
-    /// Runs one of the person's commands in the project in front, telling them
+    /// Runs one of the person's commands for the strip in front, telling them
     /// what one in the background printed.
     fn run_custom_command(&self, id: &str, cx: &mut Context<Self>) {
         let title = self
@@ -574,14 +578,17 @@ impl Workbench {
         self.run_command(json!({ "id": id }), title, cx);
     }
 
-    /// Runs `which`, a custom command's id or a `sikemux.json` action's, in the project in
+    /// Runs `which`, a custom command's id or a `sikemux.json` action's, for the strip in
     /// front, telling the person what one in the background printed.
     pub(crate) fn run_command(&self, which: Value, title: String, cx: &mut Context<Self>) {
-        let Some(Strip::Project(project)) = self.strip() else {
+        let Some(strip) = self.strip() else {
             return;
         };
+        if which.get("action").is_some() && !matches!(strip, Strip::Project(_)) {
+            return;
+        }
         let tab = self.tab().map(|tab| tab.id.clone());
-        let mut params = json!({ "project": project, "tab": tab, "pane": self.focused_view() });
+        let mut params = strip.with(json!({ "tab": tab, "pane": self.focused_view() }));
         if let (Some(params), Some(which)) = (params.as_object_mut(), which.as_object()) {
             params.extend(which.clone());
         }

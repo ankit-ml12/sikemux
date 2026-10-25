@@ -296,9 +296,19 @@ pub(crate) async fn show_terminals(core: &Arc<Core>) -> CoreResult<()> {
 }
 
 async fn home_shell(core: &Arc<Core>) -> CoreResult<SessionId> {
+    shell_at_home(core, "terminals".into(), "Terminals".into(), None).await
+}
+
+/// A shell in the home folder, named for the strip it shows in, typing `startup` when given.
+async fn shell_at_home(
+    core: &Arc<Core>,
+    session_id: String,
+    session_name: String,
+    startup: Option<String>,
+) -> CoreResult<SessionId> {
     let context = PtyContext {
-        session_id: "terminals".into(),
-        session_name: "Terminals".into(),
+        session_id,
+        session_name,
         session_kind: "command".into(),
         project: None,
         window_id: Some(format!("win-{}", uuid::Uuid::new_v4().simple())),
@@ -310,7 +320,7 @@ async fn home_shell(core: &Arc<Core>) -> CoreResult<SessionId> {
     };
     let home = sikemux_process::user_environment::var_os("HOME")
         .map(|home| home.to_string_lossy().into_owned());
-    terminal(core, opening_size(core), home, context, None).await
+    terminal(core, opening_size(core), home, context, startup).await
 }
 
 /// A shell in `project`'s folder for a new terminal: the one started ahead
@@ -394,6 +404,24 @@ impl SshParams {
 pub(crate) async fn open_ssh_terminal(core: &Arc<Core>, params: SshParams) -> CoreResult<String> {
     let id = ssh_shell(core, &params.host).await?;
     super::layout::show_ssh_terminal(core, params.host, id)
+}
+
+/// A new shell running `startup` for a view in the strip `at` names: in the project's folder,
+/// else in the home folder of this host, an SSH host's strip included.
+pub(crate) async fn strip_command_shell(
+    core: &Arc<Core>,
+    at: &At,
+    startup: String,
+) -> CoreResult<SessionId> {
+    match (&at.host, at.terminals) {
+        (_, true) => {
+            shell_at_home(core, "terminals".into(), "Terminals".into(), Some(startup)).await
+        }
+        (Some(host), false) => {
+            shell_at_home(core, format!("ssh:{host}"), host.clone(), Some(startup)).await
+        }
+        (None, false) => command_shell(core, &at.project, startup).await,
+    }
 }
 
 /// A new shell for a view beside the others of the strip `at` names: in the project's
