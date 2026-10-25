@@ -174,6 +174,7 @@ pub fn shortcuts() -> &'static [Shortcut] {
 pub struct Keymap {
     bound: BTreeMap<String, String>,
     actions: BTreeMap<String, String>,
+    overrides: Option<BTreeMap<String, Option<String>>>,
 }
 
 /// One of the project in front's sikemux.json actions, run by the shortcut it gives itself.
@@ -209,16 +210,23 @@ pub fn bind_project_actions(actions: &[(String, String, String)], cx: &mut App) 
     if bound == keymap.actions {
         return;
     }
-    let released: Vec<KeyBinding> = keymap
-        .actions
-        .values()
-        .filter(|keys| !bound.values().any(|now| now == *keys))
-        .filter_map(|keys| keystroke(keys))
-        .map(|keys| KeyBinding::new(&keys, gpui::NoAction, Some(SHELL)))
-        .collect();
-    cx.bind_keys(released);
-    cx.bind_keys(bindings);
+    let run = <RunProjectAction as gpui::Action>::name_for_type();
+    replace(bindings, |name| name == run, cx);
     cx.global_mut::<Keymap>().actions = bound;
+}
+
+/// Puts `bindings` in place of the ones whose action `ours` names, keeping every other view's,
+/// since GPUI's keymap only grows and every key press walks all of it.
+fn replace(bindings: Vec<KeyBinding>, ours: impl Fn(&str) -> bool, cx: &mut App) {
+    let kept: Vec<KeyBinding> = cx
+        .key_bindings()
+        .borrow()
+        .bindings()
+        .filter(|binding| !ours(binding.action().name()))
+        .cloned()
+        .collect();
+    cx.clear_key_bindings();
+    cx.bind_keys(kept.into_iter().chain(bindings));
 }
 
 /// The keys the project in front's action `id` runs by, as the deck shows them.
@@ -232,6 +240,7 @@ pub fn install(cx: &mut App) {
     cx.set_global(Keymap {
         bound: BTreeMap::new(),
         actions: BTreeMap::new(),
+        overrides: None,
     });
     cx.on_action(|_: &About, _| show_about());
     cx.on_action(|_: &Quit, cx| cx.quit());
@@ -273,10 +282,11 @@ pub fn install(cx: &mut App) {
     cx.set_menus(menus());
 }
 
-/// Binds every command to the person's keys, else its default. It runs again whenever the
-/// preferences change; keys a command no longer uses stop doing anything.
+/// Binds every command to the person's keys, else its default, again whenever they change.
 pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
-    let keymap = cx.global::<Keymap>();
+    if cx.global::<Keymap>().overrides.as_ref() == Some(overrides) {
+        return;
+    }
     let mut bound = BTreeMap::new();
     let mut bindings = Vec::new();
     for shortcut in shortcuts() {
@@ -304,16 +314,14 @@ pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
             bound.insert(shortcut.id.to_owned(), keys);
         }
     }
-    let released: Vec<KeyBinding> = keymap
-        .bound
-        .values()
-        .filter(|keys| !bound.values().any(|now| now == *keys))
-        .filter_map(|keys| keystroke(keys))
-        .map(|keys| KeyBinding::new(&keys, gpui::NoAction, Some(SHELL)))
-        .collect();
-    cx.bind_keys(released);
-    cx.bind_keys(bindings);
-    cx.global_mut::<Keymap>().bound = bound;
+    replace(
+        bindings,
+        |name| shortcuts().iter().any(|shortcut| shortcut.id == name),
+        cx,
+    );
+    let keymap = cx.global_mut::<Keymap>();
+    keymap.bound = bound;
+    keymap.overrides = Some(overrides.clone());
 }
 
 /// Does what command `id` does, as its shortcut would; nothing while no part of the app has it.
