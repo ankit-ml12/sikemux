@@ -12,7 +12,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, App, AppContext, Axis, ClipboardEntry, ClipboardItem, Context, Div, ExternalPaths,
     FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    PathPromptOptions, SharedString, Styled, WeakEntity, Window,
+    PathPromptOptions, SharedString, Styled, StyledImage, WeakEntity, Window,
 };
 use gpui_transcript::FilePress;
 use sikemux_core::acp::MAX_ATTACHMENTS;
@@ -74,21 +74,31 @@ const IMAGE: &str = "image:";
 /// The largest file sent to another host for a chat there.
 const MAX_KEPT: u64 = 50_000_000;
 
-/// The glyph a tag in the draft wears: a picture's, a named agent's face or mark, or a file's
-/// or folder's.
+/// The glyph a tag in the draft wears: the picture itself, a named agent's face or mark, or a
+/// file's or folder's.
 fn mark(id: &str, tint: Hsla, bench: &WeakEntity<Workbench>, cx: &App) -> gpui_kit::AnyElement {
-    if id.starts_with(IMAGE) {
-        return ui::icon(Icon::Image, 12.)
-            .text_color(tint)
-            .into_any_element();
+    if let Some(path) = id.strip_prefix(IMAGE) {
+        return gpui_kit::img(
+            crate::picture::Picture::File(PathBuf::from(path)).source_at(px(96.)),
+        )
+        .size(px(15.))
+        .flex_none()
+        .rounded(px(3.))
+        .object_fit(gpui_kit::ObjectFit::Cover)
+        .into_any_element();
     }
     let named =
         (id.strip_prefix("agent:")).and_then(|agent| bench.upgrade()?.read(cx).agent_by_id(agent));
     if let Some(agent) = named {
-        return ui::agent_mark(&agent, 12., cx);
+        return ui::agent_mark(&agent, 14., cx);
     }
-    if id.starts_with("agent:") || id.starts_with("earlier:") {
-        return ui::icon(Icon::Agent, 12.)
+    if id.starts_with("agent:") {
+        return ui::icon(Icon::Agent, 13.)
+            .text_color(tint)
+            .into_any_element();
+    }
+    if id.starts_with("earlier:") {
+        return ui::icon(Icon::Message, 13.)
             .text_color(tint)
             .into_any_element();
     }
@@ -98,10 +108,10 @@ fn mark(id: &str, tint: Hsla, bench: &WeakEntity<Workbench>, cx: &App) -> gpui_k
         } else {
             Icon::Issue
         };
-        return ui::icon(icon, 12.).text_color(tint).into_any_element();
+        return ui::icon(icon, 13.).text_color(tint).into_any_element();
     }
     if id.starts_with("folder:") {
-        return ui::icon(Icon::Folder, 12.)
+        return ui::icon(Icon::Folder, 13.)
             .text_color(tint)
             .into_any_element();
     }
@@ -111,11 +121,11 @@ fn mark(id: &str, tint: Hsla, bench: &WeakEntity<Workbench>, cx: &App) -> gpui_k
         .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
     crate::file_icons::icon(&name, cx).map_or_else(
         || {
-            ui::icon(Icon::File, 12.)
+            ui::icon(Icon::File, 13.)
                 .text_color(tint)
                 .into_any_element()
         },
-        |icon| gpui_kit::img(icon).size(px(12.)).into_any_element(),
+        |icon| gpui_kit::img(icon).size(px(13.)).into_any_element(),
     )
 }
 
@@ -124,7 +134,7 @@ fn image_tag(number: usize, path: &Path) -> InlineToken {
         format!("{IMAGE}{}", path.to_string_lossy()),
         format!("[Image #{number}]"),
     )
-    .with_label(format!("Image #{number}"))
+    .with_label(format!("Image {number}"))
 }
 
 impl Composing {
@@ -538,47 +548,60 @@ fn drawn_chip(
     cx: &mut App,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let selected = token.is_selected();
+    let id = token.token().id();
+    let (key, title) = chip_words(id, token.token().label());
     div().h(token.line_height()).flex().items_center().child(
         div()
-            .h(px(20.))
-            .max_w(token.available_width().min(px(260.)))
+            .h(token.line_height() - px(4.))
+            .max_w(token.available_width().min(px(300.)))
             .mx(px(1.))
             .pl(px(4.))
             .pr(px(6.))
             .flex()
             .items_center()
-            .gap(px(4.))
-            .border_1()
-            .border_color(if selected {
+            .gap(px(5.))
+            .rounded(theme::RADIUS_2)
+            .bg(if token.is_selected() {
                 Hsla {
-                    a: 0.3,
+                    a: 0.2,
                     ..t.text_primary
                 }
             } else {
-                t.line
-            })
-            .rounded(theme::RADIUS_1)
-            .bg(if selected {
                 t.surface_chosen
-            } else {
-                Hsla {
-                    a: 0.06,
-                    ..t.text_primary
-                }
             })
-            .text_size(crate::theme::ui_text(12.))
             .text_color(t.text_primary)
-            .child(mark(token.token().id(), t.text_tertiary, bench, cx))
-            .child(
-                div()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .whitespace_nowrap()
-                    .child(token.token().label().clone()),
-            ),
+            .whitespace_nowrap()
+            .child(mark(id, t.text_tertiary, bench, cx))
+            .child(div().flex_none().child(key))
+            .when_some(title, |chip, title| {
+                chip.child(
+                    div()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .text_color(t.text_secondary)
+                        .child(title),
+                )
+            }),
     )
+}
+
+/// What a chip says: its handle without the sign typed to make it, and for an issue or pull
+/// request its title after the number, without a `feat(scope):` kind of prefix.
+fn chip_words(id: &str, label: &SharedString) -> (SharedString, Option<SharedString>) {
+    if id.starts_with("tracked:") {
+        if let Some((number, title)) = label.split_once(' ') {
+            let title = title
+                .split_once(": ")
+                .filter(|(kind, _)| kind.len() <= 24 && !kind.contains(' '))
+                .map_or(title, |(_, rest)| rest);
+            return (number.to_owned().into(), Some(title.to_owned().into()));
+        }
+    }
+    let bare = label
+        .strip_prefix(['@', '+'])
+        .map_or_else(|| label.clone(), |bare| bare.to_owned().into());
+    (bare, None)
 }
 
 /// The files going with the message, as tiles: a picture's preview or a file's icon, its
