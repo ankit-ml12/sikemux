@@ -1365,6 +1365,14 @@ impl Workspaces {
         Ok(())
     }
 
+    pub(crate) fn backdrop_image_id(&self) -> Option<String> {
+        self.published
+            .locked()
+            .image
+            .as_ref()
+            .map(|image| image.id.clone())
+    }
+
     pub(crate) fn backdrop_image(&self) -> Option<String> {
         self.published
             .locked()

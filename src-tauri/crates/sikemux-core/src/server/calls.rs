@@ -373,6 +373,9 @@ calls! { core, client, params;
         if params.key == "updateChannel" {
             core.updates.check_soon();
         }
+        if matches!(params.key.as_str(), "paneShader" | "paneImage") {
+            super::backdrop::follow(&core);
+        }
         if matches!(params.key.as_str(), "agentWorktreeDefaults" | "lastAgentType") {
             core.view_changed();
         }
