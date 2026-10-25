@@ -69,9 +69,6 @@ impl Ease {
 pub const ROW_TINT: Ease = Ease::new(90, Curve::Linear);
 /// A control's wash and ink as it is hovered or pressed, as the rails' header actions.
 pub const CONTROL_TINT: Ease = Ease::new(90, Curve::CSS);
-/// A menu's item as the pointer comes over it, which the Mac fades even while macOS asks for
-/// less motion.
-pub const MENU_ITEM: Ease = Ease::new(100, Curve::CSS).moves_when_reduced();
 /// A tab's or pill's tint as it is chosen or hovered.
 pub const PILL_TINT: Ease = Ease::new(200, Curve::OUT);
 /// A chevron turning as what it folds opens: in a chat or a review, where the Mac turns it
