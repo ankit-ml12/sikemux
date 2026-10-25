@@ -197,7 +197,10 @@ impl From<PathBuf> for Picture {
 
 /// A picture as its type and its bytes in base64.
 pub fn decode(mime: &str, base64: &str) -> Option<Arc<Image>> {
-    let format = ImageFormat::from_mime_type(mime)?;
+    let format = match mime {
+        "image/x-icon" | "image/vnd.microsoft.icon" => ImageFormat::Ico,
+        mime => ImageFormat::from_mime_type(mime)?,
+    };
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(base64)
         .ok()?;
