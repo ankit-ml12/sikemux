@@ -946,6 +946,16 @@ pub fn start(home: Home) -> Link {
     Link { updates, asks }
 }
 
+/// Keeps the core starting at login while remote access is on, so phones reach this host
+/// after a restart, and stops it starting then once remote access is off.
+fn start_at_login(home: &Home, remote_on: Option<bool>) {
+    let Some(enabled) = remote_on else {
+        return;
+    };
+    let launch = home.launch.clone();
+    tokio::task::spawn_blocking(move || login_item::sync(IDENTIFIER, launch.as_ref(), enabled));
+}
+
 /// A connection that held this long was a working one, so the next reconnect is quick again.
 const HELD: Duration = Duration::from_secs(10);
 
@@ -990,6 +1000,12 @@ async fn run(
                 if let Err(error) = client.register_window().await {
                     eprintln!("sikemux: the core would not hand this window its calls: {error}");
                 }
+                let mut remote_on = client
+                    .remote_status()
+                    .await
+                    .ok()
+                    .map(|status| status.enabled);
+                start_at_login(&home, remote_on);
                 for (key, watch) in &watches {
                     read(&client, key, watch, &current, &updates);
                 }
@@ -1048,6 +1064,10 @@ async fn run(
                             }
                             Some(ClientEvent::Event(Event::Remote { status })) => {
                                 follow_links(&linked, &client);
+                                if remote_on != Some(status.enabled) {
+                                    remote_on = Some(status.enabled);
+                                    start_at_login(&home, remote_on);
+                                }
                                 let _ = updates.send(Update::Remote(Box::new(status)));
                             }
                             Some(ClientEvent::Event(Event::Chat { agent_id, seq, changes })) => {
