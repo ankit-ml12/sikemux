@@ -700,12 +700,7 @@ fn draw(
         ))
         .on_drop(
             window.listener_for(&this, move |bench, dropped: &ExternalPaths, _, _| {
-                let paths = dropped
-                    .paths()
-                    .iter()
-                    .map(|path| crate::chat::lasting(path).to_string_lossy().into_owned())
-                    .collect();
-                send(bench, id, TerminalInput::Paths { paths });
+                take_dropped(bench, id, dropped.paths())
             }),
         );
     if let Some(terminal) = bench.terminals.open.get(&id) {
@@ -1159,6 +1154,15 @@ impl Grid for View<'_> {
 /// The terminal holding the keyboard, if one does.
 pub fn focused(bench: &Workbench) -> Option<TermKey> {
     bench.terminals.focused
+}
+
+/// Types the paths of files dropped from Finder into terminal `id`.
+pub fn take_dropped(bench: &mut Workbench, id: TermKey, paths: &[std::path::PathBuf]) {
+    let paths = paths
+        .iter()
+        .map(|path| crate::chat::lasting(path).to_string_lossy().into_owned())
+        .collect();
+    send(bench, id, TerminalInput::Paths { paths });
 }
 
 /// Types `text` into terminal `id` as [`type_text`] does, once it shows its first screen.

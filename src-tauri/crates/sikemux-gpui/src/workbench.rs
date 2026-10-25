@@ -13,9 +13,9 @@ use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, px, AnyElement, AnyWindowHandle, App, AppContext, Bounds, Context, DragMoveEvent,
-    Entity, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement, Pixels,
-    Render, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task,
-    WeakEntity, Window,
+    Entity, ExternalPaths, FocusHandle, Focusable, Image, InteractiveElement, IntoElement,
+    ParentElement, Pixels, Render, SharedString, StatefulInteractiveElement, StyleRefinement,
+    Styled, Subscription, Task, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
@@ -2118,6 +2118,17 @@ impl Workbench {
             ));
         }
         self.picture_hash = hash;
+    }
+
+    /// Files dropped where nothing takes them go to the terminal holding the keys, else to the
+    /// chat in front.
+    fn take_stray_drop(&mut self, paths: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(id) = crate::terminal::focused(self) {
+            return crate::terminal::take_dropped(self, id, paths);
+        }
+        if let Some((agent, _)) = self.focused_chat.clone() {
+            self.attach(&agent, paths.to_vec(), window, cx);
+        }
     }
 
     /// Whether anything is over the whole window: a phone waiting to pair, a command's terminal,
@@ -4600,6 +4611,9 @@ impl Render for Workbench {
             .relative()
             .size_full()
             .capture_any_mouse_down(|_, _, _| keyboard_back())
+            .on_drop(cx.listener(|bench, dropped: &ExternalPaths, window, cx| {
+                bench.take_stray_drop(dropped.paths(), window, cx)
+            }))
             .on_modifiers_changed(
                 cx.listener(|bench, event, _, cx| bench.modifiers_changed(event, cx)),
             )
