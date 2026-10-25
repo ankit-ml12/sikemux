@@ -6,6 +6,7 @@ use std::path::Path;
 /// [`sikemux_host::headless`].
 pub fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(2).collect();
+    sikemux_host::cli_paths::link_cli_for_children();
     if let Some(data_dir) = args
         .iter()
         .position(|arg| arg == "--data-dir")
