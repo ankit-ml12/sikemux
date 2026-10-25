@@ -2,14 +2,13 @@
 //! account name: the accounts down one side, the one under the pointer in full on the other.
 //! Looking changes nothing; only "Use for new chats" moves new chats onto an account.
 
-use std::f32::consts::TAU;
 use std::time::Duration;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    anchored, canvas, deferred, div, point, px, relative, Anchor, AnchoredPositionMode, AnyElement,
-    Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder,
-    SharedString, StatefulInteractiveElement, Styled, Task,
+    anchored, deferred, div, point, px, relative, Anchor, AnchoredPositionMode, AnyElement,
+    Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Task,
 };
 use serde_json::Value;
 use sikemux_core::agent_accounts::Profile;
@@ -244,7 +243,15 @@ fn list_row(seen: &Seen, shown: bool, cx: &mut Context<Workbench>) -> impl IntoE
         .when(shown, |row| row.bg(t.surface_chosen))
         .when(!shown, |row| row.hover(|row| row.bg(t.surface_hover)))
         .when(seen.signed_out(), |row| row.opacity(0.5))
-        .child(ring(peak, 18., 2., cx))
+        .child(ui::ring(
+            peak.map(|peak| (peak, signal(peak, &t))),
+            18.,
+            2.,
+            Hsla {
+                a: 0.1,
+                ..t.text_primary
+            },
+        ))
         .child(
             div()
                 .flex_1()
@@ -518,62 +525,4 @@ fn day_and_time(at: chrono::DateTime<chrono::Utc>) -> String {
         2..=6 => format!("{} {time}", at.format("%a")),
         _ => format!("{}, {time}", at.format("%b %-d")),
     }
-}
-
-/// A ring filled clockwise from the top as far as `percent`, or an empty track without one.
-fn ring(
-    percent: Option<f64>,
-    size: f32,
-    stroke: f32,
-    cx: &mut Context<Workbench>,
-) -> impl IntoElement {
-    let t = Tokens::get(cx).clone();
-    let track = Hsla {
-        a: 0.1,
-        ..t.text_primary
-    };
-    let tint = percent.map(|percent| signal(percent, &t));
-    canvas(
-        |_, _, _| {},
-        move |bounds, _, window, _| {
-            let radius = (size - stroke) / 2.;
-            let (cx_, cy) = (
-                bounds.origin.x + bounds.size.width / 2.,
-                bounds.origin.y + bounds.size.height / 2.,
-            );
-            let at = |turn: f32| {
-                point(
-                    cx_ + px(radius * (turn * TAU).sin()),
-                    cy - px(radius * (turn * TAU).cos()),
-                )
-            };
-            let arc = |from: f32, to: f32| {
-                let mut path = PathBuilder::stroke(px(stroke));
-                path.move_to(at(from));
-                path.arc_to(
-                    point(px(radius), px(radius)),
-                    px(0.),
-                    to - from > 0.5,
-                    true,
-                    at(to),
-                );
-                path.build().ok()
-            };
-            for (from, to) in [(0., 0.5), (0.5, 1.)] {
-                if let Some(path) = arc(from, to) {
-                    window.paint_path(path, track);
-                }
-            }
-            if let (Some(percent), Some(tint)) = (percent, tint) {
-                let turn = (percent / 100.).clamp(0., 0.999) as f32;
-                if turn > 0.005 {
-                    if let Some(path) = arc(0., turn) {
-                        window.paint_path(path, tint);
-                    }
-                }
-            }
-        },
-    )
-    .size(px(size))
-    .flex_none()
 }

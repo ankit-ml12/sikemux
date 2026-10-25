@@ -26,10 +26,12 @@ pub use pane::{pane, PaneHeader, AGENT_INSET, HEADER_REACH};
 pub use select::{select, Pick};
 pub use state_mark::status_mark;
 
+use std::f32::consts::TAU;
+
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, svg, AnyElement, App, Div, FontFallbacks, FontWeight, Hsla, IntoElement,
-    ParentElement, SharedString, Styled, Svg,
+    canvas, div, img, point, px, svg, AnyElement, App, Div, FontFallbacks, FontWeight, Hsla,
+    IntoElement, ParentElement, PathBuilder, SharedString, Styled, Svg,
 };
 
 use crate::icons::{self, Icon};
@@ -263,6 +265,52 @@ pub fn dot(tone: Tone, cx: &App) -> Div {
         }
         Tone::Failed => dot.bg(t.danger),
     }
+}
+
+/// A ring `size` across, filled clockwise from the top in its tint as far as the percent,
+/// over a full track; only the track without a fill.
+pub fn ring(filled: Option<(f64, Hsla)>, size: f32, stroke: f32, track: Hsla) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let radius = (size - stroke) / 2.;
+            let centre = bounds.center();
+            let at = |turn: f32| {
+                centre
+                    + point(
+                        px(radius * (turn * TAU).sin()),
+                        px(-radius * (turn * TAU).cos()),
+                    )
+            };
+            let arc = |from: f32, to: f32| {
+                let mut path = PathBuilder::stroke(px(stroke));
+                path.move_to(at(from));
+                path.arc_to(
+                    point(px(radius), px(radius)),
+                    px(0.),
+                    to - from > 0.5,
+                    true,
+                    at(to),
+                );
+                path.build().ok()
+            };
+            for (from, to) in [(0., 0.5), (0.5, 1.)] {
+                if let Some(path) = arc(from, to) {
+                    window.paint_path(path, track);
+                }
+            }
+            if let Some((percent, tint)) = filled {
+                let turn = (percent / 100.).clamp(0., 0.999) as f32;
+                if turn > 0.005 {
+                    if let Some(path) = arc(0., turn) {
+                        window.paint_path(path, tint);
+                    }
+                }
+            }
+        },
+    )
+    .size(px(size))
+    .flex_none()
 }
 
 /// Forgets the driver's spots named from `prefix`, before a view draws them again; nothing in

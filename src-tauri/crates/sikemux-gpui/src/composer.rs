@@ -1,6 +1,5 @@
 use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use gpui_kit::base::input::InlineTokenContext;
 use gpui_kit::base::Button as BaseButton;
@@ -9,10 +8,9 @@ use gpui_kit::component::input::{Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, radians, size, Anchor, AnyElement, AnyView, App, ClipboardItem, ElementId,
-    Entity, Focusable, FontWeight, Hsla, Image, ImageFormat, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Transformation,
-    Window,
+    div, px, radians, size, Anchor, AnyElement, AnyView, App, ClipboardItem, ElementId, Entity,
+    Focusable, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
 };
 use sikemux_wire::chat::ContextUsage;
 use sikemux_wire::protocol::ConfigPicker;
@@ -731,22 +729,6 @@ fn context_meter(usage: ContextUsage, provider: &str, cx: &App) -> impl IntoElem
         _ if matches!(provider, "claude" | "codex") => theme::brand(provider),
         _ => t.accent,
     };
-    let hex = |color: Hsla| {
-        let rgba = color.to_rgb();
-        format!(
-            "#{:02x}{:02x}{:02x}",
-            (rgba.r * 255.) as u8,
-            (rgba.g * 255.) as u8,
-            (rgba.b * 255.) as u8
-        )
-    };
-    let around = std::f64::consts::TAU * 7.;
-    let ring = format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke-width="2.2"><circle cx="8" cy="8" r="7" stroke="{track}"/><circle cx="8" cy="8" r="7" stroke="{fill}" stroke-linecap="round" stroke-dasharray="{lit:.2} {around:.2}" transform="rotate(-90 8 8)"/></svg>"#,
-        track = hex(t.line),
-        fill = hex(signal),
-        lit = around * percent / 100.,
-    );
     let mut about = vec![
         "Context window".to_owned(),
         format!(
@@ -776,13 +758,7 @@ fn context_meter(usage: ContextUsage, provider: &str, cx: &App) -> impl IntoElem
             })
         })
         .tooltip(ui::tooltip(about.join("\n")))
-        .child(
-            img(Arc::new(Image::from_bytes(
-                ImageFormat::Svg,
-                ring.into_bytes(),
-            )))
-            .size(px(14.)),
-        )
+        .child(ui::ring(Some((percent, signal)), 14., 1.9, t.line))
 }
 
 /// How the composer's edge changes colour as it takes and loses the keys.
