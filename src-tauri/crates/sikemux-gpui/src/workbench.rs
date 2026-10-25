@@ -1784,6 +1784,13 @@ impl Workbench {
             .root
             .as_ref()
             .map(|root| root.to_string_lossy().into_owned());
+        if topic == "git" {
+            if let Some(pane) = &self.git {
+                pane.update(cx, |pane, cx| {
+                    pane.git_moved(project.as_deref(), paths.as_deref(), cx)
+                });
+            }
+        }
         if topic == "git" && (project.is_none() || project == root) {
             self.files.changed(paths.as_deref(), &self.target());
             if self.finder.is_some() {

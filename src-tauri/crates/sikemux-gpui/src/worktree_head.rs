@@ -48,9 +48,15 @@ impl Workbench {
                         &["codeHost"],
                     ),
                 );
+                let merged = Watch::new("worktreeMerged", json!({ "agentId": agent }), &["git"]);
+                let project =
+                    (self.project()).map(|project| project.path.to_string_lossy().into_owned());
                 target.watch(
                     MERGED,
-                    Watch::new("worktreeMerged", json!({ "agentId": agent }), &["git"]),
+                    match project {
+                        Some(project) => merged.in_folder(project),
+                        None => merged,
+                    },
                 );
             }
             None => {

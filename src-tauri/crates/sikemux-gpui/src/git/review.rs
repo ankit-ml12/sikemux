@@ -2,7 +2,7 @@
 //! under it while open, every card's rows in one virtualised list.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -208,10 +208,22 @@ impl Review {
         self.lay_out();
     }
 
-    /// Reads every card's diffs again, as after the files changed on disk.
+    /// Reads every card's diffs again, as after the repository's head or index moved.
     pub fn reread(&mut self) {
         for section in self.cards.iter_mut().flat_map(|card| &mut card.sections) {
             section.asked = false;
+        }
+    }
+
+    /// Reads again the diffs of the cards whose files are among `moved`, by full path.
+    pub fn reread_files(&mut self, moved: &[PathBuf]) {
+        let repo = Path::new(&self.repo);
+        for card in &mut self.cards {
+            if moved.contains(&repo.join(&card.path)) {
+                card.sections
+                    .iter_mut()
+                    .for_each(|section| section.asked = false);
+            }
         }
     }
 

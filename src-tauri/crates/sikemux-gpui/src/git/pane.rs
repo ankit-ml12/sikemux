@@ -499,9 +499,6 @@ impl GitPane {
         for path in self.moved.drain(..) {
             self.moving.remove(&path);
         }
-        if self.review.commit().is_none() {
-            self.review.reread();
-        }
         self.list_commits();
         self.list_branches();
         if self.page == Page::Branches {
@@ -511,6 +508,37 @@ impl GitPane {
         self.read_owners(cx);
         self.read_commit_owners(cx);
         self.list(cx);
+    }
+
+    /// Reads again the diffs a git change in the folder `project` moved: those of `paths`,
+    /// named from that folder, or every one when the change names none or git's own state.
+    pub fn git_moved(
+        &mut self,
+        project: Option<&str>,
+        paths: Option<&[String]>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.review.commit().is_some() {
+            return;
+        }
+        let repo = Path::new(&self.repo);
+        let project = project.map(Path::new);
+        if project.is_some_and(|project| !repo.starts_with(project) && !project.starts_with(repo)) {
+            return;
+        }
+        let in_git = |path: &String| {
+            Path::new(path)
+                .components()
+                .any(|part| part.as_os_str() == ".git")
+        };
+        match (project, paths.filter(|paths| !paths.iter().any(in_git))) {
+            (Some(project), Some(paths)) => {
+                let moved: Vec<_> = paths.iter().map(|path| project.join(path)).collect();
+                self.review.reread_files(&moved);
+            }
+            _ => self.review.reread(),
+        }
+        cx.notify();
     }
 
     /// Takes the agents the core's catalog says write commit messages.
@@ -1710,6 +1738,9 @@ impl GitPane {
 
     /// Reads everything the pane shows from the repository again.
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        if self.review.commit().is_none() {
+            self.review.reread();
+        }
         let answer = self.core.request("git.overview", self.repo_call(json!({})));
         cx.spawn(async move |pane, cx| {
             if let Ok(overview) = answer.await {

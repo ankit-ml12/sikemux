@@ -179,6 +179,9 @@ pub struct Watch {
     pub method: &'static str,
     pub params: Value,
     pub topics: &'static [&'static str],
+    /// The project folder whose git and code host changes move what it reads, when its
+    /// params do not name it.
+    folder: Option<String>,
     /// Counts the watches made under one key, so an answer to one it replaced is dropped.
     generation: u64,
 }
@@ -189,8 +192,15 @@ impl Watch {
             method,
             params,
             topics,
+            folder: None,
             generation: 0,
         }
+    }
+
+    /// Reads again only on git and code host changes to the project folder `folder`.
+    pub fn in_folder(mut self, folder: String) -> Self {
+        self.folder = Some(folder);
+        self
     }
 
     /// Whether `topic` changing for the project folder `project`, or for every project when
@@ -201,6 +211,7 @@ impl Watch {
             return false;
         }
         let folder = match topic {
+            "git" | "codeHost" if self.folder.is_some() => self.folder.as_deref(),
             "git" => self.params["project"]
                 .as_str()
                 .or(self.params["repo"].as_str()),
