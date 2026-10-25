@@ -99,6 +99,15 @@ pub fn agent_view(
             .children(header)
             .into_any_element();
     }
+    if agent
+        .as_ref()
+        .is_some_and(|agent| bench.in_terminal(&agent.id))
+    {
+        return ui::pane(cx)
+            .p(px(ui::AGENT_INSET))
+            .children(header)
+            .into_any_element();
+    }
     if let Some((agent, chat)) = agent
         .as_ref()
         .and_then(|agent| Some((agent, bench.chats.get(&agent.id)?)))
@@ -357,7 +366,7 @@ fn pane_header(
         (Icon::Agent, SharedString::from("GUI")),
         (Icon::Terminal, SharedString::from("TUI")),
     ];
-    let in_terminal = bench.agent_terminal(&agent.id).is_some();
+    let in_terminal = bench.in_terminal(&agent.id);
     let working = matches!(agent.status, AgentStatus::Working | AgentStatus::Blocked);
     let has_chat = bench.has_chat(&agent.provider);
     let switched = agent.id.clone();

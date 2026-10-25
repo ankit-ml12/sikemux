@@ -989,6 +989,7 @@ async fn run_requests(
                 );
             }
             Request::PublishOnScreen { agent_ids, focused } => {
+                super::launching::show_terminals(&core, &agent_ids);
                 core.seen.show(client.id, agent_ids, focused);
                 core.view_changed();
                 client.respond(request_id, Ok(Response::Done));

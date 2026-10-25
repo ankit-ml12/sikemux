@@ -69,6 +69,14 @@ pub(super) fn dress_agents(saved: &mut Saved) {
     }
 }
 
+/// Marks the agents that ran in a terminal before the workspace kept which view each runs in.
+pub(super) fn mark_terminals(saved: &mut Saved) {
+    for kept in &mut saved.agents {
+        let agent = &mut kept.agent;
+        agent.terminal = agent.pty_id.is_some() || !is_chat_provider(&agent.provider);
+    }
+}
+
 fn text(value: &Value, key: &str) -> Option<String> {
     value
         .get(key)
@@ -213,6 +221,7 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
                 .cloned(),
             face: None,
             pty_id,
+            terminal: false,
             created_at: 0,
             provider,
             id,

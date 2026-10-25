@@ -98,6 +98,28 @@ pub(crate) async fn start_terminal(
     .await
 }
 
+/// Starts again the terminal of each terminal agent a client brought on screen whose
+/// terminal ended, as it does with the core before or when the agent sleeps.
+pub(crate) fn show_terminals(core: &Arc<Core>, agent_ids: &[String]) {
+    for agent_id in agent_ids {
+        let ended = core
+            .workspaces
+            .agent(agent_id)
+            .is_some_and(|agent| agent.terminal)
+            && running_terminal(core, agent_id).is_none();
+        if !ended {
+            continue;
+        }
+        let (core, agent_id) = (core.clone(), agent_id.clone());
+        tokio::spawn(async move {
+            let size = super::spare::opening_size(&core);
+            if let Err(error) = start_terminal(&core, &agent_id, size, None).await {
+                eprintln!("sikemux core: {agent_id}'s terminal did not start again: {error}");
+            }
+        });
+    }
+}
+
 /// The agent's terminal, unless it ended or is being stopped.
 fn running_terminal(core: &Core, agent_id: &str) -> Option<SessionId> {
     let pty = core.workspaces.agent(agent_id)?.pty_id?;
@@ -164,7 +186,10 @@ async fn launch_terminal(
         super::connection::spawn(core.clone(), core.launch_identity(), target, None).await?;
     let id = pending.id();
     pending.start(core);
-    let patch = serde_json::Map::from_iter([("ptyId".to_owned(), serde_json::Value::from(id))]);
+    let patch = Map::from_iter([
+        ("ptyId".to_owned(), Value::from(id)),
+        ("terminal".to_owned(), Value::Bool(true)),
+    ]);
     core.workspaces.update_agent(agent_id, patch)?;
     core.view_changed();
     Ok(id)

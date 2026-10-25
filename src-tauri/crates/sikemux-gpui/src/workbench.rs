@@ -2909,13 +2909,22 @@ impl Workbench {
 
     /// The terminal an agent runs in, while it runs in one rather than as a chat.
     pub fn agent_terminal(&self, agent: &str) -> Option<SessionId> {
+        self.kept_agent(agent)?.pty_id
+    }
+
+    /// Whether the agent runs in its CLI in a terminal, there now or starting again.
+    pub fn in_terminal(&self, agent: &str) -> bool {
+        self.kept_agent(agent)
+            .is_some_and(|kept| kept.terminal || kept.pty_id.is_some())
+    }
+
+    fn kept_agent(&self, agent: &str) -> Option<&sikemux_wire::protocol::WorkspaceAgent> {
         self.view
             .as_ref()?
             .workspace
             .agents
             .iter()
-            .find(|kept| kept.id == agent)?
-            .pty_id
+            .find(|kept| kept.id == agent)
     }
 
     /// Moves an agent between its chat and its own CLI in a terminal, carrying what was

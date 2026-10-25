@@ -233,6 +233,11 @@ export interface WorkspaceAgent {
     face?: AgentFace;
     /** The terminal session running it, for an agent in a terminal. */
     ptyId?: number;
+    /**
+     * It runs in its CLI in a terminal rather than as a chat, whether or not that terminal
+     * runs now. One whose terminal ended starts it again once a client shows it.
+     */
+    terminal: boolean;
     /** Unix milliseconds. */
     createdAt: number;
 }

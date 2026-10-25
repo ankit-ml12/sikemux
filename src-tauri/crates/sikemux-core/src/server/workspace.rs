@@ -43,7 +43,7 @@ mod migrate;
 
 /// Bumped by a change to what [`Saved`] holds that an earlier file needs
 /// carried over to.
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 const MAX_PROJECTS: usize = 512;
 const MAX_SPACES: usize = 64;
 const MAX_PINNED: usize = 256;
@@ -526,6 +526,9 @@ impl Workspaces {
         }
         if saved.version < 2 {
             migrate::dress_agents(&mut saved);
+        }
+        if saved.version < 3 {
+            migrate::mark_terminals(&mut saved);
         }
         saved.version = VERSION;
         let workspaces = Self {
@@ -1020,8 +1023,13 @@ impl Workspaces {
     pub(crate) fn note_begun(&self, chat: &chat::Chat) {
         let launch = &chat.launch;
         if let Some(known) = self.agent(chat.agent_id()) {
-            if known.asleep {
-                self.set_asleep(&known.id, false);
+            if known.asleep || known.terminal {
+                let _ = self.change(|saved| {
+                    if let Some(kept) = saved.kept_mut(&known.id) {
+                        (kept.agent.asleep, kept.agent.terminal) = (false, false);
+                    }
+                    Ok(())
+                });
             }
             return self.note_program(chat);
         }
@@ -1073,6 +1081,7 @@ impl Workspaces {
             buddy: None,
             face: None,
             pty_id: None,
+            terminal: false,
             created_at: epoch_ms(),
         };
         let Ok(Value::Object(draft)) = serde_json::to_value(agent) else {
@@ -1610,7 +1619,7 @@ impl Workspaces {
         let stopped: Vec<ChatInfo> = agents
             .iter()
             .map(|kept| &kept.agent)
-            .filter(|agent| is_chat_provider(&agent.provider) && agent.pty_id.is_none())
+            .filter(|agent| is_chat_provider(&agent.provider) && !agent.terminal)
             .filter(|agent| !running.iter().any(|live| live.agent_id == agent.id))
             .map(|agent| ChatInfo {
                 agent_id: agent.id.clone(),

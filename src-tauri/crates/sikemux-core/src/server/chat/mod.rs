@@ -2057,7 +2057,12 @@ pub(crate) async fn attach(
                 feed.attach(client, request_id, standing, since);
                 return;
             }
+            let in_terminal = core
+                .workspaces
+                .agent(agent_id)
+                .is_some_and(|agent| agent.terminal);
             let taken_up = stopped(core, agent_id)
+                && !in_terminal
                 && super::launching::start_saved(core, agent_id, true)
                     .await
                     .is_ok();

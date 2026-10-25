@@ -1090,6 +1090,10 @@ pub struct WorkspaceAgent {
     /// The terminal session running it, for an agent in a terminal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pty_id: Option<SessionId>,
+    /// It runs in its CLI in a terminal rather than as a chat, whether or not that terminal
+    /// runs now. One whose terminal ended starts it again once a client shows it.
+    #[serde(default)]
+    pub terminal: bool,
     /// Unix milliseconds.
     #[serde(default)]
     pub created_at: u64,
