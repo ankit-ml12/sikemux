@@ -24,7 +24,7 @@ use super::history::{History, HistoryState, Page, Reader, Recovered, MAX_HISTORY
 use super::queue::{batch_len, Queued, MAX_QUEUED};
 use super::states::{Subagent, Task};
 use sikemux_fold::{ChatEvent, ChatEventKind, Place};
-use sikemux_fold::{Fold, PageOf, PAGE_BYTES as ROW_BYTES};
+use sikemux_fold::{Fold, PageOf, PAGE_BYTES as ROW_BYTES, TAIL_TURNS};
 
 /// One frame's worth of streamed updates travels as a single event. Each
 /// notification on its own costs a script eval in the webview, and an adapter
@@ -584,6 +584,41 @@ impl Replay {
             self.bytes = 0;
         }
         self.history.as_ref().map_or(0, History::size)
+    }
+
+    /// Holds the chat's latest turns again, read from its history, once it let go of them to
+    /// sleep and is read again. Reads the disk, so it blocks.
+    fn reload(&mut self) {
+        if !self.entries.is_empty() || !self.keeps_history() {
+            return;
+        }
+        let read = self
+            .plan(PageOf::Before(self.next_index), TAIL_TURNS)
+            .and_then(|planned| match &planned.reader {
+                Some(reader) => reader
+                    .lines(planned.lo, planned.hi)
+                    .map_err(|error| error.to_string()),
+                None => Ok(Vec::new()),
+            });
+        let lines = match read {
+            Ok(lines) => lines,
+            Err(error) => {
+                eprintln!("sikemux core: a sleeping chat's history could not be read: {error}");
+                return;
+            }
+        };
+        for line in lines {
+            self.bytes += line.bytes;
+            self.entries.push_back(Entry {
+                event: line.event,
+                bytes: line.bytes,
+                index: line.index,
+                starts_turn: line.starts_turn,
+                point: line.point,
+                on_disk: true,
+            });
+        }
+        self.trim();
     }
 
     /// Writes the newest event to the history, which nothing joins after.
@@ -1559,6 +1594,7 @@ impl Feed {
     /// The fold, built again from the chat's events when it was let go.
     fn fold<'a>(&self, inner: &'a mut Inner) -> &'a mut Fold {
         if inner.fold.is_none() {
+            inner.replay.reload();
             let mut fold = new_fold(
                 &inner.permission_mode,
                 inner.offers_effort,
@@ -2053,7 +2089,9 @@ impl Feed {
 
     /// What the chat said from index `from` on, or over its last `turns`.
     pub(crate) fn excerpt(&self, from: Option<u64>, turns: usize, max_bytes: usize) -> Excerpt {
-        let (said, skipped, next) = self.inner.locked().replay.excerpt(from, turns, max_bytes);
+        let mut inner = self.inner.locked();
+        inner.replay.reload();
+        let (said, skipped, next) = inner.replay.excerpt(from, turns, max_bytes);
         Excerpt {
             feed: self.id.clone(),
             said,
@@ -2064,12 +2102,16 @@ impl Feed {
 
     /// Where the turn in progress, or the last one, starts in the history.
     pub(crate) fn turn_start(&self) -> Option<u64> {
-        self.inner.locked().replay.turn_start()
+        let mut inner = self.inner.locked();
+        inner.replay.reload();
+        inner.replay.turn_start()
     }
 
     /// What the agent wrote last in its latest turn.
     pub(crate) fn last_answer(&self) -> Option<String> {
-        self.inner.locked().replay.last_answer()
+        let mut inner = self.inner.locked();
+        inner.replay.reload();
+        inner.replay.last_answer()
     }
 
     /// Whether the last turn it holds has not ended.
@@ -3006,5 +3048,35 @@ mod tests {
         let opened = view(&mut inner);
         assert!(opened.head.earlier_lost);
         assert_eq!(prompts(&opened.rows), asks(58..60));
+    }
+
+    #[tokio::test]
+    async fn a_sleeping_chat_opens_at_its_last_turns_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
+        feed.set_start(ChatStart {
+            session_id: "s".into(),
+            capabilities: json!({}),
+            setup: json!({}),
+        });
+        let mut inner = feed.inner.lock().unwrap();
+        for n in 0..60 {
+            turn(&mut inner.replay, n);
+        }
+        drop(inner);
+        assert!(feed.rest() > 0);
+        assert!(feed.inner.lock().unwrap().replay.entries.is_empty());
+
+        let mut inner = feed.inner.lock().unwrap();
+        feed.fold(&mut inner);
+        let older = Feed::holds_older(&inner);
+        let opened = feed.fold(&mut inner).view(older);
+        drop(inner);
+        let first = 60 - sikemux_fold::TAIL_TURNS;
+        assert_eq!(prompts(&opened.rows), asks(first..60));
+        assert_eq!(opened.older_before, Some(first as u64 * 5));
+        let page = feed.history(&feed.id, first as u64 * 5, 100).unwrap();
+        assert_eq!(prompts(&page.rows), asks(0..first));
+        assert!(!feed.excerpt(None, 3, usize::MAX).said.is_empty());
     }
 }

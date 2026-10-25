@@ -459,6 +459,15 @@ impl Reader {
     /// The events from `lo` up to `hi`, each with its index, read from the page point at or
     /// before `lo`. Permission requests are left out: they were answered long ago.
     pub(crate) fn range(&self, lo: u64, hi: u64) -> io::Result<Vec<(u64, ChatEvent)>> {
+        Ok(self
+            .lines(lo, hi)?
+            .into_iter()
+            .map(|line| (line.index, line.event))
+            .collect())
+    }
+
+    /// [`Reader::range`] with where each event stands, for a replay to hold them again.
+    pub(crate) fn lines(&self, lo: u64, hi: u64) -> io::Result<Vec<Recovered>> {
         let lo = lo.max(self.first);
         let hi = hi.min(self.next);
         if lo >= hi {
@@ -477,10 +486,18 @@ impl Reader {
         Ok(text
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
-            .filter_map(|line| serde_json::from_slice::<Line<ChatEvent>>(line).ok())
+            .filter_map(|text| {
+                let line = serde_json::from_slice::<Line<ChatEvent>>(text).ok()?;
+                Some(Recovered {
+                    index: line.index,
+                    starts_turn: line.starts_turn,
+                    point: line.point,
+                    bytes: text.len() + 1,
+                    event: line.event,
+                })
+            })
             .filter(|line| (lo..hi).contains(&line.index))
             .filter(|line| line.event.kind != ChatEventKind::PermissionRequest)
-            .map(|line| (line.index, line.event))
             .collect())
     }
 }
