@@ -140,6 +140,8 @@ struct Resizing {
     /// The split's sizes as the core had them when the drag began.
     from: Vec<u16>,
     sizes: Vec<u16>,
+    /// Whether the core was asked for `sizes` already, so a later mouse-up asks nothing.
+    sent: bool,
 }
 
 #[derive(Clone)]
@@ -761,8 +763,10 @@ impl Panes {
                 split: divider.split.clone(),
                 sizes: kept.clone(),
                 from: kept,
+                sent: false,
             }),
         };
+        resizing.sent = false;
         let sizes = &mut resizing.sizes;
         let (Some(&before), Some(&after)) = (sizes.get(divider.at), sizes.get(divider.at + 1))
         else {
@@ -793,21 +797,27 @@ impl Panes {
 
 impl Workbench {
     fn finish_resize(&mut self) {
-        let Some(resizing) = &self.panes.resizing else {
+        let Some(resizing) = self
+            .panes
+            .resizing
+            .as_mut()
+            .filter(|resizing| !resizing.sent)
+        else {
             return;
         };
+        resizing.sent = true;
         if resizing.sizes == resizing.from {
             self.panes.resizing = None;
             return;
         }
-        let Some(strip) = self.strip() else {
-            return;
-        };
         let params = json!({
             "tab": resizing.tab,
             "split": resizing.split,
             "sizes": resizing.sizes,
         });
+        let Some(strip) = self.strip() else {
+            return;
+        };
         self.call("resizeSplit", strip.with(params));
     }
 
