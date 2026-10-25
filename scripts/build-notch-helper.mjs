@@ -9,13 +9,14 @@ import {
   chmodSync,
   copyFileSync,
   mkdirSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+
+import { appMetadata } from "./app-metadata.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const tauriDir = join(root, "src-tauri");
@@ -94,9 +95,7 @@ const appName = dev ? "Sikemux Notch Dev" : "Sikemux Notch";
 const bundle = dev
   ? join(tauriDir, "target", "debug", `${appName}.app`)
   : join(tauriDir, "binaries", "notch", `${appName}.app`);
-const version = JSON.parse(
-  readFileSync(join(tauriDir, "tauri.conf.json"), "utf8"),
-).version;
+const { version } = appMetadata();
 rmSync(bundle, { recursive: true, force: true });
 mkdirSync(join(bundle, "Contents", "MacOS"), { recursive: true });
 mkdirSync(join(bundle, "Contents", "Resources", "Fonts"), { recursive: true });

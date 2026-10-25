@@ -18,7 +18,7 @@ fail() {
 [[ "${GITHUB_ACTIONS:-}" == "true" ]] || fail "releases publish from the Release workflow"
 
 BUNDLE="$ROOT/src-tauri/target/release/bundle"
-APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
+APP_NAME="$(node scripts/app-metadata.mjs name)"
 TAR="$BUNDLE/macos/${APP_NAME}.app.tar.gz"
 SIG="$TAR.sig"
 if [[ "$CHANNEL" == "stable" ]]; then

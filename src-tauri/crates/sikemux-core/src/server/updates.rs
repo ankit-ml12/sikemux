@@ -36,9 +36,9 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const BLOCKERS_EVERY: Duration = Duration::from_secs(2);
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
-/// The release scripts check updates against the key in the app's config, so
-/// the core reads the same one.
-const APP_CONFIG: &str = include_str!("../../../../tauri.conf.json");
+/// The release scripts check updates against the key the app's Cargo.toml
+/// names, so the core reads the same one.
+const APP_MANIFEST: &str = include_str!("../../../sikemux-gpui/Cargo.toml");
 
 /// Where an update stands, as every client shows it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -195,10 +195,14 @@ fn feeds(channel: UpdateChannel) -> &'static [&'static str] {
 
 /// The key every release is signed with.
 fn release_key() -> Result<PublicKey, String> {
-    let config: Value = serde_json::from_str(APP_CONFIG).map_err(|error| error.to_string())?;
-    let encoded = config["plugins"]["updater"]["pubkey"]
-        .as_str()
-        .ok_or("the app's config has no update key")?;
+    let manifest: toml::Value = toml::from_str(APP_MANIFEST).map_err(|error| error.to_string())?;
+    let encoded = manifest
+        .get("package")
+        .and_then(|package| package.get("metadata"))
+        .and_then(|metadata| metadata.get("sikemux"))
+        .and_then(|app| app.get("updater-key"))
+        .and_then(toml::Value::as_str)
+        .ok_or("the app's Cargo.toml has no update key")?;
     let text = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .map_err(|error| error.to_string())?;

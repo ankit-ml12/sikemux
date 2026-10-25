@@ -1,6 +1,6 @@
 # The updater signing key is loaded for the whole release build, so anything
-# that runs during it can reach the key, and tauri.conf.json decides which
-# updates installed apps trust. A change to any of these waits for the owner.
+# that runs during it can reach the key, and the GPUI app's Cargo.toml names
+# the key installed apps trust. A change to any of these waits for the owner.
 /.github/ @nodelike
 /scripts/ @nodelike
 /src-tauri/tauri*.conf.json @nodelike

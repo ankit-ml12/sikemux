@@ -7,10 +7,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd -P)"
-APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
-APP_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
-APP_IDENTIFIER="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
-MINIMUM_MACOS="$(node -p "require('./src-tauri/tauri.macos.conf.json').bundle.macOS.minimumSystemVersion")"
+APP_NAME="$(node scripts/app-metadata.mjs name)"
+APP_VERSION="$(node scripts/app-metadata.mjs version)"
+APP_IDENTIFIER="$(node scripts/app-metadata.mjs identifier)"
+MINIMUM_MACOS="$(node scripts/app-metadata.mjs minimum-macos)"
 ICON_ASSET="sikemux"
 TARGET=""
 
