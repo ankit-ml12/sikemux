@@ -114,11 +114,12 @@ fn quiet(program: &str, args: &[&str]) {
         .status();
 }
 
-/// Installs or removes the login item to match `enabled`. Installing takes
-/// effect at the next login; the core already runs for this one.
+/// Installs or removes the login item to match `enabled`. Either takes effect
+/// at the next login; the core running now, with its terminals and agents,
+/// keeps running.
 pub fn sync(identifier: &str, launch: Option<&CoreLaunch>, enabled: bool) {
     if !enabled {
-        if let Err(error) = remove(identifier) {
+        if let Err(error) = forget(identifier) {
             eprintln!("Sikemux could not stop starting its core at login: {error}");
         }
         return;
@@ -189,6 +190,16 @@ pub fn start(identifier: &str) -> Result<(), String> {
         Some(path) => service::start(&label, &path),
         None => Ok(()),
     }
+}
+
+/// Removes the login item without stopping the core it started.
+fn forget(identifier: &str) -> std::io::Result<()> {
+    let label = label(identifier);
+    let Some(path) = service::path(&label).filter(|path| path.exists()) else {
+        return Ok(());
+    };
+    service::forgotten(&label);
+    std::fs::remove_file(&path)
 }
 
 /// Stops and removes the login item. False when there was none.
@@ -281,6 +292,8 @@ mod launchd {
 
     /// launchd reads the folder itself at the next login.
     pub(super) fn installed(_label: &str) {}
+
+    pub(super) fn forgotten(_label: &str) {}
 
     pub(super) fn start(_label: &str, path: &std::path::Path) -> Result<(), String> {
         // SAFETY: getuid takes no arguments, cannot fail and touches no memory.
@@ -398,6 +411,10 @@ WantedBy=default.target
 
     pub(super) fn stop(label: &str) {
         quiet("systemctl", &["--user", "disable", "--now", &unit(label)]);
+    }
+
+    pub(super) fn forgotten(label: &str) {
+        quiet("systemctl", &["--user", "disable", &unit(label)]);
     }
 }
 
