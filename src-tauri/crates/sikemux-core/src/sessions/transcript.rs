@@ -67,9 +67,11 @@ fn newest_first(dir: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// Codex keeps each session in `YYYY/MM/DD/rollout-<time>-<session>.jsonl`.
+/// Codex keeps each session in `YYYY/MM/DD/rollout-<time>-<session>.jsonl`, compressed to
+/// `.jsonl.zst` once the session closes.
 fn codex(sessions: &Path, id: &str) -> Option<PathBuf> {
-    let suffix = format!("-{id}.jsonl");
+    let plain = format!("-{id}.jsonl");
+    let compressed = format!("{plain}.zst");
     newest_first(sessions)
         .iter()
         .flat_map(|year| newest_first(year))
@@ -78,6 +80,9 @@ fn codex(sessions: &Path, id: &str) -> Option<PathBuf> {
         .find(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("rollout-") && name.ends_with(&suffix))
+                .is_some_and(|name| {
+                    name.starts_with("rollout-")
+                        && (name.ends_with(&plain) || name.ends_with(&compressed))
+                })
         })
 }

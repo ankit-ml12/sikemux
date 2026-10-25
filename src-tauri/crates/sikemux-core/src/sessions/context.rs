@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::Value;
 
-use super::read_suffix;
 use super::roots::account_root;
 use super::transcript;
+use super::{decoded_window, is_compressed, read_suffix};
 use crate::agent_catalog::AgentKind;
 
 // ---- context window of a saved session ---------------------------------
@@ -51,6 +51,15 @@ pub fn session_transcript_path(
 fn last_line_matching<T>(path: &Path, parse: impl Fn(&str) -> Option<T>) -> Option<T> {
     const FIRST_WINDOW: u64 = 256 * 1024;
     const LAST_WINDOW: u64 = 32 * 1024 * 1024;
+    if is_compressed(path) {
+        let (window, start, _) = decoded_window(path, None, LAST_WINDOW)?;
+        let text = String::from_utf8_lossy(&window);
+        let mut lines = text.lines();
+        if start > 0 {
+            lines.next();
+        }
+        return lines.rev().find_map(parse);
+    }
     let mut file = fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
     let mut window = FIRST_WINDOW;

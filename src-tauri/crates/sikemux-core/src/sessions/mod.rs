@@ -267,7 +267,7 @@ fn is_jsonl(path: &Path) -> bool {
 /// Codex compresses a session's rollout with zstd once the session closes.
 const COMPRESSED_JSONL: &str = ".jsonl.zst";
 
-fn is_compressed(path: &Path) -> bool {
+pub(crate) fn is_compressed(path: &Path) -> bool {
     path.to_str()
         .is_some_and(|path| path.ends_with(COMPRESSED_JSONL))
 }
@@ -280,6 +280,49 @@ fn transcript_lines(path: &Path) -> Option<Box<dyn BufRead>> {
         return Some(Box::new(BufReader::new(decoder)));
     }
     Some(Box::new(BufReader::new(file)))
+}
+
+/// Up to `max` bytes of a compressed transcript, decoded: from `from`, or its last ones. Answers
+/// them with where they start and how long the whole transcript is decoded. A compressed file
+/// can't seek, so it is decoded from its start.
+pub(crate) fn decoded_window(
+    path: &Path,
+    from: Option<u64>,
+    max: u64,
+) -> Option<(Vec<u8>, u64, u64)> {
+    let mut reader = transcript_lines(path)?;
+    let mut window = Vec::new();
+    let mut start = from.unwrap_or(0);
+    let mut decoded = 0;
+    loop {
+        let chunk = reader.fill_buf().ok()?;
+        if chunk.is_empty() {
+            break;
+        }
+        let read = chunk.len() as u64;
+        let kept = match from {
+            Some(from) => {
+                let first = from.saturating_sub(decoded).min(read) as usize;
+                let room = (max as usize).saturating_sub(window.len());
+                &chunk[first..chunk.len().min(first + room)]
+            }
+            None => chunk,
+        };
+        window.extend_from_slice(kept);
+        if from.is_none() && window.len() as u64 > 2 * max {
+            let cut = window.len() - max as usize;
+            window.drain(..cut);
+            start = decoded + read - max;
+        }
+        decoded += read;
+        reader.consume(read as usize);
+    }
+    if from.is_none() && window.len() as u64 > max {
+        let cut = window.len() - max as usize;
+        window.drain(..cut);
+        start = decoded - max;
+    }
+    Some((window, start.min(decoded), decoded))
 }
 
 fn collect_transcripts(dir: &Path, wanted: fn(&Path) -> bool, out: &mut Vec<PathBuf>, depth: u32) {

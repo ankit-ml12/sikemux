@@ -36,6 +36,37 @@ pub(crate) struct Excerpt {
     pub restarted: bool,
 }
 
+/// The bytes a read takes from the file, from `from` or at its end, with where they start and
+/// how long the file is.
+fn window(path: &Path, from: Option<u64>) -> std::io::Result<(Vec<u8>, u64, u64)> {
+    let max = if from.is_some() {
+        MAX_READ_BYTES
+    } else {
+        TAIL_BYTES
+    };
+    if crate::sessions::is_compressed(path) {
+        let decoded = |from, max| {
+            crate::sessions::decoded_window(path, from, max)
+                .ok_or_else(|| std::io::Error::other("the session file could not be decoded"))
+        };
+        let read = decoded(from, max)?;
+        return match from {
+            Some(from) if from > read.2 => decoded(None, TAIL_BYTES),
+            _ => Ok(read),
+        };
+    }
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    let start = from
+        .filter(|from| *from <= len)
+        .unwrap_or_else(|| len.saturating_sub(TAIL_BYTES));
+    let end = len.min(start + max);
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.take(end - start).read_to_end(&mut bytes)?;
+    Ok((bytes, start, len))
+}
+
 /// What the file said from `from` on, or over its last `turns` turns.
 pub(crate) fn read(
     cli: AgentKind,
@@ -43,18 +74,9 @@ pub(crate) fn read(
     from: Option<u64>,
     turns: usize,
 ) -> std::io::Result<Excerpt> {
-    let mut file = File::open(path)?;
-    let len = file.metadata()?.len();
+    let (bytes, start, len) = window(path, from)?;
     let restarted = from.is_some_and(|from| from > len);
     let from = from.filter(|from| *from <= len);
-    let start = from.unwrap_or_else(|| len.saturating_sub(TAIL_BYTES));
-    let end = match from {
-        Some(from) => len.min(from + MAX_READ_BYTES),
-        None => len,
-    };
-    file.seek(SeekFrom::Start(start))?;
-    let mut bytes = Vec::new();
-    file.take(end - start).read_to_end(&mut bytes)?;
     let mut offset = start;
     let mut rest = bytes.as_slice();
     if from.is_none() && start > 0 {
