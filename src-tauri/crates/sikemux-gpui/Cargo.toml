@@ -9,6 +9,7 @@ description = "The desktop UI on GPUI, a client of the core"
 # app's version is this package's.
 [package.metadata.sikemux]
 name = "Sikemux"
+description = "The IDE for you and your coding agents"
 identifier = "com.nodelike.sikemux"
 dev-name = "Sikemux Dev"
 dev-identifier = "com.nodelike.sikemux.dev"

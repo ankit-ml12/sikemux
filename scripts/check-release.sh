@@ -54,6 +54,7 @@ if (!macBuild.includes('/usr/bin/hdiutil convert "$LAYOUT.rw.dmg" -format ULMO')
 if (!macBuild.includes('"$ROOT/src-tauri/icons/build/Assets.car" "$APP_PATH/Contents/Resources/Assets.car"')) fail("Assets.car is not bundled");
 if (!macBuild.includes('-c "Merge $ROOT/src-tauri/Info.plist"')) fail("pre-signing Info.plist merge is not configured");
 if (app["minimum-macos"] !== "11.0") fail("unexpected minimum macOS version");
+if (!app.description) fail("the app has no description for its Linux packages");
 if (!macBuild.includes('--entitlements "$ROOT/src-tauri/Entitlements.plist"')) fail("microphone entitlement is not configured");
 if (JSON.stringify(windowsConfig.bundle?.targets) !== JSON.stringify(["nsis"])) fail("Windows bundle target must be NSIS");
 if (windowsConfig.bundle?.createUpdaterArtifacts !== false) fail("unsigned Windows builds must not require updater credentials");

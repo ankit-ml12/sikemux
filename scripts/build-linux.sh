@@ -10,7 +10,7 @@ VERSION="$(node -p "require('./package.json').version")"
 # apt and dnf rank 0.6.0-nightly.1 above 0.6.0 and 0.6.0~nightly.1 below it, so the
 # packages say ~ to let a stable release overtake its nightlies.
 PACKAGE_VERSION="${VERSION/-/\~}"
-SUMMARY="$(sed -n 's/^description = "\(.*\)"$/\1/p' src-tauri/Cargo.toml | head -n 1)"
+SUMMARY="$(node scripts/app-metadata.mjs description)"
 TRIPLE=x86_64-unknown-linux-gnu
 
 LINUXDEPLOY_URL=https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
@@ -47,6 +47,7 @@ fail() {
 }
 
 [[ "$(uname -s)-$(uname -m)" == "Linux-x86_64" ]] || fail "Linux x86_64 is required"
+[[ -n "$SUMMARY" ]] || fail "the app has no description in src-tauri/crates/sikemux-gpui/Cargo.toml"
 for command in cargo node dpkg-deb dpkg-shlibdeps rpmbuild patchelf curl sha256sum; do
   command -v "$command" >/dev/null || fail "missing required command: $command"
 done
