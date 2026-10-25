@@ -84,6 +84,10 @@ impl Workbench {
                         }
                         None => {
                             bench.run_check = None;
+                            if let Some(execution) = answer["executionId"].as_str() {
+                                bench.runs_to_show.insert(execution.to_owned());
+                                bench.show_started_runs();
+                            }
                             bench.notify(toast::success(format!("Started task: {label}")), cx);
                         }
                     },
@@ -98,6 +102,46 @@ impl Workbench {
             });
         })
         .detach();
+    }
+
+    /// Opens the terminal of each run the person started here once the run has one, and
+    /// forgets a run that ended without one.
+    pub(crate) fn show_started_runs(&mut self) {
+        if self.runs_to_show.is_empty() {
+            return;
+        }
+        let runs: Vec<(String, Option<u64>, bool, String, String)> = (self.read("runs"))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|run| {
+                let execution = run["executionId"].as_str()?;
+                self.runs_to_show.contains(execution).then(|| {
+                    let label = run["label"].as_str().or(run["taskId"].as_str());
+                    (
+                        execution.to_owned(),
+                        run["ptyId"].as_u64(),
+                        matches!(run["status"].as_str(), Some("awaiting-trust" | "starting")),
+                        label.unwrap_or("Task").to_owned(),
+                        run["project"].as_str().unwrap_or_default().to_owned(),
+                    )
+                })
+            })
+            .collect();
+        for (execution, session, waiting, label, project) in runs {
+            let project = (self.projects().iter())
+                .find(|open| open.path.as_os_str() == project.as_str())
+                .map(|open| open.id.clone());
+            match (session, project) {
+                (Some(session), Some(project)) => self.call_in_front(
+                    "openTab",
+                    json!({ "project": project, "kind": "terminal", "target": session.to_string(), "title": label }),
+                ),
+                (None, _) if waiting => continue,
+                _ => {}
+            }
+            self.runs_to_show.remove(&execution);
+        }
     }
 
     /// Puts in `to`'s composer the ask to find how the project `name` is run, tested and built,

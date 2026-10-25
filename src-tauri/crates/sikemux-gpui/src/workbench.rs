@@ -270,6 +270,8 @@ pub struct Workbench {
     pub buddy_picker: Option<crate::buddy_picker::BuddyPicker>,
     /// A task its checks held back, waiting on the person.
     pub run_check: Option<crate::run_check::RunCheck>,
+    /// The runs the person started here, whose terminal opens once the run has one.
+    pub runs_to_show: HashSet<String>,
     pub sharing: Option<crate::share::Sharing>,
     /// The agent in front whose worktree its header reads, by id and folder, and where it is.
     pub watched_worktree: Option<(String, String, crate::hosts::Place)>,
@@ -685,6 +687,7 @@ impl Workbench {
             adding_task: None,
             buddy_picker: None,
             run_check: None,
+            runs_to_show: HashSet::new(),
             sharing: None,
             watched_worktree: None,
             trust_asked: HashSet::new(),
@@ -1113,6 +1116,7 @@ impl Workbench {
                 self.reads.insert(key, value);
                 if key == "runs" {
                     self.place_agent_runs();
+                    self.show_started_runs();
                 }
                 self.time_run(cx);
             }
