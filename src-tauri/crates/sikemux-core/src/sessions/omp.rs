@@ -13,7 +13,7 @@ use super::rename::now_iso8601;
 use super::roots::{omp_agent_root, omp_session_dirs};
 use super::AgentSession;
 use super::{
-    cached_title, collect_jsonl, condense, mtime_of, read_prefix, read_suffix, text_from_content,
+    cached_title, collect_transcripts, condense, is_jsonl, mtime_of, read_prefix, read_suffix, text_from_content,
     title_cache_stamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
 
@@ -24,7 +24,7 @@ pub(super) fn omp_sessions(cwd: &str) -> Vec<AgentSession> {
 fn omp_sessions_from_dirs(cwd: &str, roots: Vec<PathBuf>) -> Vec<AgentSession> {
     let mut files = Vec::new();
     for root in roots {
-        collect_jsonl(&root, &mut files, 0);
+        collect_transcripts(&root, is_jsonl, &mut files, 0);
     }
     files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
     files.dedup();
@@ -45,7 +45,7 @@ fn omp_sessions_from_dirs(cwd: &str, roots: Vec<PathBuf>) -> Vec<AgentSession> {
 pub(super) fn omp_recent(scan: &PageScan<'_>) -> Vec<Hit> {
     let mut files = Vec::new();
     for root in omp_session_dirs() {
-        collect_jsonl(&root, &mut files, 0);
+        collect_transcripts(&root, is_jsonl, &mut files, 0);
     }
     files.sort_unstable();
     files.dedup();

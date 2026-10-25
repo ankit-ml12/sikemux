@@ -21,7 +21,7 @@ pub mod transcript;
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -92,9 +92,10 @@ pub fn agent_sessions(agent: AgentKind, cwd: &str, config_path: Option<&str>) ->
 pub fn session_place(agent: AgentKind, path: &Path) -> Option<PathBuf> {
     let name = path.file_name()?.to_str()?;
     match agent {
-        AgentKind::Claude | AgentKind::Codex | AgentKind::Pi | AgentKind::Omp => {
-            name.ends_with(".jsonl").then(|| path.to_path_buf())
+        AgentKind::Claude | AgentKind::Pi | AgentKind::Omp => {
+            is_jsonl(path).then(|| path.to_path_buf())
         }
+        AgentKind::Codex => codex::is_rollout(path).then(|| path.to_path_buf()),
         AgentKind::Grok => path
             .parent()
             .filter(|_| grok::GROK_SESSION_FILES.contains(&name))
@@ -321,7 +322,29 @@ fn read_suffix(file: &mut fs::File, start: u64) -> Option<String> {
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
-fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
+fn is_jsonl(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| extension == "jsonl")
+}
+
+/// Codex compresses a session's rollout with zstd once the session closes.
+const COMPRESSED_JSONL: &str = ".jsonl.zst";
+
+fn is_compressed(path: &Path) -> bool {
+    path.to_str()
+        .is_some_and(|path| path.ends_with(COMPRESSED_JSONL))
+}
+
+/// A transcript's lines, decompressed when it is compressed.
+fn transcript_lines(path: &Path) -> Option<Box<dyn BufRead>> {
+    let file = fs::File::open(path).ok()?;
+    if is_compressed(path) {
+        let decoder = zstd::stream::read::Decoder::new(file).ok()?;
+        return Some(Box::new(BufReader::new(decoder)));
+    }
+    Some(Box::new(BufReader::new(file)))
+}
+
+fn collect_transcripts(dir: &Path, wanted: fn(&Path) -> bool, out: &mut Vec<PathBuf>, depth: u32) {
     if depth > 6 || out.len() >= MAX_AGENT_TRANSCRIPT_PATHS {
         return;
     }
@@ -334,8 +357,8 @@ fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
         }
         let path = entry.path();
         if path.is_dir() {
-            collect_jsonl(&path, out, depth + 1);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+            collect_transcripts(&path, wanted, out, depth + 1);
+        } else if wanted(&path) {
             out.push(path);
         }
     }

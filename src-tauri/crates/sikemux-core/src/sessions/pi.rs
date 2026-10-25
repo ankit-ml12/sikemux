@@ -11,7 +11,7 @@ use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::{append_line, now_iso8601};
 use super::search::Prose;
 use super::{
-    cached_title, collect_jsonl, condense, mtime_of, push_texts, read_suffix, text_from_content,
+    cached_title, collect_transcripts, condense, is_jsonl, mtime_of, push_texts, read_suffix, text_from_content,
     title_cache_stamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
 
@@ -30,7 +30,7 @@ pub(super) fn pi_sessions(cwd: &str) -> Vec<AgentSession> {
         return Vec::new();
     };
     let mut files = Vec::new();
-    collect_jsonl(&root, &mut files, 0);
+    collect_transcripts(&root, is_jsonl, &mut files, 0);
     files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
     files.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
 
@@ -51,7 +51,7 @@ pub(super) fn pi_recent(scan: &PageScan<'_>) -> Vec<Hit> {
         return Vec::new();
     };
     let mut files = Vec::new();
-    collect_jsonl(&root, &mut files, 0);
+    collect_transcripts(&root, is_jsonl, &mut files, 0);
     let listed = files
         .into_iter()
         .map(|path| Listed {

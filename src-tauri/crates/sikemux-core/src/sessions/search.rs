@@ -15,7 +15,10 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use super::recent::{provider_hits, Hit, PageScan, RecentProvider};
-use super::{claude, codex, grok, hermes, muse, opencode, pi, title_cache_stamp, TitleCacheStamp};
+use super::{
+    claude, codex, grok, hermes, is_compressed, muse, opencode, pi, title_cache_stamp,
+    transcript_lines, TitleCacheStamp,
+};
 use crate::agent_catalog::AgentKind;
 
 /// The most sessions of one CLI a search weighs.
@@ -23,6 +26,8 @@ const MAX_CANDIDATES: usize = 4_000;
 /// How much of a transcript's start, and then of its end, is read for what was said.
 const HEAD_READ: u64 = 4 * 1024 * 1024;
 const TAIL_READ: u64 = 1024 * 1024;
+/// A compressed transcript is read from its start, so its end is looked for only this far.
+const MAX_DECODED: u64 = 64 * 1024 * 1024;
 /// How much of what was said in a session is kept for matching: its first
 /// messages, then its last.
 const PROSE_HEAD: usize = 48 * 1024;
@@ -471,6 +476,9 @@ impl Prose {
 /// Reads a transcript's lines, its start and then its end when it is too
 /// long to read whole.
 pub(super) fn each_line(path: &Path, mut visit: impl FnMut(&str)) {
+    if is_compressed(path) {
+        return each_decoded_line(path, &mut visit);
+    }
     let Ok(mut file) = File::open(path) else {
         return;
     };
@@ -482,6 +490,42 @@ pub(super) fn each_line(path: &Path, mut visit: impl FnMut(&str)) {
     if len > head_end {
         let start = len.saturating_sub(TAIL_READ).max(head_end);
         read_lines(&mut file, start, len, &mut visit);
+    }
+}
+
+fn each_decoded_line(path: &Path, visit: &mut dyn FnMut(&str)) {
+    let Some(reader) = transcript_lines(path) else {
+        return;
+    };
+    let mut reader = reader.take(MAX_DECODED);
+    let mut decoded = 0;
+    let mut tail: VecDeque<String> = VecDeque::new();
+    let mut tail_bytes = 0;
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match reader.read_until(b'\n', &mut line) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => decoded += read as u64,
+        }
+        let Ok(text) = std::str::from_utf8(&line).map(str::trim_end) else {
+            continue;
+        };
+        if decoded <= HEAD_READ {
+            visit(text);
+            continue;
+        }
+        tail_bytes += text.len() + 1;
+        tail.push_back(text.to_owned());
+        while tail_bytes as u64 > TAIL_READ {
+            match tail.pop_front() {
+                Some(dropped) => tail_bytes -= dropped.len() + 1,
+                None => break,
+            }
+        }
+    }
+    for line in tail {
+        visit(&line);
     }
 }
 

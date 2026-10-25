@@ -17,11 +17,16 @@ use super::search::Prose;
 use super::AgentSession;
 use super::{apply_login_environment, apply_process_config};
 use super::{
-    cached_title, collect_jsonl, condense, next_title_cache_access, stamped_transcripts,
-    title_cache_stamp, TitleCacheStamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
+    cached_title, collect_transcripts, condense, is_compressed, is_jsonl, next_title_cache_access,
+    stamped_transcripts, title_cache_stamp, transcript_lines, TitleCacheStamp,
+    MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
 
-// ---- codex — ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl ----------------
+// ---- codex — ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl[.zst] ----------
+
+pub(super) fn is_rollout(path: &Path) -> bool {
+    is_jsonl(path) || is_compressed(path)
+}
 
 /// The parsed Codex session index, kept until the file it came from is written
 /// again. It is one file for every project, so re-reading it per scan was the
@@ -98,9 +103,8 @@ fn codex_header_cache() -> &'static Mutex<CodexHeaderCache> {
 }
 
 fn read_codex_rollout(path: &Path) -> Option<CodexRollout> {
-    let file = fs::File::open(path).ok()?;
     let mut first = String::new();
-    BufReader::new(file).read_line(&mut first).ok()?;
+    transcript_lines(path)?.read_line(&mut first).ok()?;
     let value = serde_json::from_str::<Value>(first.trim()).ok()?;
     if value.get("type").and_then(|t| t.as_str()) != Some("session_meta") {
         return None;
@@ -143,7 +147,7 @@ pub(super) fn codex_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentS
     };
     let indexed_titles = codex_indexed_titles(&root);
     let mut paths = Vec::new();
-    collect_jsonl(&root.join("sessions"), &mut paths, 0);
+    collect_transcripts(&root.join("sessions"), is_rollout, &mut paths, 0);
     let mut files = stamped_transcripts(paths.into_iter());
     files.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
 
@@ -177,7 +181,7 @@ pub(super) fn codex_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> Ve
     };
     let indexed_titles = codex_indexed_titles(&root);
     let mut paths = Vec::new();
-    collect_jsonl(&root.join("sessions"), &mut paths, 0);
+    collect_transcripts(&root.join("sessions"), is_rollout, &mut paths, 0);
     let listed = paths
         .into_iter()
         .map(|path| {
@@ -223,8 +227,7 @@ fn codex_session(
 }
 
 fn codex_title(path: &Path) -> Option<String> {
-    let file = fs::File::open(path).ok()?;
-    for line in BufReader::new(file).lines().take(200).map_while(Result::ok) {
+    for line in transcript_lines(path)?.lines().take(200).map_while(Result::ok) {
         let Ok(v) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
