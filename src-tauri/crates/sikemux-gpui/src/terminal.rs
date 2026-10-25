@@ -703,7 +703,7 @@ fn draw(
                 let paths = dropped
                     .paths()
                     .iter()
-                    .map(|path| path.to_string_lossy().into_owned())
+                    .map(|path| crate::chat::lasting(path).to_string_lossy().into_owned())
                     .collect();
                 send(bench, id, TerminalInput::Paths { paths });
             }),

@@ -63,6 +63,7 @@ mod status;
 mod tools;
 mod worktree;
 
+pub use attach::lasting;
 pub use draft::key as draft_key;
 
 /// Turns asked for each time the reader nears the top of what is held.

@@ -47,6 +47,28 @@ fn is_screenshot_thumbnail(path: &Path) -> bool {
         .contains("/TemporaryItems/NSIRD_screencaptureui_")
 }
 
+/// `path`, or for a screenshot's thumbnail a copy of it in the temporary folder that stays
+/// after macOS deletes the original.
+pub fn lasting(path: &Path) -> PathBuf {
+    if !is_screenshot_thumbnail(path) {
+        return path.to_owned();
+    }
+    let kept = || {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_millis();
+        let folder = std::env::temp_dir()
+            .join("sikemux-drops")
+            .join(stamp.to_string());
+        std::fs::create_dir_all(&folder).ok()?;
+        let copy = folder.join(path.file_name()?);
+        std::fs::copy(path, &copy).ok()?;
+        Some(copy)
+    };
+    kept().unwrap_or_else(|| path.to_owned())
+}
+
 const IMAGE: &str = "image:";
 
 /// The largest file sent to another host for a chat there.
