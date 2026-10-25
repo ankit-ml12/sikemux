@@ -67,7 +67,9 @@ pub struct Accounts {
     /// The chats that failed for want of an account's sign-in, by that account, to move onto
     /// it once it signs in.
     pub waiting_chats: HashMap<String, Vec<String>>,
-    pub limits_card: crate::limits_card::Card,
+    /// The account the Limits panel shows in place of the one new chats start on, while the
+    /// person looks through their accounts.
+    pub viewing: Option<String>,
     /// When coming back to the app last had the core check every agent's sign-in.
     checked_on_return: Option<Instant>,
 }
