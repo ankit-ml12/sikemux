@@ -71,10 +71,10 @@ pub fn follow_opened(
                 .filter_map(|file| Url::parse(file).ok()?.to_file_path().ok())
                 .collect();
             bench.update(cx, |bench, cx| {
-                let mut forward = files.is_empty() && links.is_empty();
+                let forward = files.is_empty() || !links.is_empty();
                 bench.open_handed_paths(paths, cx);
                 for link in links {
-                    forward |= follow(bench, &link, cx);
+                    follow(bench, &link, cx);
                 }
                 if forward {
                     bench.bring_window_forward(cx);
@@ -85,19 +85,18 @@ pub fn follow_opened(
     .detach();
 }
 
-/// Follows a `sikemux://` link, and says whether it was one this app understands. A link it
-/// does not understand goes nowhere, rather than to whichever app the system would pick.
-pub fn follow(bench: &mut Workbench, link: &str, cx: &mut Context<Workbench>) -> bool {
-    let Some(resume) = parse(link) else {
-        return false;
+/// Follows a `sikemux://` link. A link this app does not understand goes nowhere, rather
+/// than to whichever app the system would pick, and the window says so.
+pub fn follow(bench: &mut Workbench, link: &str, cx: &mut Context<Workbench>) {
+    let resume = parse(link).filter(|resume| {
+        bench
+            .launchers()
+            .iter()
+            .any(|launcher| launcher.provider == resume.provider)
+    });
+    let Some(resume) = resume else {
+        return bench.notify(toast::error(format!("Sikemux couldn't open {link}")), cx);
     };
-    let launchable = bench
-        .launchers()
-        .iter()
-        .any(|launcher| launcher.provider == resume.provider);
-    if !launchable {
-        return false;
-    }
     let open = bench.view.as_ref().and_then(|view| {
         view.chats
             .iter()
@@ -109,7 +108,7 @@ pub fn follow(bench: &mut Workbench, link: &str, cx: &mut Context<Workbench>) ->
     });
     if let Some(agent) = open {
         bench.open_agent(&agent);
-        return true;
+        return;
     }
     let known = bench.view.as_ref().is_some_and(|view| {
         view.workspace
@@ -119,7 +118,7 @@ pub fn follow(bench: &mut Workbench, link: &str, cx: &mut Context<Workbench>) ->
     });
     if known {
         take_up(bench, resume, false, cx);
-        return true;
+        return;
     }
     let body = format!(
         "A link asks to resume a {} chat in {}, which is not one of your projects.\nThe agent starts there at once and follows the folder's own settings and hooks. Go ahead only if you trust it.",
@@ -144,7 +143,6 @@ pub fn follow(bench: &mut Workbench, link: &str, cx: &mut Context<Workbench>) ->
         },
         cx,
     );
-    true
 }
 
 fn agent_name(bench: &Workbench, provider: &str) -> String {
