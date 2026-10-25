@@ -124,6 +124,60 @@ impl Drop for Held {
     }
 }
 
+/// WebKitGTK draws pages into DMA-BUF buffers when it finds a render node, and those only show
+/// where the X server has DRI3. Without it, as on virtual machines, remote X and some drivers,
+/// pages stay blank, so WebKit is told to draw them another way, unless the person already
+/// chose. It sets the environment, so it runs before any thread starts.
+pub fn choose_page_rendering() {
+    const DMABUF: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
+    if std::env::var_os(DMABUF).is_some() {
+        return;
+    }
+    let missing = if !has_dri3() {
+        "the X server has no DRI3"
+    } else if !has_render_node() {
+        "there is no render node to draw with"
+    } else {
+        return;
+    };
+    std::env::set_var(DMABUF, "1");
+    eprintln!("sikemux: {missing}, so web pages are drawn without DMA-BUF buffers");
+}
+
+fn has_dri3() -> bool {
+    // SAFETY: a connection of its own, closed before returning; X fills the three numbers.
+    unsafe {
+        let display = xlib::XOpenDisplay(std::ptr::null());
+        if display.is_null() {
+            return false;
+        }
+        let (mut opcode, mut event, mut error) = (0, 0, 0);
+        let found = xlib::XQueryExtension(
+            display,
+            c"DRI3".as_ptr(),
+            &mut opcode,
+            &mut event,
+            &mut error,
+        ) != 0;
+        xlib::XCloseDisplay(display);
+        found
+    }
+}
+
+fn has_render_node() -> bool {
+    let Ok(nodes) = std::fs::read_dir("/dev/dri") else {
+        return false;
+    };
+    nodes.flatten().any(|node| {
+        node.file_name().to_string_lossy().starts_with("renderD")
+            && std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(node.path())
+                .is_ok()
+    })
+}
+
 /// Starts the thread GTK runs on, once, and says whether GTK could start.
 fn gtk_thread() -> Result<(), String> {
     static STARTED: OnceLock<Result<(), String>> = OnceLock::new();

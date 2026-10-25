@@ -40,6 +40,8 @@ pub use documents::DocumentEvent;
 pub use handover::SavedStrip;
 pub use host::{BrowserResult, Error, Host};
 #[cfg(target_os = "linux")]
+pub use linux::choose_page_rendering;
+#[cfg(target_os = "linux")]
 pub use linux_page::give_keyboard_back;
 pub use manager::{BrowserManager, TabPage};
 pub use tab::{ParentView, Tab, TabSpec};

@@ -5,6 +5,8 @@ use gpui_kit::{
 use sikemux_gpui::{console, core, icons, theme, workbench, WINDOW_SIZE};
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    sikemux_browser::choose_page_rendering();
     console::install();
     let (handed, opened) = tokio::sync::mpsc::unbounded_channel();
     #[cfg(target_os = "linux")]
