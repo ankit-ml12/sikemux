@@ -243,6 +243,21 @@ pub struct Host {
     pub faces: crate::avatars::Avatars,
 }
 
+/// Opens a sign-in page in `browser`, the app and the shortcut that brings it forward, else in
+/// the default browser.
+fn open_sign_in(url: String, browser: Option<(String, String)>, cx: &mut gpui::AsyncApp) {
+    #[cfg(target_os = "macos")]
+    if let Some((app, shortcut)) = browser {
+        cx.background_executor()
+            .spawn(async move { crate::cloud_browser::open(&url, &app, &shortcut) })
+            .detach();
+        return;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = browser;
+    cx.update(|cx| cx.open_url(&url));
+}
+
 impl Host {
     /// The plugin's view `method` with `params`, asked of the core the first time and kept
     /// after, until the core says it changed.
@@ -550,6 +565,27 @@ impl Host {
 
     /// Signs in through the plugin's streamed `method`, opening any page it names.
     pub fn sign_in_through(&self, method: &str, params: Value, cx: &mut Context<PluginPane>) {
+        self.stream_sign_in(method, params, None, cx);
+    }
+
+    /// Signs in to a cloud as `sign_in_through` does, opening its pages in the browser
+    /// Settings › Cloud names for single sign-on, else the default one.
+    pub fn cloud_sign_in(&self, method: &str, params: Value, cx: &mut Context<PluginPane>) {
+        let browser = self.bench.upgrade().and_then(|bench| {
+            let preferences = bench.read(cx).preferences();
+            let app = preferences.cloud_browser.trim().to_owned();
+            (!app.is_empty()).then(|| (app, preferences.cloud_browser_shortcut))
+        });
+        self.stream_sign_in(method, params, browser, cx);
+    }
+
+    fn stream_sign_in(
+        &self,
+        method: &str,
+        params: Value,
+        browser: Option<(String, String)>,
+        cx: &mut Context<PluginPane>,
+    ) {
         let mut streaming = self.target.stream(
             "pluginStream",
             json!({ "plugin": self.plugin, "method": method, "params": params }),
@@ -560,8 +596,7 @@ impl Host {
             while let Some(part) = streaming.parts.recv().await {
                 for item in part.items {
                     if let Some(url) = item["url"].as_str() {
-                        let url = url.to_owned();
-                        cx.update(|cx| cx.open_url(&url));
+                        open_sign_in(url.to_owned(), browser.clone(), cx);
                     }
                 }
                 if let Some(error) = part.error {

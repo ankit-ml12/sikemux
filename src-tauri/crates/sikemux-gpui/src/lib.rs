@@ -17,6 +17,8 @@ mod boot;
 mod buddy_picker;
 mod chat;
 mod closing;
+#[cfg(target_os = "macos")]
+mod cloud_browser;
 pub mod codehost;
 mod command_popup;
 mod commands;

@@ -1377,7 +1377,7 @@ fn sign_in(profile: &str, cx: &mut Context<PluginPane>) -> AnyElement {
                 .icon(Icon::LogIn)
                 .on_click(cx.listener(move |pane, _, _, cx| {
                     let params = json!({ "profile": named });
-                    pane.host.sign_in_through("signIn", params, cx);
+                    pane.host.cloud_sign_in("signIn", params, cx);
                 })),
         )
         .into_any_element()
