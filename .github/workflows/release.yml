@@ -173,6 +173,9 @@ jobs:
           BITBUCKET_OAUTH_SECRET: ${{ secrets.BITBUCKET_OAUTH_SECRET }}
           JIRA_OAUTH_SECRET: ${{ secrets.JIRA_OAUTH_SECRET }}
           VERCEL_OAUTH_SECRET: ${{ secrets.VERCEL_OAUTH_SECRET }}
+          # Line tables go to a dSYM published beside the release, never into the app.
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+          CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: packed
         run: cargo build --locked --release -p sikemux-host --bin sikemux-host
         working-directory: src-tauri
 
@@ -182,6 +185,20 @@ jobs:
           name: mac-core
           if-no-files-found: error
           path: src-tauri/target/release/sikemux-host
+
+      - name: Pack the core's symbols
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/symbols"
+          ditto -c -k --keepParent src-tauri/target/release/sikemux-host.dSYM "$RUNNER_TEMP/symbols/Sikemux_${VERSION}_aarch64.core.dSYM.zip"
+
+      - name: Keep the core's symbols
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac-symbols-core
+          if-no-files-found: error
+          path: ${{ runner.temp }}/symbols/*.dSYM.zip
 
   sign-helpers:
     name: Sign the helpers
@@ -297,6 +314,8 @@ jobs:
           VERCEL_OAUTH_SECRET: ${{ secrets.VERCEL_OAUTH_SECRET }}
           VERSION: ${{ needs.plan.outputs.version }}
           CHANNEL: ${{ needs.plan.outputs.channel }}
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+          CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: packed
         run: |
           mkdir -p src-tauri/binaries
           tar -xf "$RUNNER_TEMP/helpers/helpers.tar" -C src-tauri/binaries
@@ -304,6 +323,8 @@ jobs:
           [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
           ./scripts/release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"
           COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -cf "$RUNNER_TEMP/compiled.tar" src-tauri/crates/sikemux-gpui/target/release/sikemux
+          mkdir -p "$RUNNER_TEMP/symbols"
+          ditto -c -k --keepParent src-tauri/crates/sikemux-gpui/target/release/sikemux.dSYM "$RUNNER_TEMP/symbols/Sikemux_${VERSION}_aarch64.app.dSYM.zip"
 
       - name: Keep the compiled app
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -311,6 +332,13 @@ jobs:
           name: app-compiled
           if-no-files-found: error
           path: ${{ runner.temp }}/compiled.tar
+
+      - name: Keep the app's symbols
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac-symbols-app
+          if-no-files-found: error
+          path: ${{ runner.temp }}/symbols/*.dSYM.zip
 
   # The core goes into the app only here, so the app compiles while the core does.
   package:
@@ -711,6 +739,13 @@ jobs:
         with:
           name: appimage-signature-${{ github.ref_name }}
           path: src-tauri/target/release/bundle/appimage
+
+      - name: Fetch the Mac symbols
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mac-symbols-*
+          merge-multiple: true
+          path: src-tauri/target/symbols
 
       - name: Publish
         env:

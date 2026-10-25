@@ -34,6 +34,7 @@ DEBS=("$BUNDLE"/deb/*.deb)
 RPMS=("$BUNDLE"/rpm/*.rpm)
 APPIMAGES=("$BUNDLE"/appimage/*.AppImage)
 HOSTS=("$ROOT"/src-tauri/target/host/sikemux-host-"$VERSION"-linux-*.tar.gz)
+SYMBOLS=("$ROOT"/src-tauri/target/symbols/Sikemux_"$VERSION"_*.dSYM.zip)
 shopt -u nullglob
 [[ ${#DMGS[@]} -eq 1 ]] || fail "expected exactly one DMG, found ${#DMGS[@]}"
 [[ ${#VOICES[@]} -eq 1 ]] || fail "expected exactly one voice helper, found ${#VOICES[@]}"
@@ -42,6 +43,7 @@ shopt -u nullglob
 [[ ${#RPMS[@]} -eq 1 ]] || fail "expected exactly one rpm, found ${#RPMS[@]}"
 [[ ${#APPIMAGES[@]} -eq 1 ]] || fail "expected exactly one AppImage, found ${#APPIMAGES[@]}"
 [[ ${#HOSTS[@]} -eq 2 ]] || fail "expected the x86_64 and aarch64 host cores, found ${#HOSTS[@]}"
+[[ ${#SYMBOLS[@]} -eq 2 ]] || fail "expected the Mac app's and core's symbols, found ${#SYMBOLS[@]}"
 HOST_SIGS=("${HOSTS[@]/%/.sig}")
 DMG="${DMGS[0]}"
 VOICE="${VOICES[0]}"
@@ -51,7 +53,7 @@ RPM="${RPMS[0]}"
 APPIMAGE="${APPIMAGES[0]}"
 APPIMAGE_SIG="$APPIMAGE.sig"
 INSTALLER="$ROOT/scripts/install.sh"
-for file in "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$APPIMAGE_SIG" "$MANIFEST"; do
+for file in "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$APPIMAGE_SIG" "${SYMBOLS[@]}" "$MANIFEST"; do
   [[ -s "$file" ]] || fail "$file is missing or empty"
 done
 [[ "$(node -p "require('$MANIFEST').version")" == "$VERSION" ]] || fail "$MANIFEST is not for v$VERSION"
@@ -72,8 +74,8 @@ manifest["platforms"]["linux-x86_64"] = {
 path.write_text(json.dumps(manifest, indent=2) + "\n")
 PY
 
-STABLE_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$APPIMAGE_SIG" "$MANIFEST")
-NIGHTLY_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$APPIMAGE_SIG")
+STABLE_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$APPIMAGE_SIG" "${SYMBOLS[@]}" "$MANIFEST")
+NIGHTLY_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$APPIMAGE_SIG" "${SYMBOLS[@]}")
 POINTER_NOTES="Update feed for the nightly channel.
 
 The installable build for this feed is [v$VERSION](https://github.com/nodelike/sikemux/releases/tag/v$VERSION).

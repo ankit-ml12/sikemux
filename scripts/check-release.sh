@@ -71,6 +71,7 @@ if (!publish.includes('"${HOST_SIGS[@]}" "$INSTALLER"')) fail("releases do not p
 if (!releaseWorkflow.includes("scripts/sign-host.sh")) fail("the Release workflow does not sign the Linux host core");
 if (!signHost.includes('"${HOSTS[@]}" "$APPIMAGE"')) fail("releases do not sign the AppImage with the updater key");
 if (!publish.includes('"$INSTALLER" "$APPIMAGE_SIG"')) fail("releases do not publish the AppImage's update signature");
+if (!publish.includes('"$APPIMAGE_SIG" "${SYMBOLS[@]}"')) fail("releases do not publish the Mac dSYMs that name a crash's frames");
 if (!publish.includes('manifest["platforms"]["linux-x86_64"]')) fail("the update feed does not offer the AppImage");
 if (!releaseWorkflow.includes("scripts/smoke-host-install.sh")) fail("the Release workflow does not install the host core with its own installer");
 if (!macBuild.includes("build-voice-helper.mjs")) fail("macOS build does not build the voice helper");
