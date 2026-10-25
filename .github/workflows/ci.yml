@@ -404,7 +404,7 @@ jobs:
           sleep 1
           python3 -I ci/linux-window.py --app target/debug/sikemux \
             --core ../../target/debug/sikemux-core --agent ../../target/debug/sikemux-fake-acp-agent \
-            --seed target/debug/examples/fake_chat --out "$RUNNER_TEMP/w/linux" --browser
+            --seed target/debug/examples/fake_chat --out "$RUNNER_TEMP/w/linux" --browser --input
 
       - name: Upload the captures
         if: always()

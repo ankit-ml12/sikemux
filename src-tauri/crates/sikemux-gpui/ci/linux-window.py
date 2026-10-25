@@ -4,8 +4,9 @@ python3 -I ci/linux-window.py --app APP --core CORE --agent FAKE_AGENT --seed FA
 
 The arguments are desk-checks.py's, run under an X server and a window manager (DISPLAY set). L1 opens the app
 and checks it shows a window with the seeded chat. With --browser, L2 has the fake agent open a desk browser
-tab on a local page through the agent browser tool; with --input as well, L3 has it click a link there with the
-same tools. Each leaves a capture of the window in DIR. Exits 1 when any check fails.
+tab on a local page through the agent browser tool; with --input as well, L4 has it type into the page's field,
+press a key there and read the field back, and L3 click a link there, all with the same tools. Each leaves a
+capture of the window in DIR. Exits 1 when any check fails.
 """
 
 import argparse
@@ -41,6 +42,14 @@ def page_from_tool(run):
     run.report("L2", bool(page), f"browser.navigate answered {said[:160]!r}; the desk's page {page.get('url')} titled {page.get('title')!r}")
 
 
+def typing_from_tool(run):
+    typed = desk.answered(run.prompt(desk.json_tool("browser.type", {"selector": "input", "text": "hello linux"})))
+    run.prompt(desk.json_tool("browser.press", {"key": "Backspace"}))
+    read = desk.answered(run.prompt(desk.json_tool("browser.evaluate", {"script": "document.querySelector('input').value"})))
+    run.report("L4", typed.get("value") == "hello linux" and read.get("result") == "hello linu",
+               f"browser.type left {typed.get('value')!r}; after Backspace the field holds {read.get('result')!r}")
+
+
 def click_from_tool(run):
     said = run.prompt(desk.json_tool("browser.click", {"text": "Go to the second page"}))
     page = desk.until(lambda: (lambda page: page if page.get("url", "").endswith("/page2.html") else None)(desk.active_page(run.desk())), 20) or {}
@@ -64,8 +73,10 @@ def main():
         else:
             run.leave("L2", "waits for the Linux browser (pass --browser once it draws a page)")
         if options.browser and options.input:
+            typing_from_tool(run)
             click_from_tool(run)
         else:
+            run.leave("L4", "waits for input in the Linux browser (pass --browser --input once keys reach a page)")
             run.leave("L3", "waits for input in the Linux browser (pass --browser --input once clicks reach a page)")
     finally:
         run.tear_down()
