@@ -276,6 +276,8 @@ struct Status {
     name: Option<String>,
     account_connection: Option<&'static str>,
     remote_access: Option<bool>,
+    /// The oldest release the account works with, when this one is older.
+    update_required: Option<String>,
     devices: usize,
     connected: usize,
     waiting: usize,
@@ -323,6 +325,10 @@ fn status(json: bool) -> i32 {
         devices: remote.as_ref().map_or(0, |remote| remote.devices.len()),
         connected: remote.as_ref().map_or(0, |remote| remote.connected.len()),
         waiting: remote.as_ref().map_or(0, |remote| remote.pending.len()),
+        update_required: remote
+            .as_ref()
+            .and_then(|remote| remote.update_required.as_ref())
+            .map(|required| required.minimum.clone()),
         updates,
     };
     if json {
@@ -364,15 +370,31 @@ fn print_status(status: &Status) {
         Some(false) if cfg!(target_os = "macos") => row("App", "window closed".into()),
         _ => {}
     }
-    row(
-        "Account",
-        match (&status.account, status.account_connection) {
-            (Some(account), Some(connection)) => format!("{account}, {connection}"),
-            (Some(account), None) => account.clone(),
-            (None, _) => "not signed in; sign in with `sikemux login`".into(),
+    let account = match (&status.update_required, &status.account) {
+        (Some(minimum), _) => {
+            let off = status
+                .updates
+                .as_ref()
+                .is_some_and(|updates| updates["automatic"] == Value::Bool(false));
+            let how = match off {
+                true => {
+                    "updates are off; turn them on in Sikemux or with `sudo sikemux update --on`"
+                }
+                false => "update with `sikemux update`",
+            };
+            format!("off: this release is older than {minimum}, the oldest your account works with; {how}")
+        }
+        (None, Some(account)) => match status.account_connection {
+            Some(connection) => format!("{account}, {connection}"),
+            None => account.clone(),
         },
-    );
-    if let Some(enabled) = status.remote_access {
+        (None, None) => "not signed in; sign in with `sikemux login`".into(),
+    };
+    row("Account", account);
+    if let Some(enabled) = status
+        .remote_access
+        .filter(|_| status.update_required.is_none())
+    {
         row(
             "Devices",
             format!(

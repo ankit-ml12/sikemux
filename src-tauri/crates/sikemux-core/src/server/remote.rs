@@ -436,6 +436,11 @@ impl Remote {
         self.inner.locked().stored.owner.clone()
     }
 
+    /// This build is older than the accounts server works with.
+    pub(crate) fn too_old(&self) -> bool {
+        self.inner.locked().update_required.is_some()
+    }
+
     /// What a paired device may do now, or `None` once it is unpaired or remote
     /// access is off.
     pub(crate) fn standing_of(&self, id: &str) -> Option<Standing> {
@@ -1437,6 +1442,7 @@ async fn apply_network(core: &Arc<Core>, fetched: Network) {
             );
             stop(core).await;
             stop_live(core);
+            core.updates.check_soon();
         }
         (Some(_), None) => {
             ensure_live(core);

@@ -261,7 +261,8 @@ fn read_switch() -> bool {
 }
 
 /// A host puts the release `check` found in place by itself, once no chat is
-/// in a turn. It waits at most until the next check.
+/// in a turn, or at once when the account no longer works with this build,
+/// since it then reaches nobody. It waits at most until the next check.
 async fn update_host_when_quiet(core: &Arc<Core>) {
     let status = core.updates.status();
     if !is_host()
@@ -274,7 +275,7 @@ async fn update_host_when_quiet(core: &Arc<Core>) {
     let until = tokio::time::Instant::now() + CHECK_EVERY;
     loop {
         let rested = core.updates.quiet.notified();
-        if core.chats.in_turn() == 0 {
+        if core.chats.in_turn() == 0 || core.remote.too_old() {
             break;
         }
         if tokio::time::timeout_at(until, rested).await.is_err() {
