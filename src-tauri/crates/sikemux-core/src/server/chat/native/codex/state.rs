@@ -89,6 +89,8 @@ pub(super) struct Session {
     pub subagents: Subagents,
     pub token_usage: Option<Value>,
     pub titled: bool,
+    /// The newest turn of the thread the chat has been told of.
+    pub latest_turn: Option<String>,
     /// The chat's own tool servers that have not reported starting yet.
     pub starting_servers: HashSet<String>,
     questions: u64,
@@ -216,6 +218,7 @@ impl Session {
             tool_calls: HashMap::new(),
             token_usage: None,
             titled: false,
+            latest_turn: None,
             starting_servers: HashSet::new(),
             questions: 0,
             gone: false,
@@ -512,7 +515,11 @@ impl Session {
 
     fn root_notification(&mut self, method: &str, params: &Value) -> Vec<Effect> {
         match method {
-            "turn/started" => self.turn_started(text(&params["turn"], "id")),
+            "turn/started" => {
+                let id = text(&params["turn"], "id");
+                self.latest_turn = Some(id.to_owned());
+                self.turn_started(id)
+            }
             "turn/completed" => self.turn_completed(&params["turn"]),
             "error" if params["willRetry"] == true => {
                 let turn = params["turnId"].as_str().unwrap_or_default().to_owned();

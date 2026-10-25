@@ -19,6 +19,7 @@ use crate::acp::{permission, SessionEnd};
 use crate::protocol::{ChatAccount, ChatContext, ChatLaunch, ChatStart};
 use sikemux_fold::ChatEventKind;
 
+use super::super::feed::Reach;
 use super::super::kept::Progress;
 use super::super::rebind::{
     error_message, next_account, on_account, switch_notice, switches_at_limit, Carried, Outcome,
@@ -37,6 +38,8 @@ pub(crate) struct Prompt {
     pub context: Vec<ChatContext>,
     /// A message from another agent rather than the person.
     pub letter: bool,
+    /// Sent before, to this agent or one that ran the session earlier, so its id may be taken.
+    pub resent: bool,
 }
 
 impl From<&Replay> for Prompt {
@@ -47,6 +50,7 @@ impl From<&Replay> for Prompt {
             paths: replay.paths.clone(),
             context: replay.context.clone(),
             letter: false,
+            resent: !replay.announce,
         }
     }
 }
@@ -173,6 +177,16 @@ impl Sink {
     /// the chat.
     pub fn loaded(&self) {
         self.quiet.store(false, Ordering::Release);
+    }
+
+    /// How far into the CLI's record of `session` the chat's history already reaches.
+    pub fn reach(&self, session: &str) -> Option<Reach> {
+        self.chat.feed.reach(session)
+    }
+
+    /// The chat's history now reaches `reach` into the CLI's record of `session`.
+    pub fn reached(&self, session: &str, reach: Reach) {
+        self.chat.feed.reached(session, reach);
     }
 
     /// Whether the provider has a saved session to load.
@@ -415,6 +429,12 @@ pub(crate) trait Backend: Sized + Send {
         true
     }
 
+    /// How far into its own record of the session the agent has written, all of which the
+    /// chat has been told.
+    fn reach(&self) -> Option<Reach> {
+        None
+    }
+
     /// Lets go of the agent without stopping it, answering with what a core
     /// that takes it up needs: this side's state as plain data, and the
     /// agent's process. On failure the agent is stopped.
@@ -613,6 +633,11 @@ pub(crate) async fn run<B: Backend>(
     let mut letter_turn = false;
     let end = loop {
         chat.keep(state.progress());
+        if !chat.running.load(Ordering::Acquire) {
+            if let Some(reach) = backend.reach() {
+                chat.feed.reached(&state.session_id, reach);
+            }
+        }
         chat.at_rest.store(true, Ordering::Release);
         // What the agent already said is taken in before the next command,
         // so a turn's failure or end is never cut off by letting go of the
@@ -766,6 +791,7 @@ pub(crate) async fn run<B: Backend>(
                     paths: Vec::new(),
                     context: Vec::new(),
                     letter: true,
+                    resent: false,
                 };
                 let steering = backend.steer(prompt.clone());
                 let chat = chat.clone();
@@ -971,6 +997,7 @@ pub(crate) async fn run<B: Backend>(
                     paths,
                     context,
                     letter: false,
+                    resent: false,
                 };
                 let steering = backend.steer(prompt.clone());
                 let chat = chat.clone();
@@ -1041,10 +1068,13 @@ pub(crate) async fn run<B: Backend>(
                 if let Err(Ok(handed)) = reply.send(handed) {
                     super::process::kill_and_reap(handed.released.pid);
                 }
-                break Outcome::Released;
+                return Ok(Outcome::Released);
             }
         }
     };
+    if let Some(reach) = backend.reach() {
+        chat.feed.reached(&state.session_id, reach);
+    }
     Ok(end)
 }
 

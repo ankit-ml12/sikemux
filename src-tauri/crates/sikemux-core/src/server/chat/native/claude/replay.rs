@@ -1,4 +1,7 @@
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
@@ -15,16 +18,20 @@ use super::tools::{self, TaskPlan};
 /// tool results are put back after it, queued prompts become user records, and meta,
 /// sidechain and team records are dropped. Records are returned as stored, so they carry no
 /// `parent_tool_use_id`; Claude Code keeps subagent transcripts in separate files.
+#[cfg(test)]
 pub fn read_chain(path: &Path) -> Result<Vec<Value>, String> {
     read(path, false)
 }
 
 /// The active branch back to the chat's first message, where `read_chain` starts
-/// at its last compaction.
-pub fn read_history(path: &Path) -> Result<Vec<Value>, String> {
-    read(path, true)
+/// at its last compaction, and how many bytes of the transcript it was read from.
+pub fn read_history(path: &Path) -> Result<(Vec<Value>, u64), String> {
+    let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let records = finish_messages(active_branch(parse_entries(&bytes), true));
+    Ok((records, bytes.len() as u64))
 }
 
+#[cfg(test)]
 fn read(path: &Path, across_compactions: bool) -> Result<Vec<Value>, String> {
     let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let entries = parse_entries(&bytes);
@@ -32,14 +39,88 @@ fn read(path: &Path, across_compactions: bool) -> Result<Vec<Value>, String> {
     Ok(finish_messages(chain))
 }
 
-/// `records` with each subagent's own transcript put in after the call that
-/// spawned it, so a loaded chat shows what its subagents did. Claude Code
-/// keeps those beside the chat's, in `<session>/subagents/agent-<id>.jsonl`,
-/// each with a `.meta.json` naming the spawning call.
+/// The messages Claude added to the transcript at `path` past its first `from` bytes, and how
+/// far into it they reach. A line still being written is left for the next read.
+pub fn read_since(path: &Path, from: u64) -> Result<(Vec<Value>, u64), String> {
+    let failed = |error: std::io::Error| format!("{}: {error}", path.display());
+    let mut file = File::open(path).map_err(failed)?;
+    let mut bytes = Vec::new();
+    file.seek(SeekFrom::Start(from)).map_err(failed)?;
+    file.read_to_end(&mut bytes).map_err(failed)?;
+    bytes.truncate(
+        bytes
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map_or(0, |at| at + 1),
+    );
+    let reach = from + bytes.len() as u64;
+    Ok((
+        finish_messages(active_branch(parse_entries(&bytes), true)),
+        reach,
+    ))
+}
+
+/// The first thing `find` finds in the active branch of the newest part of the transcript at
+/// `path`, read further back only while it finds nothing.
+pub fn newest<T>(path: &Path, find: impl Fn(&[Value]) -> Option<T>) -> Result<Option<T>, String> {
+    const FIRST_WINDOW: u64 = 1024 * 1024;
+    let failed = |error: std::io::Error| format!("{}: {error}", path.display());
+    let file = File::open(path).map_err(failed)?;
+    let len = file.metadata().map_err(failed)?.len();
+    let mut window = FIRST_WINDOW;
+    loop {
+        let start = len.saturating_sub(window);
+        let mut bytes = vec![0; (len - start) as usize];
+        file.read_exact_at(&mut bytes, start).map_err(failed)?;
+        let whole = if start == 0 {
+            &bytes[..]
+        } else {
+            let line = bytes
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(bytes.len(), |at| at + 1);
+            &bytes[line..]
+        };
+        let found = find(&finish_messages(active_branch(parse_entries(whole), false)));
+        if found.is_some() || start == 0 {
+            return Ok(found);
+        }
+        window *= 8;
+    }
+}
+
+/// Runs `each` on every item on as many threads as help, keeping what it answers.
+fn in_parallel<T: Sync, R: Send>(items: &[T], each: impl Fn(&T) -> Option<R> + Sync) -> Vec<R> {
+    let threads = std::thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(items.len().max(1));
+    std::thread::scope(|scope| {
+        let reading: Vec<_> = items
+            .chunks(items.len().div_ceil(threads).max(1))
+            .map(|items| scope.spawn(|| items.iter().filter_map(&each).collect::<Vec<_>>()))
+            .collect();
+        reading
+            .into_iter()
+            .flat_map(|read| read.join().unwrap_or_default())
+            .collect()
+    })
+}
+
+/// `records` with the transcript of each subagent they spawned put in after the call that
+/// spawned it, and those of the subagents it spawned in turn, so a loaded chat shows what its
+/// subagents did. Claude Code keeps those beside the chat's, in
+/// `<session>/subagents/agent-<id>.jsonl`, each with a `.meta.json` naming the spawning call.
+/// Only the transcripts of subagents `records` reach are read.
 pub fn with_subagents(path: &Path, records: Vec<Value>) -> Vec<Value> {
+    let mut calls: Vec<String> = records
+        .iter()
+        .flat_map(tool_use_ids)
+        .map(str::to_owned)
+        .collect();
     let dir = path.with_extension("").join("subagents");
-    let Ok(listing) = std::fs::read_dir(&dir) else {
-        return records;
+    let listing = match std::fs::read_dir(&dir) {
+        Ok(listing) if !calls.is_empty() => listing,
+        _ => return records,
     };
     let metas: Vec<PathBuf> = listing
         .flatten()
@@ -49,44 +130,47 @@ pub fn with_subagents(path: &Path, records: Vec<Value>) -> Vec<Value> {
                 .is_some_and(|name| name.ends_with(".meta.json"))
         })
         .collect();
-    let threads = std::thread::available_parallelism()
-        .map_or(1, usize::from)
-        .min(metas.len().max(1));
-    let read: Vec<(String, String, Vec<Value>)> = std::thread::scope(|scope| {
-        let reading: Vec<_> = metas
-            .chunks(metas.len().div_ceil(threads).max(1))
-            .map(|metas| {
-                scope.spawn(|| {
-                    metas
-                        .iter()
-                        .filter_map(|meta| subagent(meta))
-                        .collect::<Vec<_>>()
-                })
+    let mut by_call: HashMap<String, Vec<PathBuf>> = HashMap::new();
+    for (spawner, transcript) in in_parallel(&metas, |meta| spawned_by(meta)) {
+        by_call.entry(spawner).or_default().push(transcript);
+    }
+    let mut by_spawner: HashMap<String, Vec<(String, Vec<Value>)>> = HashMap::new();
+    while !calls.is_empty() {
+        let wanted: Vec<(String, PathBuf)> = calls
+            .drain(..)
+            .filter_map(|call| Some((by_call.remove(&call)?, call)))
+            .flat_map(|(transcripts, call)| {
+                transcripts
+                    .into_iter()
+                    .map(move |transcript| (call.clone(), transcript))
             })
             .collect();
-        reading
-            .into_iter()
-            .flat_map(|read| read.join().unwrap_or_default())
-            .collect()
-    });
-    let mut by_spawner: HashMap<String, Vec<(String, Vec<Value>)>> = HashMap::new();
-    for (spawner, started, chain) in read {
-        by_spawner
-            .entry(spawner)
-            .or_default()
-            .push((started, chain));
+        for (spawner, started, chain) in in_parallel(&wanted, |(spawner, transcript)| {
+            subagent(spawner, transcript)
+        }) {
+            calls.extend(chain.iter().flat_map(tool_use_ids).map(str::to_owned));
+            by_spawner
+                .entry(spawner)
+                .or_default()
+                .push((started, chain));
+        }
     }
     let mut out = Vec::with_capacity(records.len());
     put_in_subagents(records, &mut by_spawner, &mut out);
     out
 }
 
-/// A subagent's transcript, beside the call that spawned it and when it started.
-fn subagent(meta_path: &Path) -> Option<(String, String, Vec<Value>)> {
+/// The call that spawned the subagent `meta_path` describes, and where its transcript is.
+fn spawned_by(meta_path: &Path) -> Option<(String, PathBuf)> {
     let stem = meta_path.to_str()?.strip_suffix(".meta.json")?;
     let meta: Value = serde_json::from_slice(&std::fs::read(meta_path).ok()?).ok()?;
     let spawner = str_field(&meta, "toolUseId")?.to_owned();
-    let bytes = std::fs::read(format!("{stem}.jsonl")).ok()?;
+    Some((spawner, PathBuf::from(format!("{stem}.jsonl"))))
+}
+
+/// A subagent's transcript, beside the call that spawned it and when it started.
+fn subagent(spawner: &str, transcript: &Path) -> Option<(String, String, Vec<Value>)> {
+    let bytes = std::fs::read(transcript).ok()?;
     let mut entries = parse_entries(&bytes);
     for entry in &mut entries {
         entry["isSidechain"] = Value::Bool(false);
@@ -98,14 +182,14 @@ fn subagent(meta_path: &Path) -> Option<(String, String, Vec<Value>)> {
         chain.remove(0);
     }
     for record in &mut chain {
-        record["parent_tool_use_id"] = Value::String(spawner.clone());
+        record["parent_tool_use_id"] = Value::String(spawner.to_owned());
     }
     let started = chain
         .first()
         .and_then(|record| str_field(record, "timestamp"))
         .unwrap_or_default()
         .to_owned();
-    Some((spawner, started, chain))
+    Some((spawner.to_owned(), started, chain))
 }
 
 /// `records` into `out`, each followed by the transcripts of the subagents it
@@ -721,17 +805,6 @@ fn finish_messages(records: Vec<Value>) -> Vec<Value> {
                 && !truthy(record.get("teamName"))
         })
         .collect()
-}
-
-/// The ids of the messages the transcript holds as sent by the person.
-pub fn user_message_ids(records: &[Value]) -> impl Iterator<Item = String> + '_ {
-    records
-        .iter()
-        .filter(|record| {
-            str_field(record, "type") == Some("user") && record.get("toolUseResult").is_none()
-        })
-        .filter_map(|record| str_field(record, "uuid"))
-        .map(str::to_owned)
 }
 
 /// The model of the last top-level non-synthetic assistant message, for the model picker.

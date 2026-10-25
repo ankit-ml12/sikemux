@@ -22,6 +22,7 @@ use crate::launch::providers::ROUTED_ENV;
 use crate::launch::PermissionMode;
 use crate::protocol::ChatLaunch;
 
+use super::super::feed::Reach;
 use super::super::Respond;
 use super::file_link;
 use super::parts::{context_text, parts, picture, Part};
@@ -239,6 +240,41 @@ async fn list_turns(rpc: &Rpc, thread_id: &str) -> Result<Vec<Value>, String> {
     Ok(data(pages))
 }
 
+/// The turns of `thread_id` after `latest`, oldest first, read from the newest back; none when
+/// the thread no longer holds `latest`.
+async fn turns_since(rpc: &Rpc, thread_id: &str, latest: &str) -> Result<Vec<Value>, String> {
+    let mut newer = Vec::new();
+    let mut cursor = Value::Null;
+    loop {
+        let mut page = rpc
+            .request(
+                "thread/turns/list",
+                json!({
+                    "threadId": thread_id,
+                    "cursor": cursor,
+                    "itemsView": "full",
+                    "sortDirection": "desc",
+                }),
+            )
+            .await?;
+        let listed = match page["data"].take() {
+            Value::Array(listed) => listed,
+            _ => Vec::new(),
+        };
+        for turn in listed {
+            if turn["id"] == latest {
+                newer.reverse();
+                return Ok(newer);
+            }
+            newer.push(turn);
+        }
+        match page["nextCursor"].as_str().filter(|next| cursor != *next) {
+            Some(next) => cursor = next.into(),
+            None => return Ok(Vec::new()),
+        }
+    }
+}
+
 /// What each page listed, in order.
 fn data(pages: Vec<Value>) -> Vec<Value> {
     pages
@@ -413,18 +449,36 @@ impl Codex {
         Ok(())
     }
 
+    /// Tells the chat what the resumed thread holds that it does not show yet: the whole of
+    /// it, or for a chat whose history already holds it, only the turns past the one the
+    /// history reaches.
     async fn replay_history(&self, thread: &Value) -> Result<(), String> {
         let rpc = &self.driver.rpc;
         let sink = &self.driver.sink;
-        let turns = list_turns(rpc, &self.kept.thread_id).await?;
-        let children = subagent_histories(rpc, &turns).await;
-        if let Some(title) = history::thread_title(thread, &turns) {
-            sink.update(
-                &self.kept.thread_id,
-                json!({ "sessionUpdate": "session_info_update", "title": title }),
-            );
+        let thread_id = &self.kept.thread_id;
+        let turns = if sink.reloading() {
             self.driver.session.locked().titled = true;
-        }
+            let Some(Reach::Turn(latest)) = sink.reach(thread_id) else {
+                return Ok(());
+            };
+            let turns = turns_since(rpc, thread_id, &latest).await?;
+            if turns.is_empty() {
+                return Ok(());
+            }
+            sink.loaded();
+            turns
+        } else {
+            let turns = list_turns(rpc, thread_id).await?;
+            if let Some(title) = history::thread_title(thread, &turns) {
+                sink.update(
+                    thread_id,
+                    json!({ "sessionUpdate": "session_info_update", "title": title }),
+                );
+                self.driver.session.locked().titled = true;
+            }
+            turns
+        };
+        let children = subagent_histories(rpc, &turns).await;
         let mut out = Vec::new();
         history::replay(
             &self.kept.thread_id,
@@ -441,7 +495,45 @@ impl Codex {
             .locked()
             .message_turns
             .extend(history::message_turns(&turns));
+        if let Some(latest) = turns.last().and_then(|turn| turn["id"].as_str()) {
+            sink.reached(thread_id, Reach::Turn(latest.to_owned()));
+        }
         Ok(())
+    }
+
+    /// The turn the app's message `message_id` began, looked for in the thread's history from
+    /// its newest turn back when this run of Codex did not see it.
+    async fn turn_of(&self, message_id: &str) -> Result<String, String> {
+        if let Some(turn) = self.driver.session.locked().message_turns.get(message_id) {
+            return Ok(turn.clone());
+        }
+        let mut cursor = Value::Null;
+        loop {
+            let page = self
+                .driver
+                .rpc
+                .request(
+                    "thread/turns/list",
+                    json!({
+                        "threadId": self.kept.thread_id,
+                        "cursor": cursor,
+                        "itemsView": "full",
+                        "sortDirection": "desc",
+                    }),
+                )
+                .await?;
+            let listed = page["data"].as_array().cloned().unwrap_or_default();
+            if listed.iter().any(|turn| turn["id"] == message_id) {
+                return Ok(message_id.to_owned());
+            }
+            if let Some(turn) = history::message_turns(&listed).remove(message_id) {
+                return Ok(turn);
+            }
+            match page["nextCursor"].as_str().filter(|next| cursor != *next) {
+                Some(next) => cursor = next.into(),
+                None => return Ok(message_id.to_owned()),
+            }
+        }
     }
 
     async fn offer_commands(&self) {
@@ -708,14 +800,7 @@ impl Backend for Codex {
     }
 
     async fn rewind(&mut self, message_id: &str) -> Result<Option<String>, String> {
-        let turn_id = self
-            .driver
-            .session
-            .locked()
-            .message_turns
-            .get(message_id)
-            .cloned()
-            .unwrap_or_else(|| message_id.to_owned());
+        let turn_id = self.turn_of(message_id).await?;
         self.driver
             .rpc
             .request(
@@ -729,6 +814,15 @@ impl Backend for Codex {
 
     async fn closed(&self) -> String {
         self.process.ended().await
+    }
+
+    fn reach(&self) -> Option<Reach> {
+        self.driver
+            .session
+            .locked()
+            .latest_turn
+            .clone()
+            .map(Reach::Turn)
     }
 
     fn pid(&self) -> u32 {

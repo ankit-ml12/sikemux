@@ -1305,6 +1305,17 @@ impl Replay {
     }
 }
 
+/// How far into its agent CLI's own record of a session a chat's history reaches, so a resume
+/// replays only what the CLI added since.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Reach {
+    /// The length of a transcript file.
+    Bytes(u64),
+    /// The latest turn of a thread.
+    Turn(String),
+}
+
 /// What a client attaching now is told about the chat besides its rows.
 pub(crate) struct Standing {
     pub running: bool,
@@ -1350,6 +1361,8 @@ struct Inner {
     work: Option<(PathBuf, Place)>,
     /// A new chat whose agent waits for the person: clients take it up before it starts.
     waits_for_person: bool,
+    /// The session the history follows, and how far into its CLI's record it reaches.
+    reach: Option<(String, Reach)>,
 }
 
 /// A feed as plain data, for a core that takes the chat over. Clients that
@@ -1364,6 +1377,7 @@ pub(crate) struct FeedState {
     start: Option<ChatStart>,
     permission_mode: String,
     title: Option<String>,
+    reach: Option<(String, Reach)>,
 }
 
 pub(crate) struct Feed {
@@ -1458,6 +1472,7 @@ impl Feed {
                 queued: Vec::new(),
                 work: None,
                 waits_for_person: false,
+                reach: None,
             }),
         })
     }
@@ -1527,6 +1542,7 @@ impl Feed {
                 queued: Vec::new(),
                 work: None,
                 waits_for_person: false,
+                reach: state.reach,
             }),
         })
     }
@@ -1556,6 +1572,7 @@ impl Feed {
             start: inner.start.clone(),
             permission_mode: inner.permission_mode.clone(),
             title: inner.title.clone(),
+            reach: inner.reach.clone(),
         };
         Some((state, subscribers))
     }
@@ -2080,6 +2097,18 @@ impl Feed {
 
     pub(crate) fn permission_mode(&self) -> String {
         self.inner.locked().permission_mode.clone()
+    }
+
+    /// The history now holds everything the CLI's record of `session` holds, up to `reach`.
+    pub(crate) fn reached(&self, session: &str, reach: Reach) {
+        self.inner.locked().reach = Some((session.to_owned(), reach));
+    }
+
+    /// How far into the CLI's record of `session` the history reaches, when it follows it.
+    pub(crate) fn reach(&self, session: &str) -> Option<Reach> {
+        let inner = self.inner.locked();
+        let (followed, reach) = inner.reach.as_ref()?;
+        (followed == session).then(|| reach.clone())
     }
 
     /// What the agent last called this session, as the host's rail shows it.

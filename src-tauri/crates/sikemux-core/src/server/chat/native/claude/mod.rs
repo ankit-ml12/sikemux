@@ -26,6 +26,7 @@ use crate::launch::PermissionMode;
 use crate::protocol::ChatLaunch;
 use crate::sessions::{self, roots::account_root};
 
+use super::super::feed::Reach;
 use super::super::Respond;
 use super::file_link;
 use super::parts::{context_text, parts, Part};
@@ -111,27 +112,47 @@ pub(crate) async fn read_options(command: tokio::process::Command) -> Result<Val
     Ok(config::options(&models, config::DEFAULT, config::DEFAULT))
 }
 
-/// Replays the saved chat of `session_id` through `sink`, answering the ids of the person's
-/// messages in it and the model it last ran on.
+/// Tells `sink` what the saved chat of `session_id` holds that the chat does not show yet: the
+/// whole of it, or for a chat whose history already holds it, only what Claude wrote past the
+/// point the history reaches.
 pub(crate) fn replay_saved(
     launch: &ChatLaunch,
     session_id: &str,
     sink: &Sink,
-) -> Result<(Vec<String>, Option<String>), String> {
+) -> Result<(), String> {
     let loaded = || sink.update(session_id, json!({ "sessionUpdate": "history_loaded" }));
     let Some(path) = transcript(launch, session_id) else {
         loaded();
-        return Ok((Vec::new(), None));
+        return Ok(());
     };
-    let records = replay::with_subagents(&path, replay::read_history(&path)?);
+    let (records, reach) = if sink.reloading() {
+        let Some(Reach::Bytes(from)) = sink.reach(session_id) else {
+            return Ok(());
+        };
+        let (records, reach) = replay::read_since(&path, from)?;
+        if !records.is_empty() {
+            sink.loaded();
+        }
+        (records, reach)
+    } else {
+        replay::read_history(&path)?
+    };
+    let records = replay::with_subagents(&path, records);
     for (session, update) in replay::replay(&records, session_id, &launch.cwd) {
         sink.update(&session, update);
     }
     loaded();
-    Ok((
-        replay::user_message_ids(&records).collect(),
-        replay::resumed_model(&records),
-    ))
+    sink.reached(session_id, Reach::Bytes(reach));
+    Ok(())
+}
+
+/// The model the saved chat of `session_id` last ran on, read from the newest part of it.
+fn saved_model(launch: &ChatLaunch, session_id: &str) -> Option<String> {
+    let path = transcript(launch, session_id)?;
+    replay::newest(&path, replay::resumed_model)
+        .inspect_err(|error| eprintln!("sikemux core: Claude's saved model was not read: {error}"))
+        .ok()
+        .flatten()
 }
 
 /// The chat's tool servers as Claude Code's `--mcp-config` file.
@@ -319,13 +340,15 @@ impl Claude {
             .map(drop)
     }
 
-    /// The id Claude Code gets for message `message_id`. One it was already
-    /// sent under, before an edit, gets a fresh one.
-    fn uuid_for(&mut self, message_id: Option<&str>) -> String {
-        let Some(message_id) = message_id else {
+    /// The id Claude Code gets for the prompt's message. One already sent, before an edit or
+    /// by an earlier run of the session, gets a fresh one, since Claude Code drops a message
+    /// under an id its transcript already has.
+    fn uuid_for(&mut self, prompt: &Prompt) -> String {
+        let Some(message_id) = prompt.message_id.as_deref() else {
             return Uuid::new_v4().to_string();
         };
-        let used = self.kept.aliases.contains_key(message_id)
+        let used = prompt.resent
+            || self.kept.aliases.contains_key(message_id)
             || self.shared.locked().sent.contains(message_id);
         let uuid = if used || Uuid::parse_str(message_id).is_err() {
             Uuid::new_v4().to_string()
@@ -378,19 +401,8 @@ impl Backend for Claude {
         // Claude takes a moment to start, so the saved chat is read and
         // replayed while it does.
         let replaying = launch.resume_id.is_some().then(|| {
-            let (launch, id, sink, shared) = (
-                launch.clone(),
-                session_id.clone(),
-                sink.clone(),
-                shared.clone(),
-            );
-            tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
-                let (sent, model) = replay_saved(&launch, &id, &sink)?;
-                // Claude Code drops a message under an id its transcript already
-                // has, so a prompt sent again after a restart needs a new one.
-                shared.locked().sent.extend(sent);
-                Ok(model)
-            })
+            let (launch, id, sink) = (launch.clone(), session_id.clone(), sink.clone());
+            tokio::task::spawn_blocking(move || replay_saved(&launch, &id, &sink))
         });
         let start = match launch.resume_id.as_deref() {
             Some(id) => Start::Resume(id),
@@ -410,10 +422,9 @@ impl Backend for Claude {
             wanted.as_deref(),
         )
         .await?;
-        let resumed_model = match replaying {
-            Some(replaying) => replaying.await.map_err(|error| error.to_string())??,
-            None => None,
-        };
+        if let Some(replaying) = replaying {
+            replaying.await.map_err(|error| error.to_string())??;
+        }
         let routed = launch.env.contains_key(ROUTED_ENV);
         let mut models: Vec<Value> = initialized
             .get("models")
@@ -438,9 +449,17 @@ impl Backend for Claude {
             .and_then(Value::as_str)
             .and_then(|named| config::settings_model(&mut models, named));
         let chosen = wanted.filter(|model| config::offers_model(&models, model));
-        let resumed = resumed_model
-            .as_deref()
-            .and_then(|resolved| config::row_for_resolved(&models, resolved));
+        let resumed = match (&chosen, &from_settings, &launch.resume_id) {
+            (None, None, Some(id)) => {
+                let (launch, id) = (launch.clone(), id.clone());
+                tokio::task::spawn_blocking(move || saved_model(&launch, &id))
+                    .await
+                    .ok()
+                    .flatten()
+            }
+            _ => None,
+        }
+        .and_then(|resolved| config::row_for_resolved(&models, &resolved));
         let switch_to = (chosen.is_none() && from_settings.is_none())
             .then(|| resumed.clone())
             .flatten();
@@ -510,7 +529,7 @@ impl Backend for Claude {
 
     async fn prompt(&mut self, turn: u64, prompt: Prompt) -> Result<(), String> {
         let content = content(&prompt)?;
-        let uuid = self.uuid_for(prompt.message_id.as_deref());
+        let uuid = self.uuid_for(&prompt);
         let first = {
             let mut shared = self.shared.locked();
             shared.sent.insert(uuid.clone());
@@ -620,16 +639,18 @@ impl Backend for Claude {
         let path = transcript(&self.launch, &self.kept.session_id)
             .ok_or("Claude has not saved this chat yet")?;
         // Claude Code refuses to drop turns it thinks the person has not seen.
-        let newest = replay::read_chain(&path)?
-            .iter()
-            .rev()
-            .filter(|record| record.get("type").and_then(Value::as_str) == Some("user"))
-            .find_map(|record| {
-                record
-                    .get("uuid")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            });
+        let newest = replay::newest(&path, |records| {
+            records
+                .iter()
+                .rev()
+                .filter(|record| record.get("type").and_then(Value::as_str) == Some("user"))
+                .find_map(|record| {
+                    record
+                        .get("uuid")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+        })?;
         let mut request = json!({
             "subtype": "rewind_conversation",
             "target_message_uuid": uuid,
@@ -656,6 +677,11 @@ impl Backend for Claude {
 
     async fn closed(&self) -> String {
         self.running.process.ended().await
+    }
+
+    fn reach(&self) -> Option<Reach> {
+        let path = transcript(&self.launch, &self.kept.session_id)?;
+        Some(Reach::Bytes(std::fs::metadata(path).ok()?.len()))
     }
 
     fn pid(&self) -> u32 {
@@ -755,6 +781,7 @@ mod tests {
                 text: "the issue".into(),
             }],
             letter: false,
+            resent: false,
         };
         let content = content(&prompt).unwrap();
         let texts: Vec<&str> = content
