@@ -250,9 +250,10 @@ class Run:
             window = subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(self.app.pid)], capture_output=True, text=True).stdout.split()
             crop = []
             if window:
-                shell = subprocess.run(["xdotool", "getwindowgeometry", "--shell", window[-1]], capture_output=True, text=True).stdout
-                box = dict(line.split("=", 1) for line in shell.split() if "=" in line)
-                crop = ["-crop", f"{box['WIDTH']}x{box['HEIGHT']}+{box['X']}+{box['Y']}"]
+                info = subprocess.run(["xwininfo", "-id", window[-1]], capture_output=True, text=True).stdout
+                box = dict(line.strip().split(":", 1) for line in info.splitlines() if ":" in line)
+                number = lambda key: int(box[key].strip())
+                crop = ["-crop", f"{number('Width')}x{number('Height')}+{number('Absolute upper-left X')}+{number('Absolute upper-left Y')}"]
             # The page is a child window in another visual, which a capture of the app's own window leaves black.
             subprocess.run(["import", "-window", "root", *crop, self.out / f"{name}.png"])
             return
