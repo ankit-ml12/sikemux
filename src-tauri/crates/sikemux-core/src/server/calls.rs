@@ -162,6 +162,7 @@ calls! { core, client, params;
     "setSpaces": Person => answer(workspace::set_spaces(&core, parse(params)?)?),
     "setPinnedChats": Person => answer(workspace::set_pinned_chats(&core, parse(params)?)?),
     "pinChat": Person => answer(workspace::pin_chat(&core, parse(params)?)?),
+    "recentChats": Person => answer(workspace::recent_chats(&core, parse(params)?).await?),
     "setAgentDefaults": Person => answer(workspace::set_defaults(&core, parse(params)?).await?),
     "createAgent": Person => answer(workspace::create_agent(&core, parse(params)?)?),
     "updateAgent": Person => answer(workspace::update_agent(&core, parse(params)?)?),

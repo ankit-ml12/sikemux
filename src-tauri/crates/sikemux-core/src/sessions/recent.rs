@@ -74,7 +74,7 @@ pub struct RecentSession {
 #[serde(rename_all = "camelCase")]
 pub struct RecentPage {
     pub(crate) sessions: Vec<RecentSession>,
-    next: Option<RecentCursor>,
+    pub(crate) next: Option<RecentCursor>,
 }
 
 /// One entry a provider can list without opening it.

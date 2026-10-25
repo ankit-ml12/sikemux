@@ -33,14 +33,90 @@ impl Workbench {
         let Some(project) = self.project().map(|project| project.id.clone()) else {
             return;
         };
-        let catalog = self.read("catalog").and_then(Value::as_array).cloned();
-        let kind_of = move |provider: &str| {
-            catalog
-                .iter()
-                .flatten()
-                .find(|kind| kind["type"] == provider)
-                .cloned()
+        let rows = self.agent_palette_rows(&project);
+        let yolo = self
+            .view
+            .as_ref()
+            .is_some_and(|view| view.workspace.permission_mode == YOLO);
+        let mode = Rc::new(Cell::new(usize::from(yolo)));
+        let choice = Choice {
+            options: vec![
+                (Icon::Shield, "safe".into()),
+                (Icon::ShieldBolt, "yolo".into()),
+            ],
+            chosen: mode.clone(),
+            armed: Some(1),
         };
+        let spec = Spec::new(
+            "agent.choose",
+            "search agents",
+            rows,
+            move |row, bench, window, cx| {
+                let key: &str = &row.key;
+                if let Some(launcher) = key.strip_prefix(NEW) {
+                    let provider = bench
+                        .launchers()
+                        .iter()
+                        .find(|known| known.id == launcher)
+                        .map(|known| known.provider.clone())
+                        .unwrap_or_default();
+                    let can_skip =
+                        kind_of(bench, &provider).is_some_and(|kind| kind["bypass"] == true);
+                    let launch_mode = if mode.get() == 1 && can_skip {
+                        YOLO
+                    } else {
+                        SAFE
+                    };
+                    bench.target().start_chat(
+                        launcher.to_owned(),
+                        project.clone(),
+                        Some(launch_mode.to_owned()),
+                        None,
+                    );
+                } else if let Some(launcher) = key.strip_prefix(SIGN_IN) {
+                    sign_in(bench, launcher, window, cx);
+                } else if let Some(launcher) = key.strip_prefix(INSTALL) {
+                    install(bench, launcher, window, cx);
+                } else if let Some(agent) = key.strip_prefix(OPEN) {
+                    bench.open_agent(agent);
+                } else if let Some(id) = key.strip_prefix(RESUME) {
+                    if let Some(recent) = bench.saved_chat(id).cloned() {
+                        bench.resume_chat(&recent);
+                    }
+                }
+            },
+        )
+        .empty("no agent matches")
+        .choice(choice)
+        .on_stage()
+        .ruled();
+        self.toggle_palette(spec, window, cx);
+        if self.palette.is_some() {
+            self.look_for_older(true, crate::recent::PALETTE_PAGE, cx);
+        }
+    }
+
+    /// Offers the open ⌘⇧N the saved chats that came in since it opened.
+    pub fn refill_agent_palette(&mut self, cx: &mut Context<Self>) {
+        let open = self
+            .palette
+            .as_ref()
+            .is_some_and(|palette| palette.id() == "agent.choose");
+        let Some(project) = self
+            .project()
+            .map(|project| project.id.clone())
+            .filter(|_| open)
+        else {
+            return;
+        };
+        let rows = self.agent_palette_rows(&project);
+        if let Some(palette) = self.palette.as_mut() {
+            palette.refill(rows, cx);
+        }
+    }
+
+    fn agent_palette_rows(&self, project: &str) -> Vec<Row> {
+        let kind_of = |provider: &str| kind_of(self, provider);
         let mut rows = Vec::new();
         let mut sign_ins = Vec::new();
         for launcher in self.launchers() {
@@ -93,7 +169,7 @@ impl Workbench {
         rows.extend(sign_ins);
         let unarmed = |provider: &str| kind_of(provider).is_none_or(|kind| kind["bypass"] != true);
         let mut pinned_open = Vec::new();
-        for agent in self.agents_of(&project) {
+        for agent in self.agents_of(project) {
             let handle = agent.name.as_ref().map(|name| format!("@{name}"));
             let pinned = self.chat_of(&agent.id).is_some_and(|chat| chat.pinned);
             let row = Row::new(format!("{OPEN}{}", agent.id), agent.title.clone())
@@ -110,14 +186,10 @@ impl Workbench {
             }
         }
         rows.extend(pinned_open);
-        let recent = self
-            .view
-            .as_ref()
-            .map(|view| view.recent.as_slice())
-            .unwrap_or_default();
-        let saved = recent
-            .iter()
-            .filter(|recent| recent.project == project && recent.agent_id.is_none());
+        let saved = self
+            .saved_chats(project)
+            .into_iter()
+            .filter(|recent| recent.agent_id.is_none());
         let (pinned, rest): (Vec<_>, Vec<_>) = saved.partition(|recent| recent.pinned);
         for chat in pinned.into_iter().chain(rest) {
             rows.push(
@@ -133,68 +205,17 @@ impl Workbench {
                     .also(&chat.provider),
             );
         }
-        let yolo = self
-            .view
-            .as_ref()
-            .is_some_and(|view| view.workspace.permission_mode == YOLO);
-        let mode = Rc::new(Cell::new(usize::from(yolo)));
-        let choice = Choice {
-            options: vec![
-                (Icon::Shield, "safe".into()),
-                (Icon::ShieldBolt, "yolo".into()),
-            ],
-            chosen: mode.clone(),
-            armed: Some(1),
-        };
-        let spec = Spec::new(
-            "agent.choose",
-            "search agents",
-            rows,
-            move |row, bench, window, cx| {
-                let key: &str = &row.key;
-                if let Some(launcher) = key.strip_prefix(NEW) {
-                    let provider = bench
-                        .launchers()
-                        .iter()
-                        .find(|known| known.id == launcher)
-                        .map(|known| known.provider.clone())
-                        .unwrap_or_default();
-                    let can_skip = kind_of(&provider).is_some_and(|kind| kind["bypass"] == true);
-                    let launch_mode = if mode.get() == 1 && can_skip {
-                        YOLO
-                    } else {
-                        SAFE
-                    };
-                    bench.target().start_chat(
-                        launcher.to_owned(),
-                        project.clone(),
-                        Some(launch_mode.to_owned()),
-                        None,
-                    );
-                } else if let Some(launcher) = key.strip_prefix(SIGN_IN) {
-                    sign_in(bench, launcher, window, cx);
-                } else if let Some(launcher) = key.strip_prefix(INSTALL) {
-                    install(bench, launcher, window, cx);
-                } else if let Some(agent) = key.strip_prefix(OPEN) {
-                    bench.open_agent(agent);
-                } else if let Some(id) = key.strip_prefix(RESUME) {
-                    let recent = bench
-                        .view
-                        .as_ref()
-                        .and_then(|view| view.recent.iter().find(|recent| recent.id == id))
-                        .cloned();
-                    if let Some(recent) = recent {
-                        bench.resume_chat(&recent);
-                    }
-                }
-            },
-        )
-        .empty("no agent matches")
-        .choice(choice)
-        .on_stage()
-        .ruled();
-        self.toggle_palette(spec, window, cx);
+        rows
     }
+}
+
+/// What the core's catalog says of the agent `provider`.
+fn kind_of(bench: &Workbench, provider: &str) -> Option<Value> {
+    bench
+        .read("catalog")
+        .and_then(Value::as_array)
+        .and_then(|kinds| kinds.iter().find(|kind| kind["type"] == provider))
+        .cloned()
 }
 
 /// Signs the launcher's agent in: the core does it for the agents whose accounts it keeps,

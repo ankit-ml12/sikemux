@@ -213,6 +213,8 @@ pub struct Workbench {
     pub metric_day: Option<i64>,
     pub filter: Option<Entity<InputState>>,
     pub filter_text: String,
+    /// The front project's saved chats paged or searched to beyond the recent ones.
+    pub older: Option<crate::recent::OlderChats>,
     pub asks: mpsc::UnboundedSender<Ask>,
     /// The chats of the agents with a tab open, by agent id.
     pub chats: HashMap<String, Chat>,
@@ -292,6 +294,7 @@ pub struct Workbench {
     pub desks: crate::desk::Desks,
     pub sims: crate::sim_pane::Simulators,
     _filtering: Option<Subscription>,
+    pub(crate) _older: Option<Task<()>>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -728,6 +731,7 @@ impl Workbench {
             metric_day: None,
             filter: None,
             filter_text: String::new(),
+            older: None,
             asks,
             chats: HashMap::new(),
             focused_chat: None,
@@ -756,6 +760,7 @@ impl Workbench {
             desks: crate::desk::Desks::new(window, cx),
             sims: crate::sim_pane::Simulators::new(cx),
             _filtering: None,
+            _older: None,
         };
         bench.focus.focus(window, cx);
         bench.wait_patiently(cx);
@@ -820,6 +825,7 @@ impl Workbench {
                     self.watch_worktree();
                     self.close_chats(cx);
                     self.open_chat(cx);
+                    self.look_for_older(false, crate::recent::PAGE, cx);
                     self.front_moved(cx);
                     self.files.reveal(self.front_file(), &self.target());
                     crate::settings::front_moved(self, cx);
@@ -890,6 +896,7 @@ impl Workbench {
                 self.watch_ci();
                 self.close_chats(cx);
                 self.open_chat(cx);
+                self.look_for_older(false, crate::recent::PAGE, cx);
                 self.front_moved(cx);
                 self.files.reveal(self.front_file(), &self.target());
                 crate::settings::front_moved(self, cx);
@@ -4242,19 +4249,16 @@ impl Workbench {
     }
 
     fn chats_of(&self, project: &str) -> Vec<&RecentInfo> {
-        self.shown().map_or(Vec::new(), |view| {
-            view.recent
-                .iter()
-                .filter(|recent| recent.project == project)
-                .filter(|recent| {
-                    self.all_harnesses
-                        || self
-                            .launcher()
-                            .is_some_and(|launcher| launcher.provider == recent.provider)
-                })
-                .filter(|recent| recent.title.to_lowercase().contains(&self.filter_text))
-                .collect()
-        })
+        self.saved_chats(project)
+            .into_iter()
+            .filter(|recent| {
+                self.all_harnesses
+                    || self
+                        .launcher()
+                        .is_some_and(|launcher| launcher.provider == recent.provider)
+            })
+            .filter(|recent| recent.title.to_lowercase().contains(&self.filter_text))
+            .collect()
     }
 
     pub fn sign_in(&mut self) {
@@ -4279,6 +4283,7 @@ impl Workbench {
         if self.filter.take().is_some() {
             self._filtering = None;
             self.filter_text.clear();
+            self.look_for_older(false, crate::recent::PAGE, cx);
             return;
         }
         let filter = cx.new(|cx| InputState::new(window, cx).placeholder("filter recent chats…"));
@@ -4286,6 +4291,7 @@ impl Workbench {
             cx.subscribe(&filter, |bench, filter, event: &InputEvent, cx| {
                 if let InputEvent::Change = event {
                     bench.filter_text = filter.read(cx).value().to_lowercase();
+                    bench.look_for_older(false, crate::recent::PAGE, cx);
                     cx.notify();
                 }
             }),

@@ -102,13 +102,19 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
             }
         })
         .collect();
-    let recent: Vec<_> = project
+    let mut recent: Vec<_> = project
         .map(|project| bench.recent_of(&project.id))
         .unwrap_or_default()
         .into_iter()
         .filter(|recent| !recent.pinned || bench.all_projects)
         .map(|recent| recent_row(bench, recent, cx))
         .collect();
+    if bench.has_older() && !recent.is_empty() {
+        let older = new_row("older-chats", Icon::Clock, "Older chats", "", cx).on_click(
+            cx.listener(|bench, _, _, cx| bench.look_for_older(true, crate::recent::PAGE, cx)),
+        );
+        recent.push(older.into_any_element());
+    }
     let empty = (rows.is_empty() && pinned.is_empty() && recent.is_empty()).then(|| {
         let shown = (project.zip(other_host(bench)))
             .filter(|_| bench.filter_text.is_empty())
@@ -496,6 +502,7 @@ fn rename_recent(bench: &mut Workbench, chat: &RecentInfo, cx: &mut Context<Work
                     "renameRecent",
                     serde_json::json!({ "recent": recent, "title": title.trim() }),
                 );
+                bench.retitle_older(&recent, title.trim());
             }
         },
         cx,
@@ -516,6 +523,7 @@ fn delete_recent(bench: &mut Workbench, chat: &RecentInfo, cx: &mut Context<Work
         move |bench, yes, _, _| {
             if yes {
                 bench.call("deleteRecent", serde_json::json!({ "recent": recent }));
+                bench.forget_older(&recent);
             }
         },
         cx,
