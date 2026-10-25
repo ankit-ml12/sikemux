@@ -15,6 +15,8 @@
 //!   call, and says what it printed;
 //! - `tool METHOD JSON` calls one of Sikemux's agent tools, as the agent, and
 //!   says the answer;
+//! - `show JSON` shows a page with Sikemux's page_show tool, as a tool call
+//!   whose output is the tool's answer, so the reply carries the page;
 //! - anything else is echoed back.
 //!
 //! A message wrapped as one from another agent is read from its first line
@@ -181,6 +183,13 @@ fn run_command(session: &Session, command: &str) -> String {
 
 /// Calls one of Sikemux's agent tools over the endpoint the session names.
 fn call_tool(session: &Session, method: &str, params: &str) -> String {
+    match tool_answer(session, method, params) {
+        Ok(answer) => format!("tool answered: {answer}"),
+        Err(error) => format!("tool failed: {error}"),
+    }
+}
+
+fn tool_answer(session: &Session, method: &str, params: &str) -> Result<String, String> {
     use sikemux_core::cli::auth::new_nonce;
     use sikemux_core::cli::protocol::{
         CliClientCommand, CliClientHello, CliEndpointDescriptor, CliServerResponse, HarnessRequest,
@@ -234,10 +243,7 @@ fn call_tool(session: &Session, method: &str, params: &str) -> String {
             other => Err(format!("{other:?}")),
         }
     };
-    match call() {
-        Ok(answer) => format!("tool answered: {answer}"),
-        Err(error) => format!("tool failed: {error}"),
-    }
+    call()
 }
 
 /// The line of `text` that says what to do: its first, or the first inside
@@ -378,6 +384,24 @@ fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
                 json!({ "sessionUpdate": "tool_call_update", "toolCallId": "run-1", "status": "completed" }),
             );
             say(&output);
+            "end_turn"
+        }
+        "show" => {
+            let params = line.trim_start().trim_start_matches("show").trim();
+            agent.update(
+                session_id,
+                json!({ "sessionUpdate": "tool_call", "toolCallId": "show-1", "title": "mcp__sikemux-tools__page_show", "kind": "other", "status": "in_progress" }),
+            );
+            let answer = tool_answer(&session, "page.show", params);
+            let (status, output) = match &answer {
+                Ok(answer) => ("completed", answer.clone()),
+                Err(error) => ("failed", error.clone()),
+            };
+            agent.update(
+                session_id,
+                json!({ "sessionUpdate": "tool_call_update", "toolCallId": "show-1", "status": status, "rawOutput": output }),
+            );
+            say(if answer.is_ok() { "shown" } else { "not shown" });
             "end_turn"
         }
         "tool" => {

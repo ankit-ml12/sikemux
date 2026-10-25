@@ -58,8 +58,10 @@ pub(super) fn page(page: &PageRef, looks: &Looks, window: &mut Window, cx: &mut 
         }
     };
     div()
+        .relative()
         .w_full()
         .h(px(height.clamp(1., MAX_HEIGHT)))
+        .children(crate::ui::spot(|| format!("chat-page-{}", page.id)))
         .children(surface.map(|surface| {
             native_view(SharedString::from(format!("page-{}", page.id)), &surface).size_full()
         }))
