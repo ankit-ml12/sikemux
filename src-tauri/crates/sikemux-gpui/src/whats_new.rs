@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 
 use crate::core::{self, Ask};
 use crate::experience::{self, Experience};
+use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
@@ -216,6 +217,63 @@ fn install_button(update: &Value) -> (String, bool) {
         "failed" => (format!("Retry v{version}"), true),
         _ => (format!("Install v{version}"), true),
     }
+}
+
+/// The rail's note that an update is out, or how its install is going, which opens this
+/// screen; none while there is no update.
+pub fn rail_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
+    let update = pending(bench)?;
+    let version = update["available"]["version"].as_str().unwrap_or_default();
+    let (label, icon, variant, tip) = match update["state"].as_str().unwrap_or_default() {
+        "failed" => (
+            "Update failed — retry".to_owned(),
+            Icon::Warning,
+            ui::Variant::Outline,
+            Some(format!(
+                "v{version} did not install: {}",
+                update["error"].as_str().unwrap_or("unknown error")
+            )),
+        ),
+        "waiting" => (
+            install_button(update).0,
+            Icon::Download,
+            ui::Variant::Outline,
+            Some("Some agents can't be carried over yet. Open to see them or update now.".into()),
+        ),
+        state @ ("downloading" | "installing" | "ready") => (
+            install_button(update).0,
+            if state == "downloading" {
+                Icon::Download
+            } else {
+                Icon::Refresh
+            },
+            ui::Variant::Outline,
+            None,
+        ),
+        _ => (
+            format!("Update · v{version}"),
+            Icon::Download,
+            ui::Variant::Primary,
+            Some(format!(
+                "v{version} is out; you have v{}.",
+                update["current"].as_str().unwrap_or_default()
+            )),
+        ),
+    };
+    let chip = ui::Button::new("rail-update", label, variant)
+        .icon(icon)
+        .when_some(tip, |chip, tip| chip.tooltip(tip))
+        .on_click(cx.listener(|bench, _, _, cx| experience::open_whats_new(bench, cx)));
+    Some(
+        div()
+            .flex_none()
+            .mx(px(10.))
+            .mb(px(8.))
+            .flex()
+            .flex_col()
+            .child(chip)
+            .into_any_element(),
+    )
 }
 
 fn install(bench: &Workbench, force: bool) {

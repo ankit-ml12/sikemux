@@ -102,6 +102,7 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                         .children(terminals(bench, cx)),
                 ),
         )
+        .children(crate::whats_new::rail_chip(bench, cx))
         .child(account(bench, cx))
 }
 
