@@ -410,7 +410,9 @@ pub fn render(
         .child(message);
     let system = match cfg!(target_os = "macos") {
         true => "macOS may keep system-reserved combinations before Sikemux can receive them.",
-        false => "Windows may keep system-reserved combinations before Sikemux can receive them.",
+        false => {
+            "Your desktop may keep system-reserved combinations before Sikemux can receive them."
+        }
     };
     let body = div()
         .child(toolbar)

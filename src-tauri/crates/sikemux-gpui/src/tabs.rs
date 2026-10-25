@@ -1256,7 +1256,7 @@ impl TabMenu {
                 )
                 .separator()
                 .item(
-                    PopupMenuItem::new("Reveal in Finder")
+                    PopupMenuItem::new(ui::REVEAL)
                         .icon(Icon::Folder)
                         .on_click(move |_, _, cx| cx.reveal_path(Path::new(&revealed))),
                 );

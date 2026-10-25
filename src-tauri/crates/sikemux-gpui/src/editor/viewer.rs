@@ -514,7 +514,7 @@ fn bar(
                 .on_click(move |_, _, cx| cx.open_with_system(&open))
         }))
         .children(reveal.map(|reveal| {
-            ui::IconButton::new("viewer-reveal", Icon::Folder, "Show in Finder")
+            ui::IconButton::new("viewer-reveal", Icon::Folder, ui::SHOW_IN_FILES)
                 .small()
                 .on_click(move |_, _, cx| cx.reveal_path(&reveal))
         }))
