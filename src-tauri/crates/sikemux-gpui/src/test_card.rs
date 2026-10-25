@@ -3,7 +3,6 @@
 
 use std::path::{Path, PathBuf};
 
-use gpui_kit::base::Popover;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     anchored, deferred, div, px, Anchor, AnyElement, Context, FontWeight, InteractiveElement,
@@ -15,7 +14,7 @@ use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::toast;
-use crate::ui::{self, IconButton, Menu, MenuItem, Variant};
+use crate::ui::{self, IconButton, Variant};
 use crate::workbench::Workbench;
 
 /// A finished run of the task the chip shows, with the task it ran.
@@ -340,34 +339,40 @@ fn actions(output: Option<(u64, String)>, cx: &mut Context<Workbench>) -> gpui_k
 fn fix_button(bench: &Workbench, request: String, cx: &mut Context<Workbench>) -> impl IntoElement {
     let this = cx.entity();
     let choices = crate::send_to::choices(bench);
-    Popover::new("run-card-fix-menu")
-        .anchor(Anchor::TopRight)
-        .offset(px(4.))
-        .trigger(
-            ui::Button::new("run-card-fix", "Fix with an agent", Variant::Primary)
-                .icon(Icon::Agent),
-        )
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            Menu::new().children(choices.iter().enumerate().map(|(ix, choice)| {
-                let (this, popover, to, text) = (
+    ui::menu_button(
+        "run-card-fix-menu",
+        Anchor::TopRight,
+        ui::Button::new("run-card-fix", "Fix with an agent", Variant::Primary).icon(Icon::Agent),
+        move |mut popup, _, cx| {
+            for choice in &choices {
+                let (this, to, text, provider) = (
                     this.clone(),
-                    popover.clone(),
                     choice.to.clone(),
                     request.clone(),
+                    choice.provider.clone(),
                 );
-                MenuItem::new(("run-card-fix", ix), choice.label.clone())
-                    .mark(ui::mark(&choice.provider, 14.))
-                    .on_click(move |_, window, cx| {
-                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                        let (to, text) = (to.clone(), text.clone());
-                        this.update(cx, |bench, cx| {
-                            bench.close_run_card();
-                            crate::send_to::send(bench, to, async move { Some(text) }, window, cx);
-                        });
-                    })
-            }))
-        })
+                popup = popup.item(
+                    ui::MenuRow::new(choice.label.clone())
+                        .mark(move || ui::mark(&provider, 14.))
+                        .item(cx)
+                        .on_click(move |_, window, cx| {
+                            let (to, text) = (to.clone(), text.clone());
+                            this.update(cx, |bench, cx| {
+                                bench.close_run_card();
+                                crate::send_to::send(
+                                    bench,
+                                    to,
+                                    async move { Some(text) },
+                                    window,
+                                    cx,
+                                );
+                            });
+                        }),
+                );
+            }
+            popup
+        },
+    )
 }
 
 /// Adds a task that runs only the failed tests and starts it, making it the one the chip runs.

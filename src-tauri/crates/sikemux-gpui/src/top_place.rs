@@ -4,21 +4,19 @@
 use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
-use gpui_kit::base::{Button as BaseButton, Popover};
+use gpui_kit::base::Button as BaseButton;
 use gpui_kit::{
     div, px, radians, Anchor, AnyElement, App, Context, FontWeight, Hsla, InteractiveElement,
-    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Transformation,
-    Window,
+    IntoElement, ParentElement, SharedString, Styled, Transformation,
 };
 
 use crate::hosts::HostChoice;
 use crate::icons::Icon;
 use crate::theme::Tokens;
-use crate::ui::{self, Menu, MenuItem};
+use crate::ui;
 use crate::workbench::{Strip, Workbench};
 
 /// Picks a choice by its key and closes the picker.
-type Pick = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 
 #[derive(Clone)]
 struct Choice {
@@ -221,49 +219,22 @@ fn picker(
 ) -> AnyElement {
     let chosen = shown.key.clone();
     let trigger = pill(id, shown, cx);
-    let (choices, on_choose) = (Rc::new(choices), Rc::new(on_choose));
-    Popover::new(id)
-        .anchor(Anchor::TopLeft)
-        .offset(px(4.))
-        .trigger(trigger)
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            let pick: Pick = {
-                let on_choose = on_choose.clone();
-                Rc::new(move |key, window, cx| {
-                    on_choose(key, cx);
-                    popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                })
-            };
-            Menu::new().child(rows(id, choices.iter(), &chosen, &pick))
-        })
-        .into_any_element()
-}
-
-/// The menu's rows for `choices`, `chosen` ticked, scrolling past a screenful.
-fn rows<'a>(
-    id: &'static str,
-    choices: impl Iterator<Item = &'a Choice>,
-    chosen: &SharedString,
-    pick: &Pick,
-) -> impl IntoElement {
-    div()
-        .id(SharedString::from(format!("{id}-choices")))
-        .max_h(px(360.))
-        .overflow_y_scroll()
-        .flex()
-        .flex_col()
-        .gap(px(1.))
-        .children(choices.map(|choice| {
-            let (pick, key) = (pick.clone(), choice.key.clone());
-            MenuItem::new(
-                SharedString::from(format!("{id}-{}", choice.key)),
-                choice.label.clone(),
-            )
-            .mark(mark(choice.mark))
-            .checked(choice.key == *chosen)
-            .on_click(move |_, window, cx| pick(&key, window, cx))
-        }))
+    let on_choose = Rc::new(on_choose);
+    ui::menu_button(id, Anchor::TopLeft, trigger, move |mut popup, _, cx| {
+        popup = popup.max_h(px(360.)).scrollable(true);
+        for choice in &choices {
+            let (on_choose, key, glyph) = (on_choose.clone(), choice.key.clone(), choice.mark);
+            popup = popup.item(
+                ui::MenuRow::new(choice.label.clone())
+                    .mark(move || mark(glyph))
+                    .item(cx)
+                    .checked(choice.key == chosen)
+                    .on_click(move |_, _, cx| on_choose(&key, cx)),
+            );
+        }
+        popup
+    })
+    .into_any_element()
 }
 
 fn mark((icon, color): (Icon, Hsla)) -> impl IntoElement {

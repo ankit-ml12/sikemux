@@ -1312,9 +1312,13 @@ fn row_menu(
                     })),
             )
             .item(
-                ui::danger_popup_item("Delete", Some(Icon::Trash), cx).on_click(on(
-                    |bench, path, _, _, cx| bench.delete_entry(path.to_owned(), cx),
-                )),
+                ui::MenuRow::new("Delete")
+                    .icon(Icon::Trash)
+                    .danger(true)
+                    .item(cx)
+                    .on_click(on(|bench, path, _, _, cx| {
+                        bench.delete_entry(path.to_owned(), cx)
+                    })),
             );
     }
     popup = popup.separator();

@@ -2,7 +2,7 @@
 //! overview, deployments, environment variables and domains, and a deployment with its
 //! build log, to roll back, promote, redeploy, cancel, open or hand to an agent.
 
-use gpui_kit::base::Popover;
+use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::FluentBuilder;
@@ -23,7 +23,7 @@ use super::{after, listen, Host, Panel, PluginPane};
 use crate::toast;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
-use crate::ui::{self, Menu, MenuItem};
+use crate::ui;
 
 pub const REGISTRATION: super::Registration = super::Registration {
     plugin: "sikemux.vercel",
@@ -503,36 +503,29 @@ impl Vercel {
                 opens(url),
             ),
         ];
-        Popover::new(id.clone())
-            .anchor(Anchor::TopRight)
-            .offset(px(4.))
-            .trigger(
-                ui::IconButton::new(SharedString::from(format!("{id}-more")), Icon::More, label)
-                    .glyph(13.),
-            )
-            .content(move |_, _, cx| {
-                let popover = cx.entity();
-                let mut menu = Menu::new();
+        ui::menu_button(
+            id.clone(),
+            Anchor::TopRight,
+            ui::IconButton::new(SharedString::from(format!("{id}-more")), Icon::More, label)
+                .glyph(13.),
+            move |mut popup, _, _| {
                 for (index, (label, icon, disabled, act)) in items.iter().enumerate() {
                     if index == 2 {
-                        menu = menu.separator(cx);
+                        popup = popup.separator();
                     }
-                    let mut item = MenuItem::new(("more", index), *label).disabled(*disabled);
+                    let mut item = PopupMenuItem::new(*label).disabled(*disabled);
                     if let Some(icon) = icon {
                         item = item.icon(*icon);
                     }
                     if let Some(act) = act.clone() {
-                        let popover = popover.clone();
-                        item = item.on_click(move |event, window, cx| {
-                            act(event, window, cx);
-                            popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                        });
+                        item = item.on_click(move |event, window, cx| act(event, window, cx));
                     }
-                    menu = menu.child(item);
+                    popup = popup.item(item);
                 }
-                menu
-            })
-            .into_any_element()
+                popup
+            },
+        )
+        .into_any_element()
     }
 
     fn sign_in(

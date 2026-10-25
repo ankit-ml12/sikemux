@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-use gpui_kit::base::Popover;
 use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
 use gpui_kit::component::menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
@@ -18,7 +17,7 @@ use crate::icons::Icon;
 use crate::keymap;
 use crate::tabs;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
-use crate::ui::{self, Button, Group, IconButton, Menu, MenuItem, Row, Tone, Variant};
+use crate::ui::{self, Button, Group, IconButton, Row, Tone, Variant};
 use crate::workbench::{AgentRow, Edge, RailWidth, Strip, Workbench};
 
 pub const SIDE_RAIL: RailWidth = RailWidth {
@@ -415,7 +414,10 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                             }
                         }))
                         .item(
-                            ui::danger_popup_item("Remove from account", Some(Icon::Trash), cx)
+                            ui::MenuRow::new("Remove from account")
+                                .icon(Icon::Trash)
+                                .danger(true)
+                                .item(cx)
                                 .on_click({
                                     let (bench, key) = (bench.clone(), key.clone());
                                     move |_, _, cx| {
@@ -1131,10 +1133,16 @@ fn space_menu(
         }))
         .separator()
         .item(
-            ui::danger_popup_item("Delete Space…", Some(Icon::Trash), cx).on_click({
-                let (bench, space) = (bench.clone(), space.to_owned());
-                move |_, _, cx| bench.update(cx, |bench, cx| bench.delete_space(space.clone(), cx))
-            }),
+            ui::MenuRow::new("Delete Space…")
+                .icon(Icon::Trash)
+                .danger(true)
+                .item(cx)
+                .on_click({
+                    let (bench, space) = (bench.clone(), space.to_owned());
+                    move |_, _, cx| {
+                        bench.update(cx, |bench, cx| bench.delete_space(space.clone(), cx))
+                    }
+                }),
         )
 }
 
@@ -1174,7 +1182,6 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     };
     let items = [
         (
-            "your-account",
             "Your account",
             Icon::User,
             None,
@@ -1183,14 +1190,12 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
             }),
         ),
         (
-            "devices",
             "Devices",
             Icon::Laptop,
             None,
             act(|bench, window, cx| bench.open_settings(Page::Devices, window, cx)),
         ),
         (
-            "settings",
             "Settings",
             Icon::Settings,
             settings_keys,
@@ -1198,30 +1203,28 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         ),
     ];
     let sign_out = act(|bench, _, _| bench.sign_out());
-    let menu = Popover::new("account-menu")
-        .anchor(Anchor::BottomLeft)
-        .offset(px(4.))
-        .trigger(row)
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            let item = |id: &'static str, label: &'static str, icon: Icon, act: ui::OnClick| {
-                let popover = popover.clone();
-                MenuItem::new(id, label)
-                    .icon(icon)
-                    .on_click(move |event, window, cx| {
-                        act(event, window, cx);
-                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                    })
-            };
-            let mut menu = Menu::new();
-            for (id, label, icon, hint, act) in items.iter().cloned() {
-                menu = menu.child(
-                    item(id, label, icon, act).when_some(hint, |item, keys| item.hint(keys)),
+    let menu = ui::menu_button(
+        "account-menu",
+        Anchor::BottomLeft,
+        row,
+        move |mut popup, _, cx| {
+            for (label, icon, hint, act) in items.iter().cloned() {
+                popup = popup.item(
+                    ui::MenuRow::new(label)
+                        .icon(icon)
+                        .when_some(hint, ui::MenuRow::hint)
+                        .item(cx)
+                        .on_click(move |event, window, cx| act(event, window, cx)),
                 );
             }
-            menu.separator(cx)
-                .child(item("sign-out", "Sign out", Icon::LogOut, sign_out.clone()))
-        });
+            let sign_out = sign_out.clone();
+            popup.separator().item(
+                PopupMenuItem::new("Sign out")
+                    .icon(Icon::LogOut)
+                    .on_click(move |event, window, cx| sign_out(event, window, cx)),
+            )
+        },
+    );
     div()
         .flex_none()
         .flex()

@@ -1,7 +1,7 @@
 use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
-use gpui_kit::base::{Button as BaseButton, Popover};
+use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -17,7 +17,7 @@ use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens};
-use crate::ui::{self, Field, Group, IconButton, Menu, MenuItem, Row, Segmented};
+use crate::ui::{self, Field, Group, IconButton, Row, Segmented};
 use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, TeamLink, Workbench};
 
 pub const TAB_RAIL: RailWidth = RailWidth {
@@ -356,57 +356,54 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         bench.keep_rails(cx);
         cx.notify();
     }));
-    Popover::new("agent-picker")
-        .anchor(Anchor::TopLeft)
-        .offset(px(4.))
-        .trigger(
-            BaseButton::new("agent-picker-button")
-                .accessibility_label("Agent provider")
-                .h(px(28.))
-                .ml(px(-6.))
-                .px(px(6.))
-                .flex()
-                .items_center()
-                .gap(px(7.))
-                .rounded(theme::RADIUS_2)
-                .hover(move |style| style.bg(t.surface_hover))
-                .child(mark)
-                .child(name)
-                .child(
-                    ui::icon(Icon::Chevron, 9.)
-                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                        .text_color(t.text_tertiary),
-                ),
-        )
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            let item = |id: SharedString, label: String, choice: Option<String>| {
-                let (choose, popover) = (choose.clone(), popover.clone());
-                MenuItem::new(id, label)
+    let glyph_ink = t.text_tertiary;
+    ui::menu_button(
+        "agent-picker",
+        Anchor::TopLeft,
+        BaseButton::new("agent-picker-button")
+            .accessibility_label("Agent provider")
+            .h(px(28.))
+            .ml(px(-6.))
+            .px(px(6.))
+            .flex()
+            .items_center()
+            .gap(px(7.))
+            .rounded(theme::RADIUS_2)
+            .hover(move |style| style.bg(t.surface_hover))
+            .child(mark)
+            .child(name)
+            .child(
+                ui::icon(Icon::Chevron, 9.)
+                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                    .text_color(t.text_tertiary),
+            ),
+        move |mut popup, _, cx| {
+            let item = |row: ui::MenuRow, choice: Option<String>, cx: &App| {
+                let choose = choose.clone();
+                row.item(cx)
                     .checked(choice == chosen)
-                    .on_click(move |_, window, cx| {
-                        choose(&choice, window, cx);
-                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                    })
+                    .on_click(move |_, window, cx| choose(&choice, window, cx))
             };
-            div().w(px(200.)).child(
-                Menu::new()
-                    .child(
-                        item("all-harnesses".into(), "All harnesses".into(), None)
-                            .icon(Icon::Inbox),
-                    )
-                    .children(options.iter().map(|(kind, label, peak)| {
-                        item(
-                            SharedString::from(format!("harness-{kind}")),
-                            label.clone(),
-                            Some(kind.clone()),
-                        )
-                        .mark(ui::mark(kind, 14.))
-                        .when_some(*peak, |item, peak| item.hint(format!("{}%", peak.round())))
-                    })),
-            )
-        })
-        .into_any_element()
+            popup = popup.item(item(
+                ui::MenuRow::new("All harnesses")
+                    .mark(move || ui::icon(Icon::Inbox, 13.).text_color(glyph_ink)),
+                None,
+                cx,
+            ));
+            for (kind, label, peak) in &options {
+                let provider = kind.clone();
+                popup = popup.item(item(
+                    ui::MenuRow::new(label.clone())
+                        .mark(move || ui::mark(&provider, 14.))
+                        .when_some(*peak, |row, peak| row.hint(format!("{}%", peak.round()))),
+                    Some(kind.clone()),
+                    cx,
+                ));
+            }
+            popup
+        },
+    )
+    .into_any_element()
 }
 
 /// The agent's own name, such as "Claude", whichever account it starts on.
@@ -482,7 +479,11 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
                 return popup;
             }
             popup.separator().item(
-                ui::danger_popup_item("Delete…", Some(Icon::Trash), cx).on_click(on(delete_recent)),
+                ui::MenuRow::new("Delete…")
+                    .icon(Icon::Trash)
+                    .danger(true)
+                    .item(cx)
+                    .on_click(on(delete_recent)),
             )
         }))
         .into_any_element()
@@ -1181,7 +1182,8 @@ fn account_menu(
         .accounts
         .current(provider)
         .map(|profile| profile.id.clone());
-    let rows: Vec<(Profile, String, Option<String>, bool)> = bench
+    let signed_out = |profile: &Profile| status(profile).is_some_and(|status| !status.signed_in);
+    let rows: Vec<(Profile, String, Option<String>, Option<f64>)> = bench
         .accounts
         .of(provider)
         .into_iter()
@@ -1191,108 +1193,88 @@ fn account_menu(
         })
         .map(|profile| {
             let status = status(profile);
-            let signed_out = status.is_some_and(|status| !status.signed_in);
-            let hint = if signed_out {
-                vec!["Signed out".to_owned()]
-            } else {
-                status
-                    .and_then(|status| status.email.clone().or_else(|| status.organization.clone()))
-                    .into_iter()
-                    .chain(
-                        crate::accounts::used(bench, profile)
-                            .map(|used| format!("{}%", used.round())),
-                    )
-                    .collect()
+            let (detail, used) = match signed_out(profile) {
+                true => (Some("Signed out".to_owned()), None),
+                false => (
+                    status.and_then(|status| {
+                        status.email.clone().or_else(|| status.organization.clone())
+                    }),
+                    crate::accounts::used(bench, profile),
+                ),
             };
-            let hint = (!hint.is_empty()).then(|| hint.join(" · "));
             let name = crate::accounts::name(bench, profile, status);
-            (profile.clone(), name, hint, signed_out)
+            (profile.clone(), name, detail, used)
         })
         .collect();
     let chosen = rows
         .iter()
         .find(|(profile, ..)| Some(&profile.id) == current.as_ref())
-        .map(|(profile, name, _, signed_out)| (profile.id.clone(), name.clone(), *signed_out));
+        .map(|(profile, name, ..)| (profile.id.clone(), name.clone(), signed_out(profile)));
     let provider = provider.to_owned();
-    Popover::new("limits-account-menu")
-        .anchor(Anchor::BottomRight)
-        .offset(px(4.))
-        .trigger(
-            BaseButton::new("limits-account")
-                .accessibility_label("Account")
-                .h(px(20.))
-                .pl(px(3.))
-                .pr(px(5.))
-                .flex()
-                .items_center()
-                .gap(px(5.))
-                .rounded(theme::RADIUS_2)
-                .hover(move |style| style.bg(t.surface_hover))
-                .child(ui::text(name, 11., FontWeight::MEDIUM).text_color(t.text_primary))
-                .child(
-                    ui::icon(Icon::Chevron, 9.)
-                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                        .text_color(t.text_tertiary),
-                ),
-        )
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            let act = |id: SharedString, label: String, run: BenchAction| {
-                let (this, popover) = (this.clone(), popover.clone());
-                MenuItem::new(id, label).on_click(move |_, window, cx| {
-                    popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                    this.update(cx, |bench, cx| run(bench, window, cx));
+    ui::menu_button(
+        "limits-account-menu",
+        Anchor::BottomRight,
+        BaseButton::new("limits-account")
+            .accessibility_label("Account")
+            .h(px(20.))
+            .pl(px(3.))
+            .pr(px(5.))
+            .flex()
+            .items_center()
+            .gap(px(5.))
+            .rounded(theme::RADIUS_2)
+            .hover(move |style| style.bg(t.surface_hover))
+            .child(ui::text(name, 11., FontWeight::MEDIUM).text_color(t.text_primary))
+            .child(
+                ui::icon(Icon::Chevron, 9.)
+                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                    .text_color(t.text_tertiary),
+            ),
+        move |mut popup, _, _| {
+            let act = |item: PopupMenuItem, run: BenchAction| {
+                let this = this.clone();
+                item.on_click(move |_, window, cx| {
+                    this.update(cx, |bench, cx| run(bench, window, cx))
                 })
             };
-            let mut menu = Menu::new().children(rows.iter().map(|(profile, name, hint, _)| {
+            for (profile, name, detail, used) in &rows {
                 let here = Some(&profile.id) == current.as_ref();
                 let chosen = profile.clone();
-                act(
-                    SharedString::from(format!("limits-account-{}", profile.id)),
-                    name.clone(),
+                popup = popup.item(act(
+                    crate::accounts::popup_item(profile, name, detail.clone(), *used, here),
                     Rc::new(move |bench, _, cx| {
                         if !here {
                             crate::accounts::select(bench, &chosen, cx);
                         }
                     }),
-                )
-                .mark(crate::accounts::avatar(profile, name, 16.))
-                .checked(here)
-                .when_some(hint.clone(), MenuItem::hint)
-            }));
-            menu = menu.separator(cx);
+                ));
+            }
+            popup = popup.separator();
             if let Some((id, name, signed_out)) = chosen.clone() {
                 let provider = provider.clone();
-                menu = menu.child(match signed_out {
+                popup = popup.item(match signed_out {
                     true => act(
-                        "limits-sign-in-account".into(),
-                        format!("Sign in to {name}"),
+                        PopupMenuItem::new(format!("Sign in to {name}")).icon(Icon::User),
                         Rc::new(move |bench, window, cx| {
                             crate::accounts::open_sign_in(bench, &provider, Some(&id), window, cx)
                         }),
-                    )
-                    .icon(Icon::User),
+                    ),
                     false => act(
-                        "limits-sign-out".into(),
-                        format!("Sign out of {name}"),
+                        PopupMenuItem::new(format!("Sign out of {name}")).icon(Icon::LogOut),
                         Rc::new(move |bench, _, cx| crate::accounts::sign_out(bench, &id, cx)),
-                    )
-                    .icon(Icon::LogOut),
+                    ),
                 });
             }
             let provider = provider.clone();
-            menu.child(
-                act(
-                    "limits-add-account".into(),
-                    "Add account…".into(),
-                    Rc::new(move |bench, window, cx| {
-                        crate::accounts::open_sign_in(bench, &provider, None, window, cx)
-                    }),
-                )
-                .icon(Icon::Plus),
-            )
-        })
-        .into_any_element()
+            popup.item(act(
+                PopupMenuItem::new("Add account…").icon(Icon::Plus),
+                Rc::new(move |bench, window, cx| {
+                    crate::accounts::open_sign_in(bench, &provider, None, window, cx)
+                }),
+            ))
+        },
+    )
+    .into_any_element()
 }
 
 /// One of a plan's rolling windows: how much of it is used, and when it starts again.

@@ -8,9 +8,10 @@ use std::time::{Duration, Instant};
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, px, AppContext, Context, Entity, FontWeight, Hsla, IntoElement, ParentElement, Styled,
-    Window,
+    div, px, AppContext, Context, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -119,6 +120,9 @@ pub fn popup_item(
     PopupMenuItem::element(move |_, cx| {
         let t = crate::theme::Tokens::get(cx).clone();
         div()
+            .id(SharedString::from(format!("account-{}", profile.id)))
+            .aria_label(name.clone())
+            .test_support()
             .w_full()
             .flex()
             .items_center()
