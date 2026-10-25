@@ -18,8 +18,8 @@ use gpui_kit::{
     Subscription, Task, Transformation, WeakEntity, Window,
 };
 use gpui_transcript::{
-    AwayChanged, Change, CodeColours, CodeRuns, EmptyChanged, FoundChanged, Markdown, Pen, Row,
-    RowsChanged, Style, Transcript,
+    AwayChanged, Change, CodeColours, EmptyChanged, FoundChanged, Markdown, Pen, Row, RowsChanged,
+    Style, Transcript,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -3564,67 +3564,13 @@ impl Tints {
 }
 
 /// Colours a code block once syntax.rs has worked it out: the first draw asks for it,
-/// and the chat redraws when it arrives. Plain text takes the editor's text colour.
-fn code_colours(reader: Entity<Reading>, plain: Hsla) -> CodeColours {
-    // The texts asked to be coloured in the theme of this version; a new theme drops the colours
-    // worked out in the old one, so they are asked for again.
-    let asked = RefCell::new((0, HashSet::<(SharedString, SharedString)>::new()));
-    Rc::new(move |lang, code, cx| {
-        let language = SharedString::from(lang?.to_lowercase());
-        if !syntax::knows(&language) {
-            return None;
-        }
-        if let Some(lines) = syntax::coloured_lines(&language, code, cx) {
-            return Some(spread(&lines, code, plain));
-        }
-        #[cfg(feature = "counts")]
-        gpui_transcript::counts::add(&gpui_transcript::counts::UNCOLOURED, 1);
-        let mut asked = asked.borrow_mut();
-        let version = syntax::version(cx);
-        if asked.0 != version {
-            *asked = (version, HashSet::new());
-        }
-        if asked.1.insert((language.clone(), code.clone())) {
-            let coloured = syntax::colour_lines(&language, code.clone(), cx);
-            let reader = reader.downgrade();
-            cx.spawn(async move |cx| {
-                if coloured.await.is_some() {
-                    #[cfg(feature = "counts")]
-                    gpui_transcript::counts::add(&gpui_transcript::counts::COLOURED, 1);
-                    let _ = reader.update(cx, |_, cx| cx.notify());
-                }
-            })
-            .detach();
-        }
-        None
-    })
-}
-
-/// Each line's runs as runs over the whole text, with plain text filled in.
-fn spread(lines: &[syntax::LineRuns], code: &str, plain: Hsla) -> CodeRuns {
-    let plain_style = HighlightStyle {
-        color: Some(plain),
-        ..HighlightStyle::default()
-    };
-    let mut runs = Vec::new();
-    let mut start = 0;
-    for (line, runs_of_line) in code.split('\n').zip(lines) {
-        let mut cursor = start;
-        for (range, style) in runs_of_line {
-            let (from, to) = (start + range.start, start + range.end);
-            if cursor < from {
-                runs.push((cursor..from, plain_style));
-            }
-            let color = style.color.or(Some(plain));
-            runs.push((from..to, HighlightStyle { color, ..*style }));
-            cursor = to;
-        }
-        if cursor < start + line.len() {
-            runs.push((cursor..start + line.len(), plain_style));
-        }
-        start += line.len() + 1;
-    }
-    runs.into()
+/// and the chat redraws when it arrives.
+fn code_colours(reader: Entity<Reading>) -> CodeColours {
+    let reader = reader.downgrade();
+    let coloured: syntax::BlockColoured = Rc::new(move |cx| {
+        let _ = reader.update(cx, |_, cx| cx.notify());
+    });
+    Rc::new(move |lang, code, cx| syntax::block_runs(&lang?.to_lowercase(), code, &coloured, cx))
 }
 
 impl Looks {
@@ -3669,7 +3615,7 @@ impl Looks {
                 a: 0.72,
                 ..t.surface_sunken
             },
-            code: Some(code_colours(reader.clone(), theme::color(&t.editor.fg))),
+            code: Some(code_colours(reader.clone())),
             on_link: Some(Rc::new({
                 let (bench, agent) = (bench.clone(), agent.clone());
                 move |href: &str, window: &mut Window, cx: &mut App| {

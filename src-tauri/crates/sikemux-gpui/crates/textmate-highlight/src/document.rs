@@ -190,4 +190,16 @@ impl Document {
     pub fn spans(&self, line: usize) -> &[Span] {
         self.spans.get(line).map_or(&[], Vec::as_slice)
     }
+
+    /// About how much memory the lines' states and runs take.
+    pub fn bytes(&self) -> usize {
+        let runs: usize = self
+            .spans
+            .iter()
+            .map(|line| {
+                std::mem::size_of::<Vec<Span>>() + line.capacity() * std::mem::size_of::<Span>()
+            })
+            .sum();
+        runs + self.states.capacity() * std::mem::size_of::<StateStack>()
+    }
 }

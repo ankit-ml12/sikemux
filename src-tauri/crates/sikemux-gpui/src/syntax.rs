@@ -16,6 +16,7 @@ use gpui_kit::{
     px, App, Context, FontStyle, FontWeight, Global, HighlightStyle, SharedString, Task,
     UnderlineStyle, Window,
 };
+use gpui_transcript::CodeRuns;
 use textmate_highlight::{Document, Library, Span, Style, Styles};
 use tokio::sync::Notify;
 
@@ -39,6 +40,11 @@ const SYNC_MAX_LINES: usize = 400;
 const BACKGROUND_CHUNK: usize = 100;
 /// How much text `colour_lines` keeps coloured, as today's diff colours keep.
 const COLOURED_MAX_BYTES: usize = 4 * 1024 * 1024;
+/// How many chat code blocks stay coloured, and how much memory their colours take in all.
+const BLOCKS_MAX: usize = 64;
+const BLOCKS_MAX_BYTES: usize = 4 * 1024 * 1024;
+/// Longer code blocks stay in the text colour, so one block never takes the whole budget.
+const BLOCK_MAX_BYTES: usize = 128 * 1024;
 
 struct Shared {
     library: Library,
@@ -83,6 +89,7 @@ struct PaletteState {
     /// dropping the oldest.
     coloured_bytes: usize,
     coloured_order: VecDeque<((SharedString, SharedString), usize)>,
+    blocks: Blocks,
 }
 
 impl PaletteState {
@@ -95,6 +102,7 @@ impl PaletteState {
             coloured: HashMap::new(),
             coloured_bytes: 0,
             coloured_order: VecDeque::new(),
+            blocks: Blocks::default(),
         }
     }
 
@@ -248,12 +256,319 @@ pub fn colour_lines(language: &str, text: SharedString, cx: &App) -> Task<Option
 }
 
 /// The lines `colour_lines` worked out for this text in this theme, if it has.
-pub fn coloured_lines(language: &str, text: &SharedString, cx: &App) -> Option<Arc<[LineRuns]>> {
+fn coloured_lines(language: &str, text: &SharedString, cx: &App) -> Option<Arc<[LineRuns]>> {
     let state = cx.global::<Palette>().0.borrow();
     state
         .coloured
         .get(&(SharedString::from(language.to_owned()), text.clone()))
         .cloned()
+}
+
+/// What a chat does once a code block's colours come: draws it again.
+pub type BlockColoured = Rc<dyn Fn(&mut App)>;
+
+/// A chat code block's colours in `language`, worked out off the main thread, then `coloured`
+/// is called. A block that grows, as one does while an agent writes it, keeps the colours it
+/// had until its new lines are coloured, and only the lines from its last one on are worked
+/// out again. `None` for a language with no grammar or a block too long to colour.
+pub fn block_runs(
+    language: &str,
+    code: &SharedString,
+    coloured: &BlockColoured,
+    cx: &mut App,
+) -> Option<CodeRuns> {
+    if code.len() > BLOCK_MAX_BYTES || !knows(language) {
+        return None;
+    }
+    let palette = cx.global::<Palette>().clone();
+    let plain = palette.styles().last().copied().unwrap_or_default();
+    let mut state = palette.0.borrow_mut();
+    let version = state.version;
+    let blocks = &mut state.blocks;
+    blocks.used += 1;
+    let used = blocks.used;
+    let found = blocks.find(language, code);
+    let at = found.unwrap_or_else(|| {
+        blocks.next += 1;
+        let runs = blocks.shown_shorter(language, code, plain);
+        blocks.blocks.push(Block {
+            id: blocks.next,
+            language: language.to_owned().into(),
+            text: code.clone(),
+            runs,
+            coloured: 0,
+            document: None,
+            last_line: 0,
+            last_line_start: 0,
+            working: false,
+            document_bytes: 0,
+            bytes: 0,
+            used,
+            coloured_with: None,
+        });
+        blocks.blocks.len() - 1
+    });
+    let block = &mut blocks.blocks[at];
+    block.used = used;
+    block.coloured_with = Some(coloured.clone());
+    let grew = block.text != *code;
+    if grew {
+        block.text = code.clone();
+        block.runs = plain_after(&block.runs, block.coloured, code.len(), plain);
+    }
+    if block.coloured < code.len() {
+        #[cfg(feature = "counts")]
+        gpui_transcript::counts::add(&gpui_transcript::counts::UNCOLOURED, 1);
+        if !block.working {
+            start_colouring(block, version, cx);
+        }
+    }
+    let runs = block.runs.clone();
+    if grew || found.is_none() {
+        blocks.settle(at);
+    }
+    Some(runs)
+}
+
+/// The chat code blocks coloured in this theme, the least recently drawn let go past
+/// `BLOCKS_MAX` or `BLOCKS_MAX_BYTES`.
+#[derive(Default)]
+struct Blocks {
+    blocks: Vec<Block>,
+    bytes: usize,
+    /// Counts draws, so the least recently drawn block is the one with the lowest.
+    used: u64,
+    next: u64,
+}
+
+struct Block {
+    id: u64,
+    language: SharedString,
+    /// The text as last drawn.
+    text: SharedString,
+    runs: CodeRuns,
+    /// How far into `text` the runs are coloured; past it they are plain.
+    coloured: usize,
+    /// Each coloured line's grammar state, so more lines carry on from them; away while
+    /// `working`.
+    document: Option<Document>,
+    /// The coloured text's last line, and where it starts.
+    last_line: usize,
+    last_line_start: usize,
+    working: bool,
+    /// What `document` takes, and what the whole block takes.
+    document_bytes: usize,
+    bytes: usize,
+    used: u64,
+    /// Tells the last chat to draw the block that its colours have come.
+    coloured_with: Option<BlockColoured>,
+}
+
+impl Blocks {
+    /// The block `code` is, or the one it grew from.
+    fn find(&self, language: &str, code: &str) -> Option<usize> {
+        let same = |block: &Block| block.language == language;
+        self.blocks
+            .iter()
+            .position(|block| same(block) && block.text == code)
+            .or_else(|| {
+                self.blocks
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, block)| same(block) && code.starts_with(block.text.as_ref()))
+                    .max_by_key(|(_, block)| block.text.len())
+                    .map(|(at, _)| at)
+            })
+    }
+
+    /// What a new block shows until it is coloured: the colours of a longer one it starts
+    /// as, as when the fence closing a block that streamed in had come only in part, or plain.
+    fn shown_shorter(&self, language: &str, code: &str, plain: HighlightStyle) -> CodeRuns {
+        let longer = self.blocks.iter().find(|block| {
+            block.language == language && block.text.starts_with(code) && block.coloured > 0
+        });
+        let Some(longer) = longer else {
+            return plain_after(&CodeRuns::from([]), 0, code.len(), plain);
+        };
+        let len = code.len().min(longer.coloured);
+        let runs: CodeRuns = longer
+            .runs
+            .iter()
+            .filter(|(range, _)| range.start < len)
+            .map(|(range, style)| (range.start..range.end.min(len), *style))
+            .collect();
+        plain_after(&runs, len, code.len(), plain)
+    }
+
+    /// Counts the block at `at` afresh, then lets the least recently drawn others go while
+    /// there are too many or they take too much.
+    fn settle(&mut self, at: usize) {
+        let block = &mut self.blocks[at];
+        let bytes = block.text.len()
+            + block.runs.len() * std::mem::size_of::<(Range<usize>, HighlightStyle)>()
+            + block.document_bytes;
+        self.bytes = self.bytes + bytes - std::mem::replace(&mut block.bytes, bytes);
+        let kept = block.id;
+        while self.blocks.len() > BLOCKS_MAX || self.bytes > BLOCKS_MAX_BYTES {
+            let Some(oldest) = self
+                .blocks
+                .iter()
+                .enumerate()
+                .filter(|(_, block)| block.id != kept)
+                .min_by_key(|(_, block)| block.used)
+                .map(|(at, _)| at)
+            else {
+                break;
+            };
+            self.bytes -= self.blocks.swap_remove(oldest).bytes;
+        }
+    }
+}
+
+/// `runs` coloured as far as `coloured`, and plain from there to `len`.
+fn plain_after(runs: &CodeRuns, coloured: usize, len: usize, plain: HighlightStyle) -> CodeRuns {
+    let kept = runs.partition_point(|(range, _)| range.start < coloured);
+    runs[..kept]
+        .iter()
+        .cloned()
+        .chain((coloured < len).then_some((coloured..len, plain)))
+        .collect()
+}
+
+/// A block's lines from `from` on, coloured carrying on from `document`, or from its first
+/// line without one.
+struct Colouring {
+    document: Document,
+    document_bytes: usize,
+    lines: Vec<Vec<Span>>,
+    last_line: usize,
+    last_line_start: usize,
+}
+
+fn colour_block(
+    document: Option<Document>,
+    language: &str,
+    text: &str,
+    from: usize,
+) -> Option<Colouring> {
+    let lines: Vec<&str> = text
+        .split('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+        .collect();
+    let last_line = lines.len() - 1;
+    let (mut document, from) = match document {
+        Some(mut document) => {
+            document.edit(from, from, last_line);
+            (document, from)
+        }
+        None => {
+            let session = shared().library.session(language)?;
+            let mut document = Document::new(session, Some(MAX_LINE_LENGTH));
+            document.reset(lines.len());
+            (document, 0)
+        }
+    };
+    while document.pending_line().is_some() {
+        if document
+            .tokenize(&shared().styles, |line| lines[line], lines.len())
+            .is_empty()
+        {
+            break;
+        }
+    }
+    Some(Colouring {
+        lines: (from..lines.len())
+            .map(|line| document.spans(line).to_vec())
+            .collect(),
+        document_bytes: document.bytes(),
+        document,
+        last_line,
+        last_line_start: text.rfind('\n').map_or(0, |at| at + 1),
+    })
+}
+
+fn start_colouring(block: &mut Block, version: u64, cx: &mut App) {
+    block.working = true;
+    let (id, language, text) = (block.id, block.language.clone(), block.text.clone());
+    let (document, from) = (block.document.take(), block.last_line);
+    let colouring = cx.background_executor().spawn({
+        let text = text.clone();
+        async move { colour_block(document, &language, &text, from) }
+    });
+    cx.spawn(async move |cx| {
+        let colouring = colouring.await;
+        cx.update(|cx| block_coloured(id, version, text, colouring, cx));
+    })
+    .detach();
+}
+
+/// Takes in a block's new colours, then colours what it has grown by since, if it has.
+fn block_coloured(
+    id: u64,
+    version: u64,
+    text: SharedString,
+    colouring: Option<Colouring>,
+    cx: &mut App,
+) {
+    let palette = cx.global::<Palette>().clone();
+    let styles = palette.styles().to_vec();
+    let plain = styles.last().copied().unwrap_or_default();
+    let mut state = palette.0.borrow_mut();
+    if state.version != version {
+        return;
+    }
+    let blocks = &mut state.blocks;
+    let Some(at) = blocks.blocks.iter().position(|block| block.id == id) else {
+        return;
+    };
+    let block = &mut blocks.blocks[at];
+    block.working = false;
+    let Some(colouring) = colouring else {
+        block.coloured = usize::MAX;
+        return;
+    };
+    let kept = block
+        .runs
+        .partition_point(|(range, _)| range.start < block.last_line_start);
+    let mut runs: Vec<_> = block.runs[..kept].to_vec();
+    let mut start = block.last_line_start;
+    for (line, spans) in text[start..].split('\n').zip(&colouring.lines) {
+        let mut cursor = start;
+        for span in spans {
+            let (from, to) = (start + span.start as usize, start + span.end as usize);
+            if cursor < from {
+                runs.push((cursor..from, plain));
+            }
+            let mut style = resolve(span.style, &styles, plain);
+            style.color = style.color.or(plain.color);
+            runs.push((from..to, style));
+            cursor = to;
+        }
+        if cursor < start + line.len() {
+            runs.push((cursor..start + line.len(), plain));
+        }
+        start += line.len() + 1;
+    }
+    if text.len() < block.text.len() {
+        runs.push((text.len()..block.text.len(), plain));
+    }
+    block.runs = runs.into();
+    block.coloured = text.len();
+    block.document = Some(colouring.document);
+    block.document_bytes = colouring.document_bytes;
+    block.last_line = colouring.last_line;
+    block.last_line_start = colouring.last_line_start;
+    let coloured = block.coloured_with.clone();
+    if block.coloured < block.text.len() {
+        start_colouring(block, version, cx);
+    }
+    blocks.settle(at);
+    drop(state);
+    #[cfg(feature = "counts")]
+    gpui_transcript::counts::add(&gpui_transcript::counts::COLOURED, 1);
+    if let Some(coloured) = coloured {
+        coloured(cx);
+    }
 }
 
 /// The editor's highlighters: one per document, for a language id with a grammar.
