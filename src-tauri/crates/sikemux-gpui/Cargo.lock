@@ -9086,6 +9086,7 @@ dependencies = [
  "textmate-highlight",
  "tokio",
  "url",
+ "zbus",
 ]
 
 [[package]]

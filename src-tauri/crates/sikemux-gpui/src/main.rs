@@ -12,6 +12,7 @@ fn main() {
         .run(move |cx| {
             gpui_kit::init(cx);
             theme::install(cx);
+            cx.set_app_identity(core::IDENTIFIER, core::NAME);
             let behind = std::env::var_os(sikemux_process::vars::LAUNCH_BEHIND).is_some();
             #[cfg(feature = "drive")]
             let behind = behind || sikemux_gpui::drive::stays_behind();

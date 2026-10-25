@@ -598,8 +598,9 @@ pub fn request_on(
 /// Where this app's key on the network is kept.
 const DEVICE_KEY: &str = "sikemux-device";
 
-/// What the account calls this app, before " on <host>".
-const DEVICE_NAME: &str = if cfg!(debug_assertions) {
+/// This app's name: what the account calls it, before " on <host>", and the desktop on its
+/// notifications.
+pub const NAME: &str = if cfg!(debug_assertions) {
     "Sikemux Dev"
 } else {
     "Sikemux"
@@ -654,7 +655,7 @@ async fn reach_hosts(
         .await
         .and_then(|network| network::usable_relays(&network))
         .unwrap_or_default();
-    match Linked::bind(key, relays, DEVICE_NAME, "macos").await {
+    match Linked::bind(key, relays, NAME, "macos").await {
         Ok(linked) => Some(linked),
         Err(error) => {
             unavailable(error.to_string());

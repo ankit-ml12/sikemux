@@ -1,6 +1,6 @@
 //! Tells the person, while Sikemux is in the background, when an agent needs them or
-//! finished: a macOS notification that brings the agent forward when clicked, and the
-//! Dock icon's bounce and badge.
+//! finished: a system notification that brings the agent forward when clicked, and the
+//! Dock or launcher icon's bounce and badge.
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -16,6 +16,13 @@ use crate::workbench::Workbench;
 /// As long as the Mac shows it.
 const KEPT_RUNNING_SHOWN: Duration = Duration::from_secs(12);
 
+/// The keys `keymap` binds to Quit and Stop Everything.
+const STOP_EVERYTHING_KEYS: &str = if cfg!(target_os = "macos") {
+    "⌥⌘Q"
+} else {
+    "Ctrl+Alt+Q"
+};
+
 /// What the test row and the first launch post, to show what a notice looks like.
 const TEST: (&str, &str) = (
     "Sikemux notifications are on",
@@ -28,7 +35,12 @@ pub fn post(title: String, body: String, agent: Option<String>, cx: &mut Context
     #[cfg(target_os = "macos")]
     macos::post(&title, &body, agent.as_deref());
     #[cfg(not(target_os = "macos"))]
-    let _ = (title, body, agent);
+    cx.show_system_notification(gpui_kit::SystemNotification {
+        tag: agent.unwrap_or_default().into(),
+        title: title.into(),
+        body: body.into(),
+        actions: Vec::new(),
+    });
 }
 
 /// Where a click on a notification goes, with the agent it is about.
@@ -43,6 +55,12 @@ fn follow_clicks(cx: &mut Context<Workbench>) {
     if CLICKS.set(clicks).is_err() {
         return;
     }
+    #[cfg(not(target_os = "macos"))]
+    cx.on_system_notification_response(|clicked, _| {
+        if let Some(clicks) = CLICKS.get() {
+            let _ = clicks.send(Some(clicked.tag.to_string()).filter(|agent| !agent.is_empty()));
+        }
+    });
     cx.spawn(async move |bench, cx| {
         while let Some(agent) = clicked.recv().await {
             let shown = bench.update(cx, |bench, cx| {
@@ -232,9 +250,9 @@ pub fn kept_running(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     }
     crate::settings::set(bench, "keptRunningNoticeShown", true);
     bench.notify_for::<KeptRunning>(
-        toast::info(
-            "Your terminals and agents kept running while Sikemux was closed. Use Quit and Stop Everything (⌥⌘Q) to stop them.",
-        ),
+        toast::info(format!(
+            "Your terminals and agents kept running while Sikemux was closed. Use Quit and Stop Everything ({STOP_EVERYTHING_KEYS}) to stop them."
+        )),
         KEPT_RUNNING_SHOWN,
         cx,
     );
@@ -280,7 +298,7 @@ fn waiting(view: &DeviceView) -> usize {
         .count()
 }
 
-/// Keeps the Dock icon's badge at the number of agents waiting on the person.
+/// Keeps the Dock or launcher icon's badge at the number of agents waiting on the person.
 pub fn badge(bench: &mut Workbench) {
     let count = bench.view.as_ref().map_or(0, waiting);
     if count != std::mem::replace(&mut bench.badge, count) {
@@ -301,5 +319,56 @@ fn show_badge(count: usize) {
         NSApplication::sharedApplication(main)
             .dockTile()
             .setBadgeLabel(label.as_deref());
+    }
+    #[cfg(target_os = "linux")]
+    linux::show_badge(count);
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let _ = count;
+}
+
+/// The count docks such as GNOME's and KDE's draw on a launcher: Unity's launcher entry
+/// signal, sent for the desktop file named after the app's id.
+#[cfg(target_os = "linux")]
+mod linux {
+    use std::collections::HashMap;
+    use std::sync::mpsc;
+    use std::sync::OnceLock;
+
+    use zbus::zvariant::Value;
+
+    static COUNTS: OnceLock<Option<mpsc::Sender<usize>>> = OnceLock::new();
+
+    /// Sent from a thread of its own, which keeps the bus connection: a dock drops the count
+    /// once its sender leaves the bus.
+    pub(super) fn show_badge(count: usize) {
+        let counts = COUNTS.get_or_init(|| {
+            let (counts, shown) = mpsc::channel::<usize>();
+            std::thread::Builder::new()
+                .name("launcher-badge".into())
+                .spawn(move || {
+                    let Ok(bus) = zbus::blocking::Connection::session() else {
+                        return;
+                    };
+                    let app = format!("application://{}.desktop", crate::core::IDENTIFIER);
+                    for count in shown {
+                        let properties = HashMap::from([
+                            ("count", Value::from(count as i64)),
+                            ("count-visible", Value::from(count > 0)),
+                        ]);
+                        let _ = bus.emit_signal(
+                            None::<zbus::names::BusName>,
+                            "/com/nodelike/sikemux/launcher",
+                            "com.canonical.Unity.LauncherEntry",
+                            "Update",
+                            &(app.as_str(), properties),
+                        );
+                    }
+                })
+                .ok()
+                .map(|_| counts)
+        });
+        if let Some(counts) = counts {
+            let _ = counts.send(count);
+        }
     }
 }
