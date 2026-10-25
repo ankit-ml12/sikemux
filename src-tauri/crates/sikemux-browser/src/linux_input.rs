@@ -19,6 +19,26 @@ pub enum Mouse {
 /// No key is ever bound to this one.
 const UNUSED_KEYVAL: u32 = 0xffffff;
 
+thread_local! {
+    /// Set while an event of the agent's is on its way to a page.
+    static SENDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the event a page is handling now is the agent's, not the person's.
+pub(crate) fn sending() -> bool {
+    SENDING.get()
+}
+
+fn deliver(webview: &WebView, event: *mut gdk::ffi::GdkEvent) {
+    SENDING.set(true);
+    // SAFETY: `event` is a live event its caller filled in and still owns, and the widget
+    // is the live page; `gtk_widget_event` only reads the event.
+    unsafe {
+        gtk::ffi::gtk_widget_event(webview.upcast_ref::<gtk::Widget>().to_glib_none().0, event);
+    }
+    SENDING.set(false);
+}
+
 /// `x` and `y` are CSS pixels from the top left of the page's viewport.
 pub fn mouse(webview: &WebView, kind: Mouse, x: f64, y: f64, clicks: isize) -> Result<(), String> {
     let window = webview.window().ok_or("the tab is not drawn yet")?;
@@ -40,7 +60,7 @@ pub fn mouse(webview: &WebView, kind: Mouse, x: f64, y: f64, clicks: isize) -> R
     let send = |kind: gdk::EventType, state: u32| {
         // SAFETY: `gdk_event_new` hands back an event of `kind`, so the variant written is
         // the one it holds. The event takes its own reference to the window, which
-        // `gdk_event_free` gives back, and `gtk_widget_event` only reads it.
+        // `gdk_event_free` gives back.
         unsafe {
             let event = gdk::ffi::gdk_event_new(kind.into_glib());
             let window: *mut gdk::ffi::GdkWindow = window.to_glib_full();
@@ -59,7 +79,7 @@ pub fn mouse(webview: &WebView, kind: Mouse, x: f64, y: f64, clicks: isize) -> R
                 button.button = 1;
             }
             gdk::ffi::gdk_event_set_device(event, pointer.to_glib_none().0);
-            gtk::ffi::gtk_widget_event(webview.upcast_ref::<gtk::Widget>().to_glib_none().0, event);
+            deliver(webview, event);
             gdk::ffi::gdk_event_free(event);
         }
     };
@@ -149,8 +169,8 @@ fn press(webview: &WebView, keyval: u32, state: u32, down: bool) -> Result<(), S
     } else {
         gdk::EventType::KeyRelease
     };
-    // SAFETY: as in `mouse`, the event is the kind written, holds its own reference to the
-    // window until it is freed, and `gtk_widget_event` only reads it.
+    // SAFETY: as in `mouse`, the event is the kind written and holds its own reference to
+    // the window until it is freed.
     unsafe {
         let event = gdk::ffi::gdk_event_new(kind.into_glib());
         let key = &mut (*event).key;
@@ -160,7 +180,7 @@ fn press(webview: &WebView, keyval: u32, state: u32, down: bool) -> Result<(), S
         key.keyval = keyval;
         key.hardware_keycode = code as u16;
         gdk::ffi::gdk_event_set_device(event, keyboard.to_glib_none().0);
-        gtk::ffi::gtk_widget_event(webview.upcast_ref::<gtk::Widget>().to_glib_none().0, event);
+        deliver(webview, event);
         gdk::ffi::gdk_event_free(event);
     }
     Ok(())

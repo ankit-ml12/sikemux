@@ -44,6 +44,16 @@ use crate::theme::{self, Tokens};
 use crate::toast;
 use crate::{agents, home, rail, tabs, terminal};
 
+/// A click in the app's own window takes the keyboard back from a page holding it. On
+/// Linux a page is a window of another connection, which X would otherwise leave it with.
+#[cfg(target_os = "linux")]
+fn keyboard_back() {
+    sikemux_browser::give_keyboard_back();
+}
+
+#[cfg(not(target_os = "linux"))]
+fn keyboard_back() {}
+
 /// How long a tab asked to close stays closing in the window if the core never says it
 /// went, such as when its closing failed.
 const CLOSE_SETTLES: Duration = Duration::from_secs(2);
@@ -4389,6 +4399,7 @@ impl Render for Workbench {
             .track_focus(&self.focus)
             .relative()
             .size_full()
+            .capture_any_mouse_down(|_, _, _| keyboard_back())
             .on_modifiers_changed(
                 cx.listener(|bench, event, _, cx| bench.modifiers_changed(event, cx)),
             )

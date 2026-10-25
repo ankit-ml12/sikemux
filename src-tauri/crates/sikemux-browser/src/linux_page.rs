@@ -1,8 +1,12 @@
 //! The WebKitGTK side of a tab's page: its scripts, its pictures, its history and what it
 //! tells the app. Everything here runs on the GTK thread that owns the page.
 
+use std::cell::Cell;
+use std::os::raw::{c_uint, c_ulong};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
+use gtk::glib::translate::ToGlibPtr;
 use gtk::prelude::*;
 use gtk::{cairo, gdk, gdk_pixbuf, glib};
 use javascriptcore::ValueExt;
@@ -19,6 +23,13 @@ const STILL_QUALITY: &str = "80";
 type Shortcut = Box<dyn Fn(BrowserShortcut) + Send + Sync>;
 
 static SHORTCUT: OnceLock<Shortcut> = OnceLock::new();
+/// A page holds the keyboard, which only the GTK thread knows the window of.
+static PAGE_HAS_KEYBOARD: AtomicBool = AtomicBool::new(false);
+
+thread_local! {
+    /// The X11 window of the page holding the keyboard.
+    static HOLDING: Cell<Option<c_ulong>> = const { Cell::new(None) };
+}
 
 #[derive(Clone, Copy)]
 pub enum World {
@@ -34,6 +45,12 @@ pub(crate) fn attach(webview: &WebView, agent_id: &str, tab_id: &str, events: Ar
     webview.connect_is_web_process_responsive_notify(move |view| {
         hung.health((!view.is_web_process_responsive()).then_some(TabStall::Unresponsive));
     });
+    webview.connect_button_press_event(|view, _| {
+        if !crate::linux_input::sending() {
+            take_keyboard(view);
+        }
+        glib::Propagation::Proceed
+    });
     let (agent_id, tab_id) = (agent_id.to_owned(), tab_id.to_owned());
     webview.connect_key_press_event(move |_, event| {
         let Some(shortcut) = chord_of(event) else {
@@ -48,6 +65,85 @@ pub(crate) fn attach(webview: &WebView, agent_id: &str, tab_id: &str, events: Ar
         }
         glib::Propagation::Stop
     });
+}
+
+/// The page is an X11 window of another connection inside the app's, so X leaves the
+/// keyboard on the app's window when the person clicks into the page; the page takes it.
+fn take_keyboard(webview: &WebView) {
+    let Some(window) = webview.toplevel().and_then(|toplevel| toplevel.window()) else {
+        return;
+    };
+    let Ok(page) = window.downcast::<gdkx11::X11Window>() else {
+        return;
+    };
+    let xid = page.xid();
+    if focus(xid) {
+        webview.grab_focus();
+        HOLDING.set(Some(xid));
+        PAGE_HAS_KEYBOARD.store(true, Ordering::Release);
+    }
+}
+
+/// Gives the keyboard back to the app's window when a page holds it, as the person's click
+/// in the app does.
+pub fn give_keyboard_back() {
+    if !PAGE_HAS_KEYBOARD.swap(false, Ordering::AcqRel) {
+        return;
+    }
+    crate::linux::on_gtk(|| {
+        if let Some(app) = HOLDING.take().and_then(parent_of) {
+            focus(app);
+        }
+    });
+}
+
+fn xdisplay() -> Option<*mut x11::xlib::Display> {
+    let display = gdk::Display::default()?
+        .downcast::<gdkx11::X11Display>()
+        .ok()?;
+    // SAFETY: the display is GTK's own live X11 connection, which outlives the call.
+    let xdisplay = unsafe { gdkx11::ffi::gdk_x11_display_get_xdisplay(display.to_glib_none().0) };
+    (!xdisplay.is_null()).then_some(xdisplay)
+}
+
+fn focus(window: c_ulong) -> bool {
+    let Some(display) = xdisplay() else {
+        return false;
+    };
+    // SAFETY: a live connection, and X answers a window that is gone with an error event
+    // rather than failing the call.
+    unsafe {
+        x11::xlib::XSetInputFocus(
+            display,
+            window,
+            x11::xlib::RevertToParent,
+            x11::xlib::CurrentTime,
+        );
+        x11::xlib::XFlush(display);
+    }
+    true
+}
+
+fn parent_of(window: c_ulong) -> Option<c_ulong> {
+    let display = xdisplay()?;
+    let (mut root, mut parent, mut children, mut count) = (0, 0, std::ptr::null_mut(), 0 as c_uint);
+    // SAFETY: a live connection; X fills the out-pointers, and the children list it hands
+    // back is freed here.
+    let found = unsafe {
+        let found = x11::xlib::XQueryTree(
+            display,
+            window,
+            &mut root,
+            &mut parent,
+            &mut children,
+            &mut count,
+        );
+        if !children.is_null() {
+            x11::xlib::XFree(children.cast());
+        }
+        found
+    };
+    (found != 0 && parent != 0 && parent != root).then_some(parent)
 }
 
 /// Where command chords pressed in a page go: the app's keymap, not the page.

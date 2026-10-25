@@ -8954,6 +8954,7 @@ dependencies = [
  "base64 0.23.1",
  "block2 0.6.2",
  "dispatch2",
+ "gdkx11",
  "gtk",
  "javascriptcore-rs",
  "libc",
@@ -8979,6 +8980,7 @@ dependencies = [
  "webkit2gtk",
  "workspace-hack",
  "wry",
+ "x11",
 ]
 
 [[package]]
