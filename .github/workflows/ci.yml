@@ -60,6 +60,7 @@ jobs:
     outputs:
       rust: ${{ steps.areas.outputs.rust }}
       simulator: ${{ steps.areas.outputs.simulator }}
+      packaging: ${{ steps.areas.outputs.packaging }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -96,6 +97,7 @@ jobs:
           }
           area rust '^(src-tauri/|browser/|server/protocol/|src/test/markdownFixtures\.json$|rust-toolchain\.toml$)'
           area simulator '^(src-tauri/sim/|src-tauri/crates/sikemux-simulator/|src-tauri/src/simulator\.rs$|src-tauri/Cargo\.(toml|lock)$|scripts/build-sim-(helper|fixture)\.mjs$|rust-toolchain\.toml$)'
+          area packaging '^(scripts/build-linux\.sh$|scripts/build-cli-sidecar\.mjs$|src-tauri/linux/|src-tauri/icons/|src-tauri/resources/sikemux_pi_tools\.ts$)'
 
   frontend:
     name: Frontend quality, build, and tests
@@ -417,7 +419,7 @@ jobs:
   linux:
     name: Linux compile check and core tests
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.packaging == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -444,6 +446,39 @@ jobs:
       - name: Run the core's tests on Linux
         run: cargo test --locked -p sikemux-core -p sikemux-pty -p sikemux-process -p sikemux-wire -p sikemux-client -p sikemux-keychain -p sikemux-host
         working-directory: src-tauri
+
+      # The packages are unsigned and go nowhere but this run.
+      - name: Install what the app packs with
+        if: needs.changes.outputs.packaging == 'true'
+        run: sudo apt-get install -y pkg-config libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libwayland-dev libfontconfig-dev libfreetype-dev dpkg-dev rpm
+
+      - name: Pack the deb, rpm and AppImage
+        if: needs.changes.outputs.packaging == 'true'
+        run: scripts/build-linux.sh
+
+      - name: Install the deb on a clean Ubuntu
+        if: needs.changes.outputs.packaging == 'true'
+        run: |
+          docker run --rm -v "$PWD/src-tauri/target/release/bundle/deb:/packages:ro" ubuntu:24.04 sh -euc '
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /packages/*.deb >/dev/null
+            sikemux-host --version
+            test -g /usr/lib/sikemux/sikemux-host
+            test "$(stat -c %G /usr/lib/sikemux/sikemux-host)" = sikemux
+            test "$(stat -c %G:%a /var/lib/sikemux)" = sikemux:770
+            test -f /usr/lib/sikemux/sikemux_pi_tools.ts
+          '
+
+      - name: Keep the packages on the run
+        if: needs.changes.outputs.packaging == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sikemux-linux-packages
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/appimage/*.AppImage
 
   simulator-helper:
     name: iOS Simulator helper

@@ -542,13 +542,10 @@ jobs:
       - name: Setup Rust
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
 
-      - name: Install the Tauri Linux packages
+      - name: Install what the app builds and packs with
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev build-essential file
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
+          sudo apt-get install -y build-essential pkg-config libwebkit2gtk-4.1-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libwayland-dev libfontconfig-dev libfreetype-dev dpkg-dev rpm file
 
       - name: Build the deb, rpm and AppImage
         env:

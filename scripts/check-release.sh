@@ -42,9 +42,10 @@ const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
 const config = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
 const macConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.macos.conf.json", "utf8"));
 const windowsConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.windows.conf.json", "utf8"));
-const linuxConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.linux.conf.json", "utf8"));
 const sidecarConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.sidecar.conf.json", "utf8"));
 const macBuild = fs.readFileSync("scripts/build-mac.sh", "utf8");
+const linuxBuild = fs.readFileSync("scripts/build-linux.sh", "utf8");
+const installer = fs.readFileSync("scripts/install.sh", "utf8");
 const sidecarBuild = fs.readFileSync("scripts/build-cli-sidecar.mjs", "utf8");
 const publish = fs.readFileSync("scripts/publish-release.sh", "utf8");
 const releaseWorkflow = fs.readFileSync(".github/workflows/release.yml", "utf8");
@@ -63,10 +64,15 @@ if (JSON.stringify(windowsConfig.bundle?.targets) !== JSON.stringify(["nsis"])) 
 if (windowsConfig.bundle?.createUpdaterArtifacts !== false) fail("unsigned Windows builds must not require updater credentials");
 if (!windowsConfig.bundle?.icon?.includes("icons/icon.ico")) fail("Windows icon is not configured");
 if (windowsConfig.bundle?.windows?.nsis?.installMode !== "currentUser") fail("unexpected Windows install mode");
-if (JSON.stringify(linuxConfig.bundle?.targets) !== JSON.stringify(["deb", "rpm", "appimage"])) fail("Linux bundle targets must be deb, rpm and appimage");
-if (linuxConfig.bundle?.createUpdaterArtifacts !== false) fail("Linux builds must not require updater credentials");
-if (!pkg.scripts?.["build:linux"]?.includes("build:sidecar")) fail("Linux build does not build sidecars");
-if (!pkg.scripts?.["build:linux"]?.includes("tauri.sidecar.conf.json")) fail("Linux build does not bundle the CLI sidecar");
+if (pkg.scripts?.["build:linux"] !== "scripts/build-linux.sh") fail("pnpm build:linux does not run scripts/build-linux.sh");
+if (!linuxBuild.includes("node scripts/build-cli-sidecar.mjs")) fail("Linux build does not build the core");
+if (!linuxBuild.includes("cargo build --release --locked --bin sikemux")) fail("Linux build does not build the GPUI app");
+for (const name of ["Sikemux_${VERSION}_amd64.deb", "Sikemux-${VERSION}-1.x86_64.rpm", "Sikemux_${VERSION}_amd64.AppImage"]) {
+  if (!linuxBuild.includes(name)) fail(`Linux build does not make ${name}`);
+  if (!installer.includes(name)) fail(`the installer does not download ${name}`);
+}
+if (!linuxBuild.includes("sha256sum -c")) fail("Linux build runs packaging tools it has not checked");
+if (/TAURI_SIGNING|signer sign/.test(linuxBuild)) fail("Linux builds must not require updater credentials");
 if (!releaseWorkflow.includes("run: pnpm build:linux")) fail("the Release workflow does not build the Linux packages");
 if (!publish.includes('"$DEB" "$RPM" "$APPIMAGE"')) fail("releases do not publish the Linux packages");
 if (!releaseWorkflow.includes("scripts/package-host.sh")) fail("the Release workflow does not build the Linux host core");
