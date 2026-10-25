@@ -5,7 +5,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -41,6 +42,11 @@ const MAX_PAGE_TURNS: usize = 100;
 const PAGE_BYTES: u64 = 1024 * 1024;
 /// A turn longer than a page is cut into pieces about this long.
 const PIECE_BYTES: usize = 64 * 1024;
+/// The most every chat's replay holds in memory together. Past it, the chats viewed least
+/// lately that nobody watches and no turn runs in let go of theirs, which stays on disk.
+const RESIDENT_BYTES: usize = 64 * 1024 * 1024;
+/// How often the chats are looked over for one to let go of, while past [`RESIDENT_BYTES`].
+const EVICT_EVERY_MS: u64 = 1000;
 /// Updates that set how the chat stands rather than say something in it. A
 /// phone shown only the chat's end still needs the last of each.
 const STANDING_UPDATES: [&str; 6] = [
@@ -595,29 +601,43 @@ impl Replay {
     }
 
     /// Holds the chat's latest turns again, read from its history, once it let go of them to
-    /// sleep and is read again. Reads the disk, so it blocks.
+    /// sleep or to stay within the core's memory and is read again: as many as a client
+    /// opening the chat is shown, before any it took in since. Reads the disk, so it blocks.
     fn reload(&mut self) {
-        if !self.entries.is_empty() || !self.keeps_history() {
+        let held_turns = self
+            .entries
+            .iter()
+            .filter(|entry| entry.starts_turn)
+            .count();
+        let before = self
+            .entries
+            .front()
+            .map_or(self.next_index, |entry| entry.index);
+        let on_disk = self.history.as_ref().and_then(History::first);
+        if held_turns >= TAIL_TURNS
+            || self.bytes as u64 >= PAGE_BYTES
+            || on_disk.is_none_or(|first| first >= before)
+        {
             return;
         }
         let read = self
-            .plan(PageOf::Before(self.next_index), TAIL_TURNS)
+            .plan(PageOf::Before(before), TAIL_TURNS - held_turns)
             .and_then(|planned| match &planned.reader {
                 Some(reader) => reader
-                    .lines(planned.lo, planned.hi)
+                    .lines(planned.lo, planned.hi.min(before))
                     .map_err(|error| error.to_string()),
                 None => Ok(Vec::new()),
             });
         let lines = match read {
             Ok(lines) => lines,
             Err(error) => {
-                eprintln!("sikemux core: a sleeping chat's history could not be read: {error}");
+                eprintln!("sikemux core: a chat's history could not be read again: {error}");
                 return;
             }
         };
-        for line in lines {
+        for line in lines.into_iter().rev() {
             self.bytes += line.bytes;
-            self.entries.push_back(Entry {
+            self.entries.push_front(Entry {
                 event: line.event,
                 bytes: line.bytes,
                 index: line.index,
@@ -1396,8 +1416,37 @@ pub(crate) struct FeedState {
     reach: Option<(String, Reach)>,
 }
 
+/// Every feed, and what their replays hold in memory together.
+#[derive(Default)]
+struct Resident {
+    feeds: Mutex<Vec<Weak<Feed>>>,
+    bytes: AtomicUsize,
+    evicting: AtomicBool,
+    last_pass: AtomicU64,
+}
+
+static RESIDENT: LazyLock<Resident> = LazyLock::new(Resident::default);
+
+impl Resident {
+    /// Lets go of replays, the feeds viewed least lately first, until they fit again.
+    fn evict(&self) {
+        let mut feeds: Vec<Arc<Feed>> = {
+            let mut held = self.feeds.locked();
+            held.retain(|feed| feed.strong_count() > 0);
+            held.iter().filter_map(Weak::upgrade).collect()
+        };
+        feeds.sort_by_key(|feed| feed.viewed.load(Ordering::Relaxed));
+        for feed in feeds {
+            if self.bytes.load(Ordering::Relaxed) <= RESIDENT_BYTES {
+                break;
+            }
+            feed.evict();
+        }
+    }
+}
+
 pub(crate) struct Feed {
-    me: std::sync::Weak<Feed>,
+    me: Weak<Feed>,
     agent_id: String,
     /// Names this run of the chat's agent in the marks clients hold.
     id: String,
@@ -1405,6 +1454,18 @@ pub(crate) struct Feed {
     inner: Mutex<Inner>,
     /// Each client's latest find in this chat, by number, so a newer one stops the one before.
     finding: Mutex<HashMap<ClientId, u64>>,
+    /// What the replay holds in memory, as counted against [`RESIDENT_BYTES`].
+    held: AtomicUsize,
+    /// When a client last read the chat, in epoch ms.
+    viewed: AtomicU64,
+}
+
+impl Drop for Feed {
+    fn drop(&mut self) {
+        RESIDENT
+            .bytes
+            .fetch_sub(*self.held.get_mut(), Ordering::Relaxed);
+    }
 }
 
 fn queued_view(queued: &[Queued]) -> Vec<QueuedMessage> {
@@ -1465,12 +1526,14 @@ impl Feed {
     ) -> Arc<Self> {
         let id = uuid::Uuid::new_v4().to_string();
         let history = history.map(|dir| History::open(dir, &id, MAX_HISTORY_BYTES));
-        Arc::new_cyclic(|me| Self {
+        Self::counted(Arc::new_cyclic(|me| Self {
             me: me.clone(),
             agent_id,
             id,
             runtime: tokio::runtime::Handle::current(),
             finding: Mutex::default(),
+            held: AtomicUsize::new(0),
+            viewed: AtomicU64::new(epoch_ms()),
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
                 seq: 0,
@@ -1490,7 +1553,7 @@ impl Feed {
                 waits_for_person: false,
                 reach: None,
             }),
-        })
+        }))
     }
 
     /// A feed for a chat an earlier core left when it stopped, whose history
@@ -1529,18 +1592,21 @@ impl Feed {
         inner.replay = replay;
         inner.title = title;
         inner.fold = None;
+        self.account(&inner);
     }
 
     /// Takes up a feed an earlier core let go of.
     pub(crate) fn restored(agent_id: String, state: FeedState) -> Arc<Self> {
         let mut replay = state.replay;
         replay.history = state.history.map(History::reopen);
-        Arc::new_cyclic(|me| Self {
+        let feed = Self::counted(Arc::new_cyclic(|me| Self {
             me: me.clone(),
             agent_id,
             id: state.id,
             runtime: tokio::runtime::Handle::current(),
             finding: Mutex::default(),
+            held: AtomicUsize::new(0),
+            viewed: AtomicU64::new(epoch_ms()),
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
                 seq: state.seq,
@@ -1560,7 +1626,63 @@ impl Feed {
                 waits_for_person: false,
                 reach: state.reach,
             }),
-        })
+        }));
+        feed.account(&feed.inner.locked());
+        feed
+    }
+
+    fn counted(feed: Arc<Self>) -> Arc<Self> {
+        let mut feeds = RESIDENT.feeds.locked();
+        feeds.retain(|feed| feed.strong_count() > 0);
+        feeds.push(Arc::downgrade(&feed));
+        drop(feeds);
+        feed
+    }
+
+    /// Counts what the replay holds now against the core's memory, and lets go of others'
+    /// replays once all of them hold too much.
+    fn account(&self, inner: &Inner) {
+        let now = inner.replay.bytes;
+        let was = self.held.swap(now, Ordering::Relaxed);
+        let total = if now >= was {
+            RESIDENT.bytes.fetch_add(now - was, Ordering::Relaxed) + (now - was)
+        } else {
+            RESIDENT.bytes.fetch_sub(was - now, Ordering::Relaxed) - (was - now)
+        };
+        if total <= RESIDENT_BYTES
+            || RESIDENT.last_pass.load(Ordering::Relaxed) + EVICT_EVERY_MS > epoch_ms()
+            || RESIDENT.evicting.swap(true, Ordering::AcqRel)
+        {
+            return;
+        }
+        RESIDENT.last_pass.store(epoch_ms(), Ordering::Relaxed);
+        self.runtime.spawn_blocking(|| {
+            RESIDENT.evict();
+            RESIDENT.evicting.store(false, Ordering::Release);
+        });
+    }
+
+    /// A client read the chat just now.
+    fn viewed(&self) {
+        self.viewed.store(epoch_ms(), Ordering::Relaxed);
+    }
+
+    /// Lets go of what the replay holds in memory, which its history keeps on disk, unless a
+    /// client watches the chat or a turn runs in it.
+    fn evict(&self) {
+        let mut inner = self.inner.locked();
+        let busy = !inner.subscribers.is_empty()
+            || inner.replay.in_turn
+            || inner.replay.awaiting
+            || inner.holding
+            || inner.fold.as_ref().is_some_and(Fold::is_dirty)
+            || !inner.replay.keeps_history();
+        if busy {
+            return;
+        }
+        inner.fold = None;
+        inner.replay.rest();
+        self.account(&inner);
     }
 
     /// Lets go of the feed for a core that takes the chat over, once what is
@@ -1580,6 +1702,7 @@ impl Feed {
             &mut inner.replay,
             Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None),
         );
+        self.account(&inner);
         let state = FeedState {
             id: self.id.clone(),
             seq: inner.seq,
@@ -1628,6 +1751,7 @@ impl Feed {
     fn fold<'a>(&self, inner: &'a mut Inner) -> &'a mut Fold {
         if inner.fold.is_none() {
             inner.replay.reload();
+            self.account(inner);
             let mut fold = new_fold(
                 &inner.permission_mode,
                 inner.offers_effort,
@@ -1827,6 +1951,7 @@ impl Feed {
             stamp(&mut payload);
         }
         let index = inner.replay.push(kind, &payload);
+        self.account(&inner);
         self.settle_later(&mut inner);
         if let Some(title) = session_title(&payload) {
             inner.title = Some(title);
@@ -1867,6 +1992,7 @@ impl Feed {
     pub(crate) fn rewound(&self, message_id: &str) {
         let mut inner = self.inner.locked();
         inner.replay.rewind(message_id);
+        self.account(&inner);
         if let Some(fold) = inner.fold.as_mut() {
             fold.rewind(message_id);
         }
@@ -1923,6 +2049,7 @@ impl Feed {
     }
 
     pub(crate) fn subscribe(&self, client: &Arc<ClientConn>) {
+        self.viewed();
         let mut inner = self.inner.locked();
         self.fold(&mut inner);
         inner.subscribers.insert(
@@ -1939,6 +2066,7 @@ impl Feed {
     }
 
     pub(crate) fn unsubscribe(&self, client: ClientId) {
+        self.viewed();
         let mut inner = self.inner.locked();
         inner.subscribers.remove(&client);
         self.let_go(&mut inner);
@@ -1954,6 +2082,7 @@ impl Feed {
         standing: Standing,
         since: Option<ChatMark>,
     ) {
+        self.viewed();
         let mut inner = self.inner.locked();
         if inner.closed || (inner.start.is_none() && !inner.waits_for_person) {
             client.respond(
@@ -2009,7 +2138,9 @@ impl Feed {
         let mut inner = self.inner.locked();
         inner.closed = false;
         inner.fold = None;
-        inner.replay.rest()
+        let bytes = inner.replay.rest();
+        self.account(&inner);
+        bytes
     }
 
     /// Keeps what the agent says from the clients until [`Feed::let_out`]. A
@@ -2134,8 +2265,10 @@ impl Feed {
 
     /// What the chat said from index `from` on, or over its last `turns`.
     pub(crate) fn excerpt(&self, from: Option<u64>, turns: usize, max_bytes: usize) -> Excerpt {
+        self.viewed();
         let mut inner = self.inner.locked();
         inner.replay.reload();
+        self.account(&inner);
         let (said, skipped, next) = inner.replay.excerpt(from, turns, max_bytes);
         Excerpt {
             feed: self.id.clone(),
@@ -2149,6 +2282,7 @@ impl Feed {
     pub(crate) fn turn_start(&self) -> Option<u64> {
         let mut inner = self.inner.locked();
         inner.replay.reload();
+        self.account(&inner);
         inner.replay.turn_start()
     }
 
@@ -2156,6 +2290,7 @@ impl Feed {
     pub(crate) fn last_answer(&self) -> Option<String> {
         let mut inner = self.inner.locked();
         inner.replay.reload();
+        self.account(&inner);
         inner.replay.last_answer()
     }
 
@@ -2191,6 +2326,7 @@ impl Feed {
             let index = inner.replay.push(ChatEventKind::SessionUpdate, &payload);
             self.fold_in(&mut inner, index, ChatEventKind::SessionUpdate, &payload);
         }
+        self.account(&inner);
         self.flush_locked(&mut inner);
     }
 
@@ -2201,6 +2337,7 @@ impl Feed {
     pub(crate) fn forget_permission(&self, request_id: &str) {
         let mut inner = self.inner.locked();
         inner.replay.forget_permission(request_id);
+        self.account(&inner);
         if let Some(fold) = inner.fold.as_mut() {
             fold.forget_permission(request_id);
         }
@@ -2290,6 +2427,7 @@ impl Feed {
         budget: usize,
         session: Option<&str>,
     ) -> Result<ChatPage, String> {
+        self.viewed();
         for _ in 0..2 {
             let planned = self.inner.locked().replay.plan(side, turns)?;
             let mut events = match &planned.reader {
