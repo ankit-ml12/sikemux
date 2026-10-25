@@ -700,6 +700,10 @@ impl Chat {
                 .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
                 .ok();
         });
+        let activity_line = cx.new(|_| status::Activity::new(provider));
+        transcript.update(cx, |transcript, cx| {
+            transcript.set_footer(activity_line.clone().into(), cx)
+        });
         Chat {
             transcript,
             looks: kept_looks,
@@ -707,7 +711,7 @@ impl Chat {
             _found: found,
             finding: None,
             plan_open: false,
-            activity_line: cx.new(|_| status::Activity::new(provider)),
+            activity_line,
             target,
             _rows: [emptied, rows_changed],
             head: Map::new(),
@@ -1856,7 +1860,6 @@ pub fn pane(
         })
         .child(rows)
         .children(file_menu)
-        .child(chat.activity_line.clone())
         .children(status::plan(agent, chat, cx))
         .children(status::trouble(bench, agent, chat, cx))
         .children(permissions)

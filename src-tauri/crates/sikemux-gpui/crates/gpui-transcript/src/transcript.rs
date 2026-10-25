@@ -5,9 +5,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    actions, div, list, px, Animation, AnimationExt, AnyElement, App, ClipboardItem, Context,
-    ElementId, EventEmitter, FocusHandle, FollowMode, InteractiveElement, IntoElement, KeyBinding,
-    ListAlignment, ListOffset, ListState, MouseButton, MouseDownEvent, MouseMoveEvent,
+    actions, div, list, px, Animation, AnimationExt, AnyElement, AnyView, App, ClipboardItem,
+    Context, ElementId, EventEmitter, FocusHandle, FollowMode, InteractiveElement, IntoElement,
+    KeyBinding, ListAlignment, ListOffset, ListState, MouseButton, MouseDownEvent, MouseMoveEvent,
     ParentElement, Pixels, Point, Render, SharedString, Styled, Window,
 };
 
@@ -96,6 +96,8 @@ pub struct Transcript<R: Row> {
     queue: Vec<Change<R>>,
     style: Rc<Style>,
     draw_row: DrawRow<R>,
+    /// Drawn after the last row, scrolling with the rows.
+    footer: Option<AnyView>,
     layout_budget: Rc<LayoutBudget>,
     on_reach_top: Option<Ask>,
     asked_earlier: bool,
@@ -175,7 +177,7 @@ impl<R: Row> Transcript<R> {
         draw_row: impl Fn(&[R], usize, &Pen, &mut Window, &mut App) -> AnyElement + 'static,
         cx: &mut Context<Self>,
     ) -> Self {
-        let list = ListState::new(rows.len(), ListAlignment::Bottom, px(400.));
+        let list = ListState::new(rows.len() + 1, ListAlignment::Bottom, px(400.));
         list.set_follow_mode(FollowMode::Tail);
         let this = cx.weak_entity();
         list.set_scroll_handler(move |event, window, cx| {
@@ -189,6 +191,7 @@ impl<R: Row> Transcript<R> {
             queue: Vec::new(),
             style,
             draw_row: Rc::new(draw_row),
+            footer: None,
             on_reach_top: None,
             asked_earlier: false,
             on_reach_bottom: None,
@@ -467,6 +470,12 @@ impl<R: Row> Transcript<R> {
         &self.rows
     }
 
+    /// Draws `footer` after the last row, scrolling with the rows.
+    pub fn set_footer(&mut self, footer: AnyView, cx: &mut Context<Self>) {
+        self.footer = Some(footer);
+        cx.notify();
+    }
+
     pub fn list(&self) -> &ListState {
         &self.list
     }
@@ -486,7 +495,7 @@ impl<R: Row> Transcript<R> {
     fn reset(&mut self, rows: Vec<R>, follow: FollowMode) {
         self.stale = Stale::All;
         self.rows = rows;
-        self.list.reset(self.rows.len());
+        self.list.reset(self.rows.len() + 1);
         self.list.set_follow_mode(follow);
         self.asked_earlier = false;
         self.asked_later = false;
@@ -767,6 +776,12 @@ impl<R: Row> Render for Transcript<R> {
         let this = cx.entity();
         let rows = list(self.list.clone(), move |ix, window, cx| {
             this.update(cx, |this, cx| {
+                if ix == this.rows.len() {
+                    return match this.footer.clone() {
+                        Some(footer) => footer.into_any_element(),
+                        None => div().into_any_element(),
+                    };
+                }
                 let selecting = this.rows.get(ix).map(|row| Selecting {
                     row: row.id().to_owned().into(),
                     ix,
