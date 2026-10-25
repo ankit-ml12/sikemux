@@ -1,4 +1,4 @@
-# 0.2.0-nightly.1
+# 0.2.0-nightly.2
 
 • Works with hosts on the new Sikemux nightly. Update your host to the nightly to use it with this app.
 • Phone apps from before this one, 0.1.0 and its nightlies, keep working with stable hosts only.

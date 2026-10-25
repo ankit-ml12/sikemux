@@ -12,7 +12,7 @@ The first nightly of the new Sikemux app. Nightlies are signed and delivered exa
 
 ## Before you update
 
-- **Your phone needs the nightly phone app.** Install Sikemux 0.2.0-nightly.1 from TestFlight on iPhone, or from the Google Play testing track on Android. Phone apps from before it, 0.1.0 and its nightlies, keep working with stable hosts only.
+- **Your phone needs the nightly phone app.** Install Sikemux 0.2.0-nightly.2 from TestFlight on iPhone, or from the Google Play testing track on Android. Phone apps from before it, 0.1.0 and its nightlies, keep working with stable hosts only.
 - **A nightly host and a stable host can't link.** Hosts on this nightly link with each other, and hosts on stable Sikemux link with each other, but not across the two until the new app ships stable.
 - **There is no going back to an older build.** This build moves saved chats to a new format, and older Sikemux, stable 0.5.x or earlier nightlies, can't read chats saved after the update. Switching back to stable in Settings → About keeps this build until a stable release passes it, so nothing is downgraded, but installing an older build by hand isn't supported.
 
