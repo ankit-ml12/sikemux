@@ -1,0 +1,36 @@
+name: Install Ubuntu packages
+description: Installs packages with apt and keeps the downloaded .deb files between runs, so a slow mirror costs one run, not every run.
+inputs:
+  packages:
+    description: The packages to install, separated by spaces or newlines
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Name the package cache
+      id: cache
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        list="$(tr -s ' \n' '\n' <<<"$PACKAGES" | sort | shasum -a 256 | cut -c1-16)"
+        echo "prefix=apt-$ImageOS-$list-" >>"$GITHUB_OUTPUT"
+        echo "week=$(date +%G-%V)" >>"$GITHUB_OUTPUT"
+
+    # A new key each week picks up updated packages; last week's .debs still cover most of them.
+    - name: Restore the downloaded packages
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/apt-archives
+        key: ${{ steps.cache.outputs.prefix }}${{ steps.cache.outputs.week }}
+        restore-keys: ${{ steps.cache.outputs.prefix }}
+
+    - name: Install the packages
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        mkdir -p ~/apt-archives/partial
+        sudo apt-get update
+        read -ra packages <<<"$(tr -s ' \n' ' ' <<<"$PACKAGES")"
+        sudo apt-get install -y -o Acquire::Retries=3 -o Dir::Cache::Archives="$HOME/apt-archives" "${packages[@]}"
