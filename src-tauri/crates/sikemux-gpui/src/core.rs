@@ -655,7 +655,7 @@ async fn reach_hosts(
         .await
         .and_then(|network| network::usable_relays(&network))
         .unwrap_or_default();
-    match Linked::bind(key, relays, NAME, "macos").await {
+    match Linked::bind(key, relays, NAME, std::env::consts::OS).await {
         Ok(linked) => Some(linked),
         Err(error) => {
             unavailable(error.to_string());
