@@ -34,6 +34,10 @@ fn drop_group_on_this_thread() {
     }
 }
 
+pub(crate) fn root_of(uid: u32) -> PathBuf {
+    PathBuf::from(ROOT).join(uid.to_string())
+}
+
 pub(crate) fn settle(keep: bool) {
     KEEPER.get_or_init(|| {
         // SAFETY: getgid and getegid take nothing and cannot fail.
@@ -42,7 +46,7 @@ pub(crate) fn settle(keep: bool) {
         }
         let keeper = keep.then(|| {
             // SAFETY: getuid takes nothing and cannot fail.
-            let root = PathBuf::from(ROOT).join(unsafe { libc::getuid() }.to_string());
+            let root = root_of(unsafe { libc::getuid() });
             let (send, jobs) = mpsc::channel::<Job>();
             std::thread::Builder::new()
                 .name("sikemux-secrets".into())

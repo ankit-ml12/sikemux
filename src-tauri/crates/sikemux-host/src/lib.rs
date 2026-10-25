@@ -15,6 +15,8 @@ pub mod login_item;
 pub mod panic_reports;
 pub mod plugins;
 mod style;
+#[cfg(unix)]
+pub mod update;
 
 pub use plugins::provide_to_core;
 

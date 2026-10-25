@@ -24,6 +24,7 @@ const NOT_RUNNING: i32 = 3;
 
 pub const COMMANDS: &[&str] = &[
     "status", "login", "logout", "start", "stop", "restart", "enable", "disable", "plugins",
+    "update",
 ];
 
 /// Runs `command` with the arguments after it.
@@ -39,6 +40,8 @@ pub fn run(command: &str, args: &[String]) -> i32 {
         "enable" => enable(),
         "disable" => disable(),
         "plugins" => plugins(args),
+        #[cfg(target_os = "linux")]
+        "update" if args == ["--install"] => return crate::update::root::serve(),
         _ => Err(format!("no command named {command}")),
     };
     match result {

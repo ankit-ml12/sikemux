@@ -227,6 +227,54 @@ install_linux() {
   say ""
 }
 
+# Root replaces the core when the person's core asks over this socket. It
+# takes nothing from the caller but who they are and the channel they follow,
+# and installs only a release signed with Sikemux's updater key.
+UPDATE_UNITS='
+set -e
+cat >/etc/systemd/system/sikemux-update.socket <<"UNIT"
+[Unit]
+Description=Sikemux core updates
+
+[Socket]
+ListenStream=/run/sikemux-update.sock
+SocketMode=0666
+Accept=yes
+MaxConnections=4
+
+[Install]
+WantedBy=sockets.target
+UNIT
+cat >/etc/systemd/system/sikemux-update@.service <<"UNIT"
+[Unit]
+Description=Install a newer signed Sikemux core
+
+[Service]
+ExecStart=/usr/local/lib/sikemux/sikemux-host update --install
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=20min
+MemoryMax=512M
+ProtectSystem=strict
+ReadWritePaths=/usr/local/lib/sikemux
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_FSETID CAP_DAC_READ_SEARCH
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UNIT
+systemctl daemon-reload
+systemctl enable --now sikemux-update.socket >/dev/null 2>&1
+'
+
 install_host() {
   case "$(uname -m)" in
     x86_64 | amd64) arch=x86_64 ;;
@@ -260,6 +308,10 @@ install_host() {
     install -d -o root -g sikemux -m 770 /var/lib/sikemux
   ' sh "$TMP/sikemux-host"
   ln -sf /usr/local/lib/sikemux/sikemux-host "$bin/sikemux"
+  if [ -d /run/systemd/system ]; then
+    step "Setting up updates" as_root sh -c "$UPDATE_UNITS"
+    done_step "Updates itself" "signed releases"
+  fi
   if [ "$(id -u)" -eq 0 ]; then
     note "Running as root, agents run as root too and can read anything; use your own account to keep them out of the core's secrets."
   fi

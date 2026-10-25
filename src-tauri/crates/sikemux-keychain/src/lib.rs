@@ -115,6 +115,17 @@ pub fn read(service: &str, account: &str) -> KeychainResult<Option<String>> {
     }
 }
 
+/// What the guarded store holds for the person with `uid`, for root, which
+/// may read any person's.
+#[cfg(target_os = "linux")]
+pub fn read_guarded_of(uid: u32, service: &str, account: &str) -> KeychainResult<Option<String>> {
+    let (service, account) = (
+        name_like(service, "service")?,
+        name_like(account, "account")?,
+    );
+    file::read(&guarded::root_of(uid), &service, &account)
+}
+
 pub fn write(service: &str, account: &str, secret: &str) -> KeychainResult<()> {
     let (service, account) = (
         name_like(service, "service")?,
