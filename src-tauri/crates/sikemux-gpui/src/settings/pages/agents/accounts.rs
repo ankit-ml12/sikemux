@@ -3,7 +3,7 @@
 
 use std::rc::Rc;
 
-use gpui_kit::base::Popover;
+use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -16,7 +16,7 @@ use crate::accounts::{self, SignIn, Status};
 use crate::icons::Icon;
 use crate::settings::rows;
 use crate::theme::{self, Tokens};
-use crate::ui::{self, dialog, Menu, MenuItem};
+use crate::ui::{self, dialog};
 use crate::workbench::Workbench;
 
 /// What the account is called: a built-in one still under its agent's name goes by
@@ -204,44 +204,36 @@ fn account_row(
         let (sign_out, remove) = (this.clone(), this.clone());
         let (out_id, remove_id) = (id.clone(), id.clone());
         let remove_label: SharedString = format!("Remove {name}").into();
-        Popover::new(SharedString::from(format!("account-more-{id}")))
-            .anchor(Anchor::TopRight)
-            .offset(px(4.))
-            .trigger(ui::IconButton::new(
+        ui::menu_button(
+            SharedString::from(format!("account-more-{id}")),
+            Anchor::TopRight,
+            ui::IconButton::new(
                 SharedString::from(format!("account-more-button-{id}")),
                 Icon::More,
                 format!("More for {name}"),
-            ))
-            .content(move |_, _, cx| {
-                let popover = cx.entity();
-                let (sign_out, remove) = (sign_out.clone(), remove.clone());
-                let (out_id, remove_id) = (out_id.clone(), remove_id.clone());
-                let shut = popover.clone();
-                Menu::new()
-                    .when(signed_in, |menu| {
-                        menu.child(
-                            MenuItem::new("account-sign-out", "Sign out")
-                                .icon(Icon::LogOut)
-                                .on_click(move |_, window, cx| {
-                                    let id = out_id.clone();
-                                    sign_out
-                                        .update(cx, |bench, cx| accounts::sign_out(bench, &id, cx));
-                                    popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                                }),
-                        )
-                    })
-                    .when(removable, |menu| {
-                        menu.child(
-                            MenuItem::new("account-remove", remove_label.clone())
-                                .icon(Icon::Trash)
-                                .on_click(move |_, window, cx| {
-                                    let id = remove_id.clone();
-                                    remove.update(cx, |bench, cx| accounts::remove(bench, &id, cx));
-                                    shut.update(cx, |popover, cx| popover.dismiss(window, cx));
-                                }),
-                        )
-                    })
-            })
+            ),
+            move |mut popup, _, _| {
+                if signed_in {
+                    let (sign_out, id) = (sign_out.clone(), out_id.clone());
+                    popup = popup.item(PopupMenuItem::new("Sign out").icon(Icon::LogOut).on_click(
+                        move |_, _, cx| {
+                            sign_out.update(cx, |bench, cx| accounts::sign_out(bench, &id, cx))
+                        },
+                    ));
+                }
+                if removable {
+                    let (remove, id) = (remove.clone(), remove_id.clone());
+                    popup = popup.item(
+                        PopupMenuItem::new(remove_label.clone())
+                            .icon(Icon::Trash)
+                            .on_click(move |_, _, cx| {
+                                remove.update(cx, |bench, cx| accounts::remove(bench, &id, cx))
+                            }),
+                    );
+                }
+                popup
+            },
+        )
     });
     let label = div()
         .flex()

@@ -3,8 +3,8 @@
 
 use std::collections::HashMap;
 
-use gpui_kit::base::Popover;
 use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::Disableable;
 use gpui_kit::prelude::FluentBuilder;
@@ -23,7 +23,7 @@ use crate::core::{self, Ask, RemoteAsk};
 use crate::icons::Icon;
 use crate::settings::rows;
 use crate::theme::Tokens;
-use crate::ui::{self, Menu, MenuItem};
+use crate::ui;
 use crate::workbench::Workbench;
 
 pub const SECTIONS: &[&str] = &["Your account", "Remote access", "Phones", "Hosts"];
@@ -507,60 +507,49 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
     };
     let (rename_this, remove_this, approve_this) = (this.clone(), this.clone(), this.clone());
     let approval = fields.approvals.get(&id).copied().flatten();
-    let menu = Popover::new(SharedString::from(format!("host-menu-{id}")))
-        .anchor(Anchor::TopRight)
-        .offset(px(4.))
-        .trigger(ui::IconButton::new(
+    let menu = ui::menu_button(
+        SharedString::from(format!("host-menu-{id}")),
+        Anchor::TopRight,
+        ui::IconButton::new(
             SharedString::from(format!("host-more-{id}")),
             Icon::More,
             format!("More for {name}"),
-        ))
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
+        ),
+        move |popup, _, _| {
             let (rename_this, remove_this) = (rename_this.clone(), remove_this.clone());
-            let (rename_id, remove_id) = (id.clone(), id.clone());
+            let (rename_id, remove_id, approve_id) = (id.clone(), id.clone(), id.clone());
             let (rename_name, remove_name) = (name.clone(), name.clone());
-            let shut = popover.clone();
-            let (approve_id, approve_shut) = (id.clone(), popover.clone());
-            Menu::new()
-                .child(
-                    MenuItem::new("host-rename", "Rename")
-                        .icon(Icon::Pencil)
-                        .on_click(move |_, window, cx| {
-                            let (id, name) = (rename_id.clone(), rename_name.clone());
-                            rename_this.update(cx, |bench, cx| rename(bench, id, name, window, cx));
-                            popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                        }),
-                )
-                .child({
-                    let (approve_this, approve_id, shut) = (
-                        approve_this.clone(),
-                        approve_id.clone(),
-                        approve_shut.clone(),
-                    );
-                    MenuItem::new("host-approval", "Require approval for new devices")
+            let approve_this = approve_this.clone();
+            popup
+                .item(PopupMenuItem::new("Rename").icon(Icon::Pencil).on_click(
+                    move |_, window, cx| {
+                        let (id, name) = (rename_id.clone(), rename_name.clone());
+                        rename_this.update(cx, |bench, cx| rename(bench, id, name, window, cx));
+                    },
+                ))
+                .item(
+                    PopupMenuItem::new("Require approval for new devices")
                         .icon(Icon::Shield)
                         .checked(approval == Some(true))
                         .disabled(approval.is_none())
-                        .on_click(move |_, window, cx| {
+                        .on_click(move |_, _, cx| {
                             let host = approve_id.clone();
                             approve_this.update(cx, |bench, cx| {
                                 set_host_approval(bench, host, approval != Some(true), cx)
                             });
-                            shut.update(cx, |popover, cx| popover.dismiss(window, cx));
-                        })
-                })
-                .child(
-                    MenuItem::new("host-remove", "Remove from account")
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("Remove from account")
                         .icon(Icon::Trash)
                         .on_click(move |_, window, cx| {
                             let (id, name) = (remove_id.clone(), remove_name.clone());
                             remove_this
                                 .update(cx, |bench, cx| remove_host(bench, id, name, window, cx));
-                            shut.update(cx, |popover, cx| popover.dismiss(window, cx));
                         }),
                 )
-        });
+        },
+    );
     div()
         .flex()
         .items_center()
