@@ -1,6 +1,7 @@
 //! ⌘P: every file in the project in front, ranked by name as the person types.
 
 use std::ops::Range;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use gpui_kit::component::input::{Input, InputEvent, InputState};
@@ -126,6 +127,8 @@ pub struct Finder {
     selected: usize,
     scroll: UniformListScrollHandle,
     ranking: Option<Task<()>>,
+    /// Set to stop the ranking under way, once a newer query or closing makes it moot.
+    stop_ranking: Arc<AtomicBool>,
     /// What had focus before the finder took it, to hand it back.
     before: Option<FocusHandle>,
     _typing: Subscription,
@@ -153,6 +156,7 @@ impl Finder {
             selected: 0,
             scroll: UniformListScrollHandle::new(),
             ranking: None,
+            stop_ranking: Arc::default(),
             before,
             _typing: typing,
         }
@@ -176,6 +180,12 @@ impl Finder {
             .get(place)
             .and_then(|&file| self.ranked.get(file))
             .map(String::as_str)
+    }
+}
+
+impl Drop for Finder {
+    fn drop(&mut self) {
+        self.stop_ranking.store(true, Ordering::Relaxed);
     }
 }
 
@@ -204,12 +214,17 @@ impl Workbench {
             return;
         };
         let query = finder.query.clone();
+        finder.stop_ranking.store(true, Ordering::Relaxed);
+        let stop = Arc::new(AtomicBool::new(false));
+        finder.stop_ranking = stop.clone();
         let ranking = cx.background_spawn({
             let files = files.clone();
-            async move { crate::fuzzy::rank_paths(&query, &files, SHOWN) }
+            async move { crate::fuzzy::rank_paths_until(&query, &files, SHOWN, &stop) }
         });
         finder.ranking = Some(cx.spawn(async move |this, cx| {
-            let shown = ranking.await;
+            let Some(shown) = ranking.await else {
+                return;
+            };
             let _ = this.update(cx, |bench, cx| {
                 if let Some(finder) = bench.finder.as_mut() {
                     finder.shown = shown;

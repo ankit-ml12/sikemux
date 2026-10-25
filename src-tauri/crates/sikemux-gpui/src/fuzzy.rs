@@ -3,10 +3,13 @@
 
 use std::borrow::Cow;
 use std::collections::BinaryHeap;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use memchr::memmem::Finder;
 
 const SUBSEQUENCE: u32 = 1_000_000;
+/// How many paths are ranked between looks at whether the ranking is still wanted.
+const STOP_EVERY: usize = 1024;
 
 /// The text in lower case, folded into `buffer` when it fits so ranking a long list allocates nothing.
 fn lower<'a>(text: &'a str, buffer: &'a mut [u8; 512]) -> Cow<'a, [u8]> {
@@ -42,15 +45,28 @@ fn score_field(query: &Finder, text: &[u8]) -> Option<u32> {
 /// file's name and then on its whole path. Once any path holds the query whole, paths that
 /// only hold its letters in order are dropped.
 pub fn rank_paths(query: &str, paths: &[String], limit: usize) -> Vec<usize> {
+    rank_paths_until(query, paths, limit, &AtomicBool::new(false)).unwrap_or_default()
+}
+
+/// As `rank_paths`, given up with none as soon as `stopped` is set.
+pub fn rank_paths_until(
+    query: &str,
+    paths: &[String],
+    limit: usize,
+    stopped: &AtomicBool,
+) -> Option<Vec<usize>> {
     let query = query.trim().to_lowercase();
     if query.is_empty() {
-        return (0..paths.len().min(limit)).collect();
+        return Some((0..paths.len().min(limit)).collect());
     }
     let query = Finder::new(query.as_bytes());
     let mut buffer = [0; 512];
     let mut best = BinaryHeap::with_capacity(limit + 1);
     let mut substring = false;
     for (place, path) in paths.iter().enumerate() {
+        if place % STOP_EVERY == 0 && stopped.load(Ordering::Relaxed) {
+            return None;
+        }
         let path = lower(path, &mut buffer);
         let Some(whole) =
             score_field(&query, &path).filter(|whole| !substring || *whole < SUBSEQUENCE)
@@ -75,10 +91,12 @@ pub fn rank_paths(query: &str, paths: &[String], limit: usize) -> Vec<usize> {
             best.pop();
         }
     }
-    best.into_sorted_vec()
-        .into_iter()
-        .map(|(_, place)| place)
-        .collect()
+    Some(
+        best.into_sorted_vec()
+            .into_iter()
+            .map(|(_, place)| place)
+            .collect(),
+    )
 }
 
 /// The places in `texts` of the best `limit` matches for `query`, best first and earlier
