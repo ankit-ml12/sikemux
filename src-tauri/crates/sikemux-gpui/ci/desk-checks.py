@@ -255,7 +255,7 @@ class Run:
                 number = lambda key: int(box[key].strip())
                 crop = ["-crop", f"{number('Width')}x{number('Height')}+{number('Absolute upper-left X')}+{number('Absolute upper-left Y')}"]
             # The page is a child window in another visual, which a capture of the app's own window leaves black.
-            subprocess.run(["import", "-window", "root", *crop, self.out / f"{name}.png"])
+            subprocess.run(["import", "-window", "root", *crop, "+repage", self.out / f"{name}.png"])
             return
         number = subprocess.run(["swift", HERE / "window-number.swift", str(self.app.pid)], capture_output=True, text=True).stdout.strip()
         if number:
