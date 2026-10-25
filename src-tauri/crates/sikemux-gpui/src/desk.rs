@@ -491,7 +491,7 @@ impl Workbench {
         let present: HashSet<String> = agents.iter().map(|agent| agent.id.clone()).collect();
         let asleep: Vec<String> = agents
             .iter()
-            .filter(|agent| agent.asleep && self.sims.holds(&agent.id))
+            .filter(|agent| agent.asleep && self.sims.attached_by(&agent.id))
             .map(|agent| agent.id.clone())
             .collect();
         let departed: Vec<String> = self.desks.present.difference(&present).cloned().collect();
@@ -503,7 +503,7 @@ impl Workbench {
             self.desks.forget(agent);
         }
         for agent in departed.iter().chain(&asleep) {
-            self.sims.engine().forget_agent(agent);
+            self.let_go_device(agent);
         }
     }
 
@@ -1117,8 +1117,11 @@ pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Work
         desks_in(&tab.pane, &mut agents);
     }
     for agent in &agents {
-        if bench.desks.kinds.get(agent) == Some(&DeskKind::Simulator) && bench.sims.holds(agent) {
-            bench.start_screen(agent, cx);
+        if bench.desks.kinds.get(agent) == Some(&DeskKind::Simulator) {
+            match bench.sims.live(agent) {
+                true => bench.start_screen(agent, cx),
+                false => bench.pick_device_for(agent, cx),
+            }
         }
     }
     let Some(engine) = bench.desks.engine.clone() else {
@@ -2082,9 +2085,7 @@ fn simulator_desk(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -
         .gap(px(4.))
         .pl(px(SWITCH_W + GAP - 1. + 6.))
         .pr(px(6.))
-        .children(bench.sims.device_name(agent).map(|name| {
-            ui::text(name.to_owned(), 12., FontWeight::MEDIUM).text_color(t.text_secondary)
-        }))
+        .children(crate::sim_pane::picker(bench, agent, cx))
         .when(bench.sims.acting(agent), |head| {
             head.child(ui::icon(Icon::Pointer, 11.).text_color(t.accent))
         })
