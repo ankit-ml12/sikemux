@@ -669,7 +669,9 @@ fn terminal_io(fd: RawFd, inherited: &mut Inherited) -> Result<AsyncFd<File>, St
             libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
         }
     }
-    AsyncFd::new(file).map_err(|error| error.to_string())
+    // SAFETY: `file` owns the open fd and the AsyncFd owns `file`, so the fd
+    // stays open and the same until the AsyncFd is dropped.
+    unsafe { AsyncFd::register(file) }.map_err(|error| error.to_string())
 }
 
 fn adopt_session(
