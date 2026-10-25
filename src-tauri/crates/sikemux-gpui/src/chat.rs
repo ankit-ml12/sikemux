@@ -1871,6 +1871,15 @@ pub fn pane(
                     .ok();
             }
         })
+        .on_pinch({
+            let this = this.clone();
+            move |event, _, cx| {
+                this.update(cx, |bench, _| {
+                    crate::pinch::resize(bench, crate::pinch::Surface::Chat, event)
+                })
+                .ok();
+            }
+        })
         .on_action(text_size::<TextSizeIncrease>(&this, Some(true)))
         .on_action(text_size::<TextSizeDecrease>(&this, Some(false)))
         .on_action(text_size::<TextSizeReset>(&this, None))

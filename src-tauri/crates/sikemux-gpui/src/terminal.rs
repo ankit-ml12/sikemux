@@ -552,6 +552,11 @@ fn draw(bench: &Workbench, this: &Entity<Workbench>, id: TermKey, window: &Windo
         .key_context(CONTEXT)
         .size_full()
         .p(px(8.))
+        .on_pinch(
+            window.listener_for(&this, |bench, event: &gpui::PinchEvent, _, _| {
+                crate::pinch::resize(bench, crate::pinch::Surface::Terminal, event)
+            }),
+        )
         .on_action(window.listener_for(&this, move |bench, _: &Copy, _, _| copy(bench, id)))
         .on_action(window.listener_for(&this, move |bench, _: &Paste, _, cx| paste(bench, id, cx)))
         .on_action(

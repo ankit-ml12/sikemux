@@ -340,6 +340,11 @@ pub fn pane(
                 close_goto(bench, &key, window, cx)
             })
         })
+        .on_pinch(
+            window.listener_for(&this, |bench, event: &gpui::PinchEvent, _, _| {
+                crate::pinch::resize(bench, crate::pinch::Surface::Editor, event)
+            }),
+        )
         .on_action(
             window.listener_for(&this, |bench, _: &TextSizeIncrease, _, _| {
                 rescale(bench, Some(TEXT_SCALE_STEP))

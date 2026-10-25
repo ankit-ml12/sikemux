@@ -204,6 +204,7 @@ pub struct Workbench {
     usage_wanted: bool,
     /// The rail lists the recent chats of every agent, not one's.
     pub all_harnesses: bool,
+    pub pinch: Option<crate::pinch::Pinch>,
     /// Which of the calendar's metrics it shows, an index into `home::METRICS`.
     pub metric: usize,
     /// The calendar day the pointer is over, counted from the Unix epoch.
@@ -704,6 +705,7 @@ impl Workbench {
             launcher_choice: None,
             usage_wanted: false,
             all_harnesses: false,
+            pinch: None,
             metric: 0,
             metric_day: None,
             filter: None,

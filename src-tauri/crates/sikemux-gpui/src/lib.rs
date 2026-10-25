@@ -56,6 +56,7 @@ mod palette;
 mod panes;
 mod picker;
 mod picture;
+mod pinch;
 mod places;
 mod plugin_pane;
 mod ports;
