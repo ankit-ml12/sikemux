@@ -23,7 +23,7 @@ use crate::cli::protocol::{
 use crate::harness::command::{command_cwd, command_label, command_task_id, COMMAND_TASK_PREFIX};
 use crate::harness::journal::{EventsPage, JournalRecord, Journals};
 use crate::harness::runs::{CommandLaunch, Launch, Run, RunStatus, Runs, RunsRecord};
-use crate::protocol::{Pane, SessionId, TaskSessionInfo, WindowCall};
+use crate::protocol::{Pane, PaneKind, SessionId, TaskSessionInfo, WindowCall};
 
 use super::connection::blocking;
 use super::messages::{self, Mailbox};
@@ -784,7 +784,7 @@ fn laid_out(core: &Core, project: &str) -> Option<Value> {
         .iter()
         .map(|tab| {
             let mut panes = Vec::new();
-            views(&tab.pane, &mut panes);
+            views(core, &tab.pane, &mut panes);
             json!({ "id": tab.id, "name": tab.title, "panes": panes })
         })
         .collect();
@@ -796,12 +796,28 @@ fn laid_out(core: &Core, project: &str) -> Option<Value> {
     }))
 }
 
-fn views(pane: &Pane, found: &mut Vec<Value>) {
+fn views(core: &Core, pane: &Pane, found: &mut Vec<Value>) {
     match pane {
         Pane::View { id, kind, target } => {
-            found.push(json!({ "id": id, "kind": kind, "target": target }))
+            let mut view = json!({ "id": id, "kind": kind, "target": target });
+            if let Some(cwd) = cwd_of(core, *kind, target) {
+                view["cwd"] = cwd.to_string_lossy().into_owned().into();
+            }
+            found.push(view)
         }
-        Pane::Split { panes, .. } => panes.iter().for_each(|pane| views(pane, found)),
+        Pane::Split { panes, .. } => panes.iter().for_each(|pane| views(core, pane, found)),
+    }
+}
+
+/// The folder a terminal or agent pane works in: a chat's launch folder, else its terminal's.
+fn cwd_of(core: &Core, kind: PaneKind, target: &str) -> Option<PathBuf> {
+    match kind {
+        PaneKind::Terminal => core.session(target.parse().ok()?)?.cwd(),
+        PaneKind::Agent => match core.chats.get(target) {
+            Some(chat) => Some(chat.launch.cwd.clone()),
+            None => core.agent_session(target)?.cwd(),
+        },
+        _ => None,
     }
 }
 
