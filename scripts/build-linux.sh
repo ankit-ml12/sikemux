@@ -30,12 +30,15 @@ DEB_OPENED="libvulkan1, libegl1, libwayland-client0, libx11-6, libxext6"
 RPM_OPENED=(libvulkan.so.1 libEGL.so.1 libwayland-client.so.0 libX11.so.6 libXext.so.6)
 # GStreamer plugins browser recording loads by name: appsrc, videoconvert, the queue and caps
 # elements, VP8 in WebM, and MP4. Packages ask for the sets holding them, and suggest the one
-# with an H.264 encoder, without which a recording is WebM; the AppImage carries just these.
+# with an H.264 encoder, without which a recording is WebM. The AppImage carries the whole of
+# the base and good sets with the core elements, as the pages in desk tabs play video and sound
+# through them too.
 DEB_PLUGINS="gstreamer1.0-plugins-base, gstreamer1.0-plugins-good"
 DEB_H264=gstreamer1.0-plugins-ugly
 RPM_PLUGINS=("(gstreamer1-plugins-base or gstreamer-plugins-base)" "(gstreamer1-plugins-good or gstreamer-plugins-good)")
 RPM_H264="(gstreamer1-plugins-ugly or gstreamer-plugins-ugly)"
-GSTREAMER_PLUGINS=(coreelements app videoconvertscale vpx matroska isomp4)
+RECORDING_PLUGINS=(coreelements app videoconvertscale vpx matroska isomp4)
+GSTREAMER_SETS=(gstreamer1.0-plugins-base gstreamer1.0-plugins-good)
 GSTREAMER_DIR=/usr/lib/x86_64-linux-gnu/gstreamer-1.0
 
 fail() {
@@ -197,9 +200,10 @@ for part in WebKitWebProcess WebKitNetworkProcess WebKitGPUProcess injected-bund
   [[ -e "$WEBKIT_DIR/$part" ]] && cp -a "$WEBKIT_DIR/$part" "$APPDIR$WEBKIT_DIR/"
 done
 mkdir -p "$WORK/gstreamer"
-for plugin in "${GSTREAMER_PLUGINS[@]}"; do
-  [[ -f "$GSTREAMER_DIR/libgst$plugin.so" ]] || fail "GStreamer's $plugin plugin is not installed"
-  cp "$GSTREAMER_DIR/libgst$plugin.so" "$WORK/gstreamer/"
+cp "$GSTREAMER_DIR/libgstcoreelements.so" "$WORK/gstreamer/"
+dpkg -L "${GSTREAMER_SETS[@]}" | grep -x "$GSTREAMER_DIR/libgst[^/]*\.so" | xargs -I{} cp {} "$WORK/gstreamer/"
+for plugin in "${RECORDING_PLUGINS[@]}"; do
+  [[ -f "$WORK/gstreamer/libgst$plugin.so" ]] || fail "GStreamer's $plugin plugin, which recording needs, is not installed"
 done
 (
   cd "$TOOLS"
