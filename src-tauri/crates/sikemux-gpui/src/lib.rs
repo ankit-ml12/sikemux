@@ -41,6 +41,7 @@ pub mod git;
 #[cfg(target_os = "linux")]
 pub mod handoff;
 mod handover;
+mod hang_watch;
 mod home;
 pub mod hosts;
 pub mod icons;
