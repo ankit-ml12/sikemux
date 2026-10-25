@@ -287,10 +287,10 @@ impl AgentMenu {
                     "Enable YOLO Mode"
                 })
                 .icon(if yolo { Icon::Shield } else { Icon::ShieldBolt })
-                .on_click(self.call(
-                    "updateAgent",
-                    json!({ "agentId": id, "patch": { "permissionMode": mode } }),
-                )),
+                .on_click(self.on_bench({
+                    let id = id.clone();
+                    move |bench, _| bench.switch_mode(&id, mode)
+                })),
             );
         }
         popup = popup.separator();
