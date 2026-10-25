@@ -182,6 +182,11 @@ impl Desks {
                     .map(desk_theme)
                     .unwrap_or_default(),
             ),
+            ground: Mutex::new(
+                cx.try_global::<Tokens>()
+                    .map(crate::theme::page_ground_rgb)
+                    .unwrap_or_default(),
+            ),
             engine: OnceLock::new(),
         });
         let engine = window_pointer(window).map(|view| {
@@ -197,7 +202,10 @@ impl Desks {
         }
         let theming = cx.observe_global::<Tokens>({
             let page_files = page_files.clone();
-            move |_, cx| *page_files.theme.locked() = desk_theme(Tokens::get(cx))
+            move |_, cx| {
+                *page_files.theme.locked() = desk_theme(Tokens::get(cx));
+                *page_files.ground.locked() = crate::theme::page_ground_rgb(Tokens::get(cx));
+            }
         });
         let task = engine.is_some().then(|| {
             cx.spawn_in(window, async move |this, cx| {
@@ -288,7 +296,8 @@ struct DeskHost {
 
 impl Host for DeskHost {
     fn window(&self) -> Result<ParentView, String> {
-        Ok(ParentView::beneath(self.view as *mut std::ffi::c_void))
+        let ground = *self.pages.ground.locked();
+        Ok(ParentView::beneath(self.view as *mut std::ffi::c_void).with_ground(ground))
     }
 
     fn state_dir(&self) -> Option<PathBuf> {
@@ -328,6 +337,8 @@ impl Host for DeskHost {
 struct PageFiles {
     folder: Option<PathBuf>,
     theme: Mutex<String>,
+    /// What a tab's page shows until it draws, on Linux.
+    ground: Mutex<[u8; 3]>,
     engine: OnceLock<Weak<BrowserManager>>,
 }
 
@@ -374,7 +385,7 @@ fn draft_name(agent: &str) -> String {
 
 /// A tab has nothing behind it, so its pages draw the window's surface themselves.
 fn desk_theme(t: &Tokens) -> String {
-    crate::theme::page_rule(t, Some(Hsla { a: 1., ..t.surface }))
+    crate::theme::page_rule(t, Some(crate::theme::page_ground(t)))
 }
 
 /// Where a desk's page shows: the engine lays the agent's tab in front over the frame.

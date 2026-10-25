@@ -21,17 +21,19 @@ type Events = Arc<dyn Fn(PageEvent) + Send + Sync>;
 
 impl PageView {
     /// Shows `html`, which the app has already given its theme, in the app's window `parent`,
-    /// out of sight until placed, and tells `events` what the page's script reports.
+    /// out of sight until placed and on `ground` until its first frame, and tells `events`
+    /// what the page's script reports.
     pub fn new(
         parent: u32,
         html: &str,
+        ground: [u8; 3],
         events: impl Fn(PageEvent) + Send + Sync + 'static,
     ) -> Result<Self, String> {
         gtk_thread()?;
         let (html, events): (String, Events) = (html.to_owned(), Arc::new(events));
         let (sender, receiver) = std::sync::mpsc::channel();
         on_gtk(move || {
-            let _ = sender.send(open(c_ulong::from(parent), &html, events).map(Held::new));
+            let _ = sender.send(open(c_ulong::from(parent), &html, ground, events).map(Held::new));
         });
         let held = receiver
             .recv()
@@ -68,8 +70,8 @@ impl PageView {
 
 /// Makes the page's view with no storage, loads `html` once the page's script can report,
 /// and lets the page go nowhere: a link the person clicks is reported instead.
-fn open(parent: c_ulong, html: &str, events: Events) -> Result<Page, String> {
-    let clip = Clip::new(parent)?;
+fn open(parent: c_ulong, html: &str, ground: [u8; 3], events: Events) -> Result<Page, String> {
+    let clip = Clip::new(parent, Some(ground))?;
     let view = wry::WebViewBuilder::new()
         .with_incognito(true)
         .with_focused(false)
@@ -126,5 +128,5 @@ fn open(parent: c_ulong, html: &str, events: Events) -> Result<Page, String> {
         true
     });
     webview.load_html(html, None);
-    Ok(Page { view, clip })
+    Ok(Page::new(view, clip, Some(ground)))
 }

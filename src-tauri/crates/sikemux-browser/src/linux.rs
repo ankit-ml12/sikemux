@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use gtk::glib;
+use gtk::prelude::{Cast, WidgetExt};
 use raw_window_handle::{
     HandleError, HasWindowHandle, RawWindowHandle, WindowHandle, XlibWindowHandle,
 };
@@ -59,6 +60,20 @@ pub(crate) struct Page {
 }
 
 impl Page {
+    /// WebKit can take seconds to draw a page's first frame on a cold or slow machine, and
+    /// until then X shows the page's window in its own colour, black. It shows `ground` instead.
+    pub(crate) fn new(view: wry::WebView, clip: Clip, ground: Option<[u8; 3]>) -> Self {
+        let window = view
+            .webview()
+            .toplevel()
+            .and_then(|toplevel| toplevel.window())
+            .and_then(|window| window.downcast::<gdkx11::X11Window>().ok());
+        if let (Some(ground), Some(window)) = (ground, window) {
+            paint(clip.display, window.xid(), ground);
+        }
+        Self { view, clip }
+    }
+
     /// Shows the part of the page that falls in `shown` (x, y, width, height), the page itself
     /// being at `page`, both top-down in the app's window.
     pub(crate) fn place(&self, shown: (f64, f64, f64, f64), page: (f64, f64, f64, f64)) {
@@ -91,7 +106,7 @@ pub(crate) struct Clip {
 
 impl Clip {
     /// Adds a clip window to `parent`, out of sight. It draws nothing of its own.
-    pub(crate) fn new(parent: c_ulong) -> Result<Self, String> {
+    pub(crate) fn new(parent: c_ulong, ground: Option<[u8; 3]>) -> Result<Self, String> {
         let display = crate::linux_page::xdisplay().ok_or("GTK has no X11 display")?;
         // SAFETY: GTK's live X11 display on the GTK thread, and `parent` is the app's live window.
         let window = unsafe {
@@ -110,6 +125,9 @@ impl Clip {
             xlib::XFlush(display);
             window
         };
+        if let Some(ground) = ground {
+            paint(display, window, ground);
+        }
         Ok(Self { display, window })
     }
 
@@ -138,6 +156,25 @@ impl Clip {
             }
             xlib::XFlush(self.display);
         }
+    }
+}
+
+/// Gives `window` the background `ground`, as its depth holds a colour.
+fn paint(display: *mut Display, window: c_ulong, ground: [u8; 3]) {
+    let [red, green, blue] = ground.map(c_ulong::from);
+    let colour = red << 16 | green << 8 | blue;
+    // SAFETY: a live window on GTK's display, on the GTK thread; X fills the attributes.
+    unsafe {
+        let mut attributes: xlib::XWindowAttributes = std::mem::zeroed();
+        xlib::XGetWindowAttributes(display, window, &mut attributes);
+        let opaque = if attributes.depth == 32 {
+            0xff << 24
+        } else {
+            0
+        };
+        xlib::XSetWindowBackground(display, window, opaque | colour);
+        xlib::XClearWindow(display, window);
+        xlib::XFlush(display);
     }
 }
 
@@ -293,7 +330,7 @@ impl Tab {
                 events.clone(),
             );
             let attached = events.clone();
-            let clip = Clip::new(c_ulong::from(window))?;
+            let clip = Clip::new(c_ulong::from(window), parent.ground)?;
             clip.place(PARKED, PARKED, size.0, size.1);
             let view = wry::WebViewBuilder::new()
                 .with_url(&url)
@@ -335,7 +372,7 @@ impl Tab {
                 .build_as_child(&X11Parent(clip.window))
                 .map_err(|error| error.to_string())?;
             crate::linux_page::attach(&view.webview(), &agent_id, &tab_id, attached);
-            Ok(Held::new(Page { view, clip }))
+            Ok(Held::new(Page::new(view, clip, parent.ground)))
         };
         let (sender, receiver) = std::sync::mpsc::channel();
         on_gtk(move || {

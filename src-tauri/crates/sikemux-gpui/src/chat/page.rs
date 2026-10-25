@@ -93,7 +93,7 @@ fn fetch(page: &PageRef, looks: &Looks, window: &mut Window, cx: &mut App) {
             let html = sikemux_core::pages::themed(html, &theme, None);
             let (events, mut heard) = tokio::sync::mpsc::unbounded_channel();
             let _ = cx.update(|window, cx| {
-                let surface = shown_view(&html, events, window);
+                let surface = shown_view(&html, events, window, cx);
                 if let Some(shown) = cx.global_mut::<Pages>().shown.get_mut(&id) {
                     shown.surface = surface;
                 }
@@ -144,11 +144,11 @@ type Events = tokio::sync::mpsc::UnboundedSender<std::convert::Infallible>;
 /// A page on Linux is a window of its own, which has nothing behind it to show through, so it
 /// draws the window's ground itself.
 fn opaque_ground(t: &Tokens) -> Option<gpui_kit::Hsla> {
-    cfg!(target_os = "linux").then(|| gpui_kit::Hsla { a: 1., ..t.surface })
+    cfg!(target_os = "linux").then(|| theme::page_ground(t))
 }
 
 #[cfg(target_os = "macos")]
-fn shown_view(html: &str, events: Events, window: &Window) -> Option<NativeSurface> {
+fn shown_view(html: &str, events: Events, window: &Window, _: &App) -> Option<NativeSurface> {
     use sikemux_browser::page_view::PageView;
     let mtm = objc2::MainThreadMarker::new()?;
     let page = PageView::new(mtm, html, move |event| {
@@ -159,9 +159,10 @@ fn shown_view(html: &str, events: Events, window: &Window) -> Option<NativeSurfa
 }
 
 #[cfg(target_os = "linux")]
-fn shown_view(html: &str, events: Events, window: &Window) -> Option<NativeSurface> {
+fn shown_view(html: &str, events: Events, window: &Window, cx: &App) -> Option<NativeSurface> {
     let parent = gpui_native_view::window_x11(window)?;
-    let page = sikemux_browser::page_view::PageView::new(parent, html, move |event| {
+    let ground = theme::page_ground_rgb(Tokens::get(cx));
+    let page = sikemux_browser::page_view::PageView::new(parent, html, ground, move |event| {
         let _ = events.send(event);
     });
     match page {
@@ -174,7 +175,7 @@ fn shown_view(html: &str, events: Events, window: &Window) -> Option<NativeSurfa
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn shown_view(_: &str, _: Events, _: &Window) -> Option<NativeSurface> {
+fn shown_view(_: &str, _: Events, _: &Window, _: &App) -> Option<NativeSurface> {
     None
 }
 

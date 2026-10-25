@@ -437,6 +437,17 @@ fn from_oklab([l, a, b]: [f32; 3]) -> Rgba {
 
 /// The window's colours and fonts as the custom properties pages style against.
 /// `ground` is what the page draws behind itself; with none it lets what is under it show.
+/// The window's ground where a page sits, which a page with nothing behind it draws itself.
+pub fn page_ground(t: &Tokens) -> Hsla {
+    Hsla { a: 1., ..t.surface }
+}
+
+/// The same, as the red, green and blue a native window is painted with.
+pub fn page_ground_rgb(t: &Tokens) -> [u8; 3] {
+    let rgba = page_ground(t).to_rgb();
+    [rgba.r, rgba.g, rgba.b].map(|channel| (channel * 255.).round() as u8)
+}
+
 pub fn page_rule(t: &Tokens, ground: Option<Hsla>) -> String {
     let css = |color: Hsla| {
         let rgba = color.to_rgb();

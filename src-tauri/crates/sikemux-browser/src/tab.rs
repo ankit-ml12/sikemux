@@ -24,6 +24,9 @@ pub struct ParentView {
     /// Tabs go under the view's other children, such as a plane drawing popovers
     /// over them, instead of on top.
     pub beneath: bool,
+    /// The colour the window shows where a page goes, which a page on Linux shows
+    /// until it draws its first frame.
+    pub ground: Option<[u8; 3]>,
 }
 
 impl ParentView {
@@ -31,6 +34,7 @@ impl ParentView {
         Self {
             view,
             beneath: false,
+            ground: None,
         }
     }
 
@@ -38,6 +42,14 @@ impl ParentView {
         Self {
             view,
             beneath: true,
+            ground: None,
+        }
+    }
+
+    pub fn with_ground(self, ground: [u8; 3]) -> Self {
+        Self {
+            ground: Some(ground),
+            ..self
         }
     }
 }
