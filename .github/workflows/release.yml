@@ -129,7 +129,7 @@ jobs:
 
       - name: Install XcodeGen
         # The simulator helper builds FBControlCore with it.
-        run: brew install xcodegen
+        run: scripts/install-xcodegen.sh
 
       - name: Build the voice and simulator helpers
         env:
@@ -266,13 +266,16 @@ jobs:
           path: ${{ runner.temp }}/helpers.tar
 
   # The build runs alongside the checks; only publishing waits for them.
+  # Starts with the helpers rather than after them: only the helper crates and the app take
+  # their hashes, so everything else compiles while they are signed.
   build:
     name: Build the app
-    needs: [plan, sign-helpers]
-    if: ${{ !cancelled() && needs.sign-helpers.result == 'success' }}
+    needs: [approve, plan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
     runs-on: macos-26
     timeout-minutes: 90
     permissions:
+      actions: read
       contents: read
     steps:
       - name: Checkout
@@ -301,12 +304,6 @@ jobs:
           cargo fetch --manifest-path src-tauri/Cargo.toml --locked
           cargo fetch --manifest-path src-tauri/crates/sikemux-gpui/Cargo.toml --locked
 
-      - name: Fetch helpers
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: helpers
-          path: ${{ runner.temp }}/helpers
-
       - name: Compile the app around the signed helpers
         env:
           BITBUCKET_OAUTH_SECRET: ${{ secrets.BITBUCKET_OAUTH_SECRET }}
@@ -316,9 +313,20 @@ jobs:
           CHANNEL: ${{ needs.plan.outputs.channel }}
           CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
           CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: packed
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p src-tauri/binaries
-          tar -xf "$RUNNER_TEMP/helpers/helpers.tar" -C src-tauri/binaries
+          # The same build release.sh runs, with the environment it exports, so its work is reused.
+          set -m
+          (cd src-tauri/crates/sikemux-gpui && SIKEMUX_USAGE_REPORTING=app exec cargo build --release --locked --bin sikemux) &
+          early=$!
+          set +m
+          ./scripts/wait-for-artifact.sh helpers "$RUNNER_TEMP/helpers" "Build the helpers" "Sign the helpers"
+          # Finished crates are kept; the helper crates and the app rebuild with the hashes.
+          kill -TERM -- "-$early" 2>/dev/null || true
+          wait "$early" || true
+          while pgrep -g "$early" >/dev/null; do sleep 1; done
+          tar -xmf "$RUNNER_TEMP/helpers/helpers.tar" -C src-tauri/binaries
           flags=(--publish --stage compile)
           [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
           ./scripts/release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"
@@ -343,8 +351,8 @@ jobs:
   # The core goes into the app only here, so the app compiles while the core does.
   package:
     name: Pack the app
-    needs: [plan, build, mac-core]
-    if: ${{ !cancelled() && needs.build.result == 'success' && needs.mac-core.result == 'success' }}
+    needs: [plan, sign-helpers, build, mac-core]
+    if: ${{ !cancelled() && needs.sign-helpers.result == 'success' && needs.build.result == 'success' && needs.mac-core.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 30
     permissions:
