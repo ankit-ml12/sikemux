@@ -10,7 +10,6 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
 };
 use serde_json::Value;
-use sikemux_core::agent_accounts::Profile;
 use sikemux_wire::protocol::{LauncherInfo, PaneKind, RecentInfo};
 
 use crate::agent_menu::AgentMenu;
@@ -1151,7 +1150,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
                             .text_color(t.text_tertiary)
                             .font_features(crate::theme::tabular())
                     }))
-                    .child(account_menu(bench, &provider, name, cx))
+                    .child(account_name(bench, &provider, name, cx))
                     .child(
                         IconButton::new("refresh-limits", Icon::Refresh, refresh)
                             .small()
@@ -1165,116 +1164,41 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
     )
 }
 
-/// The account new chats start on, opening the person's other accounts with the agent: which
-/// to start on, signing out or in, and adding one. Accounts signed out of wait in Settings.
-fn account_menu(
+/// The account new chats start on; resting the pointer on it, or clicking it, opens the card of
+/// every account with the agent.
+fn account_name(
     bench: &Workbench,
     provider: &str,
     name: String,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let this = cx.entity();
-    let status = |profile: &Profile| {
-        crate::accounts::status(bench, profile).and_then(|status| status.as_ref().ok())
-    };
-    let current = bench
-        .accounts
-        .current(provider)
-        .map(|profile| profile.id.clone());
-    let signed_out = |profile: &Profile| status(profile).is_some_and(|status| !status.signed_in);
-    let rows: Vec<(Profile, String, Option<String>, Option<f64>)> = bench
-        .accounts
-        .of(provider)
-        .into_iter()
-        .filter(|profile| {
-            Some(&profile.id) == current.as_ref()
-                || status(profile).is_none_or(|status| status.signed_in)
-        })
-        .map(|profile| {
-            let status = status(profile);
-            let (detail, used) = match signed_out(profile) {
-                true => (Some("Signed out".to_owned()), None),
-                false => (
-                    status.and_then(|status| {
-                        status.email.clone().or_else(|| status.organization.clone())
-                    }),
-                    crate::accounts::used(bench, profile),
-                ),
-            };
-            let name = crate::accounts::name(bench, profile, status);
-            (profile.clone(), name, detail, used)
-        })
-        .collect();
-    let chosen = rows
-        .iter()
-        .find(|(profile, ..)| Some(&profile.id) == current.as_ref())
-        .map(|(profile, name, ..)| (profile.id.clone(), name.clone(), signed_out(profile)));
-    let provider = provider.to_owned();
-    ui::menu_button(
-        "limits-account-menu",
-        Anchor::BottomRight,
-        BaseButton::new("limits-account")
-            .accessibility_label("Account")
-            .h(px(20.))
-            .pl(px(3.))
-            .pr(px(5.))
-            .flex()
-            .items_center()
-            .gap(px(5.))
-            .rounded(theme::RADIUS_2)
-            .hover(move |style| style.bg(t.surface_hover))
-            .child(ui::text(name, 11., FontWeight::MEDIUM).text_color(t.text_primary))
-            .child(
-                ui::icon(Icon::Chevron, 9.)
-                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                    .text_color(t.text_tertiary),
-            ),
-        move |mut popup, _, _| {
-            let act = |item: PopupMenuItem, run: BenchAction| {
-                let this = this.clone();
-                item.on_click(move |_, window, cx| {
-                    this.update(cx, |bench, cx| run(bench, window, cx))
-                })
-            };
-            for (profile, name, detail, used) in &rows {
-                let here = Some(&profile.id) == current.as_ref();
-                let chosen = profile.clone();
-                popup = popup.item(act(
-                    crate::accounts::popup_item(profile, name, detail.clone(), *used, here),
-                    Rc::new(move |bench, _, cx| {
-                        if !here {
-                            crate::accounts::select(bench, &chosen, cx);
-                        }
-                    }),
-                ));
-            }
-            popup = popup.separator();
-            if let Some((id, name, signed_out)) = chosen.clone() {
-                let provider = provider.clone();
-                popup = popup.item(match signed_out {
-                    true => act(
-                        PopupMenuItem::new(format!("Sign in to {name}")).icon(Icon::User),
-                        Rc::new(move |bench, window, cx| {
-                            crate::accounts::open_sign_in(bench, &provider, Some(&id), window, cx)
-                        }),
-                    ),
-                    false => act(
-                        PopupMenuItem::new(format!("Sign out of {name}")).icon(Icon::LogOut),
-                        Rc::new(move |bench, _, cx| crate::accounts::sign_out(bench, &id, cx)),
-                    ),
-                });
-            }
-            let provider = provider.clone();
-            popup.item(act(
-                PopupMenuItem::new("Add account…").icon(Icon::Plus),
-                Rc::new(move |bench, window, cx| {
-                    crate::accounts::open_sign_in(bench, &provider, None, window, cx)
-                }),
-            ))
-        },
-    )
-    .into_any_element()
+    div()
+        .relative()
+        .child(
+            BaseButton::new("limits-account")
+                .accessibility_label("Accounts")
+                .h(px(20.))
+                .pl(px(3.))
+                .pr(px(5.))
+                .flex()
+                .items_center()
+                .gap(px(5.))
+                .rounded(theme::RADIUS_2)
+                .hover(move |style| style.bg(t.surface_hover))
+                .child(ui::text(name, 11., FontWeight::MEDIUM).text_color(t.text_primary))
+                .child(
+                    ui::icon(Icon::Chevron, 9.)
+                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                        .text_color(t.text_tertiary),
+                )
+                .on_hover(
+                    cx.listener(|bench, inside: &bool, _, cx| bench.rest_on_limits(*inside, cx)),
+                )
+                .on_click(cx.listener(|bench, _, _, cx| bench.open_limits(cx))),
+        )
+        .children(crate::limits_card::view(bench, provider, cx))
+        .into_any_element()
 }
 
 /// One of a plan's rolling windows: how much of it is used, and when it starts again.
@@ -1282,16 +1206,7 @@ fn limit_row(window: &Value, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let label = window["label"].as_str().unwrap_or_default().to_owned();
     let percent = window["usedPercent"].as_f64().unwrap_or(0.).clamp(0., 100.);
-    let signal = if percent >= 90. {
-        t.danger
-    } else if percent >= 70. {
-        t.warn
-    } else {
-        Hsla {
-            a: 0.62,
-            ..t.text_primary
-        }
-    };
+    let signal = signal(percent, &t);
     let reset = reset_at(&window["resetsAt"]);
     let note = match reset {
         Some(at) => format!(
@@ -1365,8 +1280,22 @@ fn limit_row(window: &Value, cx: &App) -> impl IntoElement {
         )
 }
 
+/// The colour of a window used `percent` full: quiet until it nears its limit.
+pub fn signal(percent: f64, t: &Tokens) -> Hsla {
+    if percent >= 90. {
+        t.danger
+    } else if percent >= 70. {
+        t.warn
+    } else {
+        Hsla {
+            a: 0.62,
+            ..t.text_primary
+        }
+    }
+}
+
 /// When a window starts again: Unix seconds, as a number or digits, or an ISO time.
-fn reset_at(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {
+pub fn reset_at(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {
     let seconds = value.as_i64().or_else(|| {
         value
             .as_str()
@@ -1381,7 +1310,7 @@ fn reset_at(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {
     }
 }
 
-fn countdown(reset: Option<chrono::DateTime<chrono::Utc>>) -> String {
+pub fn countdown(reset: Option<chrono::DateTime<chrono::Utc>>) -> String {
     let Some(reset) = reset else {
         return "unknown".into();
     };

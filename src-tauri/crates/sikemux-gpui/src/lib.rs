@@ -47,6 +47,7 @@ pub mod hosts;
 pub mod icons;
 pub mod install_pane;
 mod keymap;
+mod limits_card;
 mod links;
 pub use links::follow_opened;
 pub mod model_picker;
