@@ -623,7 +623,7 @@ impl Render for HostArea {
 }
 
 /// The `plugin` call of `method` of `host`'s plugin about `repo`, as `account`, with `more`.
-fn call_of(
+pub(crate) fn call_of(
     host: &str,
     repo: &str,
     account: &Option<String>,

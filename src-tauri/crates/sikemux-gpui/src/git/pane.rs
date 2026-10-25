@@ -28,6 +28,7 @@ use sikemux_wire::protocol::ProjectCodeHost;
 use branches::{branch_card, branches_page, Branches};
 use history::{commit_card, commit_row, graph, CommitOwner, Graph, Inks};
 
+mod authors;
 mod branches;
 mod history;
 use super::review::{review, Review};
@@ -355,6 +356,7 @@ pub struct GitPane {
     filters: [Filter; 4],
     /// The code host's notifications, once the Inbox page first shows.
     inbox: Option<Entity<Inbox>>,
+    authors: authors::Authors,
     draft: Entity<TextareaState>,
     /// A message written into the draft from outside the window's turn, set when it next draws.
     written: Option<String>,
@@ -469,6 +471,7 @@ impl GitPane {
             commits: Vec::new(),
             filters: Default::default(),
             inbox: None,
+            authors: Default::default(),
             branch_rows: ListState::new(0, ListAlignment::Top, px(400.)),
             draft,
             written: None,
@@ -2212,6 +2215,9 @@ impl Render for GitPane {
         if let Some(written) = self.written.take() {
             self.draft
                 .update(cx, |draft, cx| draft.set_value(written, window, cx));
+        }
+        if self.page == Page::History {
+            self.read_authors(cx);
         }
         let reviewed = review(self, window, cx);
         let pushed =
