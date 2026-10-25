@@ -123,7 +123,6 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
         );
     let row = tabs.map(|(copy, tabs)| {
         let glide = bench.strip_glide.borrow();
-        let skip = usize::from(copy.is_some());
         div()
             .on_children_prepainted(glide.keep_origin())
             .id("tab-row")
@@ -140,13 +139,22 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                     .h_full()
                     .min_w_0()
                     .overflow_hidden()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
                     .relative()
+                    .flex()
                     .children(copy)
-                    .children(tabs)
-                    .on_children_prepainted(glide.keep_items(skip)),
+                    .child(
+                        div()
+                            .on_children_prepainted(glide.keep_items(0))
+                            .id("tab-strip")
+                            .h_full()
+                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .gap(px(4.))
+                            .overflow_x_scroll()
+                            .track_scroll(&bench.strip_scroll)
+                            .children(tabs),
+                    ),
             )
             .child(
                 IconButton::new("new-tab", Icon::Plus, "New tab")
@@ -895,6 +903,13 @@ fn strip_tabs(
     let mut order: Vec<String> = listed.iter().map(|tab| tab.id.clone()).collect();
     for gone in left {
         order.insert(gone.at.min(order.len()), gone.id.clone());
+    }
+    let mut scrolled_to = bench.strip_scrolled_to.borrow_mut();
+    if *scrolled_to != front {
+        if let Some(at) = order.iter().position(|id| Some(id) == front.as_ref()) {
+            bench.strip_scroll.scroll_to_item(at);
+        }
+        *scrolled_to = front.clone();
     }
     let mut glide = bench.strip_glide.borrow_mut();
     let glided = glide.choose(front.clone(), cx.reduce_motion());

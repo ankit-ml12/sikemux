@@ -142,6 +142,9 @@ pub struct Workbench {
         std::cell::RefCell<crate::motion::ListMemory<sikemux_wire::protocol::Tab>>,
     /// Where the strip's tabs were drawn, for the chosen surface to glide between them.
     pub(crate) strip_glide: std::cell::RefCell<crate::motion::GlideTrack>,
+    /// How far the strip's tabs are scrolled, and the tab last scrolled into view.
+    pub(crate) strip_scroll: gpui_kit::ScrollHandle,
+    pub(crate) strip_scrolled_to: std::cell::RefCell<Option<String>>,
     /// Tabs asked to close that the layout still lists, and when, so a second click or ⌘W
     /// before the core's answer does not ask for a tab it has already closed.
     closing_tabs: std::cell::RefCell<HashMap<String, std::time::Instant>>,
@@ -628,6 +631,8 @@ impl Workbench {
             strip_seen: Default::default(),
             closing_tabs: Default::default(),
             strip_glide: Default::default(),
+            strip_scroll: Default::default(),
+            strip_scrolled_to: Default::default(),
             rail_glide: Default::default(),
             agent_card: crate::agent_card::Card::default(),
             picked_tasks: HashMap::new(),
