@@ -42,6 +42,9 @@ const MAX_PAGE_TURNS: usize = 100;
 const PAGE_BYTES: u64 = 1024 * 1024;
 /// A turn longer than a page is cut into pieces about this long.
 const PIECE_BYTES: usize = 64 * 1024;
+/// Where a chat taken up on a session it never ran numbers its first event, leaving the
+/// numbers below it for what it reads further back.
+const EARLIER_ROOM: u64 = 1 << 40;
 /// The most every chat's replay holds in memory together. Past it, the chats viewed least
 /// lately that nobody watches and no turn runs in let go of theirs, which stays on disk.
 const RESIDENT_BYTES: usize = 64 * 1024 * 1024;
@@ -647,6 +650,64 @@ impl Replay {
             });
         }
         self.trim();
+    }
+
+    /// Puts `updates` before everything the chat holds, in its history on disk, answering
+    /// whether they went in. They are older than what stands or is still going.
+    fn prepend(&mut self, updates: Vec<(String, Value)>) -> bool {
+        let Some(first) = self.history.as_ref().and_then(History::first) else {
+            return false;
+        };
+        let Some(base) = first.checked_sub(updates.len() as u64) else {
+            return false;
+        };
+        let mut events = Vec::with_capacity(updates.len());
+        let mut known: HashSet<String> = self
+            .spawns
+            .iter()
+            .map(|spawn| spawn.subagent.clone())
+            .collect();
+        let mut added: HashSet<String> = HashSet::new();
+        let (mut last_from_user, mut since_point) = (false, 0);
+        for (offset, (session, update)) in updates.into_iter().enumerate() {
+            let index = base + offset as u64;
+            let mut payload = json!({ "sessionId": session, "update": update });
+            stamp(&mut payload);
+            let from_user = session_update_kind(&payload) == Some("user_message_chunk");
+            let starts_turn = from_user && !last_from_user;
+            last_from_user = from_user;
+            let point = starts_turn || since_point >= PIECE_BYTES;
+            if point {
+                since_point = 0;
+            }
+            since_point += serde_json::to_vec(&payload).map_or(0, |bytes| bytes.len());
+            let event = ChatEvent {
+                kind: ChatEventKind::SessionUpdate,
+                payload,
+            };
+            let subagent = event
+                .payload
+                .pointer("/update/subagentSessionId")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            match (session_update_kind(&event.payload), subagent) {
+                (Some("subagent_spawned"), Some(subagent)) if !known.contains(&subagent) => {
+                    self.note_subagent(ChatEventKind::SessionUpdate, index, &event);
+                    known.insert(subagent.clone());
+                    added.insert(subagent);
+                }
+                (Some("subagent_state_update"), Some(subagent)) if added.contains(&subagent) => {
+                    self.note_subagent(ChatEventKind::SessionUpdate, index, &event);
+                }
+                _ => {}
+            }
+            events.push((index, event, point, starts_turn));
+        }
+        let Some(history) = self.history.as_mut() else {
+            return false;
+        };
+        history.prepend(&events);
+        history.first().is_some_and(|now| now < first)
     }
 
     /// Writes the newest event to the history, which nothing joins after.
@@ -1352,6 +1413,10 @@ pub(crate) enum Reach {
     Turn(String),
 }
 
+/// Reads further back into an agent CLI's own record of a session than the chat holds, a part
+/// at a time: the updates it tells, oldest first, until nothing earlier is left.
+pub(crate) type Earlier = Box<dyn FnMut() -> Result<Option<Vec<(String, Value)>>, String> + Send>;
+
 /// What a client attaching now is told about the chat besides its rows.
 pub(crate) struct Standing {
     pub running: bool,
@@ -1399,6 +1464,8 @@ struct Inner {
     waits_for_person: bool,
     /// The session the history follows, and how far into its CLI's record it reaches.
     reach: Option<(String, Reach)>,
+    /// The CLI's record of the session holds more before what the chat holds.
+    has_earlier: bool,
 }
 
 /// A feed as plain data, for a core that takes the chat over. Clients that
@@ -1458,6 +1525,7 @@ pub(crate) struct Feed {
     held: AtomicUsize,
     /// When a client last read the chat, in epoch ms.
     viewed: AtomicU64,
+    earlier: Mutex<Option<Earlier>>,
 }
 
 impl Drop for Feed {
@@ -1534,6 +1602,7 @@ impl Feed {
             finding: Mutex::default(),
             held: AtomicUsize::new(0),
             viewed: AtomicU64::new(epoch_ms()),
+            earlier: Mutex::new(None),
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
                 seq: 0,
@@ -1552,6 +1621,7 @@ impl Feed {
                 work: None,
                 waits_for_person: false,
                 reach: None,
+                has_earlier: false,
             }),
         }))
     }
@@ -1607,6 +1677,7 @@ impl Feed {
             finding: Mutex::default(),
             held: AtomicUsize::new(0),
             viewed: AtomicU64::new(epoch_ms()),
+            earlier: Mutex::new(None),
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
                 seq: state.seq,
@@ -1625,6 +1696,7 @@ impl Feed {
                 work: None,
                 waits_for_person: false,
                 reach: state.reach,
+                has_earlier: false,
             }),
         }));
         feed.account(&feed.inner.locked());
@@ -1785,6 +1857,9 @@ impl Feed {
 
     /// Whether the chat's events hold turns before the fold's first row.
     fn holds_older(inner: &Inner) -> bool {
+        if inner.has_earlier {
+            return true;
+        }
         let Some(floor) = inner.fold.as_ref().and_then(Fold::floor) else {
             return false;
         };
@@ -2246,6 +2321,60 @@ impl Feed {
         self.inner.locked().permission_mode.clone()
     }
 
+    /// Numbers what the chat takes in from high up, so what is read further back into the
+    /// session can go before it. Only a chat that holds nothing yet does.
+    pub(crate) fn leave_room(&self) {
+        let mut inner = self.inner.locked();
+        if inner.replay.next_index == 0 && inner.replay.entries.is_empty() {
+            inner.replay.next_index = EARLIER_ROOM;
+        }
+    }
+
+    /// The CLI's record of the session holds more before what the chat holds, which
+    /// `earlier` reads once a client pages back that far.
+    pub(crate) fn tell_earlier(&self, earlier: Earlier) {
+        *self.earlier.locked() = Some(earlier);
+        self.inner.locked().has_earlier = true;
+    }
+
+    /// Reads further back into the session until the history holds `turns` turns before
+    /// `before`, or nothing earlier is left.
+    fn reach_back(&self, before: u64, turns: usize) {
+        let mut earlier = self.earlier.locked();
+        loop {
+            {
+                let inner = self.inner.locked();
+                let enough = !inner.has_earlier
+                    || inner
+                        .replay
+                        .plan(PageOf::Before(before), turns)
+                        .is_ok_and(|planned| planned.beyond);
+                if enough {
+                    return;
+                }
+            }
+            let read = match earlier.as_mut() {
+                Some(read) => read(),
+                None => Ok(None),
+            };
+            let mut inner = self.inner.locked();
+            let went_in = match read {
+                Ok(Some(updates)) => inner.replay.prepend(updates),
+                Ok(None) => false,
+                Err(error) => {
+                    eprintln!("sikemux core: the start of a chat could not be read: {error}");
+                    false
+                }
+            };
+            self.account(&inner);
+            if !went_in {
+                inner.has_earlier = false;
+                *earlier = None;
+                return;
+            }
+        }
+    }
+
     /// The history now holds everything the CLI's record of `session` holds, up to `reach`.
     pub(crate) fn reached(&self, session: &str, reach: Reach) {
         self.inner.locked().reach = Some((session.to_owned(), reach));
@@ -2428,6 +2557,9 @@ impl Feed {
         session: Option<&str>,
     ) -> Result<ChatPage, String> {
         self.viewed();
+        if let PageOf::Before(before) = side {
+            self.reach_back(before, turns);
+        }
         for _ in 0..2 {
             let planned = self.inner.locked().replay.plan(side, turns)?;
             let mut events = match &planned.reader {

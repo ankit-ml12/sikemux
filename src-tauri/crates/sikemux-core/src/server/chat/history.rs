@@ -369,6 +369,65 @@ impl History {
         Ok(())
     }
 
+    /// Puts `events`, each with its index and whether a page or a turn starts there, before
+    /// everything the file holds, as a chat reads further back into a session it took up.
+    pub(crate) fn prepend(&mut self, events: &[(u64, ChatEvent, bool, bool)]) {
+        if self.file.is_none() || events.is_empty() {
+            return;
+        }
+        self.rewrites.fetch_add(1, Ordering::SeqCst);
+        let mut text = Vec::new();
+        let mut points = Vec::new();
+        for (index, event, point, starts_turn) in events {
+            let offset = text.len() as u64;
+            let Ok(line) = serde_json::to_vec(&Line {
+                index: *index,
+                starts_turn: *starts_turn,
+                point: *point,
+                event,
+            }) else {
+                continue;
+            };
+            text.extend(line);
+            text.push(b'\n');
+            if *point || offset == 0 {
+                points.push(Point {
+                    index: *index,
+                    offset,
+                    starts_turn: *starts_turn || offset == 0,
+                });
+            }
+        }
+        let added = text.len() as u64;
+        let written = self.rewrite_with(&text);
+        if let Err(error) = written {
+            self.fail(&error);
+            return;
+        }
+        self.bytes += added;
+        self.first = events[0].0;
+        for point in &mut self.points {
+            point.offset += added;
+        }
+        points.append(&mut self.points);
+        self.points = points;
+    }
+
+    /// The file again with `head` before what it holds, written beside it and moved over it.
+    fn rewrite_with(&mut self, head: &[u8]) -> io::Result<()> {
+        let fresh = self.path.with_extension("jsonl.earlier");
+        {
+            let mut to = File::create(&fresh)?;
+            to.write_all(head)?;
+            io::copy(&mut File::open(&self.path)?, &mut to)?;
+        }
+        fs::rename(&fresh, &self.path)?;
+        let mut file = OpenOptions::new().read(true).write(true).open(&self.path)?;
+        file.seek(SeekFrom::End(0))?;
+        self.file = Some(file);
+        Ok(())
+    }
+
     /// Forgets the event at `index` and everything after it. One that does
     /// not start a page cannot be found in the file, so everything goes.
     pub(crate) fn truncate(&mut self, index: u64) {

@@ -19,7 +19,7 @@ use crate::acp::{permission, SessionEnd};
 use crate::protocol::{ChatAccount, ChatContext, ChatLaunch, ChatStart};
 use sikemux_fold::ChatEventKind;
 
-use super::super::feed::Reach;
+use super::super::feed::{Earlier, Reach};
 use super::super::kept::Progress;
 use super::super::rebind::{
     error_message, next_account, on_account, switch_notice, switches_at_limit, Carried, Outcome,
@@ -64,7 +64,7 @@ const MAX_TEXT: usize = 128 * 1024;
 const MAX_IMAGE: usize = 2 * 1024 * 1024;
 
 /// Cuts every text in `value` down to what the chat can show.
-fn slim(value: &mut Value) {
+pub(crate) fn slim(value: &mut Value) {
     match value {
         Value::String(text) if text.len() > MAX_TEXT => {
             let mut end = MAX_TEXT;
@@ -187,6 +187,18 @@ impl Sink {
     /// How far into the CLI's record of `session` the chat's history already reaches.
     pub fn reach(&self, session: &str) -> Option<Reach> {
         self.chat.feed.reach(session)
+    }
+
+    /// Numbers what the chat takes in from high up, so what is read further back into the
+    /// session can go before it.
+    pub fn leave_room(&self) {
+        self.chat.feed.leave_room();
+    }
+
+    /// The session holds more before what the chat was told, which `earlier` reads once a
+    /// client pages back that far.
+    pub fn tell_earlier(&self, earlier: Earlier) {
+        self.chat.feed.tell_earlier(earlier);
     }
 
     /// The chat's history now reaches `reach` into the CLI's record of `session`.

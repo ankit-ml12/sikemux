@@ -125,6 +125,7 @@ pub(crate) fn replay_saved(
         loaded();
         return Ok(());
     };
+    let mut unread = None;
     let (records, reach) = if sink.reloading() {
         let Some(Reach::Bytes(from)) = sink.reach(session_id) else {
             return Ok(());
@@ -135,7 +136,27 @@ pub(crate) fn replay_saved(
         }
         (records, reach)
     } else {
-        replay::read_history(&path)?
+        let (newest, len) = replay::read_newest(&path, NEWEST_BYTES)?;
+        let (records, older) = match newest.before {
+            Some(_) => match replay::from_turn_start(newest.records) {
+                (from, older) if from.is_empty() => (older, Vec::new()),
+                cut => cut,
+            },
+            None => (newest.records, Vec::new()),
+        };
+        if newest.before.is_some() || !older.is_empty() {
+            sink.leave_room();
+            unread = Some(Unread {
+                path: path.clone(),
+                session_id: session_id.to_owned(),
+                cwd: launch.cwd.clone(),
+                start: newest.start,
+                before: newest.before,
+                pending: older,
+                window: NEWEST_BYTES * 2,
+            });
+        }
+        (records, len)
     };
     let records = replay::with_subagents(&path, records);
     for (session, update) in replay::replay(&records, session_id, &launch.cwd) {
@@ -143,7 +164,67 @@ pub(crate) fn replay_saved(
     }
     loaded();
     sink.reached(session_id, Reach::Bytes(reach));
+    if let Some(mut unread) = unread {
+        sink.tell_earlier(Box::new(move || unread.next()));
+    }
     Ok(())
+}
+
+/// How much of the end of a saved chat is read when a chat opens on one it never ran. What
+/// came before is read as a client pages back to it, in parts that grow up to
+/// [`MAX_EARLIER_BYTES`].
+const NEWEST_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_EARLIER_BYTES: u64 = 64 * 1024 * 1024;
+
+/// What a chat opened on a saved session has not read of it yet: the transcript before the
+/// bytes from `start` on, whose active branch goes on from the message `before`, and the
+/// messages read already that wait for the start of their turn.
+struct Unread {
+    path: PathBuf,
+    session_id: String,
+    cwd: PathBuf,
+    start: u64,
+    before: Option<String>,
+    pending: Vec<Value>,
+    window: u64,
+}
+
+impl Unread {
+    /// The updates of the next part back, from the start of a turn, or none once the whole
+    /// transcript has been read.
+    fn next(&mut self) -> Result<Option<Vec<(String, Value)>>, String> {
+        loop {
+            let records = match self.before.clone() {
+                Some(before) => {
+                    let stretch =
+                        replay::read_before(&self.path, self.start, &before, self.window)?;
+                    self.window = (self.window * 2).min(MAX_EARLIER_BYTES);
+                    self.start = stretch.start;
+                    self.before = stretch.before;
+                    let mut records = stretch.records;
+                    records.append(&mut self.pending);
+                    if self.before.is_some() {
+                        let (from, older) = replay::from_turn_start(records);
+                        self.pending = older;
+                        from
+                    } else {
+                        records
+                    }
+                }
+                None if self.pending.is_empty() => return Ok(None),
+                None => std::mem::take(&mut self.pending),
+            };
+            if records.is_empty() {
+                continue;
+            }
+            let records = replay::with_subagents(&self.path, records);
+            let mut updates = replay::replay(&records, &self.session_id, &self.cwd);
+            for (_, update) in &mut updates {
+                super::session::slim(update);
+            }
+            return Ok(Some(updates));
+        }
+    }
 }
 
 /// The model the saved chat of `session_id` last ran on, read from the newest part of it.

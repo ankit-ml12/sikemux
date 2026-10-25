@@ -23,14 +23,6 @@ pub fn read_chain(path: &Path) -> Result<Vec<Value>, String> {
     read(path, false)
 }
 
-/// The active branch back to the chat's first message, where `read_chain` starts
-/// at its last compaction, and how many bytes of the transcript it was read from.
-pub fn read_history(path: &Path) -> Result<(Vec<Value>, u64), String> {
-    let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let records = finish_messages(active_branch(parse_entries(&bytes), true));
-    Ok((records, bytes.len() as u64))
-}
-
 #[cfg(test)]
 fn read(path: &Path, across_compactions: bool) -> Result<Vec<Value>, String> {
     let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
@@ -87,6 +79,74 @@ pub fn newest<T>(path: &Path, find: impl Fn(&[Value]) -> Option<T>) -> Result<Op
         }
         window *= 8;
     }
+}
+
+/// Part of a transcript's active branch, read back from some point in its file.
+pub struct Stretch {
+    /// Its messages, oldest first.
+    pub records: Vec<Value>,
+    /// Where in the file the bytes it was read from start.
+    pub start: u64,
+    /// The message the branch goes on from before them, while the file holds more.
+    pub before: Option<String>,
+}
+
+/// The messages of the transcript at `path` on the whole lines between `start` and `end`,
+/// which must end a line, and where the first of those lines starts.
+fn entries_between(path: &Path, start: u64, end: u64) -> Result<(Vec<Value>, u64), String> {
+    let failed = |error: std::io::Error| format!("{}: {error}", path.display());
+    let file = File::open(path).map_err(failed)?;
+    let mut bytes = vec![0; end.saturating_sub(start) as usize];
+    file.read_exact_at(&mut bytes, start).map_err(failed)?;
+    let line = match start {
+        0 => 0,
+        _ => bytes
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(bytes.len(), |at| at + 1),
+    };
+    Ok((parse_entries(&bytes[line..]), start + line as u64))
+}
+
+/// The newest part of the active branch of the transcript at `path`, as far back as its last
+/// `window` bytes hold, and how long the file is.
+pub fn read_newest(path: &Path, window: u64) -> Result<(Stretch, u64), String> {
+    let len = std::fs::metadata(path)
+        .map_err(|error| format!("{}: {error}", path.display()))?
+        .len();
+    let (entries, start) = entries_between(path, len.saturating_sub(window), len)?;
+    let (chain, before) = branch(entries, true, None);
+    let stretch = Stretch {
+        records: finish_messages(chain),
+        start,
+        before: before.filter(|_| start > 0),
+    };
+    Ok((stretch, len))
+}
+
+/// The part of the active branch of the transcript at `path` that ends at the message
+/// `before`, read back over `window` bytes from `end`, where a line starts. None of it is
+/// there when `before` was written earlier still.
+pub fn read_before(path: &Path, end: u64, before: &str, window: u64) -> Result<Stretch, String> {
+    let (entries, start) = entries_between(path, end.saturating_sub(window), end)?;
+    let (chain, before) = branch(entries, true, Some(before));
+    Ok(Stretch {
+        records: finish_messages(chain),
+        start,
+        before: before.filter(|_| start > 0),
+    })
+}
+
+/// `records` from the first message the person sent, and those before it, so a part read on
+/// its own starts with a whole turn. None start one when the person sent none of them.
+pub fn from_turn_start(mut records: Vec<Value>) -> (Vec<Value>, Vec<Value>) {
+    let sent = records.iter().position(|record| {
+        str_field(record, "type") == Some("user")
+            && record.get("toolUseResult").is_none()
+            && !carries_tool_result(record)
+    });
+    let from = records.split_off(sent.unwrap_or(records.len()));
+    (from, records)
 }
 
 /// Runs `each` on every item on as many threads as help, keeping what it answers.
@@ -419,11 +479,60 @@ impl Records {
 }
 
 fn active_branch(entries: Vec<Value>, across_compactions: bool) -> Vec<Value> {
+    branch(entries, across_compactions, None).0
+}
+
+/// The active branch through `entries`, back from the message `from` or else from the latest
+/// one, and the message before its first that `entries` do not hold.
+fn branch(
+    entries: Vec<Value>,
+    across_compactions: bool,
+    from: Option<&str>,
+) -> (Vec<Value>, Option<String>) {
     let mut records = Records::new(&entries);
     // Before a compaction the messages it kept already stand in their place.
     if !across_compactions {
         records.relink_compactions();
     }
+    let start = match from {
+        Some(from) => from.to_owned(),
+        None => match latest_tip(&entries, &records) {
+            Some(tip) => tip,
+            None => return (Vec::new(), None),
+        },
+    };
+    let mut chain = Vec::new();
+    let mut on_chain = HashSet::new();
+    let mut current = records.get(&start);
+    let mut before = current.is_none().then_some(start);
+    while let Some(record) = current {
+        if !on_chain.insert(uuid_of(record).to_string()) {
+            break;
+        }
+        chain.push(record);
+        let compacted = across_compactions
+            .then(|| records.compacted_from(record))
+            .flatten();
+        current = records.parent_of(record).or(compacted);
+        if current.is_none() {
+            let logical = across_compactions
+                .then(|| str_field(record, "logicalParentUuid"))
+                .flatten()
+                .filter(|_| str_field(record, "subtype") == Some("compact_boundary"));
+            before = record
+                .get("parentUuid")
+                .filter(|parent| truthy(Some(parent)))
+                .and_then(Value::as_str)
+                .or(logical)
+                .map(str::to_owned);
+        }
+    }
+    chain.reverse();
+    (restore_split_messages(&records, chain, on_chain), before)
+}
+
+/// The uuid of the newest message on the main line of `entries`.
+fn latest_tip(entries: &[Value], records: &Records) -> Option<String> {
     let mut file_index: HashMap<&str, usize> = HashMap::new();
     for (index, entry) in entries.iter().enumerate() {
         file_index.insert(uuid_of(entry), index);
@@ -469,29 +578,10 @@ fn active_branch(entries: Vec<Value>, across_compactions: bool) -> Vec<Value> {
         &main_tips
     };
     let rank = |record: &Value| file_index.get(uuid_of(record)).map_or(-1, |i| *i as i64);
-    let Some(tip) = pool
-        .iter()
+    pool.iter()
         .copied()
         .reduce(|best, next| if rank(next) > rank(best) { next } else { best })
-    else {
-        return Vec::new();
-    };
-    let mut chain = Vec::new();
-    let mut on_chain = HashSet::new();
-    let mut current = records.get(uuid_of(tip));
-    while let Some(record) = current {
-        if !on_chain.insert(uuid_of(record).to_string()) {
-            break;
-        }
-        chain.push(record);
-        current = records.parent_of(record).or_else(|| {
-            across_compactions
-                .then(|| records.compacted_from(record))
-                .flatten()
-        });
-    }
-    chain.reverse();
-    restore_split_messages(&records, chain, on_chain)
+        .map(|tip| uuid_of(tip).to_owned())
 }
 
 fn api_message_id(record: &Value) -> Option<&str> {
