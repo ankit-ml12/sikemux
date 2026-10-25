@@ -420,6 +420,13 @@ impl Workbench {
         let _ = asks.send(Ask::Remote(crate::core::RemoteAsk::Status));
         cx.defer_in(window, |bench, _, cx| crate::accounts::read(bench, cx));
         cx.set_decoded_image_budget(PICTURE_BUDGET);
+        // The window's close button hides the app as ⌘H does, so the Dock, a link or
+        // `sikemux open` brings the window back as it was.
+        #[cfg(target_os = "macos")]
+        window.on_window_should_close(cx, |_, cx| {
+            cx.hide();
+            false
+        });
         crate::faces::install(cx);
         crate::file_icons::install(cx);
         crate::syntax::install(cx);
