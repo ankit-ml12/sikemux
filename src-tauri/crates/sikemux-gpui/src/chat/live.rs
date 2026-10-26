@@ -323,7 +323,16 @@ fn task_detail(task: &AsyncTask) -> Option<String> {
     .find(|text| !text.is_empty() && *text != task.name);
     let owner = task.owner.as_ref().map(|owner| format!("from {owner}"));
     let detail: Vec<String> = owner.into_iter().chain(said.map(str::to_owned)).collect();
-    (!detail.is_empty()).then(|| detail.join(" · "))
+    (!detail.is_empty()).then(|| one_line(&detail.join(" · ")))
+}
+
+/// A task named by a whole script, such as a heredoc command, shows its first line that says something.
+fn one_line(text: &str) -> String {
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 /// The background tasks, a group for each kind the agent named them by.
@@ -359,7 +368,7 @@ pub fn tasks(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Vec<
                 icon: ui::icon(task_icon(kind), 12.)
                     .text_color(tints.task)
                     .into_any_element(),
-                peek: group.iter().map(|task| task.name.clone()).collect(),
+                peek: group.iter().map(|task| one_line(&task.name)).collect(),
                 action: None,
                 key,
             }
@@ -404,7 +413,7 @@ pub fn tasks(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Vec<
                         &t,
                         tint,
                         mark,
-                        task.name.clone(),
+                        one_line(&task.name),
                         task_detail(task).map(|detail| match task.state {
                             TaskState::Running => shimmer(
                                 SharedString::from(format!("task-{}", task.async_task_id)),
