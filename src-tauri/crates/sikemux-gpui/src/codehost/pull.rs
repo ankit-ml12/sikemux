@@ -1,6 +1,7 @@
 //! One pull request opened from the list or a link: its head and actions over tabs for its
 //! conversation, its changed files' diffs, its commits, and its checks and merge.
 
+use gpui_kit::base::Button as BaseButton;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, AppContext, Context, Div, Entity, FontWeight, InteractiveElement,
@@ -20,7 +21,7 @@ use crate::git::pane::ROW_HEIGHT;
 use crate::git::Diff;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
-use crate::ui::{self, Button, IconButton, Segmented, Variant};
+use crate::ui::{self, Button, IconButton, Variant};
 use gpui_kit::component::input::{Textarea, TextareaState};
 
 pub const VIEW: &str = "host-pull";
@@ -43,12 +44,14 @@ const READABLE: f32 = 860.;
 /// How wide the file list is beside the diffs.
 const FILE_LIST: f32 = 260.;
 
-fn method_label(method: &str) -> &str {
+/// What merging by `method` is called: on the button that does it, and in the menu that
+/// picks it.
+fn method_words(method: &str) -> (&str, &str) {
     match method {
-        "squash" => "Squash",
-        "merge" => "Merge commit",
-        "rebase" => "Rebase",
-        other => other,
+        "squash" => ("Squash and merge", "Squash and merge"),
+        "merge" => ("Merge pull request", "Create a merge commit"),
+        "rebase" => ("Rebase and merge", "Rebase and merge"),
+        other => (other, other),
     }
 }
 
@@ -572,6 +575,108 @@ fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
                     cx.notify();
                 })),
         )
+}
+
+/// Merges by the method picked, as GitHub's split button does: the method's name merges,
+/// asking first, and the chevron beside it picks another method.
+fn merge_button(
+    area: &HostArea,
+    blocked: bool,
+    number: u64,
+    base: String,
+    title: String,
+    cx: &mut Context<HostArea>,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let opened = area.pull.as_ref().expect("a pull request is open");
+    let methods = area.host.pulls.merge_methods.clone();
+    let chosen = opened.method;
+    let says = methods
+        .get(chosen)
+        .map_or("Merge pull request", |method| method_words(method).0)
+        .to_owned();
+    let off = opened.busy || blocked;
+    let merge = BaseButton::new("pull-merge")
+        .accessibility_label(says.clone())
+        .flex_1()
+        .h(px(34.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(px(6.))
+        .text_size(crate::theme::ui_text(13.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(t.on_accent)
+        .when(!off, |button| {
+            button.on_click(cx.listener(move |area, _, _, cx| {
+                area.ask(
+                    super::Asking::new(
+                        format!("Merge #{number} into {base}?"),
+                        title.clone(),
+                        "Merge",
+                        false,
+                        |area, cx| area.merge(cx),
+                    ),
+                    cx,
+                );
+            }))
+        })
+        .child(ui::icon(Icon::Merge, 13.).text_color(t.on_accent))
+        .child(says);
+    let chevron = BaseButton::new("pull-merge-method-pill")
+        .accessibility_label("Merge method")
+        .w(px(34.))
+        .h(px(34.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .border_l_1()
+        .border_color(t.on_accent.opacity(0.25))
+        .child(
+            ui::icon(Icon::Chevron, 11.)
+                .with_transformation(gpui_kit::Transformation::rotate(gpui_kit::radians(
+                    std::f32::consts::FRAC_PI_2,
+                )))
+                .text_color(t.on_accent),
+        );
+    let view = cx.entity().downgrade();
+    let picker = (methods.len() > 1).then(|| {
+        ui::menu_button(
+            "pull-merge-method",
+            gpui_kit::Anchor::TopRight,
+            chevron,
+            move |mut popup, _, cx| {
+                for (index, method) in methods.iter().enumerate() {
+                    let view = view.clone();
+                    popup = popup.item(
+                        ui::MenuRow::new(method_words(method).1.to_owned())
+                            .item(cx)
+                            .checked(index == chosen)
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |area, cx| {
+                                    if let Some(opened) = &mut area.pull {
+                                        opened.method = index;
+                                    }
+                                    cx.notify();
+                                })
+                                .ok();
+                            }),
+                    );
+                }
+                popup
+            },
+        )
+    });
+    div()
+        .w_full()
+        .flex()
+        .rounded(RADIUS_2)
+        .overflow_hidden()
+        .bg(t.accent)
+        .when(off, |button| button.opacity(0.5))
+        .child(merge)
+        .children(picker)
+        .into_any_element()
 }
 
 /// Whether the host would take a merge now: not while it conflicts, its rules block it or
@@ -1139,44 +1244,7 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .flex_col()
         .gap(px(8.))
         .when(!pull.draft, |actions| {
-            actions
-                .child(
-                    Segmented::words(
-                        "merge-method",
-                        area.host
-                            .pulls
-                            .merge_methods
-                            .iter()
-                            .map(|method| {
-                                (SharedString::from(method_label(method).to_owned()), None)
-                            })
-                            .collect(),
-                        opened.method,
-                    )
-                    .on_select(cx.listener(|area, index: &usize, _, cx| {
-                        if let Some(opened) = &mut area.pull {
-                            opened.method = *index;
-                        }
-                        cx.notify();
-                    })),
-                )
-                .child(
-                    Button::new("pull-merge", "Merge pull request", Variant::Primary)
-                        .icon(Icon::Merge)
-                        .disabled(opened.busy || blocked)
-                        .on_click(cx.listener(move |area, _, _, cx| {
-                            area.ask(
-                                super::Asking::new(
-                                    format!("Merge #{number} into {base_name}?"),
-                                    title.clone(),
-                                    "Merge",
-                                    false,
-                                    |area, cx| area.merge(cx),
-                                ),
-                                cx,
-                            );
-                        })),
-                )
+            actions.child(merge_button(area, blocked, number, base_name, title, cx))
         });
     card.child(verdict)
         .children(checks)
