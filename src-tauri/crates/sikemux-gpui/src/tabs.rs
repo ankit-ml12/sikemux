@@ -237,13 +237,18 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     )
 }
 
-/// How the branch's latest CI run went, in the space of one mark.
+/// How CI went for the branch's newest commit, across all its workflows, in the space of one
+/// mark: the most pressing run's state, with each run listed in the tooltip.
 fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     let t = Tokens::get(cx).clone();
-    let run = bench.latest_run()?;
-    let outcome = run["outcome"].as_str()?;
-    let number = run["runNumber"].as_u64()?;
-    let ago = chrono::DateTime::parse_from_rfc3339(run["createdAt"].as_str()?)
+    let runs = bench.head_runs();
+    let outcome = runs
+        .iter()
+        .filter_map(|run| run["outcome"].as_str())
+        .min_by_key(|outcome| outcome_urgency(outcome))?;
+    let head = runs.first()?;
+    let sha = head["shortSha"].as_str()?;
+    let ago = chrono::DateTime::parse_from_rfc3339(head["createdAt"].as_str()?)
         .ok()?
         .timestamp_millis()
         .max(0) as u64;
@@ -251,11 +256,17 @@ fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
         now if now == "now" => now,
         age => format!("{age} ago"),
     };
-    let about = format!(
-        "{} · {} #{number} · {ago}",
-        outcome_label(outcome),
-        run["name"].as_str().unwrap_or_default()
-    );
+    let about = std::iter::once(format!("{} · {sha} · {ago}", outcome_label(outcome)))
+        .chain(runs.iter().map(|run| {
+            format!(
+                "{} #{} · {}",
+                run["name"].as_str().unwrap_or_default(),
+                run["runNumber"].as_u64().unwrap_or_default(),
+                outcome_label(run["outcome"].as_str().unwrap_or_default())
+            )
+        }))
+        .collect::<Vec<_>>()
+        .join("\n");
     Some(
         div()
             .id("ci-glyph")
@@ -275,7 +286,7 @@ fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             .tooltip(ui::tooltip(about))
             .child(ui::status_of_run(outcome, 12., cx))
             .child(
-                ui::mono(format!("#{number}"), 11., cx)
+                ui::mono(sha.to_owned(), 11., cx)
                     .font_features(crate::theme::tabular())
                     .text_color(t.text_secondary),
             )
@@ -375,6 +386,18 @@ fn battery_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             )
             .into_any_element(),
     )
+}
+
+fn outcome_urgency(outcome: &str) -> u8 {
+    match outcome {
+        "failure" => 0,
+        "running" => 1,
+        "queued" => 2,
+        "blocked" => 3,
+        "cancelled" => 4,
+        "success" => 5,
+        _ => 6,
+    }
 }
 
 fn outcome_label(outcome: &str) -> &str {

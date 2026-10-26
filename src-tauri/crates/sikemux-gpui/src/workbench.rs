@@ -2138,7 +2138,7 @@ impl Workbench {
             Watch::new("showCi", json!({ "repos": repos }), &[]),
         ));
         if let Some(ci) = &shown {
-            let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "branch": ci.branch, "perPage": 1 });
+            let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "branch": ci.branch, "perPage": 20 });
             let call = json!({ "plugin": format!("sikemux.{}", ci.host), "method": "runs", "params": runs });
             let _ = self
                 .asks
@@ -2175,10 +2175,20 @@ impl Workbench {
         })
     }
 
-    /// The latest CI run of the branch in front, while the core is checking it.
-    pub fn latest_run(&self) -> Option<&Value> {
-        self.watched_ci.as_ref()?;
-        self.read("ci")?["value"]["runs"].as_array()?.first()
+    /// Every workflow's run for the newest commit of the branch in front, while the core is
+    /// checking it.
+    pub fn head_runs(&self) -> Vec<&Value> {
+        let Some(runs) = self
+            .watched_ci
+            .as_ref()
+            .and_then(|_| self.read("ci")?["value"]["runs"].as_array())
+        else {
+            return Vec::new();
+        };
+        let Some(head) = runs.first().map(|run| &run["sha"]) else {
+            return Vec::new();
+        };
+        runs.iter().filter(|run| &run["sha"] == head).collect()
     }
 
     /// Asks for the account's picture when it is one this window has not got.
