@@ -452,7 +452,9 @@ impl Workbench {
                     if let Some(page) = self.desks.pages.get(&shortcut.agent_id) {
                         page.focus.focus(window, cx);
                     }
-                    window.dispatch_keystroke(keystroke, cx);
+                    window.defer(cx, move |window, cx| {
+                        window.dispatch_keystroke(keystroke, cx);
+                    });
                 }
             }
             Heard::Acting(agent) => {
