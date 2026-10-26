@@ -10,7 +10,7 @@ use gpui_kit::{
     ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use gpui_transcript::{Markdown, Pen};
-use sikemux_wire::codehost::{PullCommit, TimelineItem};
+use sikemux_wire::codehost::{Mention, PullCommit, TimelineItem};
 
 use super::ago;
 use crate::icons::Icon;
@@ -316,6 +316,17 @@ fn post(
 
 /// One thing that happened, as a line beside the thread with its badge.
 fn line(glyph: Icon, ink: Option<Hsla>, words: Vec<AnyElement>, cx: &App) -> AnyElement {
+    line_over(glyph, ink, words, None, cx)
+}
+
+/// A line with what it was about `below` its words, under them rather than under the badge.
+fn line_over(
+    glyph: Icon,
+    ink: Option<Hsla>,
+    words: Vec<AnyElement>,
+    below: Option<AnyElement>,
+    cx: &App,
+) -> AnyElement {
     let t = Tokens::get(cx);
     div()
         .flex()
@@ -338,13 +349,78 @@ fn line(glyph: Icon, ink: Option<Hsla>, words: Vec<AnyElement>, cx: &App) -> Any
         )
         .child(
             div()
-                .min_h(px(BADGE))
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .gap(px(5.))
+                .flex_1()
                 .min_w_0()
-                .children(words),
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .min_h(px(BADGE))
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(5.))
+                        .min_w_0()
+                        .children(words),
+                )
+                .children(below),
+        )
+        .into_any_element()
+}
+
+/// How a mentioning issue or pull request stands: its mark, colour and word.
+pub(super) fn mention_state(source: &Mention, t: &Tokens) -> (Icon, Hsla, &'static str) {
+    let glyph = match (source.pull, source.merged) {
+        (true, true) => Icon::Merge,
+        (true, false) => Icon::PullRequest,
+        (false, _) => Icon::Issues,
+    };
+    match (source.merged, source.state.as_deref()) {
+        (true, _) => (glyph, t.accent, "Merged"),
+        (_, Some("closed")) => (glyph, t.danger, "Closed"),
+        _ => (glyph, t.live, "Open"),
+    }
+}
+
+/// The issue or pull request that mentioned this one: its title and where it is, with how
+/// it stands, as GitHub shows a mention.
+fn mentioned_by(subject: String, source: &Mention, cx: &App) -> AnyElement {
+    let t = Tokens::get(cx);
+    let (glyph, ink, word) = mention_state(source, t);
+    let place = match &source.repo {
+        Some(repo) => format!("{repo}#{}", source.number),
+        None => format!("#{}", source.number),
+    };
+    div()
+        .flex()
+        .items_start()
+        .gap(px(8.))
+        .min_w_0()
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(ui::text(subject, 13., FontWeight::SEMIBOLD).text_color(t.text_primary))
+                .child(dim(place, cx)),
+        )
+        .child(
+            div()
+                .flex_none()
+                .h(px(22.))
+                .px(px(8.))
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .rounded_full()
+                .bg(ink.opacity(0.16))
+                .text_size(crate::theme::ui_text(11.5))
+                .text_color(ink)
+                .child(ui::icon(glyph, 12.).text_color(ink))
+                .child(word),
         )
         .into_any_element()
 }
@@ -513,11 +589,14 @@ fn event(item: &TimelineItem, base: Option<&str>, faces: Faces, cx: &App) -> Opt
                 vec![actor, dim(format!("referenced this{in_commit}"), cx)],
             )
         }
-        "cross-referenced" => (
-            Icon::Issues,
-            None,
-            vec![actor, dim("mentioned this in", cx), chip(subject, cx)],
-        ),
+        "cross-referenced" => {
+            let below = match &item.source {
+                Some(source) => mentioned_by(subject, source, cx),
+                None => chip(subject, cx),
+            };
+            let words = vec![actor, dim("mentioned this", cx), when];
+            return Some(line_over(Icon::Link, None, words, Some(below), cx));
+        }
         _ => return None,
     };
     words.push(when);

@@ -728,16 +728,7 @@ fn facts(open: &OpenIssue, cx: &mut Context<HostArea>) -> AnyElement {
             .gap(px(6.))
             .children(open.linked.iter().filter_map(|item| {
                 let source = item.source.as_ref()?;
-                let ink = match (source.merged, source.state.as_deref()) {
-                    (true, _) => t.accent,
-                    (_, Some("closed")) => t.danger,
-                    _ => t.live,
-                };
-                let glyph = if source.merged {
-                    Icon::Merge
-                } else {
-                    Icon::PullRequest
-                };
+                let (glyph, ink, _) = thread::mention_state(source, &t);
                 Some(
                     div()
                         .flex()
