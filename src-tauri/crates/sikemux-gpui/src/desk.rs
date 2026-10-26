@@ -1040,10 +1040,18 @@ impl Workbench {
     /// Opens `url` in a new page on `agent`'s desk, bringing the agent and its desk to the
     /// front. Answers false when this window has no browser, so the caller can open it elsewhere.
     pub fn open_on_desk(&mut self, agent: &str, url: &str) -> bool {
+        if self.desks.engine.is_none() {
+            return false;
+        }
+        self.open_agent(agent);
+        self.show_on_desk(agent, url)
+    }
+
+    /// Opens `url` in a new page on `agent`'s desk, leaving the tab in front where it is.
+    pub fn show_on_desk(&mut self, agent: &str, url: &str) -> bool {
         let Some(engine) = self.desks.engine.clone() else {
             return false;
         };
-        self.open_agent(agent);
         if !self.desk_open_anywhere(agent) {
             self.reveal_desk(agent);
         }

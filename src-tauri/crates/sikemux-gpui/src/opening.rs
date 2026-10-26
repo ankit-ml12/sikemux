@@ -211,7 +211,11 @@ impl Workbench {
                 else {
                     return answer(Err("No preview URL is configured in sikemux.json".into()));
                 };
-                match self.open_on_desk(agent, url) {
+                let shown = match focus {
+                    true => self.open_on_desk(agent, url),
+                    false => self.show_on_desk(agent, url),
+                };
+                match shown {
                     true => answer(Ok(json!({ "kind": kind, "agentId": agent, "url": url }))),
                     false => answer(Err(
                         "This window has no browser to show the preview in".into()

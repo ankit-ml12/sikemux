@@ -510,7 +510,8 @@ pub(crate) struct OpenTab {
     /// Opens it to look at, in place of the strip's tab opened that way.
     #[serde(default)]
     preview: bool,
-    /// Opens it in front of its strip but leaves the strip in front where it is.
+    /// Leaves what the person sees as it is: the strip in front stays in front, and so does
+    /// its tab. In a strip out of sight the tab still comes first.
     #[serde(default)]
     behind: bool,
 }
@@ -520,6 +521,7 @@ pub(crate) struct OpenTab {
 /// opens to look at. A tab brought forward to keep is kept. Answers its id.
 pub(crate) fn open_tab(core: &Core, params: OpenTab) -> CoreResult<String> {
     edit(core, |layout| {
+        let in_sight = in_front(layout, &params.at);
         let strip = strip_at(layout, &params.at)?;
         let shown = strip
             .tabs
@@ -559,7 +561,9 @@ pub(crate) fn open_tab(core: &Core, params: OpenTab) -> CoreResult<String> {
                 id
             }
         };
-        strip.active = Some(id.clone());
+        if !(params.behind && in_sight) {
+            strip.active = Some(id.clone());
+        }
         if !params.behind {
             bring_forward(layout, &params.at);
         }
@@ -608,6 +612,21 @@ fn strip_at<'a>(
 }
 
 /// Puts the strip `at` names in front.
+/// Whether the strip `at` names is the one the person has in front.
+fn in_front(layout: &Layout, at: &At) -> bool {
+    if layout.chosen_host.is_some() {
+        return false;
+    }
+    match (&at.host, at.terminals) {
+        (_, true) => layout.terminals_in_front,
+        _ if layout.terminals_in_front => false,
+        (Some(host), false) => layout.active_host.as_ref() == Some(host),
+        (None, false) => {
+            layout.active_host.is_none() && layout.active_project.as_ref() == Some(&at.project)
+        }
+    }
+}
+
 fn bring_forward(layout: &mut Layout, at: &At) {
     layout.chosen_host = None;
     layout.terminals_in_front = at.terminals;
