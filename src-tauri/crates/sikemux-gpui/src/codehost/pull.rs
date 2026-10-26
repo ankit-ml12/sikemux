@@ -506,7 +506,7 @@ fn page_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea
         .size_full()
         .flex()
         .flex_col()
-        .child(super::band(READABLE, div().child(top).child(tabs), cx))
+        .child(super::band(centred(div().child(top).child(tabs)), cx))
         .child(div().flex_1().min_h_0().child(body))
         .into_any_element()
 }

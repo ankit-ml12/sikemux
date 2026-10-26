@@ -856,9 +856,6 @@ fn notice(title: impl Into<SharedString>, detail: Option<SharedString>, cx: &App
         .into_any_element()
 }
 
-/// The widest a list grows, centred in a wider pane.
-const LIST: f32 = 960.;
-
 /// `inner` in a column at most `width` wide, centred in what is wider.
 fn centred(width: f32, inner: impl IntoElement) -> Div {
     div()
@@ -868,16 +865,16 @@ fn centred(width: f32, inner: impl IntoElement) -> Div {
         .child(div().w_full().max_w(px(width)).child(inner))
 }
 
-/// A band across the pane holding `inner` centred at `width`, filled as the rails are so a
-/// page's head reads over a picture behind it, and as clear as they are in a see-through window.
-fn band(width: f32, inner: impl IntoElement, cx: &App) -> Div {
+/// A band across the pane holding `inner`, filled as the rails are so a page's head reads
+/// over a picture behind it, and as clear as they are in a see-through window.
+fn band(inner: impl IntoElement, cx: &App) -> Div {
     let t = Tokens::get(cx);
     div()
         .flex_none()
         .when(!crate::see_through::clear(cx), |band| band.bg(t.surface))
         .border_b_1()
         .border_color(t.border)
-        .child(centred(width, inner))
+        .child(inner)
 }
 
 /// A list's page: its head on a band, then what it lists under it, scrolling.
@@ -886,14 +883,14 @@ fn list_page(id: &'static str, head: Div, body: impl IntoElement, cx: &App) -> A
         .size_full()
         .flex()
         .flex_col()
-        .child(band(LIST, head, cx))
+        .child(band(head, cx))
         .child(
             div()
                 .id(id)
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .child(centred(LIST, div().py(px(12.)).child(body))),
+                .child(div().py(px(12.)).child(body)),
         )
         .into_any_element()
 }
@@ -917,8 +914,7 @@ fn list_head(area: Area, host: &ProjectCodeHost, cx: &App) -> Div {
         .items_center()
         .gap(px(12.))
         .px(px(12.))
-        .pt(px(12.))
-        .pb(px(8.))
+        .py(px(10.))
         .child(
             div()
                 .flex()
