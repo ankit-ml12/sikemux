@@ -308,6 +308,8 @@ export interface ConfigChoice {
   label: string;
   /** What the agent says about it, shown under its label. */
   description?: string;
+  /** The choice the agent takes when none is made, which a picker marks. */
+  isDefault?: boolean;
 }
 
 /** What the app draws behind its panes. */

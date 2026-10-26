@@ -5,7 +5,7 @@ use gpui_kit::base::input::InlineTokenContext;
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
 use gpui_kit::component::input::{Textarea, TextareaState};
-use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
+use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, radians, size, Anchor, AnyElement, AnyView, App, ClipboardItem, ElementId, Entity,
@@ -611,15 +611,6 @@ fn chosen(picker: &ConfigPicker, name: &str) -> String {
     }
 }
 
-/// An effort choice as its trigger says it, so "Default" or "High" beside the model's own
-/// "Default" says what it sets.
-fn effort(label: String) -> String {
-    match label.to_lowercase().contains("effort") {
-        true => label,
-        false => format!("{label} effort"),
-    }
-}
-
 /// The button a picker opens from: the agent's mark beside the first, the choice, a chevron.
 fn picker_trigger(
     id: &str,
@@ -670,7 +661,12 @@ fn picker_face<E: Styled + ParentElement + IntoElement>(
             t.text_tertiary
         })
         .when(!enabled, |trigger| trigger.opacity(0.45))
-        .children(provider.map(|provider| ui::mark(provider, 17.)))
+        .child(match provider {
+            Some(provider) => ui::mark(provider, 17.),
+            None => ui::icon(Icon::Gauge, 14.)
+                .text_color(t.text_tertiary)
+                .into_any_element(),
+        })
         .child(
             div()
                 .min_w_0()
@@ -697,10 +693,7 @@ fn picker(
     cx: &App,
 ) -> impl IntoElement {
     let first = provider.is_some();
-    let label = match first {
-        true => chosen(&picker, name),
-        false => effort(chosen(&picker, name)),
-    };
+    let label = chosen(&picker, name);
     let enabled = settable && !picker.choices.is_empty();
     if !enabled {
         return picker_trigger(&picker.id, label, name, provider, enabled, cx).into_any_element();
@@ -721,11 +714,13 @@ fn picker(
             } else {
                 Anchor::BottomRight
             },
-            ui::menu(move |mut popup, _, _| {
+            ui::menu(move |mut popup, _, cx| {
                 for choice in &choices {
                     let (pick, id, value) = (pick.clone(), id.clone(), choice.value.clone());
                     popup = popup.item(
-                        PopupMenuItem::new(choice.label.clone())
+                        ui::MenuRow::new(choice.label.clone())
+                            .when(choice.is_default, |row| row.hint("Default"))
+                            .item(cx)
                             .checked(choice.value == current)
                             .on_click(move |_, window, cx| pick(&id, &value, window, cx)),
                     );

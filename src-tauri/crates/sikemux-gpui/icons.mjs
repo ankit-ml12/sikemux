@@ -95,6 +95,7 @@ const DRAWN = {
   highlighter: [ICONS, "IconHighlighter"],
   "home-button": [ICONS, "IconHomeButton"],
   hourglass: [ICONS, "IconHourglass"],
+  gauge: [ICONS, "IconGauge"],
   issue: [ICONS, "IconIssue"],
   keyboard: [ICONS, "IconKeyboard"],
   link: [ICONS, "IconLink"],

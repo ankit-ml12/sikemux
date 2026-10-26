@@ -51,6 +51,7 @@ fn choices(options: &Value, group: Option<&str>) -> Vec<ConfigChoice> {
                 value: value.to_owned(),
                 label: versioned(name, description),
                 description: description.map(str::to_owned),
+                is_default: row["isDefault"] == true,
             }]
         })
         .collect()
@@ -151,6 +152,7 @@ mod tests {
                 value: "custom/model".into(),
                 label: "My model".into(),
                 description: Some("Custom provider".into()),
+                is_default: false,
             }]
         );
     }

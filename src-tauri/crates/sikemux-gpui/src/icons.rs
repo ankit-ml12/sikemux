@@ -87,6 +87,7 @@ icons!(
     Home => "home",
     HomeButton => "home-button",
     Hourglass => "hourglass",
+    Gauge => "gauge",
     Image => "image",
     Inbox => "inbox",
     Issue => "issue",

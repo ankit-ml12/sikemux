@@ -236,6 +236,7 @@ impl Menu {
                     value: model.clone(),
                     label: served_label(route, model),
                     description: None,
+                    is_default: false,
                 })
                 .collect::<Vec<_>>()
         });
@@ -517,6 +518,15 @@ impl Render for Menu {
                         .text_size(crate::theme::ui_text(12.5))
                         .child(ui::found_with(option.label.clone(), &typed, found)),
                 )
+                .when(option.is_default, |row| {
+                    row.child(
+                        div()
+                            .flex_none()
+                            .text_size(crate::theme::ui_text(10.5))
+                            .text_color(t.text_tertiary)
+                            .child("Default"),
+                    )
+                })
                 .when(option.value == current, |row| {
                     row.child(ui::icon(Icon::Check, 14.).text_color(t.text_secondary))
                 })

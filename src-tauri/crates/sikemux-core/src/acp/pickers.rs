@@ -15,6 +15,12 @@ pub fn choice(value: &str, name: &str, description: Option<&str>) -> Value {
     choice
 }
 
+/// `choice` marked as the one the agent takes when none is made.
+pub fn as_default(mut choice: Value) -> Value {
+    choice["isDefault"] = json!(true);
+    choice
+}
+
 /// The model select option, `current` offered first when it is not among
 /// the `choices`.
 pub fn model_select(about: Option<&str>, current: &str, mut choices: Vec<Value>) -> Value {
@@ -55,9 +61,12 @@ pub fn effort_select(
     })
 }
 
-/// An effort level as a picker names it: `xhigh` as "Xhigh", `max_tokens`
+/// An effort level as a picker names it: `xhigh` as "Extra high", `max_tokens`
 /// as "Max Tokens".
 pub fn level_name(level: &str) -> String {
+    if level == "xhigh" {
+        return "Extra high".to_owned();
+    }
     level
         .split(['_', '-'])
         .filter(|part| !part.is_empty())

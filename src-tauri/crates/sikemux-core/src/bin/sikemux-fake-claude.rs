@@ -18,7 +18,8 @@
 //! drops it.
 //!
 //! A model change is answered the way Claude Code does, with a message saying
-//! so. `FAKE_CLAUDE_SETTINGS_MODEL` names the model its settings choose.
+//! so. `FAKE_CLAUDE_SETTINGS_MODEL` names the model its settings choose, and
+//! `FAKE_CLAUDE_MODELS`, a JSON list, the models it lists in place of its own.
 //!
 //! An account is its `CLAUDE_CONFIG_DIR`: `auth status --json` prints its
 //! `fake-account.json`, or a signed-out status when there is none, and a usage
@@ -360,10 +361,13 @@ impl Claude {
     fn control(&self, request_id: &str, request: &Value) {
         let response = match request["subtype"].as_str() {
             Some("initialize") => json!({
-                "models": [
-                    { "value": "default", "resolvedModel": "fake", "displayName": "Default", "description": "Fake", "supportsEffort": true, "supportedEffortLevels": ["low", "high"] },
-                    { "value": "small", "resolvedModel": "fake-small", "displayName": "Small", "description": "Smaller" },
-                ],
+                "models": std::env::var("FAKE_CLAUDE_MODELS")
+                    .ok()
+                    .and_then(|models| serde_json::from_str::<Value>(&models).ok())
+                    .unwrap_or_else(|| json!([
+                        { "value": "default", "resolvedModel": "fake", "displayName": "Default", "description": "Fake", "supportsEffort": true, "supportedEffortLevels": ["low", "high"] },
+                        { "value": "small", "resolvedModel": "fake-small", "displayName": "Small", "description": "Smaller" },
+                    ])),
                 "commands": [{ "name": "review", "description": "Review the change", "argumentHint": "" }],
             }),
             Some("interrupt") => {

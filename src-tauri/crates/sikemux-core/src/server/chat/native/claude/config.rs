@@ -9,6 +9,23 @@ use crate::launch::PermissionMode;
 
 pub(crate) const DEFAULT: &str = "default";
 
+/// The effort Claude Code runs each model at when none is set, which its model list does not
+/// say, by the model's full name.
+const OWN_EFFORTS: &[(&str, &str)] = &[
+    ("claude-fable-5-1", "medium"),
+    ("claude-fable-5", "medium"),
+    ("claude-opus-5-5", "medium"),
+    ("claude-opus-5", "high"),
+    ("claude-opus-4-8", "high"),
+    ("claude-opus-4-7", "xhigh"),
+    ("claude-opus-4-6", "high"),
+    ("claude-opus-4-5", "high"),
+    ("claude-sonnet-5-5", "high"),
+    ("claude-sonnet-5", "high"),
+    ("claude-sonnet-4-6", "high"),
+    ("claude-haiku-5-5", "medium"),
+];
+
 /// The permission mode Claude Code runs in for each of the app's modes.
 pub(crate) fn permission_mode(mode: PermissionMode) -> &'static str {
     match mode {
@@ -109,41 +126,87 @@ pub(crate) fn effort_levels(models: &[Value], model: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The models to pick from, one row each: Claude Code's default row goes by the name of the
+/// model it stands for and is marked as the default, in place of that model's own row, which
+/// shows instead only while it is the one picked.
 fn model_option(models: &[Value], current: &str) -> Value {
+    let resolved = find(models, DEFAULT).and_then(|row| text(row, "resolvedModel"));
+    let twin = |row: &Value| {
+        resolved.is_some()
+            && text(row, "value") != Some(DEFAULT)
+            && text(row, "resolvedModel") == resolved
+    };
+    let twin_picked = models
+        .iter()
+        .any(|row| twin(row) && text(row, "value") == Some(current));
     let choices = models
         .iter()
         .filter_map(|model| {
             let value = text(model, "value")?;
+            let is_twin = twin(model);
+            if value == DEFAULT {
+                if twin_picked {
+                    return None;
+                }
+                let named = models.iter().find(|other| twin(other)).unwrap_or(model);
+                let name = text(named, "displayName").unwrap_or(value);
+                let choice = pickers::choice(value, name, text(named, "description"));
+                return Some(pickers::as_default(choice));
+            }
+            if is_twin && !twin_picked {
+                return None;
+            }
             let name = text(model, "displayName").unwrap_or(value);
-            let description = if value == DEFAULT {
-                let resolved = text(model, "resolvedModel");
-                models
-                    .iter()
-                    .filter(|other| text(other, "value") != Some(DEFAULT))
-                    .find(|other| resolved.is_some() && text(other, "resolvedModel") == resolved)
-                    .and_then(|other| text(other, "displayName"))
-                    .or(resolved)
-                    .or_else(|| text(model, "description"))
-            } else {
-                text(model, "description")
-            };
-            Some(pickers::choice(value, name, description))
+            let choice = pickers::choice(value, name, text(model, "description"));
+            Some(match is_twin {
+                true => pickers::as_default(choice),
+                false => choice,
+            })
         })
         .collect();
     pickers::model_select(Some("AI model to use"), current, choices)
 }
 
-fn effort_option(levels: &[String], current: &str) -> Value {
-    let mut choices = vec![pickers::choice(DEFAULT, "Default", None)];
-    choices.extend(
-        levels
-            .iter()
-            .map(|level| pickers::choice(level, &pickers::level_name(level), None)),
-    );
-    let current = if current == DEFAULT || levels.iter().any(|level| level == current) {
+/// The effort `model` runs at when none is set, when it is one this knows.
+fn own_effort(models: &[Value], model: &str) -> Option<&'static str> {
+    let named = find(models, model)
+        .and_then(|row| text(row, "resolvedModel"))
+        .unwrap_or(model);
+    let named = named.strip_suffix("[1m]").unwrap_or(named);
+    let named = match named.rsplit_once('-') {
+        Some((name, date)) if date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => named,
+    };
+    OWN_EFFORTS
+        .iter()
+        .find(|(known, _)| *known == named)
+        .map(|(_, effort)| *effort)
+}
+
+/// The levels to pick from, the model's own marked as the default; a model whose own level is
+/// not known offers Auto, which leaves it to Claude Code.
+fn effort_option(levels: &[String], current: &str, own: Option<&str>) -> Value {
+    let own = own.filter(|own| levels.iter().any(|level| level == own));
+    let mut choices: Vec<Value> = levels
+        .iter()
+        .map(|level| {
+            let choice = pickers::choice(level, &pickers::level_name(level), None);
+            match Some(level.as_str()) == own {
+                true => pickers::as_default(choice),
+                false => choice,
+            }
+        })
+        .collect();
+    if own.is_none() {
+        choices.insert(
+            0,
+            pickers::as_default(pickers::choice(DEFAULT, "Auto", None)),
+        );
+    }
+    let current = if levels.iter().any(|level| level == current) {
         current
     } else {
-        DEFAULT
+        own.unwrap_or(DEFAULT)
     };
     pickers::effort_select(
         "effort",
@@ -160,7 +223,7 @@ pub(crate) fn options(models: &[Value], model: &str, effort: &str) -> Value {
     let mut options = vec![model_option(models, model)];
     let levels = effort_levels(models, model);
     if !levels.is_empty() {
-        options.push(effort_option(&levels, effort));
+        options.push(effort_option(&levels, effort, own_effort(models, model)));
     }
     Value::Array(options)
 }
@@ -183,13 +246,17 @@ mod tests {
     }
 
     #[test]
-    fn the_default_model_is_described_by_the_model_it_resolves_to() {
+    fn the_default_model_goes_by_the_model_it_resolves_to_in_that_models_place() {
         let options = options(&models(), "default", "high");
-        assert_eq!(options[0]["options"][0]["description"], "Opus 5.5");
-        assert_eq!(options[0]["options"][1]["name"], "Opus 5.5");
+        let rows = options[0]["options"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["value"], "default");
+        assert_eq!(rows[0]["name"], "Opus 5.5");
+        assert_eq!(rows[0]["isDefault"], true);
         assert_eq!(options[1]["category"], "thought_level");
         assert_eq!(options[1]["currentValue"], "high");
-        assert_eq!(options[1]["options"][4]["name"], "Xhigh");
+        assert_eq!(options[1]["options"][1]["isDefault"], true);
+        assert_eq!(options[1]["options"][3]["name"], "Extra high");
     }
 
     #[test]
@@ -200,7 +267,7 @@ mod tests {
             Some("opus[1m]")
         );
         let options = options(&models, "opus[1m]", "high");
-        let row = &options[0]["options"][3];
+        let row = &options[0]["options"][2];
         assert_eq!(row["value"], "opus[1m]");
         assert_eq!(row["name"], "Opus 5.5 (1M context)");
         assert_eq!(options[1]["currentValue"], "high");
@@ -222,10 +289,10 @@ mod tests {
     }
 
     #[test]
-    fn an_effort_the_model_does_not_take_falls_back_to_the_default() {
+    fn an_effort_the_model_does_not_take_falls_back_to_the_models_own() {
         assert_eq!(
             options(&models(), "opus", "ultra")[1]["currentValue"],
-            "default"
+            "medium"
         );
     }
 

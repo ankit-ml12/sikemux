@@ -695,6 +695,7 @@ export const IconRecord = makeSvgIcon24(
         <circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" />
     </>,
 );
+export const IconGauge = makeSvgIcon24(<path d="m12 14 4-4M3.34 19a10 10 0 1 1 17.32 0" />);
 export const IconHourglass = makeSvgIcon24(<path d="M6 3h12M6 21h12M7 3v3.5a5 5 0 0 0 10 0V3M7 21v-3.5a5 5 0 0 1 10 0V21" />);
 export const IconTabs = makeSvgIcon24(
     <>

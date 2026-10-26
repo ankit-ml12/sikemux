@@ -1414,6 +1414,9 @@ pub struct ConfigChoice {
     /// What the agent says about it, shown under its label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// The choice the agent takes when none is made, which a picker marks.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_default: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
