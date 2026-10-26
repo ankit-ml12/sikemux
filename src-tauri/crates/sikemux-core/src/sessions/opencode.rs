@@ -211,6 +211,22 @@ fn rename_in_databases(databases: &[PathBuf], session_id: &str, name: &str) -> R
     Err("session not found".to_string())
 }
 
+/// The provider and model of the session's last reply.
+pub(super) fn opencode_last_model(session_id: &str) -> Option<(String, String)> {
+    opencode_db_paths().iter().find_map(|db| {
+        let conn = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+        conn.query_row(
+            "SELECT json_extract(data, '$.providerID'), json_extract(data, '$.modelID') \
+             FROM message WHERE session_id = ?1 AND json_extract(data, '$.role') = 'assistant' \
+             AND json_extract(data, '$.providerID') IS NOT NULL \
+             ORDER BY time_created DESC, id DESC LIMIT 1",
+            [session_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .ok()
+    })
+}
+
 /// What the person and OpenCode wrote in the session: its text parts, never tool calls.
 pub(super) fn opencode_prose(db: &Path, session_id: &str, prose: &mut Prose) {
     let Ok(conn) = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY) else {

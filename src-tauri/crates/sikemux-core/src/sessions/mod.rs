@@ -83,6 +83,16 @@ pub fn agent_sessions(agent: AgentKind, cwd: &str, config_path: Option<&str>) ->
     }
 }
 
+/// The provider and model a saved session last ran on, as its agent names them: only OMP
+/// and OpenCode keep a provider beside each reply.
+pub fn last_model(agent: AgentKind, session_id: &str) -> Option<(String, String)> {
+    match agent {
+        AgentKind::Omp => omp::omp_last_model(Path::new(session_id)),
+        AgentKind::Opencode => opencode::opencode_last_model(session_id),
+        _ => None,
+    }
+}
+
 /// What holds the session a file written under `agent`'s session folders belongs
 /// to: Grok's folder for each session, else the transcript itself. None for agents
 /// that keep their sessions in a database.

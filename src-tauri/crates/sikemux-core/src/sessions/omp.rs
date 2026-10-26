@@ -228,6 +228,28 @@ fn omp_title_slot(title: &str, updated_at: &str) -> Option<String> {
     })
 }
 
+/// How far from its end a transcript is read for the model of its last reply.
+const LAST_MODEL_TAIL_BYTES: u64 = 4 * 1024 * 1024;
+
+/// The provider and model of the transcript's last reply.
+pub(super) fn omp_last_model(path: &Path) -> Option<(String, String)> {
+    let mut file = fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let tail = read_suffix(&mut file, len.saturating_sub(LAST_MODEL_TAIL_BYTES))?;
+    tail.lines()
+        .rev()
+        .filter(|line| line.contains("\"provider\""))
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find_map(|entry| {
+            let message = entry.get("message")?;
+            (message.get("role")?.as_str()? == "assistant").then_some(())?;
+            Some((
+                message.get("provider")?.as_str()?.to_owned(),
+                message.get("model")?.as_str()?.to_owned(),
+            ))
+        })
+}
+
 fn omp_session_id(path: &Path) -> Option<String> {
     let file = fs::File::open(path).ok()?;
     BufReader::new(file)

@@ -395,6 +395,32 @@ pub(crate) async fn resume_session(core: &Arc<Core>, session: SessionChoice) -> 
     Ok(json!({ "agentId": agent_id, "project": project }))
 }
 
+/// The provider a saved session of `kind` last ran on, and its model unless `model` is
+/// chosen, so taking the session up again keeps running there.
+async fn resumed_on(
+    core: &Arc<Core>,
+    kind: &str,
+    session: String,
+    model: Option<String>,
+) -> (Option<String>, Option<String>) {
+    let Some(agent) = AgentKind::from_name(kind) else {
+        return (None, model);
+    };
+    let core = core.clone();
+    let last = blocking(move || {
+        Ok(
+            crate::sessions::last_model(agent, &session).and_then(|(provider, last_model)| {
+                let provider = core.workspaces.providers()?.named_by_agent(&provider)?;
+                Some((provider.id.clone(), last_model))
+            }),
+        )
+    });
+    match last.await {
+        Ok(Some((id, last_model))) => (Some(id), model.or(Some(last_model))),
+        _ => (None, model),
+    }
+}
+
 async fn start_new(
     core: &Arc<Core>,
     client: Option<&Arc<ClientConn>>,
@@ -437,13 +463,17 @@ async fn start_new(
         remember_kind(core, &kind);
         return Ok((agent_id, not_started()));
     }
+    let (model_provider, model) = match &choice.resume_id {
+        Some(session) => resumed_on(core, &kind, session.clone(), choice.model).await,
+        None => (None, choice.model),
+    };
     let chosen = Launch {
         agent_id: agent_id.clone(),
         launcher: choice.launcher,
         cwd,
         permission_mode: choice.permission_mode,
-        model: choice.model,
-        model_provider: None,
+        model,
+        model_provider,
         effort: choice.effort,
         resume_id: choice.resume_id,
         account: None,

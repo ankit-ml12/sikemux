@@ -30,6 +30,9 @@ pub const KEY_SERVICE: &str = "sikemux-model-provider-test";
 /// Names the provider a chat runs on in place of its agent's own account.
 pub const ROUTED_ENV: &str = "SIKEMUX_MODEL_PROVIDER";
 
+/// Begins a provider's id as OMP and OpenCode know it.
+const AGENT_ID_PREFIX: &str = "sikemux-";
+
 /// Carries the key of a provider the person added, the only one a launch runs on.
 pub const CUSTOM_KEY_ENV: &str = "SIKEMUX_MODEL_PROVIDER_KEY";
 
@@ -336,7 +339,7 @@ impl Provider {
 
     /// Its id as OMP and OpenCode know it, apart from any provider of their own.
     fn agent_id(&self) -> String {
-        format!("sikemux-{}", self.id)
+        format!("{AGENT_ID_PREFIX}{}", self.id)
     }
 
     /// `model` as the provider's API names it, when `agent` named it its own way.
@@ -521,6 +524,11 @@ impl Providers {
             .iter()
             .find(|provider| provider.id == id)
             .cloned()
+    }
+
+    /// The provider OMP or OpenCode names `name`, when it is one Sikemux handed them.
+    pub fn named_by_agent(&self, name: &str) -> Option<Arc<Provider>> {
+        self.find(name.strip_prefix(AGENT_ID_PREFIX)?)
     }
 
     /// The catalogue's providers, then those the person added.
