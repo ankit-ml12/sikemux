@@ -2281,7 +2281,7 @@ impl Render for GitPane {
                     .h_full()
                     .flex()
                     .flex_col()
-                    .children(card)
+                    .children(card.map(|card| card.mb(px(8.))))
                     .child(div().flex_1().min_h_0().child(reviewed)),
             )
             .children(asking)
