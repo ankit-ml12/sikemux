@@ -402,7 +402,8 @@ impl Chat {
         }
     }
 
-    fn note_tool_call(&self, update: &Value) {
+    fn note_tool_call(&self, payload: &Value) {
+        let update = &payload["update"];
         if update["sessionUpdate"] != "tool_call" {
             return;
         }
