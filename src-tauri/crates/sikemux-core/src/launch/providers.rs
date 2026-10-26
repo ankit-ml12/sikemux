@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use sikemux_process::sync::Locked;
 
 use super::model_feed::{Feed, Snapshot};
-use crate::agent_catalog::{self, ProviderUse, AGENTS};
+use crate::agent_catalog::{self, ProviderUse};
 
 /// A development build keeps entries of its own, so it never spends or replaces the
 /// installed app's sign-in.
@@ -33,12 +33,26 @@ pub const ROUTED_ENV: &str = "SIKEMUX_MODEL_PROVIDER";
 /// Carries the key of a provider the person added, the only one a launch runs on.
 pub const CUSTOM_KEY_ENV: &str = "SIKEMUX_MODEL_PROVIDER_KEY";
 
-/// The agents Sikemux can point at a provider in place of their makers' accounts.
+/// Names the provider and model an OMP chat registers, as JSON, for the extension Sikemux hands it.
+const OMP_PROVIDER_ENV: &str = "SIKEMUX_OMP_PROVIDER";
+
+/// Registers the provider [`OMP_PROVIDER_ENV`] names for this run only, so the
+/// person's own OMP settings, sign-ins and models stay as they are.
+const OMP_EXTENSION: &str = "export default function (pi) {
+  const provider = process.env.SIKEMUX_OMP_PROVIDER;
+  if (provider) {
+    const { id, ...config } = JSON.parse(provider);
+    pi.registerProvider(id, config);
+  }
+}
+";
+
+/// The agents Sikemux can point at a provider in place of their makers'
+/// accounts, the one a provider runs with first.
+const ROUTED_AGENTS: [&str; 4] = ["claude", "codex", "omp", "opencode"];
+
 pub fn routed_agents() -> impl Iterator<Item = &'static str> {
-    AGENTS
-        .iter()
-        .filter(|agent| matches!(agent.providers, Some(ProviderUse::Routed)))
-        .map(|agent| agent.kind)
+    ROUTED_AGENTS.into_iter()
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -266,7 +280,11 @@ impl Provider {
             .get(agent)
             .or(self.model.as_ref())
             .filter(|model| {
-                listed.is_some_and(|listed| listed.contains_key(*model)) && serves(model)
+                let known = match (&self.models_dev, listed) {
+                    (None, _) => true,
+                    (Some(_), listed) => listed.is_some_and(|listed| listed.contains_key(*model)),
+                };
+                known && serves(model)
             });
         let newest = || {
             listed?
@@ -291,22 +309,130 @@ impl Provider {
         })
     }
 
+    /// Every provider serves OpenAI's chat completions, which OMP and OpenCode speak.
     pub fn routes(&self, agent: &str) -> bool {
         match agent {
             "claude" => self.anthropic.is_some(),
-            "codex" => self.kind == Kind::Local || self.responses,
+            "codex" => self.speaks_responses(),
+            "omp" | "opencode" => true,
             _ => false,
+        }
+    }
+
+    fn speaks_responses(&self) -> bool {
+        self.kind == Kind::Local || self.responses
+    }
+
+    /// The APIs it serves: `chat` completions, OpenAI's `responses`, and `anthropic` messages.
+    pub fn speaks(&self) -> Vec<&'static str> {
+        let mut apis = vec!["chat"];
+        if self.speaks_responses() {
+            apis.push("responses");
+        }
+        if self.anthropic.is_some() {
+            apis.push("anthropic");
+        }
+        apis
+    }
+
+    /// The agent Sikemux runs it with: the one that speaks its best API.
+    pub fn runs_with(&self) -> Option<&'static str> {
+        routed_agents().find(|agent| self.routes(agent))
+    }
+
+    /// Its id as OMP and OpenCode know it, apart from any provider of their own.
+    fn agent_id(&self) -> String {
+        format!("sikemux-{}", self.id)
+    }
+
+    /// `model` as the provider's API names it, when `agent` named it its own way.
+    pub fn api_model<'a>(&self, agent: &str, model: &'a str) -> &'a str {
+        match agent {
+            "omp" | "opencode" => model
+                .strip_prefix(&self.agent_id())
+                .and_then(|rest| rest.strip_prefix('/'))
+                .unwrap_or(model),
+            _ => model,
+        }
+    }
+
+    /// `model` as `agent` names it.
+    pub fn agent_model(&self, agent: &str, model: &str) -> String {
+        let model = self.api_model(agent, model);
+        match agent {
+            "omp" | "opencode" => format!("{}/{model}", self.agent_id()),
+            _ => model.to_owned(),
         }
     }
 
     /// `agent` pointed at this provider, paying with `key` and running `model`.
     /// Local runners take any token; Ollama's and LM Studio's guides use their names.
-    fn wiring(&self, agent: &str, key: Option<&str>, model: Option<&str>) -> Option<Wiring> {
+    /// OMP loads the extension at `omp_extension` to learn of the provider.
+    fn wiring(
+        &self,
+        agent: &str,
+        key: Option<&str>,
+        model: Option<&str>,
+        omp_extension: &Path,
+    ) -> Option<Wiring> {
         if !self.routes(agent) {
             return None;
         }
         let mut env = BTreeMap::from([(ROUTED_ENV.to_owned(), self.id.clone())]);
         let token = key.unwrap_or(&self.id).to_owned();
+        if agent == "omp" || agent == "opencode" {
+            let model = self.api_model(agent, model?);
+            let key_name = self
+                .key
+                .as_ref()
+                .and_then(|spec| spec.env.first())
+                .map_or(CUSTOM_KEY_ENV, String::as_str);
+            env.insert(key_name.to_owned(), token);
+            let mut args = Vec::new();
+            if agent == "omp" {
+                let mut entry = serde_json::json!({ "id": model });
+                if model.to_ascii_lowercase().contains("deepseek") {
+                    entry["compat"] = serde_json::json!({
+                        "requiresReasoningContentForToolCalls": true,
+                        "reasoningContentField": "reasoning_content",
+                    });
+                }
+                let registered = serde_json::json!({
+                    "id": self.agent_id(),
+                    "baseUrl": self.openai,
+                    "apiKey": key_name,
+                    "api": "openai-completions",
+                    "models": [entry],
+                });
+                env.insert(OMP_PROVIDER_ENV.into(), registered.to_string());
+                args.extend([
+                    "-e".to_owned(),
+                    omp_extension.to_string_lossy().into_owned(),
+                    "--model".to_owned(),
+                    self.agent_model(agent, model),
+                ]);
+            } else {
+                let mut config = super::skills::inherited_opencode_config()
+                    .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+                    .filter(serde_json::Value::is_object)
+                    .unwrap_or_else(|| serde_json::json!({}));
+                if !config["provider"].is_object() {
+                    config["provider"] = serde_json::json!({});
+                }
+                config["provider"][self.agent_id()] = serde_json::json!({
+                    "npm": "@ai-sdk/openai-compatible",
+                    "name": self.label,
+                    "options": {
+                        "baseURL": self.openai,
+                        "apiKey": format!("{{env:{key_name}}}"),
+                    },
+                    "models": { model: { "name": model } },
+                });
+                config["model"] = self.agent_model(agent, model).into();
+                env.insert("OPENCODE_CONFIG_CONTENT".into(), config.to_string());
+            }
+            return Some(Wiring { env, args });
+        }
         if agent == "claude" {
             let api = self.anthropic.as_ref()?;
             let (used, blanked) = match api.auth {
@@ -354,6 +480,7 @@ pub struct Providers {
     path: PathBuf,
     custom_path: PathBuf,
     helper_path: PathBuf,
+    omp_extension: PathBuf,
     state: Mutex<State>,
     feed: Feed,
 }
@@ -384,6 +511,7 @@ impl Providers {
             path: data_dir.join("model-providers.json"),
             custom_path: data_dir.join("custom-model-providers.json"),
             helper_path: data_dir.join("model-helper.json"),
+            omp_extension: data_dir.join("omp-model-provider.js"),
             state: Mutex::default(),
             feed: Feed::new(data_dir),
         }
@@ -618,9 +746,25 @@ impl Providers {
             })?),
             None => None,
         };
+        if !provider.routes(agent) {
+            return Err(format!("{agent} cannot run on {}", provider.label));
+        }
+        if agent == "omp" {
+            sikemux_process::files::write_atomic(
+                &self.omp_extension,
+                OMP_EXTENSION.as_bytes(),
+                false,
+            )
+            .map_err(|error| {
+                format!(
+                    "Sikemux could not prepare OMP for {}: {error}",
+                    provider.label
+                )
+            })?;
+        }
         let mut wiring = provider
-            .wiring(agent, key.as_deref(), model)
-            .ok_or_else(|| format!("{agent} cannot run on {}", provider.label))?;
+            .wiring(agent, key.as_deref(), model, &self.omp_extension)
+            .ok_or_else(|| format!("Pick a model of {} for {agent} to run", provider.label))?;
         for (name, value) in env {
             wiring.env.entry(name).or_insert(value);
         }

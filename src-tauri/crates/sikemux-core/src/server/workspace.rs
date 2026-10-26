@@ -1313,6 +1313,13 @@ impl Workspaces {
             None if provider.is_some() => return Err("Sikemux keeps no provider keys here".into()),
             None => Wiring::default(),
         };
+        let model = match (self.providers.as_ref(), provider, model) {
+            (Some(providers), Some(id), Some(model)) => Some(match providers.find(id) {
+                Some(provider) => provider.agent_model(&agent.provider, &model),
+                None => model,
+            }),
+            (_, _, model) => model,
+        };
         let skills = self.data_dir.as_deref().and_then(skills::ready);
         let built = agent.chat(program, providers, skills);
         Ok(ChatLaunch {
