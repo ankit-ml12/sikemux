@@ -101,12 +101,6 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                         .into_iter()
                         .flatten(),
                 )
-                .children(
-                    crate::ports::chip(bench, cx)
-                        .map(|chip| [chip, separator(cx)])
-                        .into_iter()
-                        .flatten(),
-                )
                 .children(battery_chip(bench, cx))
                 .child(clock(cx))
                 .child(
