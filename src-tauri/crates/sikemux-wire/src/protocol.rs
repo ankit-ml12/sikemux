@@ -1249,10 +1249,6 @@ pub struct Preferences {
     pub kept_running_notice_shown: bool,
     /// Panes show a dithered texture behind them.
     pub pane_shader: bool,
-    /// How the texture and picture behind panes are drawn.
-    pub pane_style: PaneStyle,
-    /// What the ASCII style draws.
-    pub pane_ascii: PaneAscii,
     /// A picture every pane dithers in place of the texture.
     pub pane_image: Option<String>,
     /// How strongly the texture or picture shows, from 0 to 2.
@@ -1281,24 +1277,6 @@ pub struct Preferences {
     pub tab_rail_all_agents: bool,
     /// The commands the person ran from the command deck, the last first.
     pub recent_command_keys: Vec<String>,
-}
-
-/// How the texture and picture behind panes are drawn: as dots, or as characters.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PaneStyle {
-    #[default]
-    Dither,
-    Ascii,
-}
-
-/// What the ASCII style draws: jellyfish swimming, or the pane image in characters.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PaneAscii {
-    #[default]
-    Jellyfish,
-    Image,
 }
 
 /// The page the tab rail shows.
@@ -1367,8 +1345,6 @@ impl Default for Preferences {
             notifications_introduced: false,
             kept_running_notice_shown: false,
             pane_shader: true,
-            pane_style: PaneStyle::default(),
-            pane_ascii: PaneAscii::default(),
             pane_image: None,
             pane_strength: 1.0,
             window_opacity: 1.0,
