@@ -1239,7 +1239,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
     )
 }
 
-const BLOCK_GAP: f32 = 2.;
+const BLOCK_GAP: f32 = 10.;
 const BLOCK_PAD_TOP: f32 = 7.;
 const BLOCK_PAD_BOTTOM: f32 = 9.;
 const NAME_LINE: f32 = 16.;
@@ -1249,9 +1249,9 @@ const SIGNED_OUT_LINE: f32 = 30.;
 
 fn row_gap(compact: bool) -> f32 {
     if compact {
-        4.
+        2.
     } else {
-        6.
+        3.
     }
 }
 
