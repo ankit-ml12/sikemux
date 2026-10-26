@@ -86,6 +86,7 @@ const TOOL_ICONS: Record<ToolIconName, IconName> = {
   keyboard: 'IconKeyboard',
   link: 'IconLink',
   'log-lines': 'IconLogLines',
+  logo: 'Logo',
   message: 'IconMessage',
   mouse: 'IconMouse',
   move: 'IconMove',

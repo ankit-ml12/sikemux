@@ -7,7 +7,7 @@ pub(super) const SPECS: &[(&str, Spec)] = &[
         Spec {
             verb: "read",
             kind: "read",
-            icon: "book",
+            icon: "logo",
             target: &["the guide: {topic}", "the guide"],
             detail: &[],
             plugin: None,
@@ -456,7 +456,7 @@ pub(super) const SPECS: &[(&str, Spec)] = &[
         Spec {
             verb: "inspect",
             kind: "read",
-            icon: "folder",
+            icon: "logo",
             target: &["the workspace"],
             detail: &[],
             plugin: None,
@@ -709,7 +709,7 @@ pub(super) const SPECS: &[(&str, Spec)] = &[
         Spec {
             verb: "skills",
             kind: "edit",
-            icon: "book",
+            icon: "logo",
             target: &["{action} {name}", "{action} from {source}", "{action}"],
             detail: &[],
             plugin: None,
@@ -720,7 +720,7 @@ pub(super) const SPECS: &[(&str, Spec)] = &[
         Spec {
             verb: "read",
             kind: "read",
-            icon: "terminal",
+            icon: "logo",
             target: &["the app console"],
             detail: &[],
             plugin: None,

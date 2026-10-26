@@ -19,6 +19,7 @@ export type ToolRowIcon =
     | "keyboard"
     | "link"
     | "log-lines"
+    | "logo"
     | "message"
     | "mouse"
     | "network"
