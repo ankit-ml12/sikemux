@@ -94,7 +94,7 @@ pub fn picker(
         .text_size(crate::theme::ui_text(11.))
         .text_color(t.text_secondary)
         .tooltip(about)
-        .child(ui::icon(Icon::User, 12.).text_color(t.text_tertiary))
+        .child(ui::mark(provider, 13.))
         .child(
             div()
                 .min_w_0()
