@@ -208,10 +208,9 @@ pub fn rainbow(word: &str, size: f32, cx: &App) -> Div {
     )
 }
 
-/// A group's spaced capitals.
-pub fn caps(value: &str, cx: &App) -> Div {
-    text(value.to_uppercase(), 11., FontWeight::MEDIUM)
-        .letter_spacing(0.2)
+/// What heads a group or a column, in the tertiary ink.
+pub fn label(value: &str, cx: &App) -> Div {
+    text(value.to_owned(), 12., FontWeight::MEDIUM)
         .line_height(crate::theme::ui_text(16.))
         .text_color(Tokens::get(cx).text_tertiary)
 }

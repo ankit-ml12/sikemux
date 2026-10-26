@@ -924,7 +924,7 @@ fn columns(pane: &BoardPane, ids: &[u64], cx: &mut Context<BoardPane>) -> impl I
                         .items_center()
                         .justify_between()
                         .px(px(6.))
-                        .child(ui::caps(name, cx))
+                        .child(ui::label(name, cx))
                         .child(ui::meta(cards.len().to_string(), cx)),
                 )
                 .children(cards.into_iter().map(|card| card_view(pane, card, cx)))

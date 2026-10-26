@@ -10,7 +10,7 @@ use gpui_kit::{
 use smallvec::SmallVec;
 
 use super::controls::OnClick;
-use super::{caps, icon, mark_box, meta, text};
+use super::{icon, label, mark_box, meta, text};
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{Tokens, RADIUS_2};
@@ -340,7 +340,6 @@ impl ParentElement for Group {
 
 impl RenderOnce for Group {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let border = Tokens::get(cx).border;
         let empty = self.rows.is_empty();
         div()
             .flex()
@@ -355,8 +354,7 @@ impl RenderOnce for Group {
                     .pr(px(6.))
                     .pb(px(6.))
                     .pl(px(8.))
-                    .child(caps(self.label, cx).flex_none())
-                    .child(div().flex_1().h(px(1.)).bg(border))
+                    .child(label(self.label, cx).flex_1())
                     .children(self.actions),
             )
             .children(self.toolbar)

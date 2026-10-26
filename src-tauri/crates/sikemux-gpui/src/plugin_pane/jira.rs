@@ -1254,7 +1254,7 @@ impl Jira {
                         .flex()
                         .items_center()
                         .gap(px(6.))
-                        .child(ui::caps(&column.name, cx))
+                        .child(ui::label(&column.name, cx))
                         .child(ui::meta(cards.len().to_string(), cx)),
                 );
             for issue in cards {
@@ -1699,7 +1699,7 @@ impl Jira {
             .flex()
             .flex_col()
             .gap(px(4.))
-            .child(ui::caps("Details", cx))
+            .child(ui::label("Details", cx))
             .child(fact("Assignee", person(issue.assignee.as_ref())));
         if let Some(reporter) = &view.reporter {
             facts = facts.child(fact("Reporter", person(Some(reporter))));
@@ -1773,7 +1773,7 @@ impl Jira {
             .flex_col()
             .gap(px(6.))
             .text_color(t.text_primary)
-            .child(ui::caps("Description", cx))
+            .child(ui::label("Description", cx))
             .child(body)
             .into_any_element()
     }
@@ -1886,7 +1886,7 @@ impl Jira {
                 div()
                     .flex()
                     .items_center()
-                    .child(ui::caps("Activity", cx))
+                    .child(ui::label("Activity", cx))
                     .child(div().flex_1())
                     .child(switch),
             )
@@ -2041,7 +2041,7 @@ fn heading(label: &str, cx: &App) -> Div {
         .px(px(8.))
         .pt(px(4.))
         .pb(px(2.))
-        .child(ui::caps(label, cx))
+        .child(ui::label(label, cx))
 }
 
 fn chevron(open: bool, cx: &App) -> AnyElement {
@@ -2475,7 +2475,7 @@ fn commits(host: &Host, key: &str, cx: &App) -> Option<AnyElement> {
             .flex()
             .flex_col()
             .gap(px(6.))
-            .child(ui::caps("Commits in this project", cx))
+            .child(ui::label("Commits in this project", cx))
             .children(named.into_iter().map(|commit| {
                 div()
                     .flex()

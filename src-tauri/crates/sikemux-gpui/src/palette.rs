@@ -168,8 +168,7 @@ pub struct Spec {
     pub choice: Option<Choice>,
     /// A button beside the field that does something the rows cannot, such as opening a folder.
     pub aside: Option<Aside>,
-    /// Drawn as the command deck: wider and taller, its rows' words in tracked capitals and
-    /// their keys in keycaps.
+    /// Drawn as the command deck: wider and taller, its rows' keys in keycaps.
     deck: bool,
     /// Rises over the stage alone, leaving the rails as they are.
     on_stage: bool,
@@ -833,7 +832,7 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                 .flex()
                 .items_end()
                 .pb(px(4.))
-                .child(ui::caps(&group, cx))
+                .child(ui::label(&group, cx))
                 .into_any_element();
         }
         Some(Line::Row(place)) => &palette.spec.rows[*place],
@@ -927,12 +926,6 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
             {
                 Some(state) => element.child(div().flex_none().child(state)),
                 None if meta.is_empty() => element,
-                None if palette.spec.deck => element.child(
-                    ui::text(meta.to_uppercase(), 10., FontWeight::SEMIBOLD)
-                        .letter_spacing(0.08)
-                        .text_color(t.text_tertiary)
-                        .flex_none(),
-                ),
                 None => element.child(ui::meta(meta, cx).flex_none()),
             }
         })

@@ -16,6 +16,9 @@ its own look from those tokens.
   and the one primary action on a surface. A choice from a set (a segmented
   button, a filter, a nav item, a choice card) is chosen, so it gets the grey
   lift; a chosen tab's underline is ink.
+- **Labels are words, not capitals.** Group and column labels are sentence case in
+  `--text-tertiary`, with no rule after them. A search list marks the letters it
+  matched in the primary ink at semibold.
 - **Hairlines, not shadows.** Flat surfaces separate with `--border`. Only things
   that float (menus, palettes, dialogs) get a shadow and may blur what is behind
   them.

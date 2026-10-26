@@ -280,7 +280,7 @@ impl Aws {
             .p(px(6.))
             .border_r_1()
             .border_color(t.border)
-            .child(div().px(px(8.)).pt(px(4.)).pb(px(4.)).child(ui::caps("Services", cx)))
+            .child(div().px(px(8.)).pt(px(4.)).pb(px(4.)).child(ui::label("Services", cx)))
             .children(services)
             .child(div().flex_1())
             .child(self.agents(host, cx))
@@ -331,7 +331,7 @@ impl Aws {
             .flex()
             .flex_col()
             .gap(px(4.))
-            .child(div().px(px(8.)).child(ui::caps("Agents use", cx)))
+            .child(div().px(px(8.)).child(ui::label("Agents use", cx)))
             .child(body)
             .into_any_element()
     }
@@ -589,7 +589,7 @@ impl Aws {
             .flex()
             .flex_col()
             .gap(px(2.))
-            .child(ui::caps("Tasks", cx))
+            .child(ui::label("Tasks", cx))
             .when(tasks.tasks.is_empty(), |list| {
                 list.child(ui::meta("No tasks running.", cx))
             })
@@ -888,7 +888,7 @@ impl Aws {
                 .flex()
                 .flex_col()
                 .gap(px(4.))
-                .child(ui::caps(
+                .child(ui::label(
                     &match &month.compared_to {
                         Some(before) => format!("By service, against {before}"),
                         None => "By service".to_owned(),

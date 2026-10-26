@@ -145,7 +145,7 @@ impl Default for Style {
             text_size: px(14.),
             line_height: 1.65,
             code_size: px(12.),
-            table_size: px(13.5),
+            table_size: px(13.),
             gap: px(10.),
             ink: rgb(0xe7e5ef).into(),
             ink_dim: rgb(0x8b8898).into(),
@@ -1232,7 +1232,6 @@ impl Draw<'_> {
                     .enumerate()
                     .map(|(x, chars)| {
                         let content = match row.get(x).cloned().flatten() {
-                            Some(rich) if head => rich.text.to_uppercase().into_any_element(),
                             Some(rich) => self.rich(&rich, cx),
                             None => div().into_any_element(),
                         };
@@ -1254,10 +1253,7 @@ impl Draw<'_> {
                     .border_color(style.line)
                     .when(y > 0, Div::border_t_1);
                 row.when(head, |row| {
-                    let size = style.table_size - px(1.5);
-                    spaced(row.bg(style.table_head))
-                        .text_size(size)
-                        .text_color(style.ink_dim)
+                    row.bg(style.table_head).text_color(style.ink_dim)
                 })
                 .children(cells)
             })
@@ -1464,16 +1460,6 @@ fn highlight(marks: Marks, style: &Style) -> HighlightStyle {
         highlight.color = Some(style.accent);
     }
     highlight
-}
-
-#[cfg(feature = "fork")]
-fn spaced(row: Div) -> Div {
-    row.letter_spacing(0.06)
-}
-
-#[cfg(not(feature = "fork"))]
-fn spaced(row: Div) -> Div {
-    row
 }
 
 fn tasks_in(node: &Node) -> usize {

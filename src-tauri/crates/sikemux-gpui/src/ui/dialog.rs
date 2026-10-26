@@ -10,7 +10,7 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, Window,
 };
 
-use super::{icon, text};
+use super::{icon, label, text};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2, RADIUS_4};
 
@@ -775,13 +775,7 @@ impl RenderOnce for Cheatsheet {
                     .when(index + 1 < count, |section| {
                         section.border_b_1().border_color(t.border)
                     })
-                    .child(
-                        div()
-                            .mb(px(6.))
-                            .text_size(crate::theme::ui_text(10.))
-                            .text_color(t.text_tertiary)
-                            .child(title.to_uppercase()),
-                    )
+                    .child(label(title, cx).mb(px(6.)))
                     .children(rows.iter().map(|(keys, label)| {
                         div()
                             .flex()
