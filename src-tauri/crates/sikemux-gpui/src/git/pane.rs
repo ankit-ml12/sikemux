@@ -3541,9 +3541,9 @@ fn tree_lines(first: bool, last: bool, t: &Tokens) -> Vec<Div> {
     if last {
         return vec![div()
             .absolute()
-            .left(px(11.))
+            .left(px(12.))
             .top(top)
-            .w(px(6.))
+            .w(px(5.))
             .h(px(if first { 27. } else { 14.5 }))
             .border_l_1()
             .border_b_1()
@@ -3553,16 +3553,16 @@ fn tree_lines(first: bool, last: bool, t: &Tokens) -> Vec<Div> {
     vec![
         div()
             .absolute()
-            .left(px(11.))
+            .left(px(12.))
             .top(top)
             .bottom(px(-1.))
             .w(px(1.))
             .bg(t.tree_spine),
         div()
             .absolute()
-            .left(px(12.))
+            .left(px(13.))
             .top(px(12.))
-            .w(px(5.))
+            .w(px(4.))
             .h(px(1.))
             .bg(t.tree_tick),
     ]
