@@ -331,6 +331,7 @@ impl RenderOnce for Button {
         let base = BaseButton::new(self.id.clone())
             .on_hover(keep_over)
             .when(self.disabled, |button| button.opacity(0.5))
+            .when(!self.disabled, |button| button.cursor_pointer())
             .group(GROUP)
             .accessibility_label(self.label.clone())
             .flex()
