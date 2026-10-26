@@ -5353,7 +5353,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux-host"
-version = "0.6.0-nightly.4"
+version = "0.6.0-nightly.5"
 dependencies = [
  "hex",
  "libc",
@@ -5733,7 +5733,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux-voice"
-version = "0.6.0-nightly.4"
+version = "0.6.0-nightly.5"
 dependencies = [
  "hex",
  "objc2-foundation",
