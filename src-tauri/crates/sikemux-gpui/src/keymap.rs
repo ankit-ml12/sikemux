@@ -408,13 +408,14 @@ pub fn label(keys: &str) -> Option<SharedString> {
 /// A key pressed, in the table's spelling, such as `Meta+Shift+KeyP`.
 pub fn spelling(keystroke: &Keystroke) -> Option<String> {
     let key = keystroke.key.as_str();
+    let shifted = SHIFTED.iter().find(|(_, typed)| *typed == key);
     let code = match key.chars().collect::<Vec<_>>().as_slice() {
         [letter] if letter.is_ascii_alphabetic() => format!("Key{}", letter.to_ascii_uppercase()),
         [digit] if digit.is_ascii_digit() => format!("Digit{digit}"),
         _ if key.starts_with('f') && key[1..].parse::<u8>().is_ok() => key.to_uppercase(),
         _ => NAMED
             .iter()
-            .chain(SHIFTED)
+            .chain(shifted)
             .find(|(_, named)| *named == key)?
             .0
             .to_owned(),
@@ -424,7 +425,7 @@ pub fn spelling(keystroke: &Keystroke) -> Option<String> {
         (modifiers.platform, "Meta"),
         (modifiers.control, "Ctrl"),
         (modifiers.alt, "Alt"),
-        (modifiers.shift, "Shift"),
+        (modifiers.shift || shifted.is_some(), "Shift"),
     ];
     let parts: Vec<&str> = held
         .into_iter()
@@ -473,18 +474,27 @@ pub fn reserved(keys: &str) -> Option<&'static str> {
 
 /// A binding in the table's spelling, `Meta+Shift+KeyP`, as GPUI writes it, `cmd-shift-p`.
 /// Keys in the table's spelling, such as Meta+Shift+BracketLeft, as GPUI spells them.
+/// Shift with a symbol or digit reaches GPUI as the character it types, Shift+] as `}`.
 pub(crate) fn keystroke(keys: &str) -> Option<String> {
-    let parts: Option<Vec<String>> = keys
-        .split('+')
-        .map(|part| {
-            Some(match part {
-                "Meta" => "cmd".to_owned(),
-                "Ctrl" => "ctrl".to_owned(),
-                "Alt" => "alt".to_owned(),
-                "Shift" => "shift".to_owned(),
-                code => key(code)?,
-            })
+    let held: Vec<&str> = keys.split('+').collect();
+    let (code, modifiers) = held.split_last()?;
+    let typed = SHIFTED
+        .iter()
+        .find(|(named, _)| named == code)
+        .filter(|_| modifiers.contains(&"Shift"))
+        .map(|(_, typed)| (*typed).to_owned());
+    let keep_shift = typed.is_none();
+    let parts: Option<Vec<String>> = modifiers
+        .iter()
+        .filter(|part| keep_shift || **part != "Shift")
+        .map(|part| match *part {
+            "Meta" => Some("cmd".to_owned()),
+            "Ctrl" => Some("ctrl".to_owned()),
+            "Alt" => Some("alt".to_owned()),
+            "Shift" => Some("shift".to_owned()),
+            _ => None,
         })
+        .chain([typed.or_else(|| key(code))])
         .collect();
     Some(parts?.join("-"))
 }
