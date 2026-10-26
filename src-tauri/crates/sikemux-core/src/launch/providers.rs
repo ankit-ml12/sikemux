@@ -353,6 +353,16 @@ impl Provider {
         }
     }
 
+    /// Whether `model` reads pictures, as models.dev says; one it does not know is taken to,
+    /// as most models an agent codes with do, so pictures reach it rather than drop silently.
+    fn reads_images(&self, feed: &Snapshot, agent: &str, model: &str) -> bool {
+        let model = self.api_model(agent, model);
+        self.models_dev
+            .as_deref()
+            .and_then(|id| feed.models(id)?.get(model)?.images)
+            .unwrap_or(true)
+    }
+
     /// `model` as `agent` names it.
     pub fn agent_model(&self, agent: &str, model: &str) -> String {
         let model = self.api_model(agent, model);
@@ -365,12 +375,14 @@ impl Provider {
     /// `agent` pointed at this provider, paying with `key` and running `model`.
     /// Local runners take any token; Ollama's and LM Studio's guides use their names.
     /// OMP loads the extension at `omp_extension` to learn of the provider.
+    /// OMP and OpenCode are told the model reads pictures when `images`.
     fn wiring(
         &self,
         agent: &str,
         key: Option<&str>,
         model: Option<&str>,
         omp_extension: &Path,
+        images: bool,
     ) -> Option<Wiring> {
         if !self.routes(agent) {
             return None;
@@ -385,9 +397,14 @@ impl Provider {
                 .and_then(|spec| spec.env.first())
                 .map_or(CUSTOM_KEY_ENV, String::as_str);
             env.insert(key_name.to_owned(), token);
+            let input: &[&str] = if images {
+                &["text", "image"]
+            } else {
+                &["text"]
+            };
             let mut args = Vec::new();
             if agent == "omp" {
-                let mut entry = serde_json::json!({ "id": model });
+                let mut entry = serde_json::json!({ "id": model, "input": input });
                 if model.to_ascii_lowercase().contains("deepseek") {
                     entry["compat"] = serde_json::json!({
                         "requiresReasoningContentForToolCalls": true,
@@ -423,7 +440,11 @@ impl Provider {
                         "baseURL": self.openai,
                         "apiKey": format!("{{env:{key_name}}}"),
                     },
-                    "models": { model: { "name": model } },
+                    "models": { model: {
+                        "name": model,
+                        "attachment": images,
+                        "modalities": { "input": input, "output": ["text"] },
+                    } },
                 });
                 config["model"] = self.agent_model(agent, model).into();
                 env.insert("OPENCODE_CONFIG_CONTENT".into(), config.to_string());
@@ -771,8 +792,10 @@ impl Providers {
                 )
             })?;
         }
+        let images = matches!(agent, "omp" | "opencode")
+            && model.is_none_or(|model| provider.reads_images(&self.feed(), agent, model));
         let mut wiring = provider
-            .wiring(agent, key.as_deref(), model, &self.omp_extension)
+            .wiring(agent, key.as_deref(), model, &self.omp_extension, images)
             .ok_or_else(|| format!("Pick a model of {} for {agent} to run", provider.label))?;
         for (name, value) in env {
             wiring.env.entry(name).or_insert(value);

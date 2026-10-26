@@ -53,6 +53,9 @@ pub struct Model {
     pub limit: Limit,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<Cost>,
+    /// It reads pictures as well as text; none when the copy did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub images: Option<bool>,
     #[serde(default, skip_serializing_if = "Experimental::is_empty")]
     experimental: Experimental,
     #[serde(default, skip_serializing)]
@@ -169,6 +172,7 @@ impl Snapshot {
                     .models
                     .retain(|_, model| model.reads_and_writes_text());
                 for model in listing.models.values_mut() {
+                    model.images = Some(model.modalities.input.iter().any(|kind| kind == "image"));
                     model.experimental.modes.retain(|speed, mode| {
                         SPEEDS.contains(&speed.as_str()) && mode.cost.is_some()
                     });
