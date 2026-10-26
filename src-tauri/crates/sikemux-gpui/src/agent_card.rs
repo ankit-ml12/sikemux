@@ -5,9 +5,9 @@ use std::time::Duration;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    anchored, deferred, div, point, px, Anchor, AnchoredPositionMode, AnyElement, Context,
-    FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Task,
+    anchored, canvas, deferred, div, point, px, Anchor, AnchoredPositionMode, AnyElement, Context,
+    Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
+    SharedString, StatefulInteractiveElement, Styled, Task,
 };
 use serde_json::json;
 use sikemux_wire::protocol::WorkspaceAgent;
@@ -24,6 +24,10 @@ const CLOSE_AFTER: Duration = Duration::from_millis(140);
 pub struct Card {
     /// The agent whose card shows.
     agent: Option<String>,
+    /// Where its row sat when the card first drew; the card closes once the row moves.
+    row_at: Option<Point<Pixels>>,
+    /// The list scrolled, so rows sliding under a still pointer open no card until it moves.
+    held: bool,
     timer: Option<Task<()>>,
     pulls: Vec<CardPull>,
 }
@@ -40,6 +44,9 @@ impl Workbench {
     pub fn rest_on_agent(&mut self, agent: &str, inside: bool, cx: &mut Context<Self>) {
         if !inside {
             return self.leave_card(cx);
+        }
+        if self.agent_card.held {
+            return;
         }
         if self.agent_card.agent.as_deref() == Some(agent) {
             self.agent_card.timer = None;
@@ -72,8 +79,29 @@ impl Workbench {
     }
 
     pub fn close_card(&mut self, cx: &mut Context<Self>) {
-        self.agent_card = Card::default();
+        let held = self.agent_card.held;
+        self.agent_card = Card {
+            held,
+            ..Card::default()
+        };
         cx.notify();
+    }
+
+    /// The agents list scrolled: any card closes, and none opens until the pointer moves.
+    pub fn hold_card(&mut self, cx: &mut Context<Self>) {
+        self.agent_card.held = true;
+        if self.agent_card.agent.is_some() || self.agent_card.timer.is_some() {
+            self.close_card(cx);
+        }
+    }
+
+    /// The pointer moved on an agent's row after a scroll held cards shut: its card opens
+    /// once the pointer rests there.
+    pub fn move_on_agent(&mut self, agent: &str, cx: &mut Context<Self>) {
+        if self.agent_card.held {
+            self.agent_card.held = false;
+            self.rest_on_agent(agent, true, cx);
+        }
     }
 
     fn open_card(&mut self, agent: String, cx: &mut Context<Self>) {
@@ -136,6 +164,32 @@ fn known<'a>(bench: &'a Workbench, id: &str) -> Option<&'a WorkspaceAgent> {
         .find(|agent| agent.id == id)
 }
 
+/// Laid over the row whose card shows: closes the card once the row moves on screen, as it
+/// does when its list scrolls, its rail slides or the window resizes, so the card never
+/// rides along with it.
+pub fn follow_row(bench: Entity<Workbench>) -> impl IntoElement {
+    canvas(
+        move |bounds, _, cx| {
+            let origin = bounds.origin;
+            let at = bench.read(cx).agent_card.row_at;
+            let moved = at.is_some_and(|at| {
+                (at.x - origin.x).abs() > px(0.5) || (at.y - origin.y).abs() > px(0.5)
+            });
+            if at.is_none() || moved {
+                cx.defer(move |cx| {
+                    bench.update(cx, |bench, cx| match moved {
+                        true => bench.close_card(cx),
+                        false => bench.agent_card.row_at = Some(origin),
+                    })
+                });
+            }
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0()
+}
+
 /// The card for `agent` when it is the one showing, placed beside its row, toward the
 /// middle of the window.
 pub fn view(
@@ -163,13 +217,9 @@ pub fn view(
         .map(|name| format!("@{name}"))
         .chain(Some(
             bench
-                .launchers()
-                .iter()
-                .find(|launcher| launcher.provider == agent.provider)
-                .map_or_else(
-                    || agent.provider.clone(),
-                    |launcher| launcher.label.to_string(),
-                ),
+                .agent_label(&agent.provider)
+                .unwrap_or(&agent.provider)
+                .to_owned(),
         ))
         .collect();
     let fact = |icon: Option<Icon>, body: AnyElement| {

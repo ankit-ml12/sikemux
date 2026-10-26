@@ -204,6 +204,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
             div()
                 .id("tab-rail-scroll")
                 .track_scroll(&bench.rail_scroll)
+                .on_scroll(cx.listener(|bench, _, _, cx| bench.hold_card(cx)))
                 .size_full()
                 .pt(px(EDGE_FADE))
                 .px(px(10.))
@@ -1002,9 +1003,11 @@ fn agent_row(
             matches!(team, Some(TeamLink::Member | TeamLink::Last)),
             |wrap| wrap.pl(px(18.)),
         )
-        .on_hover(
-            cx.listener(move |bench, inside: &bool, _, cx| bench.rest_on_agent(&id, *inside, cx)),
-        )
+        .on_hover({
+            let id = id.clone();
+            cx.listener(move |bench, inside: &bool, _, cx| bench.rest_on_agent(&id, *inside, cx))
+        })
+        .on_mouse_move(cx.listener(move |bench, _, _, cx| bench.move_on_agent(&id, cx)))
         .on_mouse_down(
             gpui_kit::MouseButton::Left,
             cx.listener(|bench, _, _, cx| bench.close_card(cx)),
@@ -1012,6 +1015,9 @@ fn agent_row(
         .child(row)
         .child(actions)
         .children(lines)
+        .when(card.is_some(), |wrap| {
+            wrap.child(crate::agent_card::follow_row(cx.entity()))
+        })
         .children(card.map(|card| div().absolute().top_0().left_0().child(card)))
         .context_menu(ui::menu(move |popup, _, _| match &menu {
             Some(menu) => menu.build(popup),
