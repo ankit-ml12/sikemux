@@ -294,6 +294,7 @@ fn post(
                 .rounded(theme::RADIUS_2)
                 .border_1()
                 .border_color(t.border)
+                .bg(t.surface_composer)
                 .child(
                     div()
                         .px(px(HEADER_INSET))

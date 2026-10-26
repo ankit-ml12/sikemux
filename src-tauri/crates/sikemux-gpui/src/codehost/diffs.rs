@@ -220,7 +220,7 @@ fn item_of(
                 .border_l_1()
                 .border_r_1()
                 .border_color(t.border)
-                .bg(t.surface),
+                .bg(t.surface_composer),
         )
     };
     match item {
@@ -394,7 +394,7 @@ fn item_of(
                         .border_r_1()
                         .border_color(t.border)
                         .rounded_b(RADIUS_2)
-                        .bg(t.surface),
+                        .bg(t.surface_composer),
                 )
                 .into_any_element()
         }

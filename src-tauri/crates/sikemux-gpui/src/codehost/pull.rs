@@ -25,22 +25,7 @@ use gpui_kit::component::input::{Textarea, TextareaState};
 pub const VIEW: &str = "host-pull";
 pub const FILES: &str = "host-pull-files";
 
-/// The side column's pages.
-#[derive(Clone, Copy, PartialEq)]
-pub enum Page {
-    Files,
-    Commits,
-    Merge,
-}
-
-/// What the main column shows.
-#[derive(Clone, Copy, PartialEq)]
-pub enum Tab {
-    Conversation,
-    Files,
-}
-
-/// What the view shows while too narrow for two columns, picked from one row of tabs.
+/// What the view shows, picked from its one row of tabs.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Section {
     Conversation,
@@ -49,8 +34,14 @@ pub enum Section {
     Checks,
 }
 
-/// Below this width the side column and the main column stack into one.
-const STACK_BELOW: f32 = 760.;
+/// Below this width the Files tab has no room for the file list beside the diffs.
+const NARROW_BELOW: f32 = 760.;
+/// The widest the view grows, centred in a wider pane.
+const PAGE: f32 = 1120.;
+/// The widest the conversation, commits and checks grow, for lines that stay readable.
+const READABLE: f32 = 860.;
+/// How wide the file list is beside the diffs.
+const FILE_LIST: f32 = 260.;
 
 fn method_label(method: &str) -> &str {
     match method {
@@ -77,11 +68,9 @@ pub struct Opened {
     pub thread: Read<Vec<Block>>,
     /// The description, kept as markdown while it reads the same.
     opening: Option<(String, Post)>,
-    pub page: Page,
-    pub tab: Tab,
     pub section: Section,
-    /// Too narrow for two columns, as last drawn.
-    stacked: bool,
+    /// Too narrow for the file list beside the diffs, as last drawn.
+    narrow: bool,
     /// The file whose diff was last asked for.
     focused: Option<String>,
     pub method: usize,
@@ -101,10 +90,8 @@ impl Opened {
             commits: None,
             thread: None,
             opening: None,
-            page: Page::Files,
-            tab: Tab::Conversation,
             section: Section::Conversation,
-            stacked: false,
+            narrow: false,
             focused: None,
             method: 0,
             busy: false,
@@ -153,7 +140,6 @@ impl Opened {
 
     /// Shows the diffs, scrolled to `path`'s.
     fn focus(&mut self, path: &str) {
-        self.tab = Tab::Files;
         self.section = Section::Files;
         self.focused = Some(path.to_owned());
         if let Some(Ok(diffs)) = &mut self.files {
@@ -379,21 +365,12 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
     let Some(opened) = &area.pull else {
         return div().into_any_element();
     };
-    let stacked = opened.stacked;
-    let diffs_shown = match stacked {
-        true => opened.section == Section::Files,
-        false => opened.tab == Tab::Files,
-    };
-    if diffs_shown {
+    if opened.section == Section::Files {
         if let Some(Some(Ok(diffs))) = area.pull.as_mut().map(|opened| opened.files.as_mut()) {
             diffs.colour(cx, |area| area.pull.as_mut()?.files.as_mut()?.as_mut().ok());
         }
     }
-    let shown = if stacked {
-        stacked_view(area, window, cx)
-    } else {
-        wide_view(area, window, cx)
-    };
+    let shown = page_view(area, window, cx);
     let entity = cx.entity().downgrade();
     div()
         .size_full()
@@ -404,8 +381,8 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
             entity
                 .update(cx, |area, cx| {
                     if let Some(opened) = &mut area.pull {
-                        if opened.stacked != (width < STACK_BELOW) {
-                            opened.stacked = !opened.stacked;
+                        if opened.narrow != (width < NARROW_BELOW) {
+                            opened.narrow = !opened.narrow;
                             cx.notify();
                         }
                     }
@@ -416,33 +393,10 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
         .into_any_element()
 }
 
-fn wide_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> AnyElement {
+/// The pull request's head with its actions, one row of tabs, then the tab's page, in a
+/// column centred in a wide pane.
+fn page_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let left = side(area, cx);
-    let right = main(area, window, cx);
-    div()
-        .size_full()
-        .flex()
-        .child(
-            div()
-                .w(px(320.))
-                .flex_none()
-                .h_full()
-                .border_r_1()
-                .border_color(t.border)
-                .child(left),
-        )
-        .child(div().flex_1().min_w_0().h_full().child(right))
-        .into_any_element()
-}
-
-/// One column for a narrow pane, such as a desk: the pull request's title and actions,
-/// one row of tabs for everything the two columns show, then the tab's page.
-fn stacked_view(
-    area: &mut HostArea,
-    window: &mut Window,
-    cx: &mut Context<HostArea>,
-) -> AnyElement {
     let opened = area.pull.as_ref().expect("a pull request is open");
     let found = match &opened.view {
         None => return super::notice("Loading pull request", None, cx),
@@ -465,53 +419,100 @@ fn stacked_view(
         )
     });
     let sections = [
-        (Section::Conversation, "Conversation", count(said)),
-        (Section::Files, "Files", count(pull.changed_files)),
-        (Section::Commits, "Commits", count(pull.commits)),
-        (Section::Checks, "Checks", checks_mark),
+        (
+            Section::Conversation,
+            Icon::Message,
+            "Conversation",
+            count(said),
+        ),
+        (
+            Section::Files,
+            Icon::File,
+            "Files",
+            count(pull.changed_files),
+        ),
+        (
+            Section::Commits,
+            Icon::Commit,
+            "Commits",
+            count(pull.commits),
+        ),
+        (Section::Checks, Icon::Actions, "Checks", checks_mark),
     ];
     let chosen = opened.section;
     let top = div()
         .px(px(14.))
         .pt(px(14.))
         .pb(px(12.))
-        .child(header(area, found, true, cx));
+        .child(header(area, found, cx));
     let folding = (chosen == Section::Files)
         .then(|| fold_all(opened, cx))
         .flatten();
     let tabs = strip(
-        sections.into_iter().map(|(section, label, mark)| {
-            tab(label, mark, chosen == section, cx).on_click(cx.listener(move |area, _, _, cx| {
-                if let Some(opened) = &mut area.pull {
-                    opened.section = section;
-                }
-                cx.notify();
-            }))
+        sections.into_iter().map(|(section, glyph, label, mark)| {
+            tab(glyph, label, mark, chosen == section, cx).on_click(cx.listener(
+                move |area, _, _, cx| {
+                    if let Some(opened) = &mut area.pull {
+                        opened.section = section;
+                    }
+                    cx.notify();
+                },
+            ))
         }),
         folding,
         cx,
     );
     let page = |body: AnyElement| {
         div()
-            .id("pull-stacked-page")
+            .id("pull-page")
             .size_full()
             .overflow_y_scroll()
-            .child(body)
+            .child(div().max_w(px(READABLE)).child(body))
             .into_any_element()
     };
     let body = match chosen {
         Section::Conversation => conversation(area, window, cx),
-        Section::Files => diffs(area, window, cx),
+        Section::Files if opened.narrow => diffs(area, window, cx),
+        Section::Files => {
+            let list = div()
+                .id("pull-file-list")
+                .w(px(FILE_LIST))
+                .flex_none()
+                .h_full()
+                .border_r_1()
+                .border_color(t.border)
+                .overflow_y_scroll()
+                .child(files_page(opened, cx));
+            div()
+                .size_full()
+                .flex()
+                .child(list)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .child(diffs(area, window, cx)),
+                )
+                .into_any_element()
+        }
         Section::Commits => page(commits_page(opened, cx)),
         Section::Checks => page(merge_page(area, cx)),
     };
     div()
         .size_full()
         .flex()
-        .flex_col()
-        .child(top)
-        .child(tabs)
-        .child(div().flex_1().min_h_0().child(body))
+        .justify_center()
+        .child(
+            div()
+                .size_full()
+                .max_w(px(PAGE))
+                .flex()
+                .flex_col()
+                .child(top)
+                .child(tabs)
+                .child(div().flex_1().min_h_0().child(body)),
+        )
         .into_any_element()
 }
 
@@ -567,7 +568,6 @@ fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
                 .disabled(open && !can_merge)
                 .on_click(cx.listener(|area, _, _, cx| {
                     if let Some(opened) = &mut area.pull {
-                        opened.page = Page::Merge;
                         opened.section = Section::Checks;
                     }
                     cx.notify();
@@ -581,9 +581,9 @@ fn mergeable(view: &OpenPull) -> bool {
     matches!(view.merge, MergeReadiness::Ready | MergeReadiness::Behind)
 }
 
-/// The pull request's head: how it stands and its number, with its actions when `acting`
-/// and the way to it on the host, then its title, then who wants to merge what into what.
-fn header(area: &HostArea, found: &OpenPull, acting: bool, cx: &mut Context<HostArea>) -> Div {
+/// The pull request's head: how it stands and its number, with its actions and the way to
+/// it on the host, then its title, then who wants to merge what into what.
+fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div {
     let t = Tokens::get(cx).clone();
     let host = super::host_label(&area.host.host);
     let pull = &found.pull;
@@ -608,11 +608,11 @@ fn header(area: &HostArea, found: &OpenPull, acting: bool, cx: &mut Context<Host
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .when(acting && area.desk.is_none(), |row| row.child(back(cx)))
+                .when(area.desk.is_none(), |row| row.child(back(cx)))
                 .child(state_pill(found.state, cx))
                 .child(ui::mono(format!("#{}", pull.number), 12., cx).text_color(t.text_tertiary))
                 .child(div().flex_1())
-                .when(acting, |row| row.child(actions(area, cx)))
+                .child(actions(area, cx))
                 .child(
                     IconButton::new("pull-open-host", Icon::Globe, format!("Open on {host}"))
                         .small()
@@ -725,6 +725,7 @@ fn fold_all(opened: &Opened, cx: &mut Context<HostArea>) -> Option<AnyElement> {
 
 /// One tab of a strip: its name, then how many it holds or how it stands.
 fn tab(
+    glyph: Icon,
     label: &'static str,
     mark: Option<AnyElement>,
     on: bool,
@@ -749,6 +750,7 @@ fn tab(
         .when(!on, |tab| {
             tab.hover(move |tab| tab.text_color(t.text_primary))
         })
+        .child(ui::icon(glyph, 13.).text_color(if on { t.text_primary } else { t.text_tertiary }))
         .child(label)
         .children(mark)
 }
@@ -761,70 +763,6 @@ fn tally(count: u64, cx: &App) -> AnyElement {
         .font_features(theme::tabular())
         .text_color(t.text_tertiary)
         .child(count.to_string())
-        .into_any_element()
-}
-
-fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
-    let t = Tokens::get(cx).clone();
-    let opened = area.pull.as_ref().expect("a pull request is open");
-    let state = (opened.view.as_ref())
-        .and_then(|view| view.as_ref().ok())
-        .map(|view| view.state);
-    let head = div()
-        .px(px(10.))
-        .pt(px(10.))
-        .pb(px(8.))
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .when(area.desk.is_none(), |head| head.child(back(cx)))
-        .children(state.map(|state| pull_mark(state, 14., cx)))
-        .child(ui::mono(format!("#{}", opened.number), 12., cx).text_color(t.text_primary));
-    let pages = [
-        (Icon::File, "Files", Page::Files),
-        (Icon::Commit, "Commits", Page::Commits),
-        (Icon::Check, "Checks", Page::Merge),
-    ];
-    let chosen = pages
-        .iter()
-        .position(|(_, _, page)| *page == opened.page)
-        .unwrap_or_default();
-    let switch = div().px(px(10.)).pb(px(8.)).child(
-        Segmented::new(
-            "pull-pages",
-            pages
-                .iter()
-                .map(|(glyph, label, _)| (*glyph, SharedString::from(*label)))
-                .collect(),
-            chosen,
-        )
-        .on_select(cx.listener(move |area, index: &usize, _, cx| {
-            if let Some(opened) = &mut area.pull {
-                opened.page = pages[*index].2;
-            }
-            cx.notify();
-        })),
-    );
-    let body = match opened.page {
-        Page::Files => files_page(opened, cx),
-        Page::Commits => commits_page(opened, cx),
-        Page::Merge => merge_page(area, cx),
-    };
-    div()
-        .size_full()
-        .flex()
-        .flex_col()
-        .child(head)
-        .child(actions(area, cx).px(px(10.)).pb(px(10.)))
-        .child(switch)
-        .child(
-            div()
-                .id("pull-side-page")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .child(body),
-        )
         .into_any_element()
 }
 
@@ -1052,6 +990,7 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .rounded(RADIUS_2)
         .border_1()
         .border_color(t.border)
+        .bg(t.surface_composer)
         .overflow_hidden();
     if pull.state == "merged" {
         let by = pull.merged_by.clone().unwrap_or_default();
@@ -1313,64 +1252,6 @@ fn checks(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
     )
 }
 
-fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> AnyElement {
-    let opened = area.pull.as_ref().expect("a pull request is open");
-    let found = match &opened.view {
-        None => return super::notice("Loading pull request", None, cx),
-        Some(Err(error)) => return super::notice("Could not read it", Some(error.clone()), cx),
-        Some(Ok(found)) => found,
-    };
-    let pull = &found.pull;
-    let said = opened
-        .thread
-        .as_ref()
-        .and_then(|thread| thread.as_ref().ok())
-        .map(|blocks| (thread::said(blocks) + 1) as u64);
-    let tabs = [
-        (Tab::Conversation, "Conversation", said),
-        (Tab::Files, "Files changed", pull.changed_files),
-    ];
-    let chosen = opened.tab;
-    let headline = div()
-        .px(px(16.))
-        .pt(px(14.))
-        .pb(px(12.))
-        .child(header(area, found, false, cx));
-    let folding = (chosen == Tab::Files)
-        .then(|| fold_all(opened, cx))
-        .flatten();
-    let tabs = strip(
-        tabs.into_iter().map(|(shown, label, count)| {
-            tab(
-                label,
-                count.map(|count| tally(count, cx)),
-                chosen == shown,
-                cx,
-            )
-            .on_click(cx.listener(move |area, _, _, cx| {
-                if let Some(opened) = &mut area.pull {
-                    opened.tab = shown;
-                }
-                cx.notify();
-            }))
-        }),
-        folding,
-        cx,
-    );
-    let body = match chosen {
-        Tab::Conversation => conversation(area, window, cx),
-        Tab::Files => diffs(area, window, cx),
-    };
-    div()
-        .size_full()
-        .flex()
-        .flex_col()
-        .child(headline)
-        .child(tabs)
-        .child(div().flex_1().min_h_0().child(body))
-        .into_any_element()
-}
-
 /// The description and everything said and done since, with the composer under them.
 fn conversation(
     area: &mut HostArea,
@@ -1404,7 +1285,7 @@ fn conversation(
             shown.face(login, known, size, cx)
         }
     };
-    let mut column = div().id("pull-thread").size_full().overflow_y_scroll();
+    let mut column = div().max_w(px(READABLE));
     column = column.child(thread::thread(
         opening,
         blocks,
@@ -1427,8 +1308,11 @@ fn conversation(
             .is_some_and(|login| pull.author.as_deref() == Some(login));
         (mine, area.host.pulls.request_changes)
     });
-    column
-        .child(composer(area, review, window, cx))
+    div()
+        .id("pull-thread")
+        .size_full()
+        .overflow_y_scroll()
+        .child(column.child(composer(area, review, window, cx)))
         .into_any_element()
 }
 
@@ -1576,7 +1460,7 @@ fn composer(
                 .rounded(RADIUS_2)
                 .border_1()
                 .border_color(t.border)
-                .bg(t.surface)
+                .bg(t.surface_composer)
                 .child(
                     div()
                         .px(px(12.))

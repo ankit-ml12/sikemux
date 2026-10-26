@@ -1000,7 +1000,7 @@ fn composer(
                 .rounded(RADIUS_2)
                 .border_1()
                 .border_color(t.border)
-                .bg(t.surface)
+                .bg(t.surface_composer)
                 .child(
                     div()
                         .px(px(12.))
@@ -1059,7 +1059,7 @@ fn new_issue(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                         .rounded(RADIUS_2)
                         .border_1()
                         .border_color(t.border)
-                        .bg(t.surface)
+                        .bg(t.surface_composer)
                         .child(
                             div()
                                 .px(px(10.))
