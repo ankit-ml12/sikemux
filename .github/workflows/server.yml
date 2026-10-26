@@ -2,7 +2,7 @@ name: Server
 
 on:
   push:
-    branches: [main, remove-tauri-ui]
+    branches: [main]
     paths:
       - "server/**"
       - "src-tauri/crates/sikemux-core/src/accounts/**"

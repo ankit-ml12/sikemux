@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, gpui, gpui-linux, remove-tauri-ui]
+    branches: [main]
     # README.md and CONTRIBUTING.md stay out of this list because format:check covers them.
     paths-ignore:
       - "docs/**"

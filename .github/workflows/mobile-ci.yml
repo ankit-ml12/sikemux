@@ -5,7 +5,7 @@ name: Mobile CI
 # else does.
 on:
   push:
-    branches: [main, remove-tauri-ui]
+    branches: [main]
     paths:
       - "mobile/**"
       - "src-tauri/crates/sikemux-mobile/**"
