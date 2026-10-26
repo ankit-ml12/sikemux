@@ -128,6 +128,8 @@ pub struct Workbench {
     pub shown: crate::experience::Shown,
     /// The repository and branch whose latest CI run the top bar shows.
     pub watched_ci: Option<CiRepo>,
+    /// The commit whose runs from every workflow, tags' included, the glyph sums up.
+    watched_head: Option<String>,
     /// The account's picture, and the hash the core named the one asked for by.
     picture: Option<Arc<Image>>,
     picture_hash: Option<String>,
@@ -658,6 +660,7 @@ impl Workbench {
             watched_project: None,
             watched_place: crate::hosts::Place::This,
             watched_ci: None,
+            watched_head: None,
             battery: crate::battery::read(),
             agent_setup: Default::default(),
             experience: None,
@@ -982,6 +985,10 @@ impl Workbench {
             Update::Read("plugins", value) => {
                 self.reads.insert("plugins", value);
                 self.watch_ci();
+            }
+            Update::Read("ci", value) => {
+                self.reads.insert("ci", value);
+                self.watch_head_runs();
             }
             Update::Read("update", value) => {
                 let ready = |value: &Value| {
@@ -2138,7 +2145,7 @@ impl Workbench {
             Watch::new("showCi", json!({ "repos": repos }), &[]),
         ));
         if let Some(ci) = &shown {
-            let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "branch": ci.branch, "perPage": 20 });
+            let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "branch": ci.branch, "perPage": 1 });
             let call = json!({ "plugin": format!("sikemux.{}", ci.host), "method": "runs", "params": runs });
             let _ = self
                 .asks
@@ -2175,20 +2182,40 @@ impl Workbench {
         })
     }
 
-    /// Every workflow's run for the newest commit of the branch in front, while the core is
-    /// checking it.
+    /// Watches every run of the commit the branch's newest run is for, which also finds those
+    /// a tag on it started.
+    fn watch_head_runs(&mut self) {
+        let head = self
+            .read("ci")
+            .and_then(|ci| ci["value"]["runs"][0]["sha"].as_str());
+        let Some(ci) = self.watched_ci.as_ref().filter(|_| head.is_some()) else {
+            return;
+        };
+        if head == self.watched_head.as_deref() {
+            return;
+        }
+        let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "headSha": head, "perPage": 20 });
+        let call =
+            json!({ "plugin": format!("sikemux.{}", ci.host), "method": "runs", "params": runs });
+        let _ = self
+            .asks
+            .send(Ask::Watch("ci-head", Watch::new("plugin", call, &["ci"])));
+        self.watched_head = head.map(str::to_owned);
+    }
+
+    /// Every run of the branch's newest commit, while the core is checking it.
     pub fn head_runs(&self) -> Vec<&Value> {
-        let Some(runs) = self
-            .watched_ci
-            .as_ref()
-            .and_then(|_| self.read("ci")?["value"]["runs"].as_array())
-        else {
+        let (Some(_), Some(head)) = (&self.watched_ci, &self.watched_head) else {
             return Vec::new();
         };
-        let Some(head) = runs.first().map(|run| &run["sha"]) else {
-            return Vec::new();
-        };
-        runs.iter().filter(|run| &run["sha"] == head).collect()
+        self.read("ci-head")
+            .and_then(|runs| runs["value"]["runs"].as_array())
+            .map(|runs| {
+                runs.iter()
+                    .filter(|run| run["sha"] == head.as_str())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Asks for the account's picture when it is one this window has not got.
@@ -2234,7 +2261,7 @@ impl Workbench {
         match update {
             Update::Read(
                 key @ ("hosts" | "plugins" | "catalog" | "preferences" | "tasks" | "usage" | "ci"
-                | "shares" | "update" | "runs" | "ports" | "trust" | "drafts"),
+                | "ci-head" | "shares" | "update" | "runs" | "ports" | "trust" | "drafts"),
                 value,
             ) => self.reads.get(key) == Some(value),
             Update::HostView(host, view) => self.host_views.get(host) == Some(&**view),
