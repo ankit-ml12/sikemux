@@ -68,3 +68,14 @@ export function rowFold(row: ChatMessage, open: (id: string) => boolean): RowFol
   if (row.id === fold.last) return { summary, hidden: false, from: fold.from };
   return { summary, hidden: !row.parts.some(outlivesFold), from: row.parts.length };
 }
+
+/**
+ * The rows a transcript draws. A folded row that draws nothing stays out of the list: each one the list
+ * has to measure moves the scroll, and a long folded turn moved it until React gave up.
+ */
+export function shownRows(rows: ChatMessage[], open: (id: string) => boolean): ChatMessage[] {
+  return rows.filter((row) => {
+    const { summary, hidden } = rowFold(row, open);
+    return !hidden || summary !== null;
+  });
+}

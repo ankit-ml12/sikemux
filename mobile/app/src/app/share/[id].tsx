@@ -13,7 +13,7 @@ import type { ChatMessage } from '@shared/chat/types';
 import { parseShareLink, type ShareLink } from '@shared/share/link';
 import { sharedChatTitle, ShareSession, type ShareSnapshot } from '@shared/share/session';
 import { apiUrl } from '@/account/config';
-import { Folds, FoldsContext, rowFold } from '@/chat/folds';
+import { Folds, FoldsContext, rowFold, shownRows } from '@/chat/folds';
 import { SharedFilesContext } from '@/chat/hostFiles';
 import { ToolDetailContext } from '@/chat/Tools';
 import { useTranscriptScroll } from '@/chat/transcriptScroll';
@@ -117,6 +117,7 @@ function SharedChat({ session }: { session: ShareSession }) {
   const [openWork, setOpenWork] = useState<ReadonlySet<string>>(() => new Set());
   const workOpen = (id: string) => openWork.has(id);
   const subagents = useMemo(() => subagentsOf(state.messages, state.subagentRows), [state.messages, state.subagentRows]);
+  const rows = useMemo(() => shownRows(state.messages, (id) => openWork.has(id)), [state.messages, openWork]);
   const toggleWork = (id: string) =>
     setOpenWork((shown) => {
       const next = new Set(shown);
@@ -177,7 +178,7 @@ function SharedChat({ session }: { session: ShareSession }) {
                     <FlashList
                       ref={list}
                       showsVerticalScrollIndicator={false}
-                      data={state.messages}
+                      data={rows}
                       keyExtractor={(message) => message.id}
                       getItemType={(message) => (rowFold(message, workOpen).hidden ? 'folded' : message.role)}
                       extraData={marks}

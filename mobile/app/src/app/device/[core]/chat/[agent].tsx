@@ -13,7 +13,7 @@ import { recordOf } from '@shared/lib/guards';
 import { ChatMenu } from '@/chat/ChatMenu';
 import { ChatTitle } from '@/chat/ChatTitle';
 import { askTitle, Composer, RecentSheet } from '@/chat/Composer';
-import { FoldsContext, rowFold } from '@/chat/folds';
+import { FoldsContext, rowFold, shownRows } from '@/chat/folds';
 import { useTranscriptScroll } from '@/chat/transcriptScroll';
 import { HostContext } from '@/chat/hostFiles';
 import { LiveSheet, LiveStrip } from '@/chat/Live';
@@ -170,6 +170,10 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const openWork = useSyncExternalStore(session.folds.subscribe, () => session.folds.openUnder('work/'));
   const workOpen = (id: string) => session.folds.isOpen(`work/${id}`, false);
   const toggleWork = (id: string) => session.folds.set(`work/${id}`, !workOpen(id));
+  const rows = useMemo(() => {
+    const opened = new Set(openWork.split('\n'));
+    return shownRows(state.messages, (id) => opened.has(`work/${id}`));
+  }, [state.messages, openWork]);
   const marks = useMemo(
     () => [chat.unsent, chat.sentFiles, liveId, open, openStrip, openWork],
     [chat.unsent, chat.sentFiles, liveId, open, openStrip, openWork],
@@ -268,7 +272,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                           <FlashList
                             ref={list}
                             showsVerticalScrollIndicator={false}
-                            data={state.messages}
+                            data={rows}
                             keyExtractor={(message) => message.id}
                             // Folded work draws nothing, so it is never recycled into a whole answer.
                             getItemType={(message) => (rowFold(message, workOpen).hidden ? 'folded' : message.role)}
