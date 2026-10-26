@@ -4,6 +4,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use git2::Repository;
 
@@ -363,6 +364,61 @@ pub(crate) fn ci_moved(core: &Arc<Core>, repo: &super::ci::Shown) {
     }
 }
 
+/// The soonest a project's code host is asked again after its refs or index moved.
+const HOST_REFRESH_GAP: Duration = Duration::from_secs(5);
+
+/// Asks the projects' code hosts where their branches and lists stand now, at once for a
+/// project not asked lately, else once more when `HOST_REFRESH_GAP` is up, however often the
+/// refs moved meanwhile.
+fn refresh_hosts(core: &Arc<Core>, projects: &[String]) {
+    let fresh: Vec<String> = {
+        let mut refreshes = core.host_refreshes.locked();
+        projects
+            .iter()
+            .filter(|project| match refreshes.get_mut(*project) {
+                Some(again) => {
+                    *again = true;
+                    false
+                }
+                None => {
+                    refreshes.insert((*project).clone(), false);
+                    true
+                }
+            })
+            .cloned()
+            .collect()
+    };
+    for project in fresh {
+        refresh_host_now(core, project);
+    }
+}
+
+fn refresh_host_now(core: &Arc<Core>, project: String) {
+    read_hosts(core, vec![project.clone()]);
+    super::codehost::refs_moved(core, std::slice::from_ref(&project));
+    let weak = Arc::downgrade(core);
+    tokio::spawn(async move {
+        tokio::time::sleep(HOST_REFRESH_GAP).await;
+        let Some(core) = weak.upgrade() else { return };
+        let again = {
+            let mut refreshes = core.host_refreshes.locked();
+            match refreshes.get_mut(&project) {
+                Some(again) if *again => {
+                    *again = false;
+                    true
+                }
+                _ => {
+                    refreshes.remove(&project);
+                    false
+                }
+            }
+        };
+        if again {
+            refresh_host_now(&core, project);
+        }
+    });
+}
+
 /// Watches the workspace's projects as they are now, telling every client
 /// when one moves.
 pub(crate) fn follow_projects(core: &Core) {
@@ -377,8 +433,7 @@ pub(crate) fn follow_projects(core: &Core) {
             .is_none_or(|paths| paths.iter().any(|path| path == watch::GIT_STATE));
         read_chips(&core, projects.to_vec());
         if state_moved {
-            read_hosts(&core, projects.to_vec());
-            super::codehost::refs_moved(&core, projects);
+            refresh_hosts(&core, projects);
         }
         for project in projects {
             super::project_files::moved(project, paths.as_deref());

@@ -393,6 +393,9 @@ pub(crate) struct Core {
     pub(crate) git_chips: Mutex<HashMap<String, crate::protocol::ProjectGit>>,
     /// Each project's code host and branch pull request, by project folder.
     pub(crate) code_hosts: Mutex<HashMap<String, git::Hosted>>,
+    /// The projects whose code hosts were asked again lately, and whether their refs moved
+    /// since, so a burst of commits or staging asks them once.
+    pub(crate) host_refreshes: Mutex<HashMap<String, bool>>,
     /// The code-host lists clients look at, kept and read again while they do.
     pub(crate) code_host_lists: codehost::Lists,
     /// The plugin views panes look at, kept and read again while they do.
@@ -509,6 +512,7 @@ impl Core {
             git_watches: Default::default(),
             git_chips: Default::default(),
             code_hosts: Default::default(),
+            host_refreshes: Default::default(),
             code_host_lists: Default::default(),
             plugin_views: Default::default(),
             open_files: Default::default(),
