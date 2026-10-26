@@ -1025,9 +1025,6 @@ const AGENT_ROW: &str = "agent-row";
 /// The hover group of a saved chat's rail row, whose unpin button shows on hover.
 const RECENT_ROW: &str = "recent-row";
 
-/// The hover group of a saved chat's rail row, whose unpin button shows on hover.
-const RECENT_ROW: &str = "recent-row";
-
 fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
     let t = Tokens::get(cx).clone();
     (agent.subagents > 0 || agent.tasks > 0).then(|| {
