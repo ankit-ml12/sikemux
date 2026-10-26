@@ -112,7 +112,7 @@ pub struct Custom {
 }
 
 impl Custom {
-    fn provider(self) -> Provider {
+    pub fn provider(self) -> Provider {
         let sign_up_url = url::Url::parse(&self.base_url)
             .map(|url| url.origin().ascii_serialization())
             .unwrap_or_else(|_| self.base_url.clone());
@@ -138,7 +138,7 @@ impl Custom {
         }
     }
 
-    fn of(provider: &Provider) -> Self {
+    pub fn of(provider: &Provider) -> Self {
         Self {
             id: provider.id.clone(),
             label: provider.label.clone(),
@@ -319,8 +319,9 @@ impl Provider {
         }
     }
 
+    /// The catalogue's runners on this computer all serve Responses; one the person added says.
     fn speaks_responses(&self) -> bool {
-        self.kind == Kind::Local || self.responses
+        self.responses || (self.kind == Kind::Local && !self.custom)
     }
 
     /// The APIs it serves: `chat` completions, OpenAI's `responses`, and `anthropic` messages.
@@ -665,6 +666,13 @@ impl Providers {
         let bytes = serde_json::to_vec(helper).map_err(|error| error.to_string())?;
         sikemux_process::files::write_atomic(&self.helper_path, &bytes, false)
             .map_err(|error| error.to_string())
+    }
+
+    /// Connects the catalogue's provider `id` with `key`, in the Keychain.
+    pub fn save_key(&self, id: &str, key: String) -> Result<(), String> {
+        sikemux_keychain::write(KEY_SERVICE, id, &key).map_err(|error| error.to_string())?;
+        self.remember_key(id, Some(key));
+        self.set_connected(id, true)
     }
 
     pub fn remember_key(&self, id: &str, key: Option<String>) {

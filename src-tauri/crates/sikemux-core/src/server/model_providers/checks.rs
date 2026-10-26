@@ -70,6 +70,14 @@ impl Checks {
             .unwrap_or_default()
     }
 
+    /// Drops what was checked of `provider`, so one added again under its id starts afresh.
+    pub(crate) fn forget(&self, provider: &str) {
+        let mut kept = self.kept.locked();
+        if kept.remove(provider).is_some() {
+            self.write(&kept);
+        }
+    }
+
     fn keep(&self, provider: &str, model: &str, check: &Check) {
         let mut kept = self.kept.locked();
         kept.entry(provider.to_owned())
@@ -95,10 +103,14 @@ impl Checks {
                 }
             }
         }
+        self.write(&kept);
+    }
+
+    fn write(&self, kept: &Kept) {
         let Some(path) = &self.path else {
             return;
         };
-        let written = serde_json::to_vec(&*kept)
+        let written = serde_json::to_vec(kept)
             .map_err(std::io::Error::from)
             .and_then(|bytes| sikemux_process::files::write_atomic(path, &bytes, false));
         if let Err(error) = written {

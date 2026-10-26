@@ -18,7 +18,11 @@ use crate::protocol::ChatLaunch;
 use super::connection::blocking;
 use super::{Core, CoreError, CoreResult};
 
+mod adding;
 pub(crate) mod checks;
+mod paste;
+
+pub(crate) use adding::{add, read, remove};
 
 use checks::{api_model, Check};
 
@@ -40,6 +44,7 @@ fn known(core: &Core, id: &str) -> CoreResult<Arc<Provider>> {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ModelProvider {
     #[serde(flatten)]
     provider: Arc<Provider>,
@@ -50,6 +55,9 @@ pub(crate) struct ModelProvider {
     models: Option<Vec<String>>,
     /// The agents Sikemux can run on it in place of their makers' accounts.
     agents: Vec<&'static str>,
+    /// The agent Sikemux runs it with.
+    runs_with: Option<&'static str>,
+    speaks: Vec<&'static str>,
     /// Whether each model checked so far calls tools the way agents need.
     checks: BTreeMap<String, Check>,
     #[serde(flatten)]
@@ -125,6 +133,27 @@ fn choices(provider: &Provider, feed: &Snapshot, served: Option<&[String]>) -> C
         model,
         defaults,
         facts,
+    }
+}
+
+fn entry(
+    core: &Core,
+    provider: Arc<Provider>,
+    connected: bool,
+    feed: &Snapshot,
+    models: Option<Vec<String>>,
+) -> ModelProvider {
+    ModelProvider {
+        connected,
+        choices: choices(&provider, feed, models.as_deref()),
+        models,
+        agents: providers::routed_agents()
+            .filter(|agent| provider.routes(agent))
+            .collect(),
+        runs_with: provider.runs_with(),
+        speaks: provider.speaks(),
+        checks: core.workspaces.model_checks.of(&provider.id),
+        provider,
     }
 }
 
@@ -215,6 +244,34 @@ struct ListedModel {
     id: String,
 }
 
+/// Why an API at a base URL listed no models.
+enum Unlisted {
+    Refused,
+    Unreachable,
+    Answered(StatusCode),
+    NotAList,
+}
+
+/// What the OpenAI-compatible API at `base_url` lists.
+async fn model_list(
+    base_url: &str,
+    key: Option<&str>,
+    timeout: Duration,
+) -> Result<Vec<String>, Unlisted> {
+    let mut request = client().get(format!("{base_url}/models")).timeout(timeout);
+    if let Some(key) = key {
+        request = request.bearer_auth(key);
+    }
+    let response = request.send().await.map_err(|_| Unlisted::Unreachable)?;
+    match response.status() {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => return Err(Unlisted::Refused),
+        status if !status.is_success() => return Err(Unlisted::Answered(status)),
+        _ => {}
+    }
+    let list: ModelList = response.json().await.map_err(|_| Unlisted::NotAList)?;
+    Ok(list.data.into_iter().map(|model| model.id).collect())
+}
+
 /// What the provider serves, by its OpenAI-compatible model list. `None` when
 /// it does not answer.
 async fn listed_models(
@@ -222,15 +279,7 @@ async fn listed_models(
     key: Option<&str>,
     timeout: Duration,
 ) -> Option<Vec<String>> {
-    let mut request = client()
-        .get(format!("{}/models", provider.openai))
-        .timeout(timeout);
-    if let Some(key) = key {
-        request = request.bearer_auth(key);
-    }
-    let response = request.send().await.ok()?.error_for_status().ok()?;
-    let list: ModelList = response.json().await.ok()?;
-    Some(list.data.into_iter().map(|model| model.id).collect())
+    model_list(&provider.openai, key, timeout).await.ok()
 }
 
 /// Every provider, and whether it is connected. Runners on this host are
@@ -253,16 +302,8 @@ pub(crate) async fn list(core: &Arc<Core>) -> CoreResult<Vec<ModelProvider>> {
     let mut listed = Vec::with_capacity(asking.len());
     for (provider, asked) in all.into_iter().zip(asking) {
         let models = asked.await.ok().flatten();
-        listed.push(ModelProvider {
-            connected: models.is_some() || provider.custom || saved.contains(&provider.id),
-            choices: choices(&provider, &feed, models.as_deref()),
-            models,
-            agents: providers::routed_agents()
-                .filter(|agent| provider.routes(agent))
-                .collect(),
-            checks: core.workspaces.model_checks.of(&provider.id),
-            provider,
-        });
+        let connected = models.is_some() || provider.custom || saved.contains(&provider.id);
+        listed.push(entry(core, provider, connected, &feed, models));
     }
     Ok(listed)
 }
@@ -343,13 +384,7 @@ pub(crate) async fn connect(core: &Arc<Core>, params: ConnectParams) -> CoreResu
         return Err("Paste the key first".into());
     }
     check_key(&provider, &key).await?;
-    Ok(on_store(core, move |store| {
-        sikemux_keychain::write(KEY_SERVICE, &provider.id, &key)
-            .map_err(|error| error.to_string())?;
-        store.remember_key(&provider.id, Some(key));
-        store.set_connected(&provider.id, true)
-    })
-    .await??)
+    Ok(on_store(core, move |store| store.save_key(&provider.id, key)).await??)
 }
 
 pub(crate) async fn disconnect(core: &Arc<Core>, params: ProviderParams) -> CoreResult<()> {

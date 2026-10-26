@@ -216,6 +216,11 @@ calls! { core, client, params;
     "modelProviderDisconnect": Person => {
         answer(model_providers::disconnect(&core, parse(params)?).await?)
     },
+    "modelProviderRead": Person => answer(model_providers::read(&core, parse(params)?).await?),
+    "modelProviderAdd": Person => answer(model_providers::add(&core, parse(params)?).await?),
+    "modelProviderRemove": Person => {
+        answer(model_providers::remove(&core, parse(params)?).await?)
+    },
     "setModelHelper": Person => answer(model_providers::set_helper(&core, parse(params)?).await?),
     "agentAccounts": Full, any_program => answer(core.workspaces.accounts()),
     "agentStatus": Full, any_program => answer(agent_accounts::status(&core, parse(params)?).await?),

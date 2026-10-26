@@ -1,0 +1,34 @@
+---
+title: Model providers
+description: "Run chats on a model provider's API key instead of an agent's own account, and add any OpenAI-compatible provider."
+---
+
+An agent normally runs on its maker's account: Claude on Anthropic's, Codex on OpenAI's. A chat can run on a model provider instead, such as OpenRouter, DeepSeek, Groq, a coding plan, Ollama on this computer, or any provider with an OpenAI-compatible API.
+
+## Picking a model
+
+The model picker in a chat lists models by provider: the agent's own account first, headed by its maker, then every provider you connected, then **+ Add provider**.
+
+A model the chosen agent can't run still shows, marked with the agent that can, such as **via OMP**. Picking it moves a chat that hasn't started yet to that agent.
+
+## Adding a provider
+
+**+ Add provider** takes one paste: an API key, a base URL, or the whole quickstart from the provider's dashboard, in Python, TypeScript or curl. Sikemux reads the base URL, the key and the model out of it, then asks the provider for its models to check the key. It shows the provider's name, its URL and how many models it serves before you add it.
+
+A key the quickstart reads from a variable, such as `os.environ["LITHOSAI_API_KEY"]`, isn't in the paste: paste the key itself too.
+
+A URL Sikemux already knows, such as OpenRouter's, connects that provider. Any other URL is added as a provider of your own. The key is kept in the macOS Keychain and handed only to the chats that run on that provider. Removing a provider you added takes its key out of the Keychain too.
+
+## Which agent runs it
+
+Each provider runs with the agent that speaks its API:
+
+| The provider serves | It runs with |
+|---|---|
+| Anthropic's Messages API | Claude Code |
+| OpenAI's Responses API | Codex |
+| Only chat completions | OMP, or OpenCode |
+
+When that agent isn't installed, adding the provider installs it with the agent's own installer, and you can carry on while it runs.
+
+OMP and OpenCode can run any provider. Sikemux tells them of it for that one chat: your own OMP and OpenCode settings, sign-ins and models stay as they are.
