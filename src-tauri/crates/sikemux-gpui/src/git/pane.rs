@@ -49,7 +49,7 @@ use crate::workbench::{AgentRow, Workbench};
 #[action(name = "window.git")]
 pub struct FocusGit;
 
-const ROW_HEIGHT: f32 = 26.;
+pub(crate) const ROW_HEIGHT: f32 = 26.;
 /// The pane's keys, by page, as its cheatsheet lists them.
 const KEYS: [ui::Section; 4] = [
     (
@@ -3536,7 +3536,7 @@ fn entry_row(
 
 /// The lines a group's row hangs from, as the project tree's children do: a spine from
 /// under the group's chevron, a tick to the row, and an elbow at the last.
-fn tree_lines(first: bool, last: bool, t: &Tokens) -> Vec<Div> {
+pub(crate) fn tree_lines(first: bool, last: bool, t: &Tokens) -> Vec<Div> {
     let top = px(if first { -13. } else { -1. });
     if last {
         return vec![div()

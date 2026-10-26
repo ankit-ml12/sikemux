@@ -1,8 +1,6 @@
 //! One pull request opened from the list or a link: its head and actions over tabs for its
 //! conversation, its changed files' diffs, its commits, and its checks and merge.
 
-use std::collections::{BTreeMap, HashSet};
-
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, AppContext, Context, Div, Entity, FontWeight, InteractiveElement,
@@ -18,6 +16,7 @@ use sikemux_wire::codehost::{
 use super::diffs::{Changed, Diffs};
 use super::thread::{self, Block, Post, Pushers};
 use super::{ago, branch_chip, outcome_word, pull_mark, tally_summary, HostArea, Read};
+use crate::git::pane::ROW_HEIGHT;
 use crate::git::Diff;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
@@ -74,8 +73,8 @@ pub struct Opened {
     narrow: bool,
     /// The file whose diff was last asked for.
     focused: Option<String>,
-    /// The file list's folders folded shut, by their path.
-    shut: HashSet<String>,
+    /// The file list is folded to its head.
+    list_folded: bool,
     pub method: usize,
     pub busy: bool,
     /// The comment being written, made once the conversation first shows.
@@ -96,7 +95,7 @@ impl Opened {
             section: Section::Conversation,
             narrow: false,
             focused: None,
-            shut: HashSet::new(),
+            list_folded: false,
             method: 0,
             busy: false,
             draft: None,
@@ -759,6 +758,8 @@ fn tally(count: u64, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
+/// The changed files as the Git tab lists its changes: one group that folds, its files
+/// hanging from it by the tree's line, each by its name with its folder after.
 fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let files = match &opened.files {
@@ -770,195 +771,99 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
     };
     let added: u64 = files.iter().map(|changed| changed.file.additions).sum();
     let removed: u64 = files.iter().map(|changed| changed.file.deletions).sum();
-    let mut rows = Vec::new();
-    lay_out_folder(&folders_of(files), "", 0, opened, files, &mut rows, cx);
-    div()
-        .flex()
-        .flex_col()
-        .pb(px(8.))
-        .child(
-            div()
-                .px(px(12.))
-                .py(px(8.))
-                .flex()
-                .gap(px(8.))
-                .text_size(crate::theme::ui_text(11.5))
-                .font_features(theme::tabular())
-                .child(
-                    div()
-                        .text_color(t.text_secondary)
-                        .child(format!("{} files", files.len())),
-                )
-                .child(div().flex_1())
-                .child(div().text_color(t.live).child(format!("+{added}")))
-                .child(div().text_color(t.danger).child(format!("−{removed}"))),
-        )
-        .children(rows)
-        .into_any_element()
-}
-
-/// A folder of the changed files: the folders in it by name, and its files by name with
-/// where each is in the list.
-#[derive(Default)]
-struct Folder<'a> {
-    folders: BTreeMap<&'a str, Folder<'a>>,
-    files: BTreeMap<&'a str, usize>,
-}
-
-fn folders_of(files: &[Changed]) -> Folder<'_> {
-    let mut root = Folder::default();
-    for (at, changed) in files.iter().enumerate() {
-        let mut parts: Vec<&str> = changed.file.path.split('/').collect();
-        let name = parts.pop().unwrap_or_default();
-        let here = parts.into_iter().fold(&mut root, |here, part| {
-            here.folders.entry(part).or_default()
-        });
-        here.files.insert(name, at);
-    }
-    root
-}
-
-/// The rows of `folder` at `depth`: its folders first, a folder holding only one more
-/// folder named with it on one row, then its files.
-#[allow(clippy::too_many_arguments)]
-fn lay_out_folder(
-    folder: &Folder,
-    path: &str,
-    depth: usize,
-    opened: &Opened,
-    files: &[Changed],
-    rows: &mut Vec<AnyElement>,
-    cx: &mut Context<HostArea>,
-) {
-    for (name, mut inner) in &folder.folders {
-        let mut label = (*name).to_owned();
-        while inner.files.is_empty() && inner.folders.len() == 1 {
-            let Some((next, deeper)) = inner.folders.iter().next() else {
-                break;
-            };
-            label = format!("{label}/{next}");
-            inner = deeper;
-        }
-        let full = match path {
-            "" => label.clone(),
-            path => format!("{path}/{label}"),
-        };
-        let open = !opened.shut.contains(&full);
-        rows.push(folder_row(&full, &label, depth, open, cx));
-        if open {
-            lay_out_folder(inner, &full, depth + 1, opened, files, rows, cx);
-        }
-    }
-    for (name, at) in &folder.files {
-        let changed = &files[*at];
-        let chosen = opened.focused.as_deref() == Some(changed.file.path.as_str());
-        rows.push(file_row(*at, changed, name, depth, chosen, cx));
-    }
-}
-
-/// How far in each level of the file list sits.
-const TREE_STEP: f32 = 14.;
-const TREE_INSET: f32 = 10.;
-/// The column a folder's chevron takes, which a file keeps empty so names line up.
-const TREE_CHEVRON: f32 = 12.;
-
-/// A file list row at `depth`: inset by its depth, with a guide down each level above it.
-fn tree_row(id: impl Into<gpui_kit::ElementId>, depth: usize, cx: &App) -> gpui_kit::Stateful<Div> {
-    let t = Tokens::get(cx);
-    div()
-        .id(id)
-        .relative()
-        .h(px(26.))
-        .pl(px(TREE_INSET + depth as f32 * TREE_STEP))
-        .pr(px(12.))
+    let folded = opened.list_folded;
+    let group = div()
+        .id("pull-files-group")
+        .h(px(ROW_HEIGHT))
+        .px(px(6.))
         .flex()
         .items_center()
-        .gap(px(6.))
-        .text_size(crate::theme::ui_text(12.5))
+        .gap(px(4.))
+        .rounded(RADIUS_2)
         .cursor_pointer()
-        .children((0..depth).map(|level| {
-            div()
-                .absolute()
-                .top_0()
-                .bottom_0()
-                .left(px(TREE_INSET
-                    + level as f32 * TREE_STEP
-                    + TREE_CHEVRON / 2.))
-                .w(px(1.))
-                .bg(t.tree_spine)
-        }))
-}
-
-fn folder_row(
-    path: &str,
-    label: &str,
-    depth: usize,
-    open: bool,
-    cx: &mut Context<HostArea>,
-) -> AnyElement {
-    let t = Tokens::get(cx).clone();
-    let key = SharedString::from(format!("pull-folder-{path}"));
-    let toggled = path.to_owned();
-    tree_row(key.clone(), depth, cx)
         .hover(move |row| row.bg(t.surface_hover))
-        .tooltip(ui::tooltip(path.to_owned()))
-        .on_click(cx.listener(move |area, _, _, cx| {
+        .on_click(cx.listener(|area, _, _, cx| {
             if let Some(opened) = &mut area.pull {
-                if !opened.shut.remove(&toggled) {
-                    opened.shut.insert(toggled.clone());
-                }
+                opened.list_folded = !opened.list_folded;
             }
             cx.notify();
         }))
+        .child(crate::motion::turn(
+            "pull-files-group:chevron",
+            crate::motion::fold_angle(!folded),
+            crate::motion::LIST_FOLD,
+            ui::icon(Icon::Chevron, 13.).text_color(t.text_tertiary),
+        ))
+        .child(ui::icon(Icon::File, 13.).text_color(t.text_tertiary))
+        .child(ui::text("Changed files", 12., FontWeight::MEDIUM).text_color(t.text_primary))
+        .child(ui::meta(files.len().to_string(), cx).ml(px(2.)))
+        .child(div().flex_1())
         .child(
             div()
-                .w(px(TREE_CHEVRON))
-                .flex_none()
                 .flex()
-                .justify_center()
-                .child(crate::motion::turn(
-                    format!("{key}:chevron"),
-                    crate::motion::fold_angle(open),
-                    crate::motion::DETAIL_FOLD,
-                    ui::icon(Icon::Chevron, 10.).text_color(t.text_tertiary),
-                )),
-        )
-        .child(
-            ui::icon(Icon::Folder, 14.)
-                .flex_none()
-                .text_color(t.text_tertiary),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_color(t.text_secondary)
-                .child(label.to_owned()),
-        )
+                .gap(px(6.))
+                .text_size(crate::theme::ui_text(11.5))
+                .font_features(theme::tabular())
+                .child(div().text_color(t.live).child(format!("+{added}")))
+                .child(div().text_color(t.danger).child(format!("−{removed}"))),
+        );
+    let last = files.len().saturating_sub(1);
+    let rows = files.iter().enumerate().map(|(at, changed)| {
+        let chosen = opened.focused.as_deref() == Some(changed.file.path.as_str());
+        file_row(at, changed, at == 0, at == last, chosen, cx)
+    });
+    div()
+        .p(px(6.))
+        .flex()
+        .flex_col()
+        .child(group)
+        .when(!folded, |list| list.children(rows.collect::<Vec<_>>()))
         .into_any_element()
 }
 
-/// A changed file in the list: its icon and name, with how it changed.
+/// A changed file in the list: its icon, name and folder, with how it changed.
 fn file_row(
     at: usize,
     changed: &Changed,
-    name: &str,
-    depth: usize,
+    first: bool,
+    last: bool,
     chosen: bool,
     cx: &mut Context<HostArea>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let path = changed.file.path.clone();
+    let (dir, name) = match path.rsplit_once('/') {
+        Some((dir, name)) => (Some(dir.to_owned()), name.to_owned()),
+        None => (None, path.clone()),
+    };
     let (letter, ink) = match changed.file.status.as_str() {
         "added" => ("A", t.git_added),
         "removed" => ("D", t.git_deleted),
         "renamed" | "copied" => ("R", t.git_renamed),
         _ => ("M", t.git_modified),
     };
-    tree_row(("pull-file", at), depth, cx)
+    div()
+        .id(("pull-file", at))
+        .relative()
+        .w_full()
+        .h(px(ROW_HEIGHT))
+        .pl(px(18.))
+        .pr(px(6.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .rounded(RADIUS_2)
+        .text_size(crate::theme::ui_text(13.))
+        .text_color(if chosen {
+            t.text_primary
+        } else {
+            t.text_secondary
+        })
+        .cursor_pointer()
         .when(chosen, |row| row.bg(t.surface_chosen))
-        .when(!chosen, |row| row.hover(move |row| row.bg(t.surface_hover)))
+        .when(!chosen, |row| {
+            row.hover(move |row| row.bg(t.surface_hover).text_color(t.text_primary))
+        })
         .tooltip(ui::tooltip(path.clone()))
         .on_click(cx.listener(move |area, _, _, cx| {
             if let Some(opened) = &mut area.pull {
@@ -966,21 +871,34 @@ fn file_row(
             }
             cx.notify();
         }))
-        .child(div().w(px(TREE_CHEVRON)).flex_none())
-        .child(crate::file_icons::glyph(name, 14., cx))
+        .children(crate::git::pane::tree_lines(first, last, &t))
+        .child(crate::file_icons::glyph(&name, 14., cx))
         .child(
             div()
+                .flex()
                 .flex_1()
                 .min_w_0()
-                .truncate()
-                .text_color(t.text_primary)
-                .child(name.to_owned()),
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(div().flex_none().child(name))
+                .children(dir.map(|dir| {
+                    div()
+                        .ml(px(6.))
+                        .min_w_0()
+                        .truncate()
+                        .text_size(crate::theme::ui_text(12.))
+                        .text_color(t.text_tertiary)
+                        .child(dir)
+                })),
         )
         .child(
             div()
                 .flex_none()
+                .w(px(14.))
+                .text_center()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(11.5))
+                .text_size(crate::theme::ui_text(11.))
+                .font_weight(FontWeight::SEMIBOLD)
                 .text_color(ink)
                 .child(letter),
         )

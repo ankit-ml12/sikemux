@@ -29,7 +29,7 @@ pub use crate::codehost::{Area, OpenArea};
 pub use pane::{FocusGit, GitPane};
 pub use sikemux_core::git::diff::DiffKind;
 
-mod pane;
+pub(crate) mod pane;
 pub mod repos;
 mod review;
 
