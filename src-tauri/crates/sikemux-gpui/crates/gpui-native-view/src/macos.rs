@@ -1,14 +1,16 @@
 use std::cell::{Cell, RefCell};
-use std::ffi::c_void;
+use std::ffi::{c_void, CStr};
+use std::ptr::NonNull;
 use std::rc::{self, Rc};
 
+use block2::RcBlock;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use gpui::{App, Bounds, FocusHandle, Pixels, Subscription, WeakFocusHandle, Window};
 use objc2::rc::{Retained, Weak};
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyClass, AnyObject};
 use objc2::{define_class, DefinedClass, MainThreadMarker, MainThreadOnly};
-use objc2_app_kit::{NSView, NSWindow, NSWindowOrderingMode};
+use objc2_app_kit::{NSEvent, NSEventMask, NSView, NSWindow, NSWindowOrderingMode};
 use objc2_foundation::{
     ns_string, NSDictionary, NSKeyValueChangeKey, NSKeyValueObservingOptions, NSObject,
     NSObjectNSKeyValueObserverRegistration, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -107,6 +109,60 @@ pub fn window_view(window: &Window) -> Option<Retained<NSView>> {
     unsafe { Retained::retain(appkit.ns_view.as_ptr().cast::<NSView>()) }
 }
 
+/// Gives GPUI the keyboard back whenever the person clicks something GPUI draws.
+/// AppKit hands it to a clicked native view, but never back on a click elsewhere,
+/// so after clicking into a page every key would go to the page.
+pub(crate) fn reclaim_keyboard_on_click() {
+    if CLICK_MONITOR.with(|monitor| monitor.borrow().is_some()) {
+        return;
+    }
+    let block = RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
+        // SAFETY: AppKit hands the monitor a live event for the length of the call.
+        reclaim_keyboard(unsafe { event.as_ref() });
+        event.as_ptr()
+    });
+    let mask = NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown;
+    // SAFETY: main thread, as every element's prepaint is. AppKit copies the block, and
+    // the monitor it returns is kept in CLICK_MONITOR so it stays installed.
+    let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) };
+    CLICK_MONITOR.with(|slot| *slot.borrow_mut() = monitor);
+}
+
+fn reclaim_keyboard(event: &NSEvent) {
+    let Some(window) = MainThreadMarker::new().and_then(|mtm| event.window(mtm)) else {
+        return;
+    };
+    let Some(clicked) = window
+        .contentView()
+        .and_then(|content| content.hitTest(event.locationInWindow()))
+    else {
+        return;
+    };
+    let Some(gpui_view) = drawn_by_gpui(clicked) else {
+        return;
+    };
+    let holds_keyboard = window
+        .firstResponder()
+        .is_some_and(|responder| std::ptr::eq(&*responder, gpui_view.as_ref()));
+    if !holds_keyboard {
+        window.makeFirstResponder(Some(&gpui_view));
+    }
+}
+
+/// The GPUI view `view` belongs to, when it is that view or the overlay GPUI
+/// draws inside it rather than a native view.
+fn drawn_by_gpui(view: Retained<NSView>) -> Option<Retained<NSView>> {
+    let is = |name: &CStr| AnyClass::get(name).is_some_and(|class| view.isKindOfClass(class));
+    if is(c"GPUIView") {
+        Some(view)
+    } else if is(c"GPUIOverlayView") {
+        // SAFETY: main thread, and `view` is a live view.
+        unsafe { view.superview() }
+    } else {
+        None
+    }
+}
+
 /// Keeps a surface's native keyboard focus and its element's focus handle together.
 pub(crate) struct Keyboard {
     mark: u64,
@@ -126,6 +182,7 @@ thread_local! {
     static WATCHED: RefCell<Vec<(Weak<NSWindow>, Retained<FirstResponderObserver>)>> =
         const { RefCell::new(Vec::new()) };
     static MARKS: Cell<u64> = const { Cell::new(0) };
+    static CLICK_MONITOR: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
 }
 
 impl Keyboard {
