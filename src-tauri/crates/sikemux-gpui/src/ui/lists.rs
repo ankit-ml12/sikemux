@@ -34,6 +34,7 @@ pub struct Row {
     /// The chosen surface is a copy gliding onto the row, which draws none of its own yet.
     glided: bool,
     compact: bool,
+    centered: bool,
     subtitle: Option<AnyElement>,
     detail: Option<SharedString>,
     status: Option<AnyElement>,
@@ -58,6 +59,7 @@ impl Row {
             chosen: false,
             glided: false,
             compact: false,
+            centered: false,
             subtitle: None,
             detail: None,
             status: None,
@@ -100,6 +102,13 @@ impl Row {
 
     pub fn glided(mut self, glided: bool) -> Self {
         self.glided = glided;
+        self
+    }
+
+    /// Centres a two-line row's mark on both lines rather than beside the title, for a
+    /// picture as tall as the two.
+    pub fn centered(mut self) -> Self {
+        self.centered = true;
         self
     }
 
@@ -181,6 +190,7 @@ impl RenderOnce for Row {
         let tint = motion::blend(rest, t.surface_hover, lit);
         let ink = motion::blend(rest_ink, t.text_primary, lit);
         let two_lines = self.subtitle.is_some();
+        let top_aligned = two_lines && !self.centered;
         let right = if self.status.is_some() {
             28.
         } else {
@@ -207,7 +217,7 @@ impl RenderOnce for Row {
             .justify_start()
             .gap(px(8.))
             .map(|row| {
-                if two_lines {
+                if top_aligned {
                     row.items_start().pt(px(4.))
                 } else {
                     row.items_center()
@@ -221,8 +231,9 @@ impl RenderOnce for Row {
                 row.on_click(move |event, window, cx| handler(event, window, cx))
             })
             .children(
-                self.mark
-                    .map(|mark| mark_box(self.slot, mark).when(two_lines, |slot| slot.mt(px(-2.)))),
+                self.mark.map(|mark| {
+                    mark_box(self.slot, mark).when(top_aligned, |slot| slot.mt(px(-2.)))
+                }),
             )
             .child(
                 div()
@@ -268,7 +279,7 @@ impl RenderOnce for Row {
                     .absolute()
                     .right(px(4.))
                     .top_0()
-                    .map(|slot| match two_lines {
+                    .map(|slot| match top_aligned {
                         true => slot.h(px(28.)),
                         false => slot.bottom_0(),
                     })

@@ -1225,6 +1225,7 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         .unwrap_or_else(|| "Signed in".into());
     let row = Row::new("account", who)
         .mark(24., avatar(bench, account, 24., &t))
+        .centered()
         .when_some(
             account.name.as_ref().and(account.email.clone()),
             |row, email| row.subtitle(ui::meta(email, cx)),
