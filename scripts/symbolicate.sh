@@ -43,18 +43,20 @@ else:
     print(f"{panic['process']} {version} panicked on thread {panic['thread']}: {panic['message']}")
     print(f"at {panic['location']}")
 
+def is_part(path):
+    return path.name.startswith("sikemux-host") == (part == "core")
+
 if not dsym:
     cache = pathlib.Path.home() / "Library/Caches/sikemux-symbols" / version
     name = f"Sikemux_{version}_aarch64.{part}.dSYM.zip"
     found = sorted(cache.glob("*.dSYM")) if cache.is_dir() else []
-    found = [path for path in found if path.name.startswith("sikemux-host" if part == "core" else "sikemux.")]
+    found = [path for path in found if is_part(path)]
     if not found:
         cache.mkdir(parents=True, exist_ok=True)
         subprocess.run(["gh", "release", "download", f"v{version}", "-R", "nodelike/sikemux",
                         "-p", name, "-D", str(cache), "--clobber"], check=True)
         subprocess.run(["ditto", "-x", "-k", str(cache / name), str(cache)], check=True)
-        found = [path for path in sorted(cache.glob("*.dSYM"))
-                 if path.name.startswith("sikemux-host" if part == "core" else "sikemux.")]
+        found = [path for path in sorted(cache.glob("*.dSYM")) if is_part(path)]
     if not found:
         sys.exit(f"no dSYM in {name}")
     dsym = str(found[0])
