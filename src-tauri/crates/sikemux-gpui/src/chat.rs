@@ -4219,6 +4219,7 @@ fn notice_box(looks: &Drawn) -> Div {
         .border_1()
         .border_color(looks.tints.line_soft)
         .rounded(theme::RADIUS_2)
+        .bg(looks.tints.well)
         .text_size(crate::theme::ui_text(10.5))
         .text_color(looks.quiet)
 }
