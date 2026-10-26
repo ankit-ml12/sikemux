@@ -184,10 +184,10 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     let git = project.git.as_ref()?;
     let host = project.code_host.as_ref();
     let mark = match host {
-        Some(host) if host.host == "github" => {
-            ui::icon(Icon::Github, 12.).text_color(t.text_primary)
+        Some(host) if let Some(mark) = Icon::named(&host.host) => {
+            ui::picture(mark, 12., t.text_primary)
         }
-        _ => ui::icon(Icon::Git, 12.).text_color(if git.dirty { t.warn } else { t.live }),
+        _ => ui::picture(Icon::Git, 12., if git.dirty { t.warn } else { t.live }),
     };
     let mut about: Vec<String> = host
         .map(|host| vec![host_label(&host.host).to_owned(), host.repo.clone()])

@@ -60,10 +60,10 @@ pub fn render(
                     None => id.clone(),
                 }
                 .into();
-                let mark = match id.as_str() {
-                    "sikemux.github" => Icon::Github,
-                    other => crate::rail::plugin_mark(other).unwrap_or(Icon::Plug),
-                };
+                let mark = id
+                    .strip_prefix("sikemux.")
+                    .and_then(Icon::named)
+                    .unwrap_or(Icon::Plug);
                 let this = this.clone();
                 let toggle = Switch::new(SharedString::from(format!("plugin-on-{id}")))
                     .checked(on)

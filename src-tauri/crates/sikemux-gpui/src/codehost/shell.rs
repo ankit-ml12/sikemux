@@ -905,6 +905,8 @@ pub fn account(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     let Some(login) = area.login().map(str::to_owned) else {
         return sign_in_chip(area, cx);
     };
+    let face = area.face(Some(&login), area.avatar(), 20., cx);
+    area.fetch_pictures(cx);
     div()
         .id("host-account")
         .flex_none()
@@ -916,7 +918,7 @@ pub fn account(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
             area.host.repo
         )))
         .on_click(cx.listener(|area, _, _, cx| area.open_menu(cx)))
-        .child(area.face(Some(&login), area.avatar(), 20., cx))
+        .child(face)
         .into_any_element()
 }
 
@@ -925,10 +927,7 @@ pub fn account(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
 fn sign_in_chip(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let host = host_label(&area.host.host).to_owned();
-    let logo = match area.host.host.as_str() {
-        "github" => Icon::Github,
-        _ => Icon::Git,
-    };
+    let logo = Icon::named(&area.host.host).unwrap_or(Icon::Git);
     let bench = area.bench.clone();
     div()
         .id("host-sign-in")
@@ -1052,10 +1051,7 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
         _ => None,
     }
     .filter(|_| area.host.host == "github" && !signing.adding);
-    let mark = match area.host.host.as_str() {
-        "github" => Icon::Github,
-        _ => Icon::Git,
-    };
+    let mark = Icon::named(&area.host.host).unwrap_or(Icon::Git);
     let tokens_too = borrowed.is_some() || status.browser_sign_in;
     let mut screen = sign_in::Screen::new(
         "host-sign-in-page",
