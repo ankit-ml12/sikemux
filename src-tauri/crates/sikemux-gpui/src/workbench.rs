@@ -81,6 +81,9 @@ pub struct Workbench {
     pub lost: Option<String>,
     /// The core stopped on purpose, so it waits for the person to start it again.
     pub stopped: bool,
+    /// The core holding the socket stopped answering, by its process id, and whether the
+    /// person asked to restart it.
+    pub stuck: Option<(u32, bool)>,
     /// Opening has taken long enough to show the mark.
     pub boot_shown: bool,
     /// Opening has taken long enough to say what the window waits for.
@@ -623,6 +626,7 @@ impl Workbench {
             reads: HashMap::new(),
             lost: None,
             stopped: false,
+            stuck: None,
             boot_shown: false,
             slow_start: false,
             voice,
@@ -806,6 +810,7 @@ impl Workbench {
                 self.version = version;
                 self.lost = None;
                 self.stopped = false;
+                self.stuck = None;
                 self.on_screen = None;
                 for (agent, chat) in &self.chats {
                     self.ask_chat(ChatAsk::Attach {
@@ -1202,6 +1207,10 @@ impl Workbench {
             Update::Stopped => {
                 self.lost = None;
                 self.stopped = true;
+            }
+            Update::Stuck(pid) => {
+                self.lost = None;
+                self.stuck = Some((pid, false));
             }
             Update::ShutDown => return cx.quit(),
             Update::Notice { title, body, agent } => {
@@ -4901,6 +4910,7 @@ impl Render for Workbench {
             .children(crate::boot::stopped(self, cx))
             .children(crate::whats_new::required(self, cx))
             .children(crate::boot::opening(self, cx))
+            .children(crate::boot::stuck(self, cx))
             .when(
                 self.finder.is_some() || self.palette.is_some() || self.switcher.is_some(),
                 |shell| {

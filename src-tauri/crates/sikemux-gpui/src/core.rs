@@ -47,6 +47,9 @@ pub enum Update {
     /// The core said it stopped on purpose, as `sikemux stop` stops it, so the window starts it
     /// again only when the person asks with `Ask::StartCore`, or picks up one started elsewhere.
     Stopped,
+    /// The core with this process id holds the socket but stopped answering, so the window
+    /// offers to end it and start another when the person asks with `Ask::StartCore`.
+    Stuck(u32),
     /// The core stopped everything it ran, as the person asked, so the app can quit.
     ShutDown,
     /// Where remote access stands, whenever it changes.
@@ -1013,6 +1016,10 @@ fn start_at_login(home: &Home, remote_on: Option<bool>) {
     tokio::task::spawn_blocking(move || login_item::sync(IDENTIFIER, launch.as_ref(), enabled));
 }
 
+/// How long Quit and Stop Everything waits for the core to stop what it runs and answer, before
+/// it counts the core as stuck and ends it by signal.
+const SHUT_DOWN_ANSWER: Duration = Duration::from_secs(20);
+
 /// A connection that held this long was a working one, so the next reconnect is quick again.
 const HELD: Duration = Duration::from_secs(10);
 
@@ -1443,7 +1450,11 @@ async fn run(
                             }
                             Some(Ask::StartCore) => {}
                             Some(Ask::Shutdown) => {
-                                let _ = client.shutdown(true).await;
+                                let answered = tokio::time::timeout(SHUT_DOWN_ANSWER, client.shutdown(true)).await;
+                                if !matches!(answered, Ok(Ok(()))) {
+                                    let (socket, pid) = (home.socket.clone(), client.hello().pid);
+                                    let _ = tokio::task::spawn_blocking(move || core_start::end(&socket, pid)).await;
+                                }
                                 let _ = updates.send(Update::ShutDown);
                             }
                             Some(Ask::MoveChat { agent, account }) => {
@@ -1503,7 +1514,30 @@ async fn run(
             }
             Err(error) => {
                 eprintln!("sikemux: no core answers: {error}");
-                let _ = updates.send(Update::Lost(error.to_string()));
+                let socket = home.socket.clone();
+                let stuck = tokio::task::spawn_blocking(move || core_start::stuck(&socket))
+                    .await
+                    .ok()
+                    .flatten();
+                let Some(pid) = stuck else {
+                    let _ = updates.send(Update::Lost(error.to_string()));
+                    tokio::time::sleep(reconnect.next()).await;
+                    continue;
+                };
+                eprintln!("sikemux: the core, pid {pid}, holds the socket but does not answer");
+                let _ = updates.send(Update::Stuck(pid));
+                if !wait_to_start(&home, &mut asks, &mut watches, &mut followed, &current).await {
+                    return;
+                }
+                let socket = home.socket.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    if core_start::stuck(&socket) == Some(pid) && !core_start::end(&socket, pid) {
+                        eprintln!("sikemux: the core, pid {pid}, would not stop");
+                    }
+                })
+                .await;
+                reconnect.reset();
+                continue;
             }
         }
         tokio::time::sleep(reconnect.next()).await;

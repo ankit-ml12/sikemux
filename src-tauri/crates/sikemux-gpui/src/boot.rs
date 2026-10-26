@@ -83,6 +83,7 @@ pub fn opening(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
     } else {
         "Opening your workspace"
     });
+    let why = bench.lost.clone().filter(|_| bench.slow_start);
     let mark = div()
         .relative()
         .child(ui::icon(Icon::Logo, 34.).text_color(white()).opacity(0.9))
@@ -94,7 +95,9 @@ pub fn opening(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                     .left(px(17.))
                     .w(px(0.))
                     .flex()
-                    .justify_center()
+                    .flex_col()
+                    .items_center()
+                    .gap(px(6.))
                     .child(
                         div()
                             .flex_none()
@@ -102,7 +105,16 @@ pub fn opening(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                             .text_size(crate::theme::ui_text(13.))
                             .text_color(t.text_secondary)
                             .child(words),
-                    ),
+                    )
+                    .when_some(why, |column, why| {
+                        column.child(
+                            ui::meta(why, cx)
+                                .flex_none()
+                                .w(px(420.))
+                                .text_center()
+                                .whitespace_normal(),
+                        )
+                    }),
             )
         });
     Some(
@@ -178,6 +190,49 @@ pub fn stopped(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                         let _ = bench.asks.send(crate::core::Ask::StartCore);
                     }),
                 ),
+            )
+            .into_any_element(),
+    )
+}
+
+/// Covers the window while a core that stopped answering holds the socket, with the one way
+/// out: ending it so another starts.
+pub fn stuck(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
+    let (pid, restarting) = bench.stuck?;
+    let t = Tokens::get(cx).clone();
+    Some(
+        div()
+            .id("stuck")
+            .absolute()
+            .inset_0()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(px(18.))
+            .bg(t.surface_sunken)
+            .occlude()
+            .child(mark_with(
+                Some("Sikemux is not answering".to_owned()),
+                Some(format!(
+                    "Its core (pid {pid}) is still running but stopped responding. Restarting it ends its terminals; chats pick up where they were."
+                )),
+                cx,
+            ))
+            .child(
+                ui::Button::new(
+                    "restart-core",
+                    if restarting { "Restarting…" } else { "Restart Sikemux" },
+                    ui::Variant::Primary,
+                )
+                .disabled(restarting)
+                .on_click(cx.listener(|bench, _, _, cx| {
+                    if let Some((_, restarting)) = &mut bench.stuck {
+                        *restarting = true;
+                    }
+                    let _ = bench.asks.send(crate::core::Ask::StartCore);
+                    cx.notify();
+                })),
             )
             .into_any_element(),
     )
