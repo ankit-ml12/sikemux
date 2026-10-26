@@ -43,7 +43,10 @@ impl Activity {
 
     pub fn wear(&mut self, agent: &AgentRow, cx: &mut Context<Self>) {
         let worn = self.agent.as_ref().is_some_and(|worn| {
-            worn.id == agent.id && worn.face == agent.face && worn.group == agent.group
+            worn.id == agent.id
+                && worn.provider == agent.provider
+                && worn.face == agent.face
+                && worn.group == agent.group
         });
         if !worn {
             self.agent = Some(agent.clone());
