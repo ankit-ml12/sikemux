@@ -14,7 +14,7 @@ pub const UI: &str = "Figtree";
 
 /// How much lighter-than-mid-grey text is thinned, as the power its glyphs' coverage is raised to
 /// for white text: the person's pick, nearer WebKit's weight on a dark ground. Retina screens
-/// only; 1x screens keep macOS's own smoothing.
+/// only, as at 1x it strips the soft edges of glyphs.
 const LIGHT_TEXT_CURVE: f32 = 1.5;
 
 /// GPUI Kit's own text size at the default text size. The Kit sets each window's rem to its
