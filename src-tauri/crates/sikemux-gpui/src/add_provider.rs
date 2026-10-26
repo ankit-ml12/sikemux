@@ -35,7 +35,16 @@ pub struct AddProvider {
     reading: bool,
     adding: bool,
     failure: Option<String>,
+    /// What the person pasted, while the field shows it with its key masked.
+    hidden: Option<Hidden>,
     _typing: Subscription,
+}
+
+/// A paste and how the field shows it, its key cut down to its first and last letters, as
+/// people share their screens.
+struct Hidden {
+    pasted: String,
+    shown: String,
 }
 
 impl AddProvider {
@@ -46,12 +55,21 @@ impl AddProvider {
                 .placeholder("sk-…, https://api.example.com/v1, or the quickstart")
         });
         field.update(cx, |field, cx| field.focus(window, cx));
-        let typing = cx.subscribe(&field, |bench, field, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                let text = field.read(cx).value().trim().to_owned();
-                settle(bench, text, cx);
-            }
-        });
+        let typing = cx.subscribe_in(
+            &field,
+            window,
+            |bench, _, event: &InputEvent, window, cx| {
+                let Some(adding) = bench.adding_provider.as_mut() else {
+                    return;
+                };
+                if !matches!(event, InputEvent::Change) || adding.masking(cx) {
+                    return;
+                }
+                adding.hidden = None;
+                let text = adding.text(cx);
+                settle(bench, text, window, cx);
+            },
+        );
         Self {
             target,
             field,
@@ -59,15 +77,31 @@ impl AddProvider {
             reading: false,
             adding: false,
             failure: None,
+            hidden: None,
             _typing: typing,
+        }
+    }
+
+    /// Whether the field shows the paste with its key masked.
+    fn masking(&self, cx: &gpui_kit::App) -> bool {
+        let shown = self.field.read(cx).value();
+        self.hidden
+            .as_ref()
+            .is_some_and(|hidden| hidden.shown == shown.trim())
+    }
+
+    /// What the person pasted or typed, key and all.
+    fn text(&self, cx: &gpui_kit::App) -> String {
+        match (&self.hidden, self.masking(cx)) {
+            (Some(hidden), true) => hidden.pasted.clone(),
+            _ => self.field.read(cx).value().trim().to_owned(),
         }
     }
 
     /// The reading of what the field holds now, once the core has given it.
     fn current(&self, cx: &gpui_kit::App) -> Option<&Value> {
-        let text = self.field.read(cx).value();
         let (read_for, read) = self.read.as_ref()?;
-        (read_for == text.trim()).then_some(read)
+        (*read_for == self.text(cx)).then_some(read)
     }
 }
 
@@ -83,8 +117,35 @@ impl Workbench {
     }
 }
 
+/// `text` with each run that looks like a key cut to its first seven and last four letters.
+fn mask(text: &str) -> String {
+    let keyish = |letter: char| letter.is_ascii_alphanumeric() || letter == '_' || letter == '-';
+    let mut masked = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find(keyish) {
+        masked.push_str(&rest[..start]);
+        rest = &rest[start..];
+        let end = rest.find(|letter| !keyish(letter)).unwrap_or(rest.len());
+        let run = &rest[..end];
+        let key = run.len() >= 20
+            && run.contains(|letter: char| letter.is_ascii_digit())
+            && run.contains(|letter: char| letter.is_ascii_alphabetic());
+        match key {
+            true => {
+                masked.push_str(&run[..7]);
+                masked.push_str(&"•".repeat(12));
+                masked.push_str(&run[run.len() - 4..]);
+            }
+            false => masked.push_str(run),
+        }
+        rest = &rest[end..];
+    }
+    masked.push_str(rest);
+    masked
+}
+
 /// Reads `text` once typing rests on it.
-fn settle(bench: &mut Workbench, text: String, cx: &mut Context<Workbench>) {
+fn settle(bench: &mut Workbench, text: String, window: &mut Window, cx: &mut Context<Workbench>) {
     let Some(adding) = bench.adding_provider.as_mut() else {
         return;
     };
@@ -95,14 +156,14 @@ fn settle(bench: &mut Workbench, text: String, cx: &mut Context<Workbench>) {
         return;
     }
     let target = adding.target.clone();
-    cx.spawn(async move |bench, cx| {
+    cx.spawn_in(window, async move |bench, cx| {
         cx.background_executor().timer(SETTLE).await;
         let still = bench
             .update(cx, |bench, cx| {
                 bench
                     .adding_provider
                     .as_ref()
-                    .is_some_and(|adding| adding.field.read(cx).value().trim() == text)
+                    .is_some_and(|adding| adding.text(cx) == text)
             })
             .unwrap_or(false);
         if !still {
@@ -112,14 +173,24 @@ fn settle(bench: &mut Workbench, text: String, cx: &mut Context<Workbench>) {
             .request("modelProviderRead", json!({ "text": text }))
             .await
             .unwrap_or_else(|failure| json!({ "failure": readable(failure) }));
-        let _ = bench.update(cx, |bench, cx| {
+        let _ = bench.update_in(cx, |bench, window, cx| {
             let Some(adding) = bench.adding_provider.as_mut() else {
                 return;
             };
-            if adding.field.read(cx).value().trim() != text {
+            if adding.text(cx) != text {
                 return;
             }
             adding.reading = false;
+            let shown = mask(&text);
+            if read["hasKey"] == true && shown != text {
+                adding.hidden = Some(Hidden {
+                    pasted: text.clone(),
+                    shown: shown.clone(),
+                });
+                adding
+                    .field
+                    .update(cx, |field, cx| field.set_value(shown, window, cx));
+            }
             let works = read["failure"].is_null() && read["models"].is_array();
             let agent = read["runsWith"].as_str().map(str::to_owned);
             let here = matches!(adding.target.place(), Place::This);
@@ -148,7 +219,7 @@ fn add(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) 
     if adding.adding || !read["failure"].is_null() || !read["models"].is_array() {
         return;
     }
-    let text = adding.field.read(cx).value().trim().to_owned();
+    let text = adding.text(cx);
     adding.adding = true;
     let added = adding
         .target
