@@ -3478,17 +3478,18 @@ fn entry_row(
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .border_1()
-                .border_color(if chosen {
-                    t.border_selected
-                } else {
-                    gpui_kit::transparent_black()
-                })
                 .rounded(RADIUS_2)
                 .text_size(crate::theme::ui_text(13.))
-                .text_color(t.text_secondary)
+                .text_color(if chosen {
+                    t.text_primary
+                } else {
+                    t.text_secondary
+                })
+                .when(chosen, |row| row.bg(t.surface_chosen))
                 .when(ranged && !chosen, |row| row.bg(t.warn.opacity(0.1)))
-                .hover(move |row| row.bg(t.surface_hover).text_color(t.text_primary))
+                .when(!chosen, |row| {
+                    row.hover(move |row| row.bg(t.surface_hover).text_color(t.text_primary))
+                })
                 .on_click(move |_, window, cx| {
                     selecting.update(cx, |pane, cx| {
                         window.focus(&pane.focus, cx);
@@ -3627,7 +3628,7 @@ fn group_row(
                             format!("{key}:chevron"),
                             motion::fold_angle(!folded),
                             motion::LIST_FOLD,
-                            ui::icon(Icon::Chevron, 13.).text_color(t.tree_spine),
+                            ui::icon(Icon::Chevron, 13.).text_color(t.text_tertiary),
                         ))
                         .child(
                             ui::icon(if staged { Icon::FilePlus } else { Icon::File }, 13.)

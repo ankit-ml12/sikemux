@@ -762,7 +762,7 @@ fn branch_row(
                 format!("branch-chevron:{index}"),
                 motion::fold_angle(open),
                 motion::LIST_FOLD,
-                ui::icon(Icon::Chevron, 13.).text_color(t.tree_spine),
+                ui::icon(Icon::Chevron, 13.).text_color(t.text_tertiary),
             ))
             .child(ui::icon(icon, 13.).text_color(t.text_tertiary))
             .child(
