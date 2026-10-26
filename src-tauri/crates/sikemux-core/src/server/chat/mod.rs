@@ -2437,22 +2437,26 @@ fn waiting_options(core: &Core, chat: &Chat) -> Option<Value> {
     Some(options)
 }
 
-/// Tells a chat that waits for the person what it offers to pick. A launcher that has never
-/// offered anything has its agent's CLI asked once, with no session; after that only its own
-/// sessions change what it offers.
+/// Tells a chat that waits for the person what it offers to pick: what the launcher offered
+/// last, while its agent's CLI is asked again, with no session, once each time the core starts,
+/// so a newer CLI's models and this core's reading of them show before a session starts.
 fn offer_options(core: &Arc<Core>, chat: &Arc<Chat>) {
     let Some(launcher) = chat.origin.launcher.clone() else {
         return;
     };
-    if core.workspaces.launcher_options(&launcher).is_some() {
+    let offered = core.workspaces.launcher_options(&launcher).is_some();
+    if offered {
         if let Some(options) = waiting_options(core, chat) {
             tell_options(chat, options);
         }
+    }
+    if !core.workspaces.first_offer_read(&launcher) {
         return;
     }
-    // Noted as offering nothing until the CLI answers, so no other chat asks it again.
-    core.workspaces
-        .note_config_options(&launcher, &Value::Array(Vec::new()));
+    if !offered {
+        core.workspaces
+            .note_config_options(&launcher, &Value::Array(Vec::new()));
+    }
     let (core, chat) = (core.clone(), chat.clone());
     tokio::spawn(async move {
         match native::read_options(&chat.current_launch()).await {

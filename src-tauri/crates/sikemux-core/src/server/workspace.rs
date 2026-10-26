@@ -368,6 +368,8 @@ pub(crate) struct Workspaces {
     pub(crate) wake: Wake,
     /// The saved chats may have changed.
     recent_stale: Notify,
+    /// The launchers whose agents were asked what they offer since the core started.
+    offers_read: Mutex<HashSet<String>>,
 }
 
 pub(crate) struct ChatChoice {
@@ -566,6 +568,7 @@ impl Workspaces {
             missed: Mutex::default(),
             wake: Wake::default(),
             recent_stale: Notify::new(),
+            offers_read: Mutex::default(),
         };
         if upgraded {
             workspaces.file.save(&workspaces.published.locked().saved);
@@ -1593,6 +1596,12 @@ impl Workspaces {
                 .insert(launcher.to_owned(), options.clone());
             Ok(())
         });
+    }
+
+    /// Whether `launcher`'s agent is yet to be asked what it offers since the core started,
+    /// which this call counts as asking.
+    pub(crate) fn first_offer_read(&self, launcher: &str) -> bool {
+        self.offers_read.locked().insert(launcher.to_owned())
     }
 
     /// The `configOptions` the launcher's last session offered, once one has.
