@@ -19,10 +19,12 @@ use crate::accounts::share::{
     ShareClientMessage, ShareClose, ShareCloseCode, ShareEndReason, ShareFrame, ShareHello,
     ShareOpen, SharePong, SharePublish, ShareRefusal, ShareRole, ShareServerMessage,
 };
-use crate::accounts::socket::{self, send, Closed, Failures, Frame};
+use crate::accounts::socket::{self, Closed, Failures, Frame, Socket};
 
 /// How often expiries and chats that started again are looked for.
 const TICK: Duration = Duration::from_secs(3);
+/// A send the server has not taken by then means the connection is stuck, so it is made again.
+const SEND_LIMIT: Duration = socket::HEARTBEAT;
 
 enum Ended {
     /// Nothing is shared any more.
@@ -104,6 +106,12 @@ fn close_message(id: &str) -> ShareClientMessage {
 
 /// Seals what a share's client heard and numbers it, if it is something to
 /// publish and the share is open.
+async fn send(socket: &mut Socket, message: &ShareClientMessage) -> bool {
+    tokio::time::timeout(SEND_LIMIT, socket::send(socket, message))
+        .await
+        .unwrap_or(false)
+}
+
 fn publish(core: &Core, id: &str, frame: &[u8]) -> Option<ShareClientMessage> {
     let (plain, snapshot) = published(core, id, frame)?;
     let mut inner = core.shares.inner.locked();
@@ -231,6 +239,7 @@ async fn session(
                 if !open {
                     continue;
                 }
+                let mut taken = None;
                 let outgoing = match heard {
                     ToLink::Open(id) => core
                         .shares
@@ -241,7 +250,10 @@ async fn session(
                             open_message(&id, running.stored.expires_at, running.seal.viewer_check())
                         }),
                     ToLink::Close(id) => Some(close_message(&id)),
-                    ToLink::Heard(id, frame) => publish(core, &id, &frame),
+                    ToLink::Heard(id, frame, took) => {
+                        taken = Some(took);
+                        publish(core, &id, &frame)
+                    }
                     ToLink::Send(message) => Some(message),
                     ToLink::Retry => None,
                 };
@@ -250,6 +262,7 @@ async fn session(
                         return retry(hint, open);
                     }
                 }
+                drop(taken);
                 continue;
             }
             _ = ticker.tick() => {

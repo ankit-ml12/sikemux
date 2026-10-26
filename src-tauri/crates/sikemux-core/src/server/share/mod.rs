@@ -93,11 +93,25 @@ impl Drop for Running {
 pub(super) enum ToLink {
     Open(String),
     Close(String),
-    /// A frame the chat sent a share's client.
-    Heard(String, Arc<[u8]>),
+    /// A frame the chat sent a share's client, which counts against the client's backlog
+    /// until it is sent or let go of.
+    Heard(String, Arc<[u8]>, Taken),
     Send(crate::accounts::share::ShareClientMessage),
     /// The network came back: stop waiting out the backoff and connect now.
     Retry,
+}
+
+/// Takes a frame off its share client's backlog once dropped, so a share connection that
+/// falls behind slows the chat's frames down instead of piling them up here.
+pub(super) struct Taken {
+    client: Arc<ClientConn>,
+    bytes: usize,
+}
+
+impl Drop for Taken {
+    fn drop(&mut self) {
+        self.client.took(self.bytes);
+    }
 }
 
 #[derive(Default)]
@@ -201,12 +215,15 @@ fn begin(core: &Arc<Core>, inner: &mut Inner, stored: StoredShare) -> CoreResult
     let weak = Arc::downgrade(core);
     let pump = tokio::spawn(async move {
         while let Some(frame) = frames.recv().await {
-            reader.took(frame.len());
+            let taken = Taken {
+                client: reader.clone(),
+                bytes: frame.len(),
+            };
             let Some(core) = weak.upgrade() else {
                 return;
             };
             let mut inner = core.shares.inner.locked();
-            tell(&core, &mut inner, ToLink::Heard(id.clone(), frame));
+            tell(&core, &mut inner, ToLink::Heard(id.clone(), frame, taken));
         }
     });
     let id = stored.id.clone();
