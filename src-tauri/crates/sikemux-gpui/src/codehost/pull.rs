@@ -780,23 +780,15 @@ fn merge_bar(
         .collect::<Vec<_>>();
     let checkout = checkout_button(area, view, cx);
     let merge = merge_button(area, view, narrow, cx);
-    let bar = div()
-        .py(px(8.))
-        .pl(px(12.))
-        .pr(px(8.))
-        .rounded(RADIUS_2)
-        .border_1()
-        .border_color(t.border)
-        .bg(t.text_primary.opacity(0.03));
     Some(match narrow {
-        true => bar
-            .pl(px(8.))
+        true => div()
             .flex()
             .flex_col()
-            .gap(px(8.))
-            .child(div().px(px(4.)).flex().justify_between().children(statuses))
+            .gap(px(10.))
+            .child(div().flex().justify_between().children(statuses))
             .child(div().flex().gap(px(6.)).child(checkout).child(merge)),
-        false => bar
+        false => div()
+            .pl(px(AVATAR + AVATAR_GAP))
             .flex()
             .flex_wrap()
             .items_center()
@@ -882,19 +874,25 @@ fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div 
             .child(branches())
             .children(pull.labels.iter().map(|label| super::label_chip(label, cx)))
     });
+    let back = area.desk.is_none().then(|| {
+        let at = div().h(px(AVATAR)).flex().items_center().child(back(cx));
+        match narrow {
+            true => at,
+            false => at.absolute().top_0().left(px(-30.)),
+        }
+    });
     div()
         .flex()
         .flex_col()
         .gap(px(12.))
         .child(
             div()
+                .relative()
                 .flex()
                 .items_start()
-                .gap(px(12.))
-                .when(area.desk.is_none(), |row| {
-                    row.child(div().h(px(36.)).flex().items_center().child(back(cx)))
-                })
-                .child(area.face(Some(&author), pull.avatar_url.as_deref(), 36., cx))
+                .gap(px(AVATAR_GAP))
+                .children(back)
+                .child(area.face(Some(&author), pull.avatar_url.as_deref(), AVATAR, cx))
                 .child(
                     div()
                         .flex_1()
@@ -918,6 +916,11 @@ fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div 
         )
         .children(merge_bar(area, found, narrow, cx))
 }
+
+/// The author's face beside the title, and the gap between them, which the merge line
+/// under them is inset by so its statuses start where the title does.
+const AVATAR: f32 = 36.;
+const AVATAR_GAP: f32 = 12.;
 
 /// How the pull request stands, as a pill in its colour.
 fn state_pill(state: PullState, cx: &App) -> Div {
