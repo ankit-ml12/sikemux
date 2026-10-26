@@ -18,12 +18,9 @@ use super::pane::{has_unstaged, is_staged, status_mark, GitPane, Side};
 use super::{row, Colours, Compared, Diff, Notes, RowLook};
 use crate::core::Target;
 use crate::editor::OpenAt;
-use crate::icons::Icon;
-use crate::motion;
 use crate::theme::{Tokens, RADIUS_2};
 use crate::ui;
 
-const HEADER_HEIGHT: Pixels = px(32.);
 const TITLE_HEIGHT: Pixels = px(22.);
 const CARD_GAP: Pixels = px(8.);
 /// Cards past the first one showing whose diffs are read ahead of being scrolled to.
@@ -603,91 +600,30 @@ fn draw(
 /// pane's own render, where reading it panics.
 fn header(view: &Entity<GitPane>, pane: &GitPane, card: usize, cx: &App) -> AnyElement {
     let review = &pane.review;
-    let t = Tokens::get(cx).clone();
     let path = &review.cards[card].path;
     let file = review.cards[card].file.as_ref();
     let open = !review.folded.contains(path);
-    let (dir, base) = match path.trim_end_matches('/').rsplit_once('/') {
-        Some((dir, base)) => (Some(dir.to_owned()), base.to_owned()),
-        None => (None, path.clone()),
-    };
-    let glyph = match crate::file_icons::icon(&base, cx) {
-        Some(icon) => gpui_kit::img(icon)
-            .size(px(14.))
-            .flex_none()
-            .into_any_element(),
-        None => ui::icon(Icon::File, 14.)
-            .text_color(t.text_tertiary)
-            .into_any_element(),
-    };
     let target = OpenAt {
         path: Path::new(&review.repo).join(path),
         line: 0,
         column: None,
     };
     let toggling = view.clone();
-    let id = SharedString::from(format!("card-{path}"));
     let key = SharedString::from(format!("card:{path}"));
+    let opens: Box<dyn Fn(&mut Window, &mut App)> = Box::new(move |window, cx| {
+        window.dispatch_action(gpui_kit::Action::boxed_clone(&target), cx)
+    });
     div()
         .when(!open, |card| card.pb(CARD_GAP))
         .child(
-            div()
-                .id(id.clone())
+            ui::file_head(format!("card-{path}"), path, open, Some(opens), cx)
                 .on_hover(super::pane::hover(view, key.clone()))
-                .h(HEADER_HEIGHT)
-                .px(px(8.))
-                .flex()
-                .items_center()
-                .gap(px(7.))
-                .border_1()
-                .border_color(t.border)
-                .map(|head| {
-                    if open {
-                        head.rounded_t(RADIUS_2).border_b_0()
-                    } else {
-                        head.rounded(RADIUS_2)
-                    }
-                })
-                .bg(t.surface)
-                .font_family(crate::theme::UI)
-                .cursor_pointer()
                 .on_click(move |_, _, cx| {
                     toggling.update(cx, |pane, cx| {
                         pane.review.toggle(card);
                         cx.notify();
                     })
                 })
-                .child(motion::turn(
-                    format!("{key}:chevron"),
-                    motion::fold_angle(open),
-                    motion::DETAIL_FOLD,
-                    ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary),
-                ))
-                .child(glyph)
-                .child(
-                    div()
-                        .id(SharedString::from(format!("{id}-name")))
-                        .min_w_0()
-                        .truncate()
-                        .text_size(crate::theme::ui_text(13.))
-                        .hover(|name| name.underline())
-                        .tooltip(ui::tooltip("Open in editor"))
-                        .on_click(move |_, window, cx| {
-                            cx.stop_propagation();
-                            window.dispatch_action(gpui_kit::Action::boxed_clone(&target), cx);
-                        })
-                        .when_some(dir, |name, dir| {
-                            name.child(
-                                div()
-                                    .flex_none()
-                                    .text_color(t.text_tertiary)
-                                    .child(format!("{dir}/")),
-                            )
-                        })
-                        .flex()
-                        .child(div().text_color(t.text_primary).child(base)),
-                )
-                .child(div().flex_1())
                 .when(pane.hovered.as_ref() == Some(&key), |head| {
                     head.child(
                         div().flex().gap(px(2.)).pr(px(4.)).children(

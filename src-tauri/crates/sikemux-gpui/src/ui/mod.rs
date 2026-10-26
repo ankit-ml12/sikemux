@@ -5,6 +5,7 @@ pub mod clock;
 mod controls;
 pub(crate) mod dialog;
 mod dock;
+mod file_card;
 pub mod find_bar;
 mod floats;
 pub mod grain;
@@ -20,6 +21,7 @@ mod state_mark;
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
 pub use dialog::{Cheatsheet, Choice, Choices, Confirm, Prompt, Section};
 pub use dock::{DockMenu, DockRow, DockScope};
+pub use file_card::file_head;
 pub use find_bar::FindBar;
 pub use floats::{
     card_tooltip, float, menu, menu_button, tooltip, MenuRow, FLOAT_INSET, PANEL_INSET,

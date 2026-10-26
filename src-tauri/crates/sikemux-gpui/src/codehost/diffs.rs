@@ -237,23 +237,7 @@ fn item_of(
                 .pt(px(12.))
                 .when(!open && last, |card| card.pb(px(12.)))
                 .child(
-                    div()
-                        .id(key.clone())
-                        .h(px(30.))
-                        .px(px(10.))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .map(|head| match open {
-                            true => head.rounded_t(RADIUS_2),
-                            false => head.rounded(RADIUS_2),
-                        })
-                        .border_1()
-                        .border_color(t.border)
-                        .bg(t.surface_raised)
-                        .font_family(theme::UI)
-                        .text_size(crate::theme::ui_text(12.))
-                        .cursor_pointer()
+                    crate::ui::file_head(key, &file.path, open, None, cx)
                         .on_click(move |_, _, cx| {
                             toggling.update(cx, |area, cx| {
                                 if let Some(diffs) = find(area) {
@@ -262,32 +246,21 @@ fn item_of(
                                 cx.notify();
                             })
                         })
-                        .child(crate::motion::turn(
-                            format!("{key}:chevron"),
-                            crate::motion::fold_angle(open),
-                            crate::motion::DETAIL_FOLD,
-                            crate::ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary),
-                        ))
-                        .child(crate::file_icons::glyph(
-                            file.path.rsplit('/').next().unwrap_or(&file.path),
-                            14.,
-                            cx,
-                        ))
-                        .child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .text_color(t.text_primary)
-                                .child(file.path.clone()),
-                        )
                         .children(file.previous_path.as_ref().map(|from| {
                             div()
+                                .text_size(crate::theme::ui_text(12.))
                                 .text_color(t.text_tertiary)
                                 .child(format!("from {from}"))
                         }))
-                        .child(div().flex_1())
-                        .child(div().text_color(t.live).child(format!("+{added}")))
-                        .child(div().text_color(t.danger).child(format!("−{removed}"))),
+                        .child(
+                            div()
+                                .flex()
+                                .gap(px(5.))
+                                .pr(px(1.))
+                                .text_size(crate::theme::ui_text(12.))
+                                .child(div().text_color(t.live).child(format!("+{added}")))
+                                .child(div().text_color(t.danger).child(format!("−{removed}"))),
+                        ),
                 )
                 .into_any_element()
         }

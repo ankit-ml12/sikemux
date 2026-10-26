@@ -23,7 +23,7 @@ use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::motion;
 use crate::picture::{self, Picture};
-use crate::theme;
+use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::ui::clock::{self, Slot};
 use crate::ui::shimmer::shimmer;
@@ -32,6 +32,8 @@ use crate::ui::shimmer::shimmer;
 const OUTPUT_FOLD_LINES: usize = 12;
 /// Unchanged lines kept either side of a change; the rest fold into a gap the reader opens.
 const DIFF_CONTEXT: usize = 3;
+/// A diff taller than this scrolls inside its card.
+const DIFF_MOST_HEIGHT: f32 = 360.;
 /// The width of a character of the mono face the run is set in, at its size.
 const MONO_CHAR: f32 = 6.6;
 
@@ -44,6 +46,8 @@ pub struct Opened {
     calls: HashSet<String>,
     /// Outputs shown whole and diffs shown with every unchanged line, by call.
     whole: HashSet<String>,
+    /// Diffs the reader folded under their file's head, by call.
+    folded: HashSet<String>,
     details: HashMap<String, Asked>,
 }
 
@@ -907,48 +911,42 @@ fn diff_body(
             .map_or(0, |line| line.saturating_sub(1) as u32),
         column: None,
     };
-    let name = std::path::Path::new(path)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
     let whole = looks.reading.tools.whole.contains(id);
-    let head = div()
-        .h(px(22.))
-        .px(px(9.))
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .border_b_1()
-        .border_color(looks.tints.line_soft)
-        .text_size(crate::theme::ui_text(10.))
-        .text_color(looks.faint)
-        .child(crate::file_icons::glyph(&name, 12., cx))
+    let folded = looks.reading.tools.folded.contains(id);
+    let shown = looks.files.borrow().shown(path);
+    let opens: Box<dyn Fn(&mut gpui_kit::Window, &mut App)> =
+        Box::new(move |window, cx| window.dispatch_action(open.boxed_clone(), cx));
+    let (reader, folding) = (looks.reader.clone(), id.to_owned());
+    let head = ui::file_head(format!("diff:{id}"), &shown, !folded, Some(opens), cx)
+        .on_click(move |_, _, cx| {
+            cx.stop_propagation();
+            reader.update(cx, |reading, cx| {
+                if !reading.tools.folded.remove(&folding) {
+                    reading.tools.folded.insert(folding.clone());
+                }
+                cx.notify();
+            });
+        })
         .child(
             div()
-                .id(SharedString::from(format!("open:{id}")))
-                .min_w_0()
-                .truncate()
-                .text_color(looks.quiet)
-                .cursor_pointer()
-                .hover(|path| path.underline())
-                .tooltip(ui::tooltip("Open in editor"))
-                .on_click(move |_, window, cx| {
-                    cx.stop_propagation();
-                    window.dispatch_action(open.boxed_clone(), cx);
-                })
-                .child(path.to_owned()),
-        )
-        .child(
-            div()
-                .ml_auto()
-                .text_color(looks.tints.added)
-                .child(format!("+{adds}")),
-        )
-        .child(
-            div()
-                .text_color(looks.tints.deleted_line)
-                .child(format!("−{dels}")),
+                .flex()
+                .gap(px(5.))
+                .pr(px(1.))
+                .text_size(crate::theme::ui_text(12.))
+                .child(
+                    div()
+                        .text_color(looks.tints.added)
+                        .child(format!("+{adds}")),
+                )
+                .child(
+                    div()
+                        .text_color(looks.tints.deleted_line)
+                        .child(format!("−{dels}")),
+                ),
         );
+    if folded {
+        return div().child(head);
+    }
     let keep = kept(lines, if whole { usize::MAX } else { DIFF_CONTEXT });
     let mut body: Vec<AnyElement> = Vec::new();
     let mut gap = 0;
@@ -966,9 +964,23 @@ fn diff_body(
     if gap > 0 {
         body.push(diff_gap(id, gap, looks));
     }
-    boxed(looks)
-        .child(head)
-        .child(div().py(px(3.)).flex().flex_col().children(body))
+    let t = Tokens::get(cx);
+    div().child(head).child(
+        div()
+            .id(SharedString::from(format!("diff-body:{id}")))
+            .max_h(px(DIFF_MOST_HEIGHT))
+            .overflow_y_scroll()
+            .py(px(3.))
+            .flex()
+            .flex_col()
+            .border_1()
+            .border_color(t.border)
+            .rounded_b(theme::RADIUS_2)
+            .bg(t.surface)
+            .text_size(crate::theme::ui_text(11.))
+            .line_height(crate::theme::ui_text(17.))
+            .children(body),
+    )
 }
 
 /// Which lines are within `context` of a change.
