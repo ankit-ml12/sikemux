@@ -483,7 +483,7 @@ fn draw(
     let review = &pane.review;
     let t = Tokens::get(cx).clone();
     let body = |inner: Div| {
-        div().pr(CARD_GAP).child(
+        div().child(
             inner
                 .border_l_1()
                 .border_r_1()
@@ -494,7 +494,6 @@ fn draw(
     match item {
         Item::Header(card) => header(view, pane, card, cx),
         Item::End(_) => div()
-            .pr(CARD_GAP)
             .pb(CARD_GAP)
             .child(
                 div()
@@ -630,7 +629,6 @@ fn header(view: &Entity<GitPane>, pane: &GitPane, card: usize, cx: &App) -> AnyE
     let id = SharedString::from(format!("card-{path}"));
     let key = SharedString::from(format!("card:{path}"));
     div()
-        .pr(CARD_GAP)
         .when(!open, |card| card.pb(CARD_GAP))
         .child(
             div()
