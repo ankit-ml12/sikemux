@@ -82,6 +82,10 @@ pub struct Opened {
     pub section: Section,
     /// Too narrow for two columns, as last drawn.
     stacked: bool,
+    /// The stacked view's file list is put away, leaving the diffs the whole width.
+    files_hidden: bool,
+    /// The file whose diff was last asked for.
+    focused: Option<String>,
     pub method: usize,
     pub busy: bool,
     /// The comment being written, made once the conversation first shows.
@@ -103,6 +107,8 @@ impl Opened {
             tab: Tab::Conversation,
             section: Section::Conversation,
             stacked: false,
+            files_hidden: false,
+            focused: None,
             method: 0,
             busy: false,
             draft: None,
@@ -152,6 +158,7 @@ impl Opened {
     fn focus(&mut self, path: &str) {
         self.tab = Tab::Files;
         self.section = Section::Files;
+        self.focused = Some(path.to_owned());
         if let Some(Ok(diffs)) = &self.files {
             diffs.reveal(path);
         }
@@ -346,7 +353,10 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
         return div().into_any_element();
     };
     let stacked = opened.stacked;
-    let diffs_shown = opened.tab == Tab::Files && (!stacked || opened.section == Section::Files);
+    let diffs_shown = match stacked {
+        true => opened.section == Section::Files,
+        false => opened.tab == Tab::Files,
+    };
     if diffs_shown {
         if let Some(Some(Ok(diffs))) = area.pull.as_mut().map(|opened| opened.files.as_mut()) {
             diffs.colour(cx, |area| area.pull.as_mut()?.files.as_mut()?.as_mut().ok());
@@ -440,18 +450,34 @@ fn stacked_view(
         .pt(px(14.))
         .pb(px(12.))
         .child(header(area, found, true, cx));
+    let hidden = opened.files_hidden;
+    let list_toggle = (chosen == Section::Files).then(|| {
+        let label = if hidden {
+            "Show the file list"
+        } else {
+            "Hide the file list"
+        };
+        IconButton::new("pull-file-list", Icon::PanelLeft, label)
+            .small()
+            .pressed(!hidden)
+            .on_click(cx.listener(|area, _, _, cx| {
+                if let Some(opened) = &mut area.pull {
+                    opened.files_hidden = !opened.files_hidden;
+                }
+                cx.notify();
+            }))
+            .into_any_element()
+    });
     let tabs = strip(
         sections.into_iter().map(|(section, label, mark)| {
             tab(label, mark, chosen == section, cx).on_click(cx.listener(move |area, _, _, cx| {
                 if let Some(opened) = &mut area.pull {
                     opened.section = section;
-                    if section == Section::Files {
-                        opened.tab = Tab::Conversation;
-                    }
                 }
                 cx.notify();
             }))
         }),
+        list_toggle,
         cx,
     );
     let page = |body: AnyElement| {
@@ -464,44 +490,31 @@ fn stacked_view(
     };
     let body = match chosen {
         Section::Conversation => conversation(area, window, cx),
-        Section::Files if opened.tab == Tab::Files => {
-            let count = pull.changed_files.unwrap_or_default();
+        Section::Files => {
+            let list = (!hidden).then(|| {
+                div()
+                    .id("pull-file-list")
+                    .w(px(FILE_LIST))
+                    .flex_none()
+                    .h_full()
+                    .border_r_1()
+                    .border_color(t.border)
+                    .overflow_y_scroll()
+                    .child(files_page(opened, cx))
+            });
             div()
                 .size_full()
                 .flex()
-                .flex_col()
+                .children(list)
                 .child(
                     div()
-                        .id("pull-all-files")
-                        .h(px(30.))
-                        .px(px(10.))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .border_b_1()
-                        .border_color(t.border)
-                        .text_size(crate::theme::ui_text(11.5))
-                        .text_color(t.text_secondary)
-                        .cursor_pointer()
-                        .hover(move |row| row.text_color(t.text_primary))
-                        .on_click(cx.listener(|area, _, _, cx| {
-                            if let Some(opened) = &mut area.pull {
-                                opened.tab = Tab::Conversation;
-                            }
-                            cx.notify();
-                        }))
-                        .child(ui::icon(Icon::Chevron, 11.).with_transformation(
-                            gpui_kit::Transformation::rotate(gpui_kit::radians(
-                                std::f32::consts::PI,
-                            )),
-                        ))
-                        .child(format!("All files · {count}")),
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .child(diffs(area, window, cx)),
                 )
-                .child(div().flex_1().min_h_0().child(diffs(area, window, cx)))
                 .into_any_element()
         }
-        Section::Files => page(files_page(opened, cx)),
         Section::Commits => page(commits_page(opened, cx)),
         Section::Checks => page(merge_page(area, cx)),
     };
@@ -669,18 +682,28 @@ fn state_pill(state: PullState, cx: &App) -> Div {
         .child(word)
 }
 
-/// A row of tabs over a page, the chosen one underlined in ink.
-fn strip(tabs: impl IntoIterator<Item = gpui_kit::Stateful<Div>>, cx: &App) -> Div {
+/// A row of tabs over a page, the chosen one underlined in ink, with what acts on the page
+/// at its end.
+fn strip(
+    tabs: impl IntoIterator<Item = gpui_kit::Stateful<Div>>,
+    end: Option<AnyElement>,
+    cx: &App,
+) -> Div {
     let t = Tokens::get(cx);
     div()
         .flex_none()
         .px(px(14.))
         .flex()
+        .items_center()
         .gap(px(18.))
         .border_b_1()
         .border_color(t.border)
         .children(tabs)
+        .children(end.map(|end| div().ml_auto().child(end)))
 }
+
+/// How wide the stacked view's file list is, beside the diffs.
+const FILE_LIST: f32 = 220.;
 
 /// One tab of a strip: its name, then how many it holds or how it stands.
 fn tab(
@@ -798,13 +821,29 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
     };
     let added: u64 = files.iter().map(|changed| changed.file.additions).sum();
     let removed: u64 = files.iter().map(|changed| changed.file.deletions).sum();
+    let mut rows: Vec<AnyElement> = Vec::new();
+    let mut folder: Option<&str> = None;
+    for (at, changed) in files.iter().enumerate() {
+        let path = changed.file.path.as_str();
+        let (dir, name) = match path.rsplit_once('/') {
+            Some((dir, name)) => (Some(dir), name),
+            None => (None, path),
+        };
+        if dir != folder {
+            folder = dir;
+            rows.extend(dir.map(|dir| folder_row(at, dir, cx)));
+        }
+        let chosen = opened.focused.as_deref() == Some(path);
+        rows.push(file_row(at, changed, name, dir.is_some(), chosen, cx));
+    }
     div()
         .flex()
         .flex_col()
+        .pb(px(8.))
         .child(
             div()
                 .px(px(12.))
-                .py(px(4.))
+                .py(px(6.))
                 .flex()
                 .gap(px(8.))
                 .text_size(crate::theme::ui_text(11.))
@@ -818,65 +857,98 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
                 .child(div().text_color(t.live).child(format!("+{added}")))
                 .child(div().text_color(t.danger).child(format!("−{removed}"))),
         )
-        .children(files.iter().enumerate().map(|(at, changed)| {
-            let path = changed.file.path.clone();
-            let (dir, name) = match path.rsplit_once('/') {
-                Some((dir, name)) => (Some(dir.to_owned()), name.to_owned()),
-                None => (None, path.clone()),
-            };
-            let (letter, ink) = match changed.file.status.as_str() {
-                "added" => ("A", t.git_added),
-                "removed" => ("D", t.git_deleted),
-                "renamed" | "copied" => ("R", t.git_renamed),
-                _ => ("M", t.git_modified),
-            };
-            let glyph = match crate::file_icons::icon(&name, cx) {
-                Some(icon) => gpui_kit::img(icon)
-                    .size(px(14.))
-                    .flex_none()
-                    .into_any_element(),
-                None => ui::icon(Icon::File, 14.)
-                    .text_color(t.text_tertiary)
-                    .into_any_element(),
-            };
-            div()
-                .id(("pull-file", at))
-                .h(px(26.))
-                .px(px(12.))
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .text_size(crate::theme::ui_text(12.))
-                .cursor_pointer()
-                .hover(move |row| row.bg(t.surface_hover))
-                .tooltip(ui::tooltip(path.clone()))
-                .on_click(cx.listener(move |area, _, _, cx| {
-                    if let Some(opened) = &mut area.pull {
-                        opened.focus(&path);
-                    }
-                    cx.notify();
-                }))
-                .child(glyph)
-                .child(div().flex_none().text_color(t.text_primary).child(name))
-                .children(dir.map(|dir| {
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(crate::theme::ui_text(10.5))
-                        .text_color(t.text_tertiary)
-                        .child(dir)
-                }))
-                .child(
-                    div()
-                        .ml_auto()
-                        .flex_none()
-                        .font_family(theme::MONO)
-                        .text_size(crate::theme::ui_text(11.))
-                        .text_color(ink)
-                        .child(letter),
-                )
+        .children(rows)
+        .into_any_element()
+}
+
+/// The folder the files under it are in, by its last two names so a deep path stays
+/// readable in a narrow list.
+fn folder_row(at: usize, dir: &str, cx: &App) -> AnyElement {
+    let t = Tokens::get(cx);
+    let parts: Vec<&str> = dir.split('/').collect();
+    let shown = match parts.len() {
+        0..=2 => dir.to_owned(),
+        count => format!("…/{}", parts[count - 2..].join("/")),
+    };
+    div()
+        .id(("pull-folder", at))
+        .h(px(24.))
+        .mt(px(4.))
+        .px(px(12.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .text_size(crate::theme::ui_text(11.))
+        .text_color(t.text_tertiary)
+        .tooltip(ui::tooltip(dir.to_owned()))
+        .child(ui::icon(Icon::Folder, 12.).flex_none())
+        .child(div().min_w_0().truncate().child(shown))
+        .into_any_element()
+}
+
+/// A changed file in the list: its icon and name, under its folder when it has one, with
+/// how it changed.
+fn file_row(
+    at: usize,
+    changed: &Changed,
+    name: &str,
+    nested: bool,
+    chosen: bool,
+    cx: &mut Context<HostArea>,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let path = changed.file.path.clone();
+    let (letter, ink) = match changed.file.status.as_str() {
+        "added" => ("A", t.git_added),
+        "removed" => ("D", t.git_deleted),
+        "renamed" | "copied" => ("R", t.git_renamed),
+        _ => ("M", t.git_modified),
+    };
+    let glyph = match crate::file_icons::icon(name, cx) {
+        Some(icon) => gpui_kit::img(icon)
+            .size(px(14.))
+            .flex_none()
+            .into_any_element(),
+        None => ui::icon(Icon::File, 14.)
+            .text_color(t.text_tertiary)
+            .into_any_element(),
+    };
+    div()
+        .id(("pull-file", at))
+        .h(px(26.))
+        .pl(px(if nested { 30. } else { 12. }))
+        .pr(px(12.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .text_size(crate::theme::ui_text(12.))
+        .cursor_pointer()
+        .when(chosen, |row| row.bg(t.surface_chosen))
+        .when(!chosen, |row| row.hover(move |row| row.bg(t.surface_hover)))
+        .tooltip(ui::tooltip(path.clone()))
+        .on_click(cx.listener(move |area, _, _, cx| {
+            if let Some(opened) = &mut area.pull {
+                opened.focus(&path);
+            }
+            cx.notify();
         }))
+        .child(glyph)
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_color(t.text_primary)
+                .child(name.to_owned()),
+        )
+        .child(
+            div()
+                .flex_none()
+                .font_family(theme::MONO)
+                .text_size(crate::theme::ui_text(11.))
+                .text_color(ink)
+                .child(letter),
+        )
         .into_any_element()
 }
 
@@ -1294,6 +1366,7 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
                 cx.notify();
             }))
         }),
+        None,
         cx,
     );
     let body = match chosen {
