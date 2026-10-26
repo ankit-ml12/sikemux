@@ -1,6 +1,6 @@
 //! A link in a message: a file the agent named shows in Finder, or in the editor when the
-//! agent runs on another host; a web page opens on the agent's desk, or with ⌘ held where
-//! the system opens it; Sikemux's own links are followed here. Any other link, or a web
+//! agent runs on another host; a web page opens on the agent's desk, a pull request there as
+//! the Git tab shows one, or with ⌘ held where the system opens it; Sikemux's own links are followed here. Any other link, or a web
 //! address carrying a password, goes nowhere, so a link an agent wrote cannot start another app.
 
 use std::path::PathBuf;
@@ -49,7 +49,7 @@ pub fn open(href: &str, agent: &str, bench: &WeakEntity<Workbench>, window: &Win
     }
     if !window.modifiers().platform {
         let shown = bench
-            .update(cx, |bench, _| bench.open_on_desk(agent, href))
+            .update(cx, |bench, cx| bench.open_link_on_desk(agent, href, cx))
             .unwrap_or(false);
         if shown {
             return;

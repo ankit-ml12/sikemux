@@ -268,6 +268,8 @@ impl HostArea {
                     area.signing = None;
                     area.read_budget(cx);
                     area.watch();
+                } else if matches!(area.status, Some(Ok(_))) {
+                    area.fall_back(cx);
                 }
                 cx.notify();
             })

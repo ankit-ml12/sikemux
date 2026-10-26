@@ -383,17 +383,19 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .flex()
         .items_center()
         .gap(px(8.))
-        .child(
-            IconButton::new("pull-back", Icon::Chevron, "Back to the pull requests")
-                .turned(std::f32::consts::PI)
-                .small()
-                .on_click(cx.listener(|area, _, _, cx| {
-                    area.pull = None;
-                    area.elsewhere = None;
-                    area.watch();
-                    cx.notify();
-                })),
-        )
+        .when(area.desk.is_none(), |head| {
+            head.child(
+                IconButton::new("pull-back", Icon::Chevron, "Back to the pull requests")
+                    .turned(std::f32::consts::PI)
+                    .small()
+                    .on_click(cx.listener(|area, _, _, cx| {
+                        area.pull = None;
+                        area.elsewhere = None;
+                        area.watch();
+                        cx.notify();
+                    })),
+            )
+        })
         .children(state.map(|state| pull_mark(state, 14., cx)))
         .child(ui::mono(format!("#{}", opened.number), 12., cx).text_color(t.text_primary));
     let actions = div()
@@ -898,7 +900,7 @@ fn checks(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
                     .cursor_pointer()
                     .hover(move |row| row.bg(t.surface_hover))
                     .on_click(cx.listener(move |area, _, _, cx| {
-                        if area.elsewhere.is_none() {
+                        if area.elsewhere.is_none() && area.desk.is_none() {
                             area.open_run(id.clone(), Some(number), cx)
                         }
                     }))

@@ -164,6 +164,32 @@ pub struct HostArea {
     pictures: crate::avatars::Avatars,
     /// Out of sight, so nothing is watched until it shows again.
     hidden: bool,
+    /// The agent's desk this shows one pull request on, in place of the Git tab.
+    desk: Option<OnDesk>,
+}
+
+/// A pull request shown alone on an agent's desk, from a link to it.
+struct OnDesk {
+    agent: String,
+    url: String,
+    view: &'static str,
+    files: &'static str,
+}
+
+/// The keys a desk's pull request is watched by. Watch keys live as long as the app, so
+/// each pull request opened on a desk makes its pair once.
+fn desk_keys(agent: &str, host: &str, repo: &str, number: u64) -> (&'static str, &'static str) {
+    thread_local! {
+        static KEYS: std::cell::RefCell<std::collections::HashMap<String, (&'static str, &'static str)>> =
+            Default::default();
+    }
+    let name = format!("host-desk-{agent}-{host}-{repo}-{number}");
+    KEYS.with_borrow_mut(|keys| {
+        *keys.entry(name.clone()).or_insert_with(|| {
+            let leak = |key: String| -> &'static str { Box::leak(key.into_boxed_str()) };
+            (leak(format!("{name}-view")), leak(format!("{name}-files")))
+        })
+    })
 }
 
 /// Every list and page the areas watch, by key.
@@ -216,6 +242,96 @@ impl HostArea {
                 std::time::Duration::from_secs(60),
             ),
             pictures: Default::default(),
+            desk: None,
+        }
+    }
+
+    /// Shows pull request `number` of `linked` alone, on `agent`'s desk, as the link `url`
+    /// named it. It is read through `project` when that is the project's own repository,
+    /// so it can be checked out there.
+    #[allow(clippy::too_many_arguments)]
+    pub fn on_desk(
+        core: Target,
+        bench: WeakEntity<Workbench>,
+        agent: String,
+        url: String,
+        linked: ProjectCodeHost,
+        number: u64,
+        project: Option<&sikemux_wire::protocol::ProjectInfo>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let own = project.filter(|project| {
+            project
+                .code_host
+                .as_ref()
+                .is_some_and(|host| host.host == linked.host && host.repo == linked.repo)
+        });
+        let account = project
+            .and_then(|project| project.code_hosts.get(&linked.host))
+            .and_then(|choice| choice.account.clone());
+        let (folder, branch) = own.map_or_else(Default::default, |project| {
+            (
+                project.path.to_string_lossy().into_owned(),
+                branch_of(project),
+            )
+        });
+        let (view, files) = desk_keys(&agent, &linked.host, &linked.repo, number);
+        let mut area = Self::new(core, bench, folder, linked, account, branch);
+        area.elsewhere = own.is_none().then(|| area.host.repo.clone());
+        area.desk = Some(OnDesk {
+            agent,
+            url,
+            view,
+            files,
+        });
+        area.show(Area::Pulls, cx);
+        area.open_pull(number, cx);
+        area
+    }
+
+    /// The keys the open pull request and its files are watched by.
+    fn pull_keys(&self) -> (&'static str, &'static str) {
+        match &self.desk {
+            Some(desk) => (desk.view, desk.files),
+            None => (pull::VIEW, pull::FILES),
+        }
+    }
+
+    /// Opens the desk's link as a web page in place of the pull request, once the host
+    /// cannot show it here: no account is signed in to it, or it would not read it.
+    fn fall_back(&self, cx: &mut Context<Self>) {
+        let Some(desk) = &self.desk else {
+            return;
+        };
+        let (agent, url) = (desk.agent.clone(), desk.url.clone());
+        let (bench, shown) = (self.bench.clone(), cx.entity().entity_id());
+        cx.defer(move |cx| {
+            bench
+                .update(cx, |bench, cx| {
+                    bench.desk_pull_fell_back(&agent, shown, &url, cx)
+                })
+                .ok();
+        });
+    }
+
+    /// How a desk's tab names the pull request: its state's mark, and its number and title.
+    pub fn desk_face(&self, cx: &App) -> (AnyElement, String) {
+        let t = Tokens::get(cx);
+        let Some(opened) = &self.pull else {
+            return (div().into_any_element(), String::new());
+        };
+        match opened.view.as_ref().and_then(|view| view.as_ref().ok()) {
+            Some(view) => (
+                pull_mark(view.state, 13., cx),
+                format!("#{} {}", opened.number, view.pull.title),
+            ),
+            None => (
+                ui::icon(Icon::PullRequest, 13.)
+                    .text_color(t.text_tertiary)
+                    .flex_none()
+                    .into_any_element(),
+                format!("#{}", opened.number),
+            ),
         }
     }
 
@@ -261,6 +377,11 @@ impl HostArea {
     }
 
     fn unwatch_all(&self) {
+        if let Some(desk) = &self.desk {
+            self.core.unwatch(desk.view);
+            self.core.unwatch(desk.files);
+            return;
+        }
         for key in WATCHED {
             self.core.unwatch(key);
         }
@@ -311,21 +432,33 @@ impl HostArea {
 
     /// Takes a watched list's answer, under the key it was watched by.
     pub fn read(&mut self, key: &str, value: &Value, cx: &mut Context<Self>) {
+        let (view, files) = self.pull_keys();
         match key {
-            pulls::KEY => self.pulls.list = Some(answer(value)),
-            pull::VIEW => {
-                if let Some(opened) = &mut self.pull {
-                    if opened.take_view(Some(answer(value))) {
-                        let number = opened.number;
-                        self.read_pull_extras(number, cx);
-                    }
+            key if key == view => {
+                let Some(opened) = &mut self.pull else {
+                    return;
+                };
+                let first = opened.view.is_none();
+                if opened.take_view(Some(answer(value))) {
+                    let number = opened.number;
+                    self.read_pull_extras(number, cx);
+                }
+                let unread = |area: &Self| {
+                    area.pull
+                        .as_ref()
+                        .is_some_and(|opened| matches!(opened.view, Some(Err(_))))
+                };
+                if first && unread(self) {
+                    self.fall_back(cx);
                 }
             }
-            pull::FILES => {
+            key if key == files => {
                 if let Some(opened) = &mut self.pull {
                     opened.take_files(answer(value));
                 }
             }
+            _ if self.desk.is_some() => return,
+            pulls::KEY => self.pulls.list = Some(answer(value)),
             runs::LIST => self.runs.list = Some(answer(value)),
             releases::KEY => self.releases.list = Some(answer(value)),
             issues::KEY => {
@@ -411,8 +544,9 @@ impl HostArea {
             Some(opened) => {
                 let mut params = self.located();
                 params["number"] = json!(opened.number);
-                self.ask_watch(pull::VIEW, "codeHostPull", params.clone());
-                self.ask_watch(pull::FILES, "codeHostPullFiles", params);
+                let (view, files) = self.pull_keys();
+                self.ask_watch(view, "codeHostPull", params.clone());
+                self.ask_watch(files, "codeHostPullFiles", params);
             }
             None => self.ask_watch(
                 pulls::KEY,
@@ -534,6 +668,14 @@ impl HostArea {
         }
         self.core
             .watch(key, Watch::new(method, params, &["codeHost"]));
+    }
+}
+
+impl Drop for HostArea {
+    fn drop(&mut self) {
+        if self.desk.is_some() {
+            self.unwatch_all();
+        }
     }
 }
 
@@ -926,6 +1068,11 @@ fn comments(count: u64, cx: &App) -> Option<Div> {
 /// Whether `key` is one this module watches, so the workbench hands its answers here.
 pub fn watches(key: &str) -> bool {
     key.starts_with("host-")
+}
+
+/// Whether `key` is one a desk's pull request watches.
+pub fn on_desks(key: &str) -> bool {
+    key.starts_with("host-desk-")
 }
 
 /// The project's branch, and whether the core says it needs a pull request.

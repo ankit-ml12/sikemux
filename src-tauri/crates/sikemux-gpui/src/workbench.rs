@@ -1172,6 +1172,9 @@ impl Workbench {
                 self.time_run(cx);
             }
             Update::Read("whatsNew", value) => crate::experience::whats_new_read(self, &value, cx),
+            Update::Read(key, value) if crate::codehost::on_desks(key) => {
+                self.read_desk_pulls(key, &value, cx);
+            }
             Update::Read(key, value) if crate::codehost::watches(key) => {
                 if let Some(host) = &self.host {
                     host.update(cx, |host, cx| host.read(key, &value, cx));
