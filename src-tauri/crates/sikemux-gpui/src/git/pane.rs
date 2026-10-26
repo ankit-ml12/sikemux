@@ -2304,6 +2304,7 @@ fn side(pane: &mut GitPane, window: &mut Window, cx: &mut Context<GitPane>) -> i
         cards,
         start,
         motion,
+        Some(Tokens::get(cx).border),
         move |event, cx| {
             this.update(cx, |pane, cx| pane.swipe(event, cx))
                 .unwrap_or(false)

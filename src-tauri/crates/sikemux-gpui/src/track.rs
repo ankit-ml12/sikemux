@@ -7,8 +7,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::{
-    canvas, div, relative, AnimationExt, AnyElement, App, Context, DispatchPhase, Div, ElementId,
-    IntoElement, ParentElement, ScrollWheelEvent, Styled, Task, TouchPhase, Window,
+    canvas, div, px, relative, AnimationExt, AnyElement, App, Context, DispatchPhase, Div,
+    ElementId, Hsla, IntoElement, ParentElement, ScrollWheelEvent, Styled, Task, TouchPhase,
+    Window,
 };
 use sikemux_wire::protocol::PaneKind;
 
@@ -334,6 +335,7 @@ pub fn stage(
         cards,
         start,
         motion,
+        None,
         move |event, cx| {
             this.update(cx, |bench, cx| bench.swipe_stage(event, cx))
                 .unwrap_or(false)
@@ -363,6 +365,7 @@ pub fn rail(
         cards,
         start,
         motion,
+        Some(crate::theme::Tokens::get(cx).border),
         move |event, cx| {
             this.update(cx, |bench, cx| bench.swipe_rail(event, cx))
                 .unwrap_or(false)
@@ -374,20 +377,22 @@ pub fn rail(
     .into_any_element()
 }
 
-/// A row's frame: what it shows, and the hearing of its swipes; the caller sizes it.
+/// A row's frame: what it shows, and the hearing of its swipes; the caller sizes it. A
+/// `seam` colour draws a hairline between things while they move side by side.
 pub(crate) fn row(
     id: &'static str,
     width: &Rc<Cell<f32>>,
     cards: Vec<(AnyElement, i32)>,
     start: f32,
     motion: Option<(usize, Option<f32>)>,
+    seam: Option<Hsla>,
     swiped: impl Fn(&ScrollWheelEvent, &mut App) -> bool + 'static,
 ) -> Div {
     div()
         .relative()
         .overflow_hidden()
         .child(listener(width, swiped))
-        .child(lane(id, cards, start, motion))
+        .child(lane(id, cards, start, motion, seam))
 }
 
 /// A row of things, each a row's width, sitting `start` places along and travelling to
@@ -397,6 +402,7 @@ fn lane(
     mut cards: Vec<(AnyElement, i32)>,
     start: f32,
     motion: Option<(usize, Option<f32>)>,
+    seam: Option<Hsla>,
 ) -> AnyElement {
     cards.sort_by_key(|(_, place)| *place);
     let first = cards.first().map_or(0, |(_, place)| *place);
@@ -409,11 +415,24 @@ fn lane(
         .flex()
         .w(relative(count))
         .left(relative(first as f32 - start))
-        .children(
-            cards
-                .into_iter()
-                .map(|(card, _)| div().h_full().w(relative(1. / count)).flex().child(card)),
-        );
+        .children(cards.into_iter().enumerate().map(|(at, (card, _))| {
+            let line = seam.filter(|_| at > 0).map(|color| {
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .bottom_0()
+                    .w(px(1.))
+                    .bg(color)
+            });
+            div()
+                .relative()
+                .h_full()
+                .w(relative(1. / count))
+                .flex()
+                .child(card)
+                .children(line)
+        }));
     let Some((moved, spring)) = motion else {
         return lane.into_any_element();
     };
