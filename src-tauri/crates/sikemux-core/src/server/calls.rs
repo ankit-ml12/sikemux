@@ -558,6 +558,10 @@ calls! { core, client, params;
         answer(())
     },
     "pluginView": Watch => answer(super::plugin_views::view(&core, client.id, parse(params)?).await),
+    "pluginViewAway": Watch => {
+        super::plugin_views::away(&core, client.id, parse(params)?);
+        answer(())
+    },
     "pluginViewsRead": Watch => {
         super::plugin_views::read_again(&core, parse(params)?);
         answer(())

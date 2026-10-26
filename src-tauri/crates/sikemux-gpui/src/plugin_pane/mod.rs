@@ -243,6 +243,8 @@ pub struct Host {
     /// The browser sign-in on its way, which dropping stops.
     signing: Option<Task<()>>,
     pub faces: crate::avatars::Avatars,
+    /// The pane's tab is out of front, so its views are not read again until it shows.
+    hidden: bool,
 }
 
 /// Opens a sign-in page in `browser`, the app and the shortcut that brings it forward, else in
@@ -332,6 +334,9 @@ impl Host {
     /// Reads again the kept views the core says changed, `paths` naming them as
     /// `<plugin>/<method>`, or every one when it names none.
     fn changed(&mut self, paths: Option<&[String]>, cx: &mut Context<PluginPane>) {
+        if self.hidden {
+            return;
+        }
         let moved = |method: &str| {
             paths.is_none_or(|paths| {
                 paths
@@ -673,7 +678,25 @@ impl PluginPane {
                 status: None,
                 signing: None,
                 faces: Default::default(),
+                hidden: false,
             },
+        }
+    }
+
+    /// Stops the core reading the pane's views again while its tab is out of front.
+    pub fn hide(&mut self) {
+        if !std::mem::replace(&mut self.host.hidden, true) {
+            self.host
+                .target
+                .call("pluginViewAway", json!({ "slot": self.host.slot }));
+        }
+    }
+
+    /// Reads the pane's views again as its tab comes to the front, which the core then keeps
+    /// reading while it shows.
+    pub fn show(&mut self, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.host.hidden) {
+            self.host.changed(None, cx);
         }
     }
 

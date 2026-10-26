@@ -130,6 +130,24 @@ pub(crate) async fn view(core: &Arc<Core>, client: ClientId, asked: ViewParams) 
     }
 }
 
+#[derive(Deserialize)]
+pub(crate) struct AwayParams {
+    slot: String,
+}
+
+/// The client no longer shows `slot` or any view under it, so they stop being read again for
+/// it until it asks for one there.
+pub(crate) fn away(core: &Core, client: ClientId, asked: AwayParams) {
+    let under = format!("{}/", asked.slot);
+    core.plugin_views
+        .state
+        .locked()
+        .shown
+        .retain(|(shown_to, slot), _| {
+            *shown_to != client || (*slot != asked.slot && !slot.starts_with(&under))
+        });
+}
+
 /// How long `answer` stays fresh: the manifest's pace, or sooner when the
 /// view asks for it, such as while a run it shows goes on.
 fn pace(answer: &Value, every: Duration) -> Duration {

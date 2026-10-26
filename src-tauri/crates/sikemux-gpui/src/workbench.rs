@@ -3638,8 +3638,18 @@ impl Workbench {
                 plugin_views(&tab.pane, &mut shown);
             }
         }
-        self.plugin_panes
-            .retain(|id, _| shown.iter().any(|(kept, _)| kept == id));
+        let mut in_front = Vec::new();
+        if let Some(tab) = self.tab() {
+            plugin_views(&tab.pane, &mut in_front);
+        }
+        self.plugin_panes.retain(|id, pane| {
+            let kept = shown.iter().any(|(kept, _)| kept == id);
+            match kept && in_front.iter().any(|(front, _)| front == id) {
+                true => pane.update(cx, |pane, cx| pane.show(cx)),
+                false => pane.update(cx, |pane, _| pane.hide()),
+            }
+            kept
+        });
         for (id, target) in shown {
             if self.plugin_panes.contains_key(&id) {
                 continue;
