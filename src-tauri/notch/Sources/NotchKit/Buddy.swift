@@ -48,20 +48,23 @@ struct AgentLook: View {
     let provider: String
     var mark: Mark = .idle
     var size: CGFloat = 16
+    /// Drawn in a list of agents, where a mark keeps its colour only while its agent works or waits on you, as the rail's rows do.
+    var listed = false
     @Environment(\.faceMotion) private var moves
 
     var body: some View {
         if let face, let image = BuddyArt.shared.image(face, state: BuddyState(mark)) {
             BuddyImage(image: image, state: BuddyState(mark), moves: moves, size: size)
         } else {
-            AgentMark(provider: provider, size: size)
+            let quiet = listed && mark != .working && mark != .needs
+            AgentMark(provider: provider, size: size, tint: quiet ? Theme.inkDim : nil)
         }
     }
 }
 
 extension AgentLook {
-    init(entry: Entry, size: CGFloat) {
-        self.init(face: entry.agent?.face, provider: entry.provider, mark: entry.mark, size: size)
+    init(entry: Entry, size: CGFloat, listed: Bool = false) {
+        self.init(face: entry.agent?.face, provider: entry.provider, mark: entry.mark, size: size, listed: listed)
     }
 }
 

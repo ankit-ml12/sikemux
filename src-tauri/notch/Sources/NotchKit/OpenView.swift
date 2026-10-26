@@ -170,7 +170,7 @@ struct RowLine: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            AgentLook(entry: entry, size: 20).matchedGeometryEffect(id: entry.id, in: marks)
+            AgentLook(entry: entry, size: 20, listed: true).matchedGeometryEffect(id: entry.id, in: marks)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(entry.title).font(Theme.ui(13, .medium)).foregroundStyle(Theme.ink).lineLimit(1)
                 if entry.mark == .working, let attempt = entry.reconnecting {

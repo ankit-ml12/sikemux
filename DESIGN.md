@@ -16,6 +16,9 @@ its own look from those tokens.
   and the one primary action on a surface. A choice from a set (a segmented
   button, a filter, a nav item, a choice card) is chosen, so it gets the grey
   lift; a chosen tab's underline is ink.
+- **Brand colour means busy.** In a list of agents, a mark keeps its agent's colour
+  only while the agent starts, works or waits on you; otherwise it is grey, so titles
+  lead. A single mark, such as the composer's model, keeps its colour.
 - **Labels are words, not capitals.** Group and column labels are sentence case in
   `--text-tertiary`, with no rule after them. A search list marks the letters it
   matched in the primary ink at semibold.
