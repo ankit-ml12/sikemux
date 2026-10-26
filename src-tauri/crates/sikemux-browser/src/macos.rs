@@ -1084,10 +1084,15 @@ pub fn call_async(
             return;
         }
         // SAFETY: WebKit passes a live result or nil, valid until the block returns.
-        let text = unsafe { value.as_ref() }
+        let answer = unsafe { value.as_ref() }
             .and_then(|value| value.downcast_ref::<NSString>())
-            .map(|text| text.to_string());
-        done(text.ok_or_else(|| "the script returned nothing readable".into()));
+            .map(|text| text.to_string())
+            .unwrap_or_default();
+        done(match answer.split_at_checked(1) {
+            Some(("o", text)) => Ok(text.to_owned()),
+            Some(("e", message)) => Err(message.to_owned()),
+            _ => Err("the script returned nothing readable".into()),
+        });
     });
     let world = match world {
         // SAFETY: main thread, as `mtm` proves.
@@ -1104,13 +1109,25 @@ pub fn call_async(
     // SAFETY: main thread, `webview` and `world` are retained, and WebKit copies the block.
     unsafe {
         webview.callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler(
-            &NSString::from_str(body),
+            &NSString::from_str(&never_throwing(body)),
             None,
             None,
             &world,
             Some(&block),
         );
     }
+}
+
+/// Wraps `body` so it answers with a string led by `o` and its value, `e` and what it
+/// threw, or `n` when its value is not a string. WebKit crashed on macOS 26 while
+/// describing a script's error, so a body never leaves it one to describe.
+fn never_throwing(body: &str) -> String {
+    format!(
+        "try {{ const value = await (async () => {{\n{body}\n}})(); \
+         return typeof value === \"string\" ? \"o\" + value : \"n\"; }} \
+         catch (error) {{ try {{ return \"e\" + String((error && error.message) || error); }} \
+         catch {{ return \"ethe script threw\"; }} }}"
+    )
 }
 
 /// WebKit's own description of a thrown exception is only "A JavaScript
