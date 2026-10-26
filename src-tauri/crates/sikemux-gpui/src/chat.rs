@@ -2586,16 +2586,13 @@ fn asking(
         .enumerate()
         .map(|(ix, choice)| {
             let (agent, id) = (agent.to_owned(), current.id.clone());
-            let key = if current.multi {
-                tick(chosen(ix), t)
-            } else {
-                div()
-                    .font_family(theme::MONO)
-                    .text_size(crate::theme::ui_text(10.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child((ix + 1).to_string())
-                    .into_any_element()
+            let key = match current.multi {
+                true => tick(chosen(ix), t),
+                false => radio(chosen(ix), t),
             };
+            let number = ui::kbd((ix + 1).to_string(), cx)
+                .line_height(crate::theme::ui_text(19.))
+                .into_any_element();
             let (label, recommended) = recommended(&choice.label);
             let label = div()
                 .flex()
@@ -2625,6 +2622,7 @@ fn asking(
                 cursor == Some(ix),
                 key,
                 div().child(label).children(detail),
+                Some(number),
                 t,
             )
             .disabled(chat.sending_answers())
@@ -2650,6 +2648,7 @@ fn asking(
                 false,
                 key,
                 typed,
+                None,
                 t,
             )
             .into_any_element(),
@@ -2700,9 +2699,10 @@ fn answer_row(
     cursor: bool,
     key: AnyElement,
     body: impl IntoElement,
+    number: Option<AnyElement>,
     t: &Tokens,
 ) -> BaseButton {
-    let hover = t.surface_chosen;
+    let hover = t.surface_hover;
     BaseButton::new(id)
         .w_full()
         .pt(px(7.))
@@ -2712,14 +2712,8 @@ fn answer_row(
         .flex()
         .items_start()
         .rounded(theme::RADIUS_2)
-        .bg(match (chosen, cursor) {
-            (true, _) => Hsla {
-                a: 0.14,
-                ..t.text_primary
-            },
-            (false, true) => t.surface_chosen,
-            (false, false) => t.surface_hover,
-        })
+        .when(chosen, |row| row.bg(t.surface_chosen))
+        .when(!chosen && cursor, |row| row.bg(t.surface_hover))
         .text_color(if chosen {
             t.text_primary
         } else {
@@ -2739,6 +2733,30 @@ fn answer_row(
                 .child(key),
         )
         .child(div().flex_1().min_w_0().flex().flex_col().child(body))
+        .children(number.map(|number| div().flex_none().pl(px(8.)).child(number)))
+}
+
+/// The ring of a choice on a question that takes one.
+fn radio(on: bool, t: &Tokens) -> AnyElement {
+    div()
+        .mt(px(3.5))
+        .size(px(12.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .border_1()
+        .border_color(match on {
+            true => t.text_primary,
+            false => Hsla {
+                a: 0.3,
+                ..t.text_primary
+            },
+        })
+        .when(on, |ring| {
+            ring.child(div().size(px(6.)).rounded_full().bg(t.text_primary))
+        })
+        .into_any_element()
 }
 
 /// The box of a choice on a question that takes several.
