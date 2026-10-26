@@ -1194,7 +1194,8 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
         .flex()
         .items_center()
         .gap(px(8.))
-        .child(ui::label("Limits", cx).flex_1())
+        .child(ui::label("Limits", cx).flex_none())
+        .child(div().flex_1().h(px(1.)).bg(t.border))
         .children(top_name)
         .child({
             let provider = provider.clone();

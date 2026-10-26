@@ -354,7 +354,8 @@ impl RenderOnce for Group {
                     .pr(px(6.))
                     .pb(px(6.))
                     .pl(px(8.))
-                    .child(label(self.label, cx).flex_1())
+                    .child(label(self.label, cx).flex_none())
+                    .child(div().flex_1().h(px(1.)).bg(Tokens::get(cx).border))
                     .children(self.actions),
             )
             .children(self.toolbar)
