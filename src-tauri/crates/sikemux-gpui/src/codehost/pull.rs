@@ -1,5 +1,7 @@
-//! One pull request opened from the list: its files, commits, checks and merge in the
-//! side column, and its conversation or every changed file's diff beside them.
+//! One pull request opened from the list or a link: its head and actions over tabs for its
+//! conversation, its changed files' diffs, its commits, and its checks and merge.
+
+use std::collections::{BTreeMap, HashSet};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -72,6 +74,8 @@ pub struct Opened {
     narrow: bool,
     /// The file whose diff was last asked for.
     focused: Option<String>,
+    /// The file list's folders folded shut, by their path.
+    shut: HashSet<String>,
     pub method: usize,
     pub busy: bool,
     /// The comment being written, made once the conversation first shows.
@@ -92,6 +96,7 @@ impl Opened {
             section: Section::Conversation,
             narrow: false,
             focused: None,
+            shut: HashSet::new(),
             method: 0,
             busy: false,
             draft: None,
@@ -479,6 +484,7 @@ fn page_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea
                 .h_full()
                 .border_r_1()
                 .border_color(t.border)
+                .bg(t.surface_composer)
                 .overflow_y_scroll()
                 .child(files_page(opened, cx));
             div()
@@ -764,21 +770,8 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
     };
     let added: u64 = files.iter().map(|changed| changed.file.additions).sum();
     let removed: u64 = files.iter().map(|changed| changed.file.deletions).sum();
-    let mut rows: Vec<AnyElement> = Vec::new();
-    let mut folder: Option<&str> = None;
-    for (at, changed) in files.iter().enumerate() {
-        let path = changed.file.path.as_str();
-        let (dir, name) = match path.rsplit_once('/') {
-            Some((dir, name)) => (Some(dir), name),
-            None => (None, path),
-        };
-        if dir != folder {
-            folder = dir;
-            rows.extend(dir.map(|dir| folder_row(at, dir, cx)));
-        }
-        let chosen = opened.focused.as_deref() == Some(path);
-        rows.push(file_row(at, changed, name, dir.is_some(), chosen, cx));
-    }
+    let mut rows = Vec::new();
+    lay_out_folder(&folders_of(files), "", 0, opened, files, &mut rows, cx);
     div()
         .flex()
         .flex_col()
@@ -786,10 +779,10 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
         .child(
             div()
                 .px(px(12.))
-                .py(px(6.))
+                .py(px(8.))
                 .flex()
                 .gap(px(8.))
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(11.5))
                 .font_features(theme::tabular())
                 .child(
                     div()
@@ -804,38 +797,154 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
         .into_any_element()
 }
 
-/// The folder the files under it are in, by its last two names so a deep path stays
-/// readable in a narrow list.
-fn folder_row(at: usize, dir: &str, cx: &App) -> AnyElement {
+/// A folder of the changed files: the folders in it by name, and its files by name with
+/// where each is in the list.
+#[derive(Default)]
+struct Folder<'a> {
+    folders: BTreeMap<&'a str, Folder<'a>>,
+    files: BTreeMap<&'a str, usize>,
+}
+
+fn folders_of(files: &[Changed]) -> Folder<'_> {
+    let mut root = Folder::default();
+    for (at, changed) in files.iter().enumerate() {
+        let mut parts: Vec<&str> = changed.file.path.split('/').collect();
+        let name = parts.pop().unwrap_or_default();
+        let here = parts.into_iter().fold(&mut root, |here, part| {
+            here.folders.entry(part).or_default()
+        });
+        here.files.insert(name, at);
+    }
+    root
+}
+
+/// The rows of `folder` at `depth`: its folders first, a folder holding only one more
+/// folder named with it on one row, then its files.
+#[allow(clippy::too_many_arguments)]
+fn lay_out_folder(
+    folder: &Folder,
+    path: &str,
+    depth: usize,
+    opened: &Opened,
+    files: &[Changed],
+    rows: &mut Vec<AnyElement>,
+    cx: &mut Context<HostArea>,
+) {
+    for (name, mut inner) in &folder.folders {
+        let mut label = (*name).to_owned();
+        while inner.files.is_empty() && inner.folders.len() == 1 {
+            let Some((next, deeper)) = inner.folders.iter().next() else {
+                break;
+            };
+            label = format!("{label}/{next}");
+            inner = deeper;
+        }
+        let full = match path {
+            "" => label.clone(),
+            path => format!("{path}/{label}"),
+        };
+        let open = !opened.shut.contains(&full);
+        rows.push(folder_row(&full, &label, depth, open, cx));
+        if open {
+            lay_out_folder(inner, &full, depth + 1, opened, files, rows, cx);
+        }
+    }
+    for (name, at) in &folder.files {
+        let changed = &files[*at];
+        let chosen = opened.focused.as_deref() == Some(changed.file.path.as_str());
+        rows.push(file_row(*at, changed, name, depth, chosen, cx));
+    }
+}
+
+/// How far in each level of the file list sits.
+const TREE_STEP: f32 = 14.;
+const TREE_INSET: f32 = 10.;
+/// The column a folder's chevron takes, which a file keeps empty so names line up.
+const TREE_CHEVRON: f32 = 12.;
+
+/// A file list row at `depth`: inset by its depth, with a guide down each level above it.
+fn tree_row(id: impl Into<gpui_kit::ElementId>, depth: usize, cx: &App) -> gpui_kit::Stateful<Div> {
     let t = Tokens::get(cx);
-    let parts: Vec<&str> = dir.split('/').collect();
-    let shown = match parts.len() {
-        0..=2 => dir.to_owned(),
-        count => format!("…/{}", parts[count - 2..].join("/")),
-    };
     div()
-        .id(("pull-folder", at))
-        .h(px(24.))
-        .mt(px(4.))
-        .px(px(12.))
+        .id(id)
+        .relative()
+        .h(px(26.))
+        .pl(px(TREE_INSET + depth as f32 * TREE_STEP))
+        .pr(px(12.))
         .flex()
         .items_center()
         .gap(px(6.))
-        .text_size(crate::theme::ui_text(11.))
-        .text_color(t.text_tertiary)
-        .tooltip(ui::tooltip(dir.to_owned()))
-        .child(ui::icon(Icon::Folder, 12.).flex_none())
-        .child(div().min_w_0().truncate().child(shown))
+        .text_size(crate::theme::ui_text(12.5))
+        .cursor_pointer()
+        .children((0..depth).map(|level| {
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left(px(TREE_INSET
+                    + level as f32 * TREE_STEP
+                    + TREE_CHEVRON / 2.))
+                .w(px(1.))
+                .bg(t.tree_spine)
+        }))
+}
+
+fn folder_row(
+    path: &str,
+    label: &str,
+    depth: usize,
+    open: bool,
+    cx: &mut Context<HostArea>,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let key = SharedString::from(format!("pull-folder-{path}"));
+    let toggled = path.to_owned();
+    tree_row(key.clone(), depth, cx)
+        .hover(move |row| row.bg(t.surface_hover))
+        .tooltip(ui::tooltip(path.to_owned()))
+        .on_click(cx.listener(move |area, _, _, cx| {
+            if let Some(opened) = &mut area.pull {
+                if !opened.shut.remove(&toggled) {
+                    opened.shut.insert(toggled.clone());
+                }
+            }
+            cx.notify();
+        }))
+        .child(
+            div()
+                .w(px(TREE_CHEVRON))
+                .flex_none()
+                .flex()
+                .justify_center()
+                .child(crate::motion::turn(
+                    format!("{key}:chevron"),
+                    crate::motion::fold_angle(open),
+                    crate::motion::DETAIL_FOLD,
+                    ui::icon(Icon::Chevron, 10.).text_color(t.text_tertiary),
+                )),
+        )
+        .child(
+            ui::icon(Icon::Folder, 14.)
+                .flex_none()
+                .text_color(t.text_tertiary),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_color(t.text_secondary)
+                .child(label.to_owned()),
+        )
         .into_any_element()
 }
 
-/// A changed file in the list: its icon and name, under its folder when it has one, with
-/// how it changed.
+/// A changed file in the list: its icon and name, with how it changed.
 fn file_row(
     at: usize,
     changed: &Changed,
     name: &str,
-    nested: bool,
+    depth: usize,
     chosen: bool,
     cx: &mut Context<HostArea>,
 ) -> AnyElement {
@@ -847,17 +956,7 @@ fn file_row(
         "renamed" | "copied" => ("R", t.git_renamed),
         _ => ("M", t.git_modified),
     };
-    let glyph = crate::file_icons::glyph(name, 14., cx);
-    div()
-        .id(("pull-file", at))
-        .h(px(26.))
-        .pl(px(if nested { 30. } else { 12. }))
-        .pr(px(12.))
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .text_size(crate::theme::ui_text(12.))
-        .cursor_pointer()
+    tree_row(("pull-file", at), depth, cx)
         .when(chosen, |row| row.bg(t.surface_chosen))
         .when(!chosen, |row| row.hover(move |row| row.bg(t.surface_hover)))
         .tooltip(ui::tooltip(path.clone()))
@@ -867,7 +966,8 @@ fn file_row(
             }
             cx.notify();
         }))
-        .child(glyph)
+        .child(div().w(px(TREE_CHEVRON)).flex_none())
+        .child(crate::file_icons::glyph(name, 14., cx))
         .child(
             div()
                 .flex_1()
@@ -880,7 +980,7 @@ fn file_row(
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(11.5))
                 .text_color(ink)
                 .child(letter),
         )
