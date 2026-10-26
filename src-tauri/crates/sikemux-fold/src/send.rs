@@ -579,6 +579,15 @@ impl Fold {
     }
 
     fn subagent_rows(&self, rows: &[&Row]) -> BTreeMap<String, Vec<ChatMessage>> {
+        self.shown_subagents(rows)
+            .into_iter()
+            .map(|(session, latest)| (session, latest.iter().map(whole_row).collect()))
+            .collect()
+    }
+
+    /// The latest rows of each subagent the window's rows or the running cards show, and of
+    /// those its own rows show in turn.
+    fn shown_subagents(&self, rows: &[&Row]) -> BTreeMap<String, &[Row]> {
         let mut found = BTreeMap::new();
         let mut sessions: Vec<String> = Vec::new();
         let note = |parts: &[ChatPart], sessions: &mut Vec<String>| {
@@ -608,7 +617,7 @@ impl Fold {
             for row in latest {
                 note(&row.msg.parts, &mut sessions);
             }
-            found.insert(session, latest.iter().map(whole_row).collect());
+            found.insert(session, latest);
         }
         found
     }
@@ -662,17 +671,12 @@ impl Fold {
             });
         }
         let window: Vec<&Row> = rows.iter().collect();
-        for (session, sub_rows) in self.subagent_rows(&window) {
-            let Some(sub) = self.subs.get(&session) else {
-                continue;
-            };
-            for (row, msg) in sub.rows.iter().zip(sub_rows) {
-                if row.v > since {
-                    out.push(ChatChange::Row {
-                        row: msg,
-                        within: Some(session.clone()),
-                    });
-                }
+        for (session, latest) in self.shown_subagents(&window) {
+            for row in latest.iter().filter(|row| row.v > since) {
+                out.push(ChatChange::Row {
+                    row: whole_row(row),
+                    within: Some(session.clone()),
+                });
             }
         }
         Some(out)
