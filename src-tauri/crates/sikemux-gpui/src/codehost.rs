@@ -18,6 +18,7 @@ mod thread;
 use std::future::Future;
 use std::rc::Rc;
 
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
@@ -867,13 +868,13 @@ fn centred(width: f32, inner: impl IntoElement) -> Div {
         .child(div().w_full().max_w(px(width)).child(inner))
 }
 
-/// A solid band across the pane holding `inner` centred at `width`, so a page's head reads
-/// over a picture behind it.
+/// A band across the pane holding `inner` centred at `width`, filled as the rails are so a
+/// page's head reads over a picture behind it, and as clear as they are in a see-through window.
 fn band(width: f32, inner: impl IntoElement, cx: &App) -> Div {
     let t = Tokens::get(cx);
     div()
         .flex_none()
-        .bg(t.surface_composer)
+        .when(!crate::see_through::clear(cx), |band| band.bg(t.surface))
         .border_b_1()
         .border_color(t.border)
         .child(centred(width, inner))
