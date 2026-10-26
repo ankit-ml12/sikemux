@@ -301,6 +301,54 @@ pub(crate) async fn pull_files(core: &Arc<Core>, client: ClientId, params: PullP
     named_or_project(core, client, params.project, params.repo, list).await
 }
 
+#[derive(Deserialize)]
+pub(crate) struct PullLinkParams {
+    url: String,
+}
+
+/// The pull request a web address shows, with what clients show of its repository's host,
+/// when the address is one of a host Sikemux reads; else null.
+pub(crate) async fn pull_link(params: PullLinkParams) -> Value {
+    let Some((repo_url, number)) = pull_address(&params.url) else {
+        return Value::Null;
+    };
+    match super::board::codehost::shown(&repo_url, &Default::default()).await {
+        Some(host) => json!({ "codeHost": host, "number": number }),
+        None => Value::Null,
+    }
+}
+
+/// Splits a pull request's web address into its repository's address and its number, as
+/// GitHub (`/pull/12`), Bitbucket (`/pull-requests/12`) and GitLab (`/-/merge_requests/12`)
+/// write them.
+fn pull_address(address: &str) -> Option<(String, u64)> {
+    let url = url::Url::parse(address).ok()?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    let parts: Vec<&str> = url
+        .path_segments()?
+        .filter(|part| !part.is_empty())
+        .collect();
+    let marker = parts
+        .iter()
+        .position(|part| matches!(*part, "pull" | "pull-requests" | "merge_requests"))?;
+    let number = parts.get(marker + 1)?.parse().ok()?;
+    let repo = match parts[..marker] {
+        [ref repo @ .., "-"] => repo,
+        ref repo => repo,
+    };
+    if repo.len() < 2 {
+        return None;
+    }
+    let mut origin = url.origin().ascii_serialization();
+    for part in repo {
+        origin.push('/');
+        origin.push_str(part);
+    }
+    Some((origin, number))
+}
+
 pub(crate) async fn releases(core: &Arc<Core>, client: ClientId, params: ReleasesParams) -> Answer {
     answered(core, client, params.project, List::Releases).await
 }
