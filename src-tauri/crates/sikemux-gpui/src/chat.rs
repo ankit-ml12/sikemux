@@ -3831,6 +3831,7 @@ fn row(
                     .items_end()
                     .child(
                         div()
+                            .max_w_full()
                             .px(px(12.))
                             .py(px(8.))
                             .border_1()
