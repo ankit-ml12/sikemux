@@ -22,7 +22,7 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use crate::agent_catalog::ChatDriver;
+use crate::agent_catalog::{AgentKind, ChatDriver};
 use crate::protocol::ChatLaunch;
 
 use super::rebind::Outcome;
@@ -82,6 +82,10 @@ fn driver(provider: &str) -> Option<&'static ChatDriver> {
 /// only Claude's is a file the core reads itself.
 fn shows_saved(provider: &str) -> bool {
     matches!(driver(provider), Some(ChatDriver::Claude))
+        || matches!(
+            AgentKind::from_name(provider),
+            Some(AgentKind::Omp | AgentKind::Opencode)
+        )
 }
 
 /// The models and efforts `launch`'s agent offers, asked of its CLI without a session.
@@ -126,7 +130,13 @@ pub(crate) fn show_saved(chat: &Arc<Chat>) {
     let chat = chat.clone();
     tokio::task::spawn_blocking(move || {
         let sink = session::Sink::showing(chat.clone());
-        if let Err(error) = claude::replay_saved(&chat.launch, &session, &sink) {
+        let shown = match driver(chat.provider()) {
+            Some(ChatDriver::Claude) => claude::replay_saved(&chat.launch, &session, &sink),
+            _ => acp::replay_saved(&chat.launch, &session, &sink),
+        };
+        if let Err(error) = shown {
+            chat.saved_shown
+                .store(false, std::sync::atomic::Ordering::Release);
             eprintln!(
                 "sikemux core: could not show {}'s saved chat: {error}",
                 chat.agent_id()

@@ -24,7 +24,7 @@ pub fn opencode_data_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-fn opencode_db_paths() -> Vec<PathBuf> {
+pub(super) fn opencode_db_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();
     for dir in opencode_data_dirs() {
         let direct = dir.join("opencode.db");

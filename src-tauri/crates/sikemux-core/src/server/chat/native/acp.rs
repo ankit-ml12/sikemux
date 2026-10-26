@@ -33,6 +33,20 @@ use super::{devices, servers};
 const AUTH_REQUIRED: i64 = -32000;
 
 /// An agent's error in words, its details included.
+/// Shows a saved session of an agent that keeps one Sikemux can read, as the agent would
+/// replay it on loading it.
+pub(super) fn replay_saved(launch: &ChatLaunch, session: &str, sink: &Sink) -> Result<(), String> {
+    let agent = crate::agent_catalog::AgentKind::from_name(&launch.provider)
+        .ok_or_else(|| format!("{} keeps no sessions Sikemux reads", launch.provider))?;
+    let servers = server_names(launch);
+    for mut update in crate::sessions::history(agent, session, &launch.cwd)? {
+        devices::as_tool_call(&mut update, &servers);
+        sink.update(session, update);
+    }
+    sink.update(session, json!({ "sessionUpdate": "history_loaded" }));
+    Ok(())
+}
+
 fn server_names(launch: &ChatLaunch) -> Arc<[String]> {
     launch
         .mcp_servers

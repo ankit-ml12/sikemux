@@ -8,6 +8,7 @@ pub mod context;
 pub mod delete;
 mod grok;
 mod hermes;
+mod history;
 pub mod index;
 mod muse;
 mod omp;
@@ -80,6 +81,16 @@ pub fn agent_sessions(agent: AgentKind, cwd: &str, config_path: Option<&str>) ->
         AgentKind::Omp => omp_sessions(cwd),
         AgentKind::Grok => grok_sessions(cwd),
         AgentKind::Muse => muse_sessions(cwd),
+    }
+}
+
+/// A saved session as the updates its agent sends when it loads it, for OMP and OpenCode,
+/// whose chats show it before the agent starts.
+pub fn history(agent: AgentKind, session_id: &str, cwd: &Path) -> Result<Vec<Value>, String> {
+    match agent {
+        AgentKind::Omp => history::omp(Path::new(session_id), cwd),
+        AgentKind::Opencode => history::opencode(&opencode::opencode_db_paths(), session_id),
+        _ => Ok(Vec::new()),
     }
 }
 
