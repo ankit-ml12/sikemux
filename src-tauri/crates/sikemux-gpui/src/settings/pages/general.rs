@@ -372,15 +372,15 @@ pub fn render(
             .pb(px(4.))
             .border_b_1()
             .border_color(t.line_soft)
-            .child(div().flex_1().child(ui::label("Folder", cx)))
+            .child(div().flex_1().child(ui::caps("Folder", cx)))
             .child(
                 div()
                     .w(px(INDEX_COLUMN))
                     .flex()
                     .justify_center()
-                    .child(ui::label("Index itself", cx)),
+                    .child(ui::caps("Index itself", cx)),
             )
-            .child(div().w(px(DEPTH_COLUMN)).child(ui::label("Depth", cx)))
+            .child(div().w(px(DEPTH_COLUMN)).child(ui::caps("Depth", cx)))
     });
     let body = div()
         .children(heads)

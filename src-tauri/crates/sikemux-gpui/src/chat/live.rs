@@ -112,7 +112,7 @@ impl Label {
                     }))
             })
             .when(self.folded, |label| label.child(self.icon))
-            .child(div().child(self.word.clone()))
+            .child(div().child(self.word.to_uppercase()))
             .child(
                 div()
                     .font_family(theme::MONO)
@@ -138,15 +138,9 @@ impl Label {
     }
 }
 
-/// `word` as a group's label says it: capitalised, and in the plural for more than one.
 fn plural(word: &str, count: usize) -> String {
-    let mut letters = word.chars();
-    let word: String = letters
-        .next()
-        .map(|first| first.to_uppercase().chain(letters).collect())
-        .unwrap_or_default();
     if count == 1 {
-        word
+        word.to_owned()
     } else {
         format!("{word}s")
     }
@@ -594,7 +588,7 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
     });
     let label = Label {
         key: "queued".into(),
-        word: "Queued".into(),
+        word: "queued".into(),
         count: waiting.len(),
         folds: false,
         folded: false,

@@ -433,7 +433,7 @@ impl Database {
             .flex()
             .items_center()
             .gap(px(4.))
-            .child(ui::label("Explorer", cx))
+            .child(ui::caps("Explorer", cx))
             .child(div().flex_1())
             .child(
                 IconButton::new("db-refresh", Icon::Refresh, "Refresh")
@@ -756,7 +756,7 @@ impl Database {
                 for column in columns {
                     let mark = column
                         .primary_key
-                        .then(|| ui::label("PK", cx).into_any_element());
+                        .then(|| ui::caps("PK", cx).into_any_element());
                     let detail = div()
                         .flex()
                         .items_center()
@@ -913,7 +913,7 @@ impl Database {
                         ui::text(connection.name.clone(), 15., FontWeight::SEMIBOLD)
                             .text_color(t.text_primary),
                     )
-                    .children(connection.read_only.then(|| ui::label("Read only", cx))),
+                    .children(connection.read_only.then(|| ui::caps("Read only", cx))),
             )
             .child(div().flex().flex_col().gap(px(6.)).children(facts))
             .child(
@@ -1181,7 +1181,7 @@ fn table_page(
                     .items_center()
                     .gap(px(6.))
                     .child(ui::mono(column.name.clone(), 11.5, cx).text_color(t.text_primary))
-                    .children(column.primary_key.then(|| ui::label("PK", cx))),
+                    .children(column.primary_key.then(|| ui::caps("PK", cx))),
             )
             .child(cell(Some(0.24)).child(ui::mono(column.type_name.clone(), 11.5, cx)))
             .child(cell(Some(0.07)).child(ui::meta(if column.nullable { "yes" } else { "no" }, cx)))
@@ -1263,7 +1263,7 @@ fn table_page(
                                 .text_color(t.text_primary),
                         ),
                 )
-                .children((info.kind != TableKind::Table).then(|| ui::label(&info.kind_name, cx))),
+                .children((info.kind != TableKind::Table).then(|| ui::caps(&info.kind_name, cx))),
         )
         .child(heading("Columns"))
         .child(div().flex().flex_col().child(header).children(columns))
@@ -1313,7 +1313,7 @@ fn history_row(entry: &HistoryEntry, cx: &mut Context<PluginPane>) -> AnyElement
                 .child(ui::meta(ago, cx))
                 .child(ui::meta(format!("{} ms", entry.millis), cx))
                 .children(said)
-                .children(entry.by_agent.then(|| ui::label("agent", cx))),
+                .children(entry.by_agent.then(|| ui::caps("agent", cx))),
         )
         .into_any_element()
 }

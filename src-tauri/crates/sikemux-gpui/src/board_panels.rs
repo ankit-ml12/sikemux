@@ -85,7 +85,7 @@ fn section(name: &'static str, cx: &mut Context<BoardPane>) -> gpui_kit::Div {
         .gap(px(6.))
         .px(px(14.))
         .py(px(10.))
-        .child(ui::label(name, cx))
+        .child(ui::caps(name, cx))
 }
 
 fn fact(name: &'static str, value: AnyElement, cx: &mut Context<BoardPane>) -> AnyElement {
@@ -93,7 +93,7 @@ fn fact(name: &'static str, value: AnyElement, cx: &mut Context<BoardPane>) -> A
         .flex()
         .items_center()
         .gap(px(10.))
-        .child(ui::label(name, cx).w(px(64.)).flex_none())
+        .child(ui::caps(name, cx).w(px(64.)).flex_none())
         .child(div().flex_1().min_w_0().child(value))
         .into_any_element()
 }
@@ -111,7 +111,7 @@ fn settings_group(name: &'static str, cx: &mut Context<BoardPane>) -> gpui_kit::
         .pb(px(10.))
         .border_t_1()
         .border_color(t.border)
-        .child(ui::label(name, cx))
+        .child(ui::caps(name, cx))
 }
 
 /// The cards under `id`, and theirs, which it cannot be put under.

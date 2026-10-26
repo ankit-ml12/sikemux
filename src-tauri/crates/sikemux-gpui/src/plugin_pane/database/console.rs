@@ -211,7 +211,7 @@ pub(super) fn page(
                 .map(|version| ui::meta(version, cx)),
         )
         .child(div().flex_1())
-        .children(connection.read_only.then(|| ui::label("Read only", cx)))
+        .children(connection.read_only.then(|| ui::caps("Read only", cx)))
         .child(limits)
         .children(running.then(|| {
             Button::new("db-stop", "Stop", Variant::Outline).on_click(listen::<Database, _>(

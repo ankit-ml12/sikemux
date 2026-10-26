@@ -643,7 +643,7 @@ impl Signoz {
                     .px(px(8.))
                     .pt(px(4.))
                     .pb(px(2.))
-                    .child(ui::label("Pinned", cx)),
+                    .child(ui::caps("Pinned", cx)),
             );
             for pin in &settings.pins {
                 let Some((kind, id)) = pin.split_once(':') else {
@@ -1218,7 +1218,7 @@ fn card(title: &str, body: impl IntoElement, cx: &App) -> Div {
         .rounded(RADIUS_2)
         .border_1()
         .border_color(t.border)
-        .child(ui::label(title, cx))
+        .child(ui::caps(title, cx))
         .child(body)
 }
 
@@ -1352,7 +1352,7 @@ impl Signoz {
                         .id(SharedString::from(format!("signoz-sort-{label}")))
                         .cursor_pointer()
                         .child(
-                            ui::label(label, cx)
+                            ui::caps(label, cx)
                                 .when(by == sort, |head| head.text_color(t.text_primary)),
                         )
                         .on_click(listen::<Signoz, _>(cx, move |_, host, _, _, cx| {
@@ -1458,7 +1458,7 @@ impl Signoz {
                 .rounded(RADIUS_2)
                 .border_1()
                 .border_color(t.border)
-                .child(ui::label(label, cx))
+                .child(ui::caps(label, cx))
                 .child(
                     ui::text(value, 18., FontWeight::SEMIBOLD).text_color(if bad {
                         t.danger
@@ -1522,7 +1522,7 @@ impl Signoz {
                 table_row(
                     ["Endpoint", "Requests", "Errors", "p99"]
                         .iter()
-                        .map(|label| ui::label(label, cx).into_any_element())
+                        .map(|label| ui::caps(label, cx).into_any_element())
                         .collect(),
                     &widths,
                 )
@@ -2122,8 +2122,8 @@ impl Signoz {
             .border_b_1()
             .border_color(t.border)
             .children(heads.into_iter().map(|(label, width)| match width {
-                0. => div().flex_1().child(ui::label(label, cx)),
-                width => div().w(px(width)).flex_none().child(ui::label(label, cx)),
+                0. => div().flex_1().child(ui::caps(label, cx)),
+                width => div().w(px(width)).flex_none().child(ui::caps(label, cx)),
             }));
         let mut asked = search;
         asked.insert("limit".into(), json!(LOG_PAGE));
@@ -2741,13 +2741,13 @@ impl Signoz {
             .gap(px(10.))
             .border_b_1()
             .border_color(t.border)
-            .child(div().w(px(96.)).child(ui::label("Time", cx)))
-            .child(div().w(px(52.)).child(ui::label("Status", cx)))
+            .child(div().w(px(96.)).child(ui::caps("Time", cx)))
+            .child(div().w(px(52.)).child(ui::caps("Status", cx)))
             .when(show_service, |head| {
-                head.child(div().w(px(130.)).child(ui::label("Service", cx)))
+                head.child(div().w(px(130.)).child(ui::caps("Service", cx)))
             })
-            .child(div().flex_1().child(ui::label("Operation", cx)))
-            .child(div().w(px(180.)).child(ui::label("Duration", cx)));
+            .child(div().flex_1().child(ui::caps("Operation", cx)))
+            .child(div().w(px(180.)).child(ui::caps("Duration", cx)));
         let page = match host
             .view("tracesView", Value::Object(asked), cx)
             .read::<TracePage>()
@@ -3104,7 +3104,7 @@ impl Signoz {
                     .child(
                         div()
                             .px(px(16.))
-                            .child(ui::label("Log lines in this trace", cx)),
+                            .child(ui::caps("Log lines in this trace", cx)),
                     )
                     .child(lines),
             )
@@ -3579,7 +3579,7 @@ impl Signoz {
                             } else {
                                 column.name.clone()
                             };
-                            div().w(px(120.)).flex_none().child(ui::label(&name, cx))
+                            div().w(px(120.)).flex_none().child(ui::caps(&name, cx))
                         })),
                 )
                 .children(rows.iter().map(|row| {

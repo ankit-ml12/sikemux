@@ -461,13 +461,14 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
             })
         });
     }
+    let t = Tokens::get(cx).clone();
     let name = bench
         .files
         .root
         .as_ref()
         .and_then(|root| root.file_name())
         .map_or_else(
-            || "Files".to_owned(),
+            || "files".to_owned(),
             |name| name.to_string_lossy().into_owned(),
         );
     let rows = bench.files.rows();
@@ -493,7 +494,11 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 .items_center()
                 .justify_between()
                 .gap(px(8.))
-                .child(ui::label(&name, cx))
+                .child(
+                    ui::text(name.to_uppercase(), 10., FontWeight::SEMIBOLD)
+                        .letter_spacing(0.08)
+                        .text_color(t.text_tertiary),
+                )
                 .child(
                     div()
                         .flex()

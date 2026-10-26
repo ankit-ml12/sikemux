@@ -617,7 +617,7 @@ impl Rundeck {
                     .px(px(12.))
                     .pt(px(12.))
                     .pb(px(4.))
-                    .child(ui::label("Projects", cx)),
+                    .child(ui::caps("Projects", cx)),
             )
             .child(body)
             .child(connection(host, cx))
@@ -978,7 +978,7 @@ impl Rundeck {
                                     ))
                             })
                             .child(
-                                ui::label(&section.label, cx)
+                                ui::caps(&section.label, cx)
                                     .when(section.prod, |caps| caps.text_color(t.warn)),
                             )
                             .into_any_element(),
@@ -1173,7 +1173,7 @@ fn compare_grid(
     names.dedup();
     let column = |section: &Section| {
         div().flex_1().min_w_0().px(px(8.)).child(
-            ui::label(section.segment.as_deref().unwrap_or_default(), cx)
+            ui::caps(section.segment.as_deref().unwrap_or_default(), cx)
                 .when(section.prod, |caps| caps.text_color(t.warn)),
         )
     };
@@ -1181,7 +1181,7 @@ fn compare_grid(
         .flex()
         .px(px(12.))
         .py(px(8.))
-        .child(div().w(px(160.)).flex_none().child(ui::label("Job", cx)))
+        .child(div().w(px(160.)).flex_none().child(ui::caps("Job", cx)))
         .children(sections.iter().map(|(section, _)| column(section)));
     let rows = names.into_iter().map(|name| {
         div()
@@ -1352,7 +1352,7 @@ impl Rundeck {
                 .flex()
                 .flex_col()
                 .gap(px(2.))
-                .child(ui::label(label, cx))
+                .child(ui::caps(label, cx))
                 .child(
                     div()
                         .flex()
@@ -1646,7 +1646,7 @@ fn history(runs: &[Run], with_job: bool, job: &JobRef, cx: &mut Context<PluginPa
                         .px(px(12.))
                         .pt(px(10.))
                         .pb(px(4.))
-                        .child(ui::label(&day, cx))
+                        .child(ui::caps(&day, cx))
                         .child(ui::meta(runs.len().to_string(), cx)),
                 )
                 .children(runs.into_iter().map(|run| {
@@ -3274,7 +3274,7 @@ impl Rundeck {
             .flex()
             .flex_col()
             .gap(px(1.))
-            .child(div().px(px(8.)).pb(px(4.)).child(ui::label("Steps", cx)))
+            .child(div().px(px(8.)).pb(px(4.)).child(ui::caps("Steps", cx)))
             .child(all)
             .when(steps.is_empty(), |list| {
                 list.child(div().px(px(8.)).child(ui::meta("Waiting for steps…", cx)))

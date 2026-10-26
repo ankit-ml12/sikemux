@@ -1200,7 +1200,11 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
         .flex()
         .items_center()
         .gap(px(8.))
-        .child(ui::label("Limits", cx).flex_none())
+        .child(
+            ui::text("LIMITS", 11., FontWeight::MEDIUM)
+                .letter_spacing(0.08)
+                .text_color(t.text_tertiary),
+        )
         .child(div().flex_1().h(px(1.)).bg(t.border))
         .children(top_name)
         .child({

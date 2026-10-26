@@ -2372,7 +2372,7 @@ fn questions(
                 );
                 cx.notify();
             }))
-            .child(if count == 1 { "Question" } else { "Questions" })
+            .child(if count == 1 { "QUESTION" } else { "QUESTIONS" })
             .child(
                 div()
                     .font_family(theme::MONO)
