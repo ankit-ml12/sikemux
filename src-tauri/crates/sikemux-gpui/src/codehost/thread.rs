@@ -139,17 +139,18 @@ pub fn thread(
     let mut items: Vec<Item> = Vec::new();
     if let Some(opening) = opening {
         let opened = post(&pen, "post-opening", opening, faces, window, cx);
-        items.push(Item::new(opened, GAP, 0., AVATAR));
+        items.push(Item::new(opened, GAP, 0., None));
     }
     for (index, block) in blocks.iter().enumerate() {
         match block {
             Block::Post(said) => {
                 let said = post(&pen, ("post", index), said, faces, window, cx);
-                items.push(Item::new(said, GAP, 0., AVATAR));
+                items.push(Item::new(said, GAP, 0., None));
             }
             Block::Commits(commits) => items.extend(pushed(index, commits, pushers, faces, cx)),
-            Block::Event(item) => items
-                .extend(event(item, base, faces, cx).map(|line| Item::new(line, GAP, 0., BADGE))),
+            Block::Event(item) => items.extend(
+                event(item, base, faces, cx).map(|line| Item::new(line, GAP, 0., Some(BADGE))),
+            ),
         }
     }
     let last = items.len().saturating_sub(1);
@@ -157,7 +158,7 @@ pub fn thread(
     let spine = |top: f32, bottom: Option<f32>| {
         let line = div()
             .absolute()
-            .left(px(AVATAR / 2. - 0.5))
+            .left(px(SPINE - 0.5))
             .w(px(1.))
             .top(px(top))
             .bg(ink);
@@ -179,21 +180,24 @@ pub fn thread(
                 .when(at > 0, |row| {
                     row.child(spine(-space, Some(space + item.mark.0)))
                 })
-                .when(at < last, |row| row.child(spine(item.mark.1, None)))
+                .when_some(item.mark.1.filter(|_| at < last), |row, bottom| {
+                    row.child(spine(bottom, None))
+                })
                 .child(item.shown)
         }))
 }
 
-/// One thing in the thread: the space above it, and where its face, badge or commit sits
-/// down its height, which the line through the thread joins to the next.
+/// One thing in the thread: the space above it, and where the line through the thread meets
+/// it and leaves it again, at its badge or commit, or at the top and bottom of a post's box,
+/// which sits on the line.
 struct Item {
     shown: AnyElement,
     space: f32,
-    mark: (f32, f32),
+    mark: (f32, Option<f32>),
 }
 
 impl Item {
-    fn new(shown: AnyElement, space: f32, top: f32, bottom: f32) -> Self {
+    fn new(shown: AnyElement, space: f32, top: f32, bottom: Option<f32>) -> Self {
         Self {
             shown,
             space,
@@ -202,9 +206,11 @@ impl Item {
     }
 }
 
-/// The posts' faces, the events' badges and the commits sit in one column, centred on the
-/// line through the thread.
+/// A post's face hangs left of its box; the line runs a little inside the box's left edge,
+/// through the events' badges and the commits, as GitHub draws it.
 const AVATAR: f32 = 28.;
+const AVATAR_GAP: f32 = 8.;
+const SPINE: f32 = AVATAR + AVATAR_GAP + 16.;
 const BADGE: f32 = 22.;
 const GAP: f32 = 14.;
 const COMMIT_ROW: f32 = 22.;
@@ -267,7 +273,7 @@ fn post(
     };
     div()
         .flex()
-        .gap(px(12.))
+        .gap(px(AVATAR_GAP))
         .child(faces(Some(author), post.avatar.as_deref(), AVATAR, cx))
         .child(
             div()
@@ -332,7 +338,7 @@ fn line_over(
         .flex()
         .items_start()
         .gap(px(8.))
-        .pl(px((AVATAR - BADGE) / 2.))
+        .pl(px(SPINE - BADGE / 2.))
         .min_w_0()
         .text_size(crate::theme::ui_text(12.))
         .text_color(t.text_secondary)
@@ -640,7 +646,7 @@ fn pushed(
         .unwrap_or_default();
     words.push(dim(format!("added {count} commit{plural} {when}"), cx));
     let glyph_top = (COMMIT_ROW - COMMIT_GLYPH) / 2.;
-    let head = Item::new(line(Icon::Push, None, words, cx), GAP, 0., BADGE);
+    let head = Item::new(line(Icon::Push, None, words, cx), GAP, 0., Some(BADGE));
     std::iter::once(head)
         .chain(commits.iter().enumerate().map(|(at, commit)| {
             let message = commit.message.as_deref().unwrap_or_default();
@@ -655,13 +661,11 @@ fn pushed(
                 .gap(px(8.))
                 .min_w_0()
                 .text_size(crate::theme::ui_text(12.))
+                .pl(px(SPINE - COMMIT_GLYPH / 2.))
                 .child(
-                    div()
-                        .w(px(AVATAR))
+                    ui::icon(Icon::Commit, COMMIT_GLYPH)
                         .flex_none()
-                        .flex()
-                        .justify_center()
-                        .child(ui::icon(Icon::Commit, COMMIT_GLYPH).text_color(t.text_tertiary)),
+                        .text_color(t.text_tertiary),
                 )
                 .child(faces(Some(&author), None, 16., cx))
                 .child(
@@ -701,7 +705,7 @@ fn pushed(
                 row.into_any_element(),
                 space,
                 glyph_top,
-                glyph_top + COMMIT_GLYPH,
+                Some(glyph_top + COMMIT_GLYPH),
             )
         }))
         .collect()
