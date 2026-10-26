@@ -58,7 +58,7 @@ tokio-websockets = { version = "0.13", default-features = false, features = ["cl
 toml = "1"
 trash = "5"
 webpki-roots = "1"
-zstd = { version = "0.13", default-features = false }
+zstd = { version = "0.14.3", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
