@@ -612,7 +612,7 @@ fn yolo(on: bool, settable: bool, agent: &str, toggle: Act, cx: &App) -> impl In
         .tooltip(ui::tooltip(about))
         .on_click(move |_, window, cx| toggle(window, cx))
         .child(
-            ui::icon(if on { Icon::ShieldBolt } else { Icon::Shield }, 12.).text_color(if on {
+            ui::icon(if on { Icon::BoltFill } else { Icon::Lock }, 12.).text_color(if on {
                 t.accent
             } else {
                 t.text_tertiary

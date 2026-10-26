@@ -41,8 +41,8 @@ impl Workbench {
         let mode = Rc::new(Cell::new(usize::from(yolo)));
         let choice = Choice {
             options: vec![
-                (Icon::Shield, "safe".into()),
-                (Icon::ShieldBolt, "yolo".into()),
+                (Icon::Lock, "safe".into()),
+                (Icon::BoltFill, "yolo".into()),
             ],
             chosen: mode.clone(),
             armed: Some(1),

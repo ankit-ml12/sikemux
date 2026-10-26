@@ -286,7 +286,7 @@ impl AgentMenu {
                 } else {
                     "Enable YOLO Mode"
                 })
-                .icon(if yolo { Icon::Shield } else { Icon::ShieldBolt })
+                .icon(if yolo { Icon::Lock } else { Icon::BoltFill })
                 .on_click(self.on_bench({
                     let id = id.clone();
                     move |bench, _| bench.switch_mode(&id, mode)
