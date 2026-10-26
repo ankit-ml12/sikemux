@@ -62,6 +62,8 @@ pub type FileOf = Rc<dyn Fn(&str, &mut App) -> Option<FileKind>>;
 pub type OnFile = Rc<dyn Fn(&str, FileKind, FilePress, &mut Window, &mut App)>;
 /// The icon drawn inside the text before a file's name, by its name as written, `size` square.
 pub type FileIcon = Rc<dyn Fn(&str, FileKind, Pixels, &mut Window, &mut App) -> Option<AnyElement>>;
+/// The icon drawn inside the text before a link's words, by where it leads, `size` square.
+pub type LinkIcon = Rc<dyn Fn(&str, Pixels, &mut App) -> Option<AnyElement>>;
 /// Draws a chip in place of the words it stands for.
 pub type DrawChip = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 
@@ -114,6 +116,8 @@ pub struct Style {
     pub on_file: Option<OnFile>,
     /// Draws each file's icon inside the text, just before its name.
     pub file_icon: Option<FileIcon>,
+    /// Draws an icon before the words of each link it knows, such as a service's mark.
+    pub link_icon: Option<LinkIcon>,
     pub fence: Option<DrawFence>,
     pub code: Option<CodeColours>,
     pub image: Option<DrawImage>,
@@ -167,6 +171,7 @@ impl Default for Style {
             file_of: None,
             on_file: None,
             file_icon: None,
+            link_icon: None,
             fence: None,
             code: None,
             image: None,
@@ -889,6 +894,21 @@ impl Draw<'_> {
                 .collect(),
             None => Vec::new(),
         };
+        let link_icons: Vec<(usize, AnyElement)> = match &style.link_icon {
+            Some(link_icon) => rich
+                .links
+                .iter()
+                .filter(|(range, _)| !files.iter().any(|(file, _, _)| file == range))
+                .filter(|(range, _)| !chips.iter().any(|(chip, _)| overlap(chip, range)))
+                .filter_map(|(range, href)| Some((range.start, link_icon(href, icon_size, cx)?)))
+                .collect(),
+            None => Vec::new(),
+        };
+        gaps.extend(
+            link_icons
+                .iter()
+                .map(|(at, _)| (*at, icon_size + style.text_size * FILE_ICON_SPACE_EMS)),
+        );
         gaps.extend(
             chips
                 .iter()
@@ -926,48 +946,59 @@ impl Draw<'_> {
                 })
                 .into_any_element()
         };
-        let inner = match (&style.file_icon, files.is_empty()) {
-            (Some(file_icon), false) => {
-                let (file_icon, named, layout) = (file_icon.clone(), files.clone(), layout.clone());
-                div()
-                    .relative()
-                    .child(inner)
-                    .child(
-                        canvas(
-                            move |_, window, cx| {
-                                let line = layout.line_height();
-                                named
+        let file_icon = style.file_icon.clone().filter(|_| !files.is_empty());
+        let inner = if file_icon.is_none() && link_icons.is_empty() {
+            inner
+        } else {
+            let (named, layout) = (files.clone(), layout.clone());
+            div()
+                .relative()
+                .child(inner)
+                .child(
+                    canvas(
+                        move |_, window, cx| {
+                            let line = layout.line_height();
+                            let mut icons: Vec<(usize, AnyElement)> = match &file_icon {
+                                Some(file_icon) => named
                                     .iter()
                                     .filter_map(|(range, name, kind)| {
-                                        let at = layout.gap_origin(range.start)?;
-                                        let mut icon =
-                                            file_icon(name, *kind, icon_size, window, cx)?;
-                                        let top = (line - icon_size) / 2.;
-                                        icon.prepaint_as_root(
-                                            point(at.x, at.y + top),
-                                            size(
-                                                AvailableSpace::Definite(icon_size),
-                                                AvailableSpace::Definite(icon_size),
-                                            ),
-                                            window,
-                                            cx,
-                                        );
-                                        Some(icon)
+                                        Some((
+                                            range.start,
+                                            file_icon(name, *kind, icon_size, window, cx)?,
+                                        ))
                                     })
-                                    .collect::<Vec<_>>()
-                            },
-                            |_, mut icons, window, cx| {
-                                for icon in &mut icons {
-                                    icon.paint(window, cx);
-                                }
-                            },
-                        )
-                        .absolute()
-                        .inset_0(),
+                                    .collect(),
+                                None => Vec::new(),
+                            };
+                            icons.extend(link_icons);
+                            icons
+                                .into_iter()
+                                .filter_map(|(start, mut icon)| {
+                                    let at = layout.gap_origin(start)?;
+                                    let top = (line - icon_size) / 2.;
+                                    icon.prepaint_as_root(
+                                        point(at.x, at.y + top),
+                                        size(
+                                            AvailableSpace::Definite(icon_size),
+                                            AvailableSpace::Definite(icon_size),
+                                        ),
+                                        window,
+                                        cx,
+                                    );
+                                    Some(icon)
+                                })
+                                .collect::<Vec<_>>()
+                        },
+                        |_, mut icons, window, cx| {
+                            for icon in &mut icons {
+                                icon.paint(window, cx);
+                            }
+                        },
                     )
-                    .into_any_element()
-            }
-            _ => inner,
+                    .absolute()
+                    .inset_0(),
+                )
+                .into_any_element()
         };
         let inner = if chips.is_empty() {
             inner

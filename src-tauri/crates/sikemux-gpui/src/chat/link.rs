@@ -8,7 +8,27 @@ use std::path::PathBuf;
 use gpui_kit::{App, WeakEntity, Window};
 use url::Url;
 
+use crate::icons::Icon;
 use crate::workbench::Workbench;
+
+/// The mark of the service a web link leads to, when a plugin speaks for it.
+pub fn service_mark(href: &str) -> Option<Icon> {
+    let url = Url::parse(href).ok()?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    let host = url.host_str()?;
+    let on = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
+    Some(if on("github.com") {
+        Icon::Github
+    } else if on("bitbucket.org") {
+        Icon::Bitbucket
+    } else if on("atlassian.net") {
+        Icon::Jira
+    } else {
+        return None;
+    })
+}
 
 /// The file a link names, when it names one on this host.
 pub fn local_path(href: &str) -> Option<PathBuf> {

@@ -3704,6 +3704,14 @@ impl Looks {
                     })
                 },
             )),
+            link_icon: Some(Rc::new(|href: &str, size, cx: &mut App| {
+                let mark = link::service_mark(href)?;
+                Some(crate::ui::picture(
+                    mark,
+                    f32::from(size),
+                    Tokens::get(cx).text_primary,
+                ))
+            })),
             on_file: Some(Rc::new({
                 let (bench, agent, files) = (bench.clone(), agent.clone(), files.clone());
                 move |name: &str, kind, press, window: &mut Window, cx: &mut App| {
