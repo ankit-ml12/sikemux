@@ -13,8 +13,6 @@ use crate::theme::Tokens;
 use crate::ui;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Built-in plugins"];
-
 /// Switches `id` on or off by sending the core every plugin that is off.
 fn switch(bench: &Workbench, id: &str, on: bool) {
     let mut off: Vec<String> = bench
@@ -82,10 +80,10 @@ pub fn render(
             .into_any_element(),
     };
     vec![rows::section(
-        "Built-in plugins",
+        "Integrations",
         None,
         Some("A plugin switched off leaves the rail, the top bar and agents' tools, and costs nothing until it is back on.".into()),
-        lit("Built-in plugins"),
+        lit("Integrations"),
         body,
         cx,
     )]

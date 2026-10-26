@@ -6,17 +6,31 @@ use gpui_kit::component::switch::Switch;
 use gpui_kit::component::IndexPath;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Context, Div, Entity, IntoElement, ParentElement,
-    SharedString, Styled, Subscription, Window,
+    div, px, AnyElement, App, AppContext, Context, Div, Entity, FontWeight, Global, Hsla,
+    IntoElement, ParentElement, SharedString, Styled, Subscription, Window,
 };
 
 use crate::theme::{self, Tokens};
+use crate::ui;
 use crate::workbench::Workbench;
 
-/// A section of a page: its heading, a count or state beside it, a line
+/// The name of the page being drawn. A section named as its page leaves its name to the page's
+/// header and shows only what it says beside and under it.
+pub struct Shown(pub &'static str);
+
+impl Global for Shown {}
+
+/// The fill under a section's card: the theme's ground, held back enough that the
+/// pane's picture still shows around the cards while their words stay readable over it.
+pub fn card_fill(cx: &App) -> Hsla {
+    let t = Tokens::get(cx);
+    t.surface.opacity(if t.dark { 0.84 } else { 0.9 })
+}
+
+/// A section of a page: a card with its heading, a count or state beside it, a line
 /// under it, and its rows. One a search led to is lit for a moment.
 pub fn section(
-    title: &'static str,
+    title: impl Into<SharedString>,
     meta: Option<SharedString>,
     sub: Option<SharedString>,
     flash: bool,
@@ -28,7 +42,7 @@ pub fn section(
 
 /// A section as [`section`] draws it, with `action` at the far end of its heading.
 pub fn section_with(
-    title: &'static str,
+    title: impl Into<SharedString>,
     meta: Option<SharedString>,
     action: Option<AnyElement>,
     sub: Option<SharedString>,
@@ -37,57 +51,91 @@ pub fn section_with(
     cx: &App,
 ) -> AnyElement {
     let t = Tokens::get(cx);
+    let title: SharedString = title.into();
+    let named = cx
+        .try_global::<Shown>()
+        .is_none_or(|shown| shown.0 != title.as_ref());
+    let headed = named || meta.is_some() || action.is_some() || sub.is_some();
+    let heading = div()
+        .flex()
+        .flex_col()
+        .gap(px(3.))
+        .px(px(16.))
+        .pt(px(14.))
+        .pb(px(10.))
+        .when(named || meta.is_some() || action.is_some(), |heading| {
+            heading.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .min_h(px(22.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .items_baseline()
+                            .gap(px(8.))
+                            .when(named, |line| {
+                                line.child(
+                                    ui::text(title, 13., FontWeight::SEMIBOLD)
+                                        .text_color(t.text_primary),
+                                )
+                            })
+                            .children(meta.map(|meta| {
+                                div()
+                                    .text_size(crate::theme::ui_text(11.5))
+                                    .text_color(t.text_tertiary)
+                                    .child(meta)
+                            })),
+                    )
+                    .children(action.map(|action| div().flex_none().child(action))),
+            )
+        })
+        .children(sub.map(|sub| {
+            div()
+                .max_w(px(560.))
+                .text_size(crate::theme::ui_text(12.))
+                .line_height(crate::theme::ui_text(17.))
+                .text_color(t.text_secondary)
+                .child(sub)
+        }));
     div()
         .flex()
         .flex_col()
-        .gap(px(10.))
-        .p(px(4.))
+        .overflow_hidden()
+        .bg(if flash {
+            t.surface_chosen
+        } else {
+            card_fill(cx)
+        })
+        .border_1()
+        .border_color(t.border)
         .rounded(theme::RADIUS_3)
-        .when(flash, |section| section.bg(t.surface_chosen))
+        .when(headed, |card| card.child(heading))
         .child(
             div()
-                .flex()
-                .items_center()
-                .gap(px(12.))
-                .child(
-                    div()
-                        .flex()
-                        .items_baseline()
-                        .gap(px(8.))
-                        .child(
-                            div()
-                                .text_size(crate::theme::ui_text(13.))
-                                .text_color(t.text_primary)
-                                .child(title),
-                        )
-                        .children(meta.map(|meta| {
-                            div()
-                                .text_size(crate::theme::ui_text(11.5))
-                                .text_color(t.text_tertiary)
-                                .child(meta)
-                        })),
-                )
-                .children(action.map(|action| div().flex_1().flex().justify_end().child(action))),
+                .when(headed, |body| body.border_t_1().border_color(t.line_soft))
+                .child(div().mb(px(-1.)).flex().flex_col().child(body)),
         )
-        .children(sub.map(|sub| {
-            div()
-                .text_size(crate::theme::ui_text(12.))
-                .text_color(t.text_tertiary)
-                .child(sub)
-        }))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .border_1()
-                .border_color(t.border)
-                .rounded(theme::RADIUS_3)
-                .child(
-                    div()
-                        .overflow_hidden()
-                        .child(div().mb(px(-1.)).flex().flex_col().child(body)),
-                ),
-        )
+        .into_any_element()
+}
+
+/// A card with no heading, for a section that is one picture of itself.
+pub fn card(flash: bool, body: impl IntoElement, cx: &App) -> AnyElement {
+    let t = Tokens::get(cx);
+    div()
+        .overflow_hidden()
+        .bg(if flash {
+            t.surface_chosen
+        } else {
+            card_fill(cx)
+        })
+        .border_1()
+        .border_color(t.border)
+        .rounded(theme::RADIUS_3)
+        .child(body)
         .into_any_element()
 }
 
@@ -113,9 +161,9 @@ pub fn row_with(
     div()
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(14.))
-        .py(px(10.))
+        .gap(px(16.))
+        .px(px(16.))
+        .py(px(11.))
         .border_b_1()
         .border_color(t.line_soft)
         .children(mark)
@@ -135,6 +183,7 @@ pub fn row_with(
                 .children(about.map(|about| {
                     div()
                         .text_size(crate::theme::ui_text(11.5))
+                        .line_height(crate::theme::ui_text(16.))
                         .text_color(t.text_tertiary)
                         .child(about)
                 })),
@@ -157,7 +206,7 @@ pub fn switch(id: &'static str, key: &'static str, on: bool, this: &Entity<Workb
 pub fn note(text: impl Into<SharedString>, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     div()
-        .px(px(14.))
+        .px(px(16.))
         .py(px(12.))
         .text_size(crate::theme::ui_text(12.))
         .text_color(t.text_tertiary)

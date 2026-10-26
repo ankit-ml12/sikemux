@@ -1240,9 +1240,7 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
             "Your account",
             Icon::User,
             None,
-            act(|bench, window, cx| {
-                crate::settings::open_at(bench, Page::Devices, "Your account", window, cx)
-            }),
+            act(|bench, window, cx| bench.open_settings(Page::Account, window, cx)),
         ),
         (
             "Devices",

@@ -11,8 +11,6 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Shell integration", "Usage"];
-
 /// Asks the core how the command is installed, or installs it.
 fn ask(bench: &mut Workbench, method: &'static str, cx: &mut Context<Workbench>) {
     let Some(settings) = bench.settings.as_mut() else {
@@ -111,7 +109,7 @@ pub fn render(
         .flex()
         .flex_col()
         .gap(px(10.))
-        .p(px(14.))
+        .p(px(16.))
         .child(path_line("Command", "sikemux".into()))
         .child(path_line("Install directory", install_dir.clone()))
         .child(
@@ -160,7 +158,7 @@ pub fn render(
             },
         );
     let usage = div()
-        .p(px(14.))
+        .p(px(16.))
         .font_family(theme::MONO)
         .text_size(crate::theme::ui_text(12.))
         .text_color(t.text_secondary)

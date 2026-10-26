@@ -77,7 +77,7 @@ Agents can start, read, and stop these tasks through Sikemux's MCP tools or the 
 
 ## CLI
 
-Install the `sikemux` launcher from Settings → CLI.
+Install the `sikemux` launcher from Settings → Command line.
 
 ```bash
 sikemux .
@@ -95,7 +95,7 @@ sikemux src/App.tsx:42:5
 | `⌘⇧S` | Connect to an SSH host        |     | `⌘,`  | Settings                 |
 | `⌘Q`  | Quit, leaving work running    |     | `⌥⌘Q` | Quit and Stop Everything |
 
-Settings → Keybindings lists and rebinds every shortcut.
+Settings → Keyboard lists and rebinds every shortcut.
 
 ## Build from source
 

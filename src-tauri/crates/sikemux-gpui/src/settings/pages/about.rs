@@ -14,8 +14,6 @@ use crate::ui;
 use crate::whats_new::RELEASES;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Updates", "Privacy", "Help"];
-
 pub fn render(
     bench: &Workbench,
     lit: &dyn Fn(&str) -> bool,
@@ -129,7 +127,7 @@ pub fn render(
         div()
             .flex()
             .gap(px(8.))
-            .p(px(14.))
+            .p(px(16.))
             .child(
                 ui::Button::new("help-whats-new", "What’s New", ui::Variant::Outline).on_click(
                     move |_, window, cx| {
@@ -164,7 +162,42 @@ pub fn render(
                 }),
             )
     };
+    let t = crate::theme::Tokens::get(cx).clone();
+    let version = match bench.version.is_empty() {
+        true => "Version unknown".to_owned(),
+        false => format!("Version {}", bench.version),
+    };
+    let app = div()
+        .flex()
+        .items_center()
+        .gap(px(14.))
+        .p(px(16.))
+        .child(
+            div()
+                .size(px(44.))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(crate::theme::RADIUS_3)
+                .bg(t.surface_raised)
+                .border_1()
+                .border_color(t.border)
+                .child(ui::icon(Icon::Logo, 22.).text_color(t.accent)),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(3.))
+                .child(
+                    ui::text("Sikemux", 17., gpui_kit::FontWeight::SEMIBOLD)
+                        .text_color(t.text_primary),
+                )
+                .child(ui::mono(version, 11.5, cx)),
+        );
     vec![
+        rows::card(lit("Sikemux"), app, cx),
         rows::section("Updates", None, None, lit("Updates"), updates, cx),
         rows::section("Privacy", None, None, lit("Privacy"), privacy, cx),
         rows::section(

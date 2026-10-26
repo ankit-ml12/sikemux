@@ -18,8 +18,6 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Overview", "Calendar", "By model", "By agent", "By project"];
-
 /// The price being entered for a model, in USD per million tokens.
 pub struct Fields {
     model: Option<String>,
@@ -212,7 +210,7 @@ fn share_row(
         .flex()
         .items_center()
         .gap(px(12.))
-        .px(px(14.))
+        .px(px(16.))
         .py(px(9.))
         .border_b_1()
         .border_color(t.line_soft)
@@ -342,7 +340,7 @@ fn price_form(
         .flex()
         .flex_col()
         .gap(px(10.))
-        .px(px(14.))
+        .px(px(16.))
         .py(px(12.))
         .border_b_1()
         .border_color(t.line_soft)
@@ -515,7 +513,7 @@ fn pricing_note(summary: &Value, cx: &App) -> AnyElement {
         .flex()
         .flex_col()
         .gap(px(2.))
-        .px(px(14.))
+        .px(px(16.))
         .py(px(10.))
         .text_size(crate::theme::ui_text(11.5))
         .text_color(t.text_tertiary)
@@ -552,14 +550,14 @@ pub fn render(
             cx,
         ),
         Some(totals) => div()
-            .p(px(14.))
+            .p(px(16.))
             .child(home::overview(totals, cx))
             .into_any_element(),
         None => rows::note("Reading activity…", cx),
     };
     let calendar = match summary {
         Some(summary) => div()
-            .p(px(14.))
+            .p(px(16.))
             .child(home::calendar(summary, bench, None, cx))
             .into_any_element(),
         None => div().into_any_element(),

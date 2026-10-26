@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use crate::core;
 use crate::home::compact;
 use crate::settings::rows::{self, Choice};
+use crate::settings::Page;
 use crate::theme::Tokens;
 use crate::ui;
 use crate::workbench::Workbench;
@@ -414,7 +415,7 @@ fn row(
         .flex()
         .items_center()
         .gap(px(12.))
-        .px(px(14.))
+        .px(px(16.))
         .py(px(10.))
         .border_b_1()
         .border_color(t.line_soft)
@@ -707,6 +708,7 @@ fn helpers(bench: &Workbench, fields: &Fields, cx: &mut Context<Workbench>) -> A
 pub fn render(
     bench: &Workbench,
     fields: &Fields,
+    page: Page,
     lit: &dyn Fn(&str) -> bool,
     this: &Entity<Workbench>,
     window: &Window,
@@ -750,35 +752,39 @@ pub fn render(
                 cx,
             )
         };
-    let plans = keyed(
+    let section = match page {
+        Page::Plans => keyed(
         "plan",
         "Coding plans",
         "Monthly subscriptions made for coding agents. OpenCode, Pi and OMP list a plan's models once its key is saved here, and a chat's model picker can move Claude Code or Codex onto it. Keys stay in your Keychain.",
         cx,
-    );
-    let paid = keyed(
+    ),
+        Page::Providers => keyed(
         "api",
-        "Model providers",
+        "API providers",
         "Hosted models you pay the provider for by the token. OpenCode, Pi and OMP list a provider's models once its key is saved here, and a chat's model picker can move Claude Code or Codex onto it. Keys stay in your Keychain.",
         cx,
-    );
+    ),
+        Page::LocalModels => {
     let local = of_kind("local");
     let running = connected(&local);
-    let local = rows::section(
+    rows::section(
         "Local models",
         (running > 0).then(|| format!("{running} running").into()),
         Some("Models served on this computer by Ollama or LM Studio. They need no key, and nothing leaves this computer.".into()),
         lit("Local models"),
         div().children(local.iter().map(|provider| local_row(bench, fields, provider, this, cx))),
         cx,
-    );
-    let helpers = rows::section(
+    )
+        }
+        _ => rows::section(
         "Helpers",
         None,
         Some("Agents that other agents start without naming a model run as set here, and Claude Code's own subagents take this model when their chat runs where helpers do. The agent you build with keeps the model you pick.".into()),
         lit("Helpers"),
         helpers(bench, fields, cx),
         cx,
-    );
-    vec![plans, paid, local, helpers]
+    ),
+    };
+    vec![section]
 }

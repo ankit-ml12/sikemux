@@ -17,26 +17,43 @@ use sikemux_wire::theme::{ThemeSource, ThemeSummary};
 use crate::core::{Ask, Watch};
 use crate::icons::Icon;
 use crate::settings::rows;
+use crate::settings::Page;
 use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Theme", "Interface", "Buddies", "Window"];
 const THEME_SEARCH: &str = "ThemeSearch";
 
-actions!(appearance, [PreviousTheme, NextTheme]);
+actions!(
+    appearance,
+    [PreviousTheme, NextTheme, EarlierTheme, LaterTheme]
+);
 
-/// Lets ↑ and ↓ in the theme search wear the theme before or after the one worn.
+/// Lets the arrows in the theme search wear the theme above, below, before or after the one worn.
 pub fn install(cx: &mut App) {
     let search = Some("ThemeSearch > Input");
     cx.bind_keys([
         KeyBinding::new("up", PreviousTheme, search),
         KeyBinding::new("down", NextTheme, search),
+        KeyBinding::new("alt-left", EarlierTheme, search),
+        KeyBinding::new("alt-right", LaterTheme, search),
     ]);
 }
 
-const THEME_ROW: f32 = 30.;
-const THEMES_SHOWN: f32 = 340.;
+fn appearance_of(bench: &mut Workbench) -> Option<&mut Fields> {
+    bench.settings.as_mut()?.pages.appearance.as_mut()
+}
+
+/// Theme cards across a row of the library.
+const COLUMNS: usize = 4;
+const CARD_ROW: f32 = 104.;
+const THEMES_SHOWN: f32 = 416.;
+/// Where each kind of theme comes in the library, and what its filter says.
+const SOURCES: [(ThemeSource, &str); 3] = [
+    (ThemeSource::Custom, "Yours"),
+    (ThemeSource::Sikemux, "Sikemux"),
+    (ThemeSource::Ghostty, "Ghostty"),
+];
 
 /// What the page keeps: the theme search, the theme list's filter, and the
 /// sliders, each setting its preference as it moves.
@@ -44,6 +61,7 @@ pub struct Fields {
     search: Entity<InputState>,
     query: SharedString,
     tone: Tone,
+    source: Option<ThemeSource>,
     strength: Entity<SliderState>,
     opacity: Entity<SliderState>,
     blur: Entity<SliderState>,
@@ -135,6 +153,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
             search,
             query: SharedString::default(),
             tone: Tone::All,
+            source: None,
             strength,
             opacity,
             blur,
@@ -146,13 +165,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
     bench.parts.redraw(&bench.parts.stage, cx);
 }
 
-/// One line of the theme list: a group's heading, or a theme.
-enum Line {
-    Group(&'static str, usize),
-    Theme(ThemeSummary),
-}
-
-/// Wears the theme `by` places from the one worn in the list as searched, else its first or last.
+/// Wears the theme `by` places from the one worn in the library as filtered, else its first or last.
 fn step(bench: &Workbench, by: isize) {
     let Some(fields) = bench
         .settings
@@ -165,12 +178,9 @@ fn step(bench: &Workbench, by: isize) {
         .read("themes")
         .and_then(|themes| serde_json::from_value(themes.clone()).ok())
         .unwrap_or_default();
-    let listed: Vec<String> = lines(&themes, &fields.query, fields.tone)
+    let listed: Vec<String> = shown(&themes, fields)
         .into_iter()
-        .filter_map(|line| match line {
-            Line::Theme(summary) => Some(summary.id),
-            Line::Group(..) => None,
-        })
+        .map(|summary| summary.id)
         .collect();
     let Some(last) = listed.len().checked_sub(1) else {
         return;
@@ -184,40 +194,119 @@ fn step(bench: &Workbench, by: isize) {
     crate::settings::set(bench, "themeId", listed[next].clone());
 }
 
-fn lines(themes: &[ThemeSummary], query: &str, tone: Tone) -> Vec<Line> {
-    let query = query.trim().to_lowercase();
+/// The themes the library shows as searched and filtered: yours, then Sikemux's, then Ghostty's.
+fn shown(themes: &[ThemeSummary], fields: &Fields) -> Vec<ThemeSummary> {
+    let query = fields.query.trim().to_lowercase();
     let wanted = |theme: &&ThemeSummary| {
         (query.is_empty() || theme.name.to_lowercase().contains(&query))
-            && match tone {
+            && fields.source.is_none_or(|source| theme.source == source)
+            && match fields.tone {
                 Tone::All => true,
                 Tone::Dark => theme.dark,
                 Tone::Light => !theme.dark,
             }
     };
-    let groups = [
-        (ThemeSource::Custom, "Your themes"),
-        (ThemeSource::Sikemux, "Sikemux"),
-        (ThemeSource::Ghostty, "Ghostty"),
-    ];
-    let mut lines = Vec::new();
-    for (source, label) in groups {
-        let shown: Vec<&ThemeSummary> = themes
-            .iter()
-            .filter(|theme| theme.source == source)
-            .filter(wanted)
-            .collect();
-        if shown.is_empty() {
-            continue;
-        }
-        lines.push(Line::Group(label, shown.len()));
-        lines.extend(shown.into_iter().cloned().map(Line::Theme));
-    }
-    lines
+    SOURCES
+        .iter()
+        .flat_map(|(source, _)| {
+            themes
+                .iter()
+                .filter(move |theme| theme.source == *source)
+                .filter(wanted)
+                .cloned()
+        })
+        .collect()
+}
+
+/// A small picture of a theme made from its own colours: its ground and edge, its accent,
+/// lines of text in its terminal's colours, and those colours along the foot.
+fn preview(summary: &ThemeSummary, height: f32, rail: bool) -> gpui_kit::Div {
+    let swatch = |at: usize| {
+        summary
+            .swatches
+            .get(at)
+            .map_or(theme::color(&summary.acc), |swatch| theme::color(swatch))
+    };
+    let bar = |color, width: f32| {
+        div()
+            .h(px(4.))
+            .w(gpui_kit::relative(width))
+            .rounded(px(2.))
+            .bg(color)
+    };
+    let line = |parts: Vec<(gpui_kit::Hsla, f32)>| {
+        div()
+            .flex()
+            .gap(px(4.))
+            .children(parts.into_iter().map(|(color, width)| bar(color, width)))
+    };
+    div()
+        .h(px(height))
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .rounded(px(6.))
+        .border_1()
+        .border_color(theme::color(&summary.line))
+        .bg(theme::color(&summary.bg))
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .when(rail, |body| {
+                    let quiet = theme::color(&summary.line);
+                    body.child(
+                        div()
+                            .w(px(46.))
+                            .h_full()
+                            .flex()
+                            .flex_col()
+                            .gap(px(7.))
+                            .p(px(9.))
+                            .border_r_1()
+                            .border_color(quiet)
+                            .child(bar(theme::color(&summary.acc), 0.8))
+                            .child(bar(quiet, 1.))
+                            .child(bar(quiet, 0.7))
+                            .child(bar(quiet, 0.85)),
+                    )
+                })
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .justify_center()
+                        .gap(px(6.))
+                        .px(px(9.))
+                        .child(line(vec![
+                            (theme::color(&summary.acc), 0.22),
+                            (swatch(5), 0.38),
+                        ]))
+                        .child(line(vec![(swatch(4), 0.16), (swatch(1), 0.5)]))
+                        .child(line(vec![(swatch(2), 0.3), (swatch(3), 0.22)]))
+                        .when(rail, |code| {
+                            code.child(line(vec![
+                                (swatch(0), 0.12),
+                                (swatch(5), 0.3),
+                                (swatch(1), 0.2),
+                            ]))
+                            .child(line(vec![(swatch(3), 0.42)]))
+                        }),
+                ),
+        )
+        .child(
+            div()
+                .h(px(4.))
+                .flex()
+                .children((0..6).map(|at| div().flex_1().h_full().bg(swatch(at)))),
+        )
 }
 
 pub fn render(
     bench: &Workbench,
     pages: &super::State,
+    page: Page,
     lit: &dyn Fn(&str) -> bool,
     this: &Entity<Workbench>,
     window: &Window,
@@ -245,155 +334,184 @@ pub fn render(
             Tone::Dark => 1,
             Tone::Light => 2,
         };
-        ui::Segmented::new(
+        ui::Segmented::words(
             "theme-tone",
             vec![
-                (Icon::Stack, SharedString::from("All")),
-                (Icon::Eye, SharedString::from("Dark")),
-                (Icon::Star, SharedString::from("Light")),
+                ("All".into(), None),
+                ("Dark".into(), None),
+                ("Light".into(), None),
             ],
             chosen,
         )
         .on_select(move |chosen, _, cx| {
             let tone = [Tone::All, Tone::Dark, Tone::Light][*chosen];
             this.update(cx, |bench, cx| {
-                if let Some(fields) = bench
-                    .settings
-                    .as_mut()
-                    .and_then(|settings| settings.pages.appearance.as_mut())
-                {
+                if let Some(fields) = appearance_of(bench) {
                     fields.tone = tone;
                 }
                 bench.parts.redraw(&bench.parts.stage, cx);
             })
         })
     };
-    let listed = Rc::new(lines(&themes, &fields.query, fields.tone));
+    let offered: Vec<(Option<ThemeSource>, SharedString, Option<u64>)> =
+        std::iter::once((None, SharedString::from("All"), Some(themes.len() as u64)))
+            .chain(SOURCES.iter().filter_map(|(source, label)| {
+                let count = themes
+                    .iter()
+                    .filter(|theme| theme.source == *source)
+                    .count();
+                (count > 0).then(|| {
+                    (
+                        Some(*source),
+                        SharedString::from(*label),
+                        Some(count as u64),
+                    )
+                })
+            }))
+            .collect();
+    let sources = {
+        let this = this.clone();
+        let picked: Vec<Option<ThemeSource>> =
+            offered.iter().map(|(source, _, _)| *source).collect();
+        let chosen = picked
+            .iter()
+            .position(|source| *source == fields.source)
+            .unwrap_or(0);
+        ui::Segmented::words(
+            "theme-source",
+            offered
+                .iter()
+                .map(|(_, label, count)| (label.clone(), *count))
+                .collect(),
+            chosen,
+        )
+        .on_select(move |chosen, _, cx| {
+            let source = picked.get(*chosen).copied().flatten();
+            this.update(cx, |bench, cx| {
+                if let Some(fields) = appearance_of(bench) {
+                    fields.source = source;
+                }
+                bench.parts.redraw(&bench.parts.stage, cx);
+            })
+        })
+    };
+    let listed = shown(&themes, fields);
+    let found = listed.len();
+    let rows_of: Rc<Vec<Vec<ThemeSummary>>> =
+        Rc::new(listed.chunks(COLUMNS).map(<[_]>::to_vec).collect());
     let picked = preferences.theme_id.clone();
+    let shown_rows = rows_of.len();
     let list = {
-        let (listed, this, t) = (listed.clone(), this.clone(), t.clone());
-        uniform_list("theme-list", listed.len(), move |range, _, _| {
+        let (this, t) = (this.clone(), t.clone());
+        uniform_list("theme-grid", shown_rows, move |range, _, _| {
             range
-                .map(|at| match &listed[at] {
-                    Line::Group(label, count) => div()
-                        .id(("theme-group", at))
-                        .flex()
-                        .items_end()
-                        .gap(px(6.))
-                        .h(px(THEME_ROW))
-                        .px(px(12.))
-                        .pb(px(4.))
-                        .text_size(crate::theme::ui_text(10.5))
-                        .text_color(t.text_tertiary)
-                        .child(*label)
-                        .child(count.to_string()),
-                    Line::Theme(summary) => {
+                .map(|at| {
+                    let cards = rows_of[at].iter().map(|summary| {
                         let chosen = summary.id == picked;
+                        let custom = summary.source == ThemeSource::Custom;
+                        let group = SharedString::from(format!("theme-card-{}", summary.id));
                         let (pick, id) = (this.clone(), summary.id.clone());
+                        let edit = {
+                            let (this, id) = (this.clone(), summary.id.clone());
+                            ui::IconButton::new(
+                                SharedString::from(format!("theme-edit-{}", summary.id)),
+                                Icon::Pencil,
+                                if custom {
+                                    "Edit theme"
+                                } else {
+                                    "Customize a copy"
+                                },
+                            )
+                            .small()
+                            .on_click(move |_, window, cx| {
+                                let id = id.clone();
+                                this.update(cx, |bench, cx| match custom {
+                                    true => super::theme_editor::edit(bench, &id, window, cx),
+                                    false => super::theme_editor::customize(bench, id, window, cx),
+                                })
+                            })
+                        };
+                        let delete = custom.then(|| {
+                            let (this, id) = (this.clone(), summary.id.clone());
+                            ui::IconButton::new(
+                                SharedString::from(format!("theme-delete-{}", summary.id)),
+                                Icon::Trash,
+                                "Delete theme",
+                            )
+                            .small()
+                            .on_click(move |_, _, cx| {
+                                let id = id.clone();
+                                this.update(cx, |bench, _| super::theme_editor::delete(bench, &id))
+                            })
+                        });
                         div()
-                            .id(("theme", at))
-                            .w_full()
+                            .id(SharedString::from(format!("theme-{}", summary.id)))
+                            .group(group.clone())
+                            .flex_1()
+                            .min_w_0()
                             .flex()
-                            .items_center()
-                            .gap(px(10.))
-                            .h(px(THEME_ROW))
-                            .px(px(12.))
+                            .flex_col()
+                            .gap(px(4.))
+                            .p(px(4.))
+                            .rounded(px(8.))
                             .cursor_pointer()
-                            .when(chosen, |row| row.bg(t.surface_chosen))
-                            .when(!chosen, |row| row.hover(|style| style.bg(t.surface_hover)))
+                            .when(chosen, |card| card.bg(t.surface_chosen))
+                            .when(!chosen, |card| {
+                                card.hover(|style| style.bg(t.surface_hover))
+                            })
                             .on_click(move |_, _, cx| {
                                 let id = id.clone();
                                 pick.update(cx, |bench, _| {
                                     crate::settings::set(bench, "themeId", id)
                                 })
                             })
+                            .child(preview(summary, 58., false))
                             .child(
                                 div()
-                                    .size(px(18.))
-                                    .rounded(theme::RADIUS_2)
-                                    .border_1()
-                                    .border_color(theme::color(&summary.line))
-                                    .bg(theme::color(&summary.bg))
+                                    .h(px(22.))
                                     .flex()
                                     .items_center()
-                                    .justify_center()
+                                    .gap(px(4.))
+                                    .pl(px(2.))
                                     .child(
                                         div()
-                                            .size(px(6.))
-                                            .rounded_full()
-                                            .bg(theme::color(&summary.acc)),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(crate::theme::ui_text(12.5))
-                                    .text_color(t.text_primary)
-                                    .child(summary.name.clone()),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap(px(2.))
-                                    .children(summary.swatches.iter().map(|swatch| {
-                                        div().size(px(8.)).rounded(px(2.)).bg(theme::color(swatch))
-                                    })),
-                            )
-                            .child({
-                                let (this, id, custom) = (
-                                    this.clone(),
-                                    summary.id.clone(),
-                                    summary.source == ThemeSource::Custom,
-                                );
-                                ui::IconButton::new(
-                                    SharedString::from(format!("theme-edit-{}", summary.id)),
-                                    Icon::Pencil,
-                                    if custom {
-                                        "Edit theme"
-                                    } else {
-                                        "Customize a copy"
-                                    },
-                                )
-                                .small()
-                                .on_click(move |_, window, cx| {
-                                    let id = id.clone();
-                                    this.update(cx, |bench, cx| match custom {
-                                        true => super::theme_editor::edit(bench, &id, window, cx),
-                                        false => {
-                                            super::theme_editor::customize(bench, id, window, cx)
-                                        }
-                                    })
-                                })
-                            })
-                            .when(summary.source == ThemeSource::Custom, |row| {
-                                let (this, id) = (this.clone(), summary.id.clone());
-                                row.child(
-                                    ui::IconButton::new(
-                                        SharedString::from(format!("theme-delete-{}", summary.id)),
-                                        Icon::Trash,
-                                        "Delete theme",
-                                    )
-                                    .small()
-                                    .on_click(
-                                        move |_, _, cx| {
-                                            let id = id.clone();
-                                            this.update(cx, |bench, _| {
-                                                super::theme_editor::delete(bench, &id)
+                                            .flex_1()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_size(crate::theme::ui_text(11.5))
+                                            .text_color(if chosen {
+                                                t.text_primary
+                                            } else {
+                                                t.text_secondary
                                             })
-                                        },
-                                    ),
-                                )
-                            })
-                            .when(chosen, |row| {
-                                row.child(ui::icon(Icon::Check, 12.).text_color(t.accent))
-                            })
-                    }
+                                            .child(summary.name.clone()),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .opacity(0.)
+                                            .group_hover(group, |actions| actions.opacity(1.))
+                                            .child(edit)
+                                            .children(delete),
+                                    )
+                                    .when(chosen, |name| {
+                                        name.child(ui::icon(Icon::Check, 12.).text_color(t.accent))
+                                    }),
+                            )
+                    });
+                    let gaps = COLUMNS - rows_of[at].len();
+                    div()
+                        .id(("theme-row", at))
+                        .w_full()
+                        .h(px(CARD_ROW))
+                        .flex()
+                        .gap(px(6.))
+                        .children(cards)
+                        .children((0..gaps).map(|_| div().flex_1()))
                 })
                 .collect()
         })
-        .h(px(THEMES_SHOWN))
+        .h(px(THEMES_SHOWN.min(CARD_ROW * shown_rows.max(1) as f32)))
     };
     let worn = themes
         .iter()
@@ -425,88 +543,120 @@ pub fn render(
                 })
             })
         };
+        let kind = SOURCES
+            .iter()
+            .find(|(source, _)| *source == worn.source)
+            .map_or("", |(_, label)| *label);
         div()
             .flex()
             .items_center()
-            .gap(px(10.))
-            .p(px(10.))
-            .border_b_1()
-            .border_color(t.line_soft)
+            .gap(px(18.))
+            .p(px(16.))
+            .child(
+                div()
+                    .w(px(200.))
+                    .flex_none()
+                    .child(preview(worn, 112., true)),
+            )
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(px(3.))
+                    .child(ui::caps("Wearing", cx))
                     .child(
-                        div()
-                            .text_size(crate::theme::ui_text(10.5))
-                            .text_color(t.text_tertiary)
-                            .child("Wearing"),
+                        ui::text(worn.name.clone(), 17., gpui_kit::FontWeight::SEMIBOLD)
+                            .truncate()
+                            .text_color(t.text_primary),
                     )
                     .child(
                         div()
-                            .truncate()
-                            .text_size(crate::theme::ui_text(13.))
-                            .text_color(t.text_primary)
-                            .child(worn.name.clone()),
+                            .text_size(crate::theme::ui_text(12.))
+                            .text_color(t.text_tertiary)
+                            .child(format!(
+                                "{} · {kind}",
+                                if worn.dark { "Dark" } else { "Light" }
+                            )),
+                    )
+                    .child(
+                        div()
+                            .pt(px(10.))
+                            .flex()
+                            .flex_wrap()
+                            .gap(px(6.))
+                            .child(
+                                ui::Button::new(
+                                    "theme-change",
+                                    if custom { "Edit" } else { "Customize" },
+                                    ui::Variant::Outline,
+                                )
+                                .icon(Icon::Pencil)
+                                .on_click(move |_, window, cx| {
+                                    let id = id.clone();
+                                    change.update(cx, |bench, cx| match custom {
+                                        true => super::theme_editor::edit(bench, &id, window, cx),
+                                        false => {
+                                            super::theme_editor::customize(bench, id, window, cx)
+                                        }
+                                    })
+                                }),
+                            )
+                            .when(super::theme_editor::wallpaper_offered(), |row| {
+                                row.child(from(Picture::Wallpaper, "From wallpaper"))
+                            })
+                            .when(has_pane_image, |row| {
+                                row.child(from(Picture::PaneImage, "From pane image"))
+                            }),
                     ),
-            )
-            .when(super::theme_editor::wallpaper_offered(), |row| {
-                row.child(from(Picture::Wallpaper, "From wallpaper"))
-            })
-            .when(has_pane_image, |row| {
-                row.child(from(Picture::PaneImage, "From pane image"))
-            })
-            .child(
-                ui::Button::new(
-                    "theme-change",
-                    if custom { "Edit" } else { "Customize" },
-                    ui::Variant::Outline,
-                )
-                .icon(Icon::Pencil)
-                .on_click(move |_, window, cx| {
-                    let id = id.clone();
-                    change.update(cx, |bench, cx| match custom {
-                        true => super::theme_editor::edit(bench, &id, window, cx),
-                        false => super::theme_editor::customize(bench, id, window, cx),
-                    })
-                }),
             )
     });
     let editing = fields
         .editor
         .as_ref()
         .map(|editor| super::theme_editor::view(editor, this, cx));
-    let theme_body = div()
-        .children(current)
+    let library = div()
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(10.))
-                .p(px(10.))
-                .border_b_1()
-                .border_color(t.line_soft)
+                .gap(px(8.))
+                .px(px(12.))
+                .pt(px(12.))
+                .pb(px(8.))
                 .child(
                     div()
                         .flex_1()
                         .key_context(THEME_SEARCH)
+                        .on_action(window.listener_for(this, |bench, _: &PreviousTheme, _, _| {
+                            step(bench, -(COLUMNS as isize))
+                        }))
+                        .on_action(window.listener_for(this, |bench, _: &NextTheme, _, _| {
+                            step(bench, COLUMNS as isize)
+                        }))
                         .on_action(
-                            window.listener_for(this, |bench, _: &PreviousTheme, _, _| {
+                            window.listener_for(this, |bench, _: &EarlierTheme, _, _| {
                                 step(bench, -1)
                             }),
                         )
                         .on_action(
-                            window.listener_for(this, |bench, _: &NextTheme, _, _| step(bench, 1)),
+                            window.listener_for(this, |bench, _: &LaterTheme, _, _| step(bench, 1)),
                         )
                         .child(ui::Field::new(&fields.search).icon(Icon::Search)),
                 )
                 .child(tone),
         )
-        .child(list)
-        .children(editing);
+        .child(div().px(px(12.)).pb(px(10.)).flex().child(sources))
+        .child(
+            div()
+                .px(px(8.))
+                .pb(px(8.))
+                .child(list)
+                .when(found == 0, |grid| {
+                    grid.child(rows::note("No themes match.", cx))
+                }),
+        );
 
     let text_size = {
         let this = this.clone();
@@ -596,13 +746,13 @@ pub fn render(
                     .child(shown),
             )
     };
+    let text = div().child(rows::row(
+        "Text size",
+        Some("Scales labels and controls without loosening the layout."),
+        text_size,
+        cx,
+    ));
     let interface = div()
-        .child(rows::row(
-            "Text size",
-            Some("Scales labels and controls without loosening the layout."),
-            text_size,
-            cx,
-        ))
         .child(rows::row(
             "Pane texture",
             Some("The dithered grain behind each pane."),
@@ -677,7 +827,7 @@ pub fn render(
             .rounded(theme::RADIUS_3)
             .border_1()
             .cursor_pointer()
-            .border_color(if on { t.border_selected } else { t.border })
+            .border_color(if on { t.border_strong } else { t.border })
             .when(on, |card| card.bg(t.surface_chosen))
             .when(!on, |card| card.hover(|style| style.bg(t.surface_hover)))
             .child(div().flex().gap(px(2.)).children(faces))
@@ -744,7 +894,7 @@ pub fn render(
                 .cursor_pointer()
                 .text_size(crate::theme::ui_text(12.))
                 .text_color(t.text_secondary)
-                .border_color(if mixing { t.border_selected } else { t.border })
+                .border_color(if mixing { t.border_strong } else { t.border })
                 .when(mixing, |chip| chip.bg(t.surface_chosen))
                 .child("Mix")
                 .on_click(choose(style.pack.clone(), "mixed".into())),
@@ -761,7 +911,7 @@ pub fn render(
                     .rounded(theme::RADIUS_2)
                     .border_1()
                     .cursor_pointer()
-                    .border_color(if on { t.border_selected } else { t.border })
+                    .border_color(if on { t.border_strong } else { t.border })
                     .when(on, |chip| chip.bg(t.surface_chosen))
                     .when(!on, |chip| chip.hover(|style| style.bg(t.surface_hover)))
                     .tooltip(ui::tooltip(shape.name.clone()))
@@ -774,7 +924,7 @@ pub fn render(
             .flex()
             .flex_col()
             .gap(px(8.))
-            .px(px(14.))
+            .px(px(16.))
             .py(px(10.))
             .border_b_1()
             .border_color(t.line_soft)
@@ -840,27 +990,40 @@ pub fn render(
             cx,
         ));
 
-    let mut sections = vec![
-        rows::section(
-            "Theme",
-            Some(format!("{} built-in · {custom} custom", themes.len() - custom).into()),
-            Some("Applies instantly to chrome, editor and terminal.".into()),
-            lit("Theme"),
-            theme_body,
+    match page {
+        Page::Theme => {
+            let mut sections = Vec::new();
+            sections.extend(current.map(|current| rows::card(lit("Wearing"), current, cx)));
+            sections.extend(editing);
+            sections.push(rows::section(
+                "Themes",
+                Some(format!("{} built-in · {custom} yours", themes.len() - custom).into()),
+                None,
+                lit("Themes"),
+                library,
+                cx,
+            ));
+            sections
+        }
+        Page::Interface => vec![
+            rows::section("Text", None, None, lit("Text"), text, cx),
+            rows::section("Panes", None, None, lit("Panes"), interface, cx),
+        ],
+        Page::Buddies => vec![rows::section(
+            "Buddies",
+            None,
+            None,
+            lit("Buddies"),
+            buddies,
             cx,
-        ),
-        rows::section("Interface", None, None, lit("Interface"), interface, cx),
-        rows::section("Buddies", None, None, lit("Buddies"), buddies, cx),
-    ];
-    if crate::settings::index::here(crate::settings::Page::Appearance, "Window") {
-        sections.push(rows::section(
+        )],
+        _ => vec![rows::section(
             "Window",
             None,
             None,
             lit("Window"),
             window_section,
             cx,
-        ));
+        )],
     }
-    sections
 }

@@ -22,11 +22,10 @@ use sikemux_wire::protocol::{
 use crate::core::{self, Ask, RemoteAsk};
 use crate::icons::Icon;
 use crate::settings::rows;
+use crate::settings::Page;
 use crate::theme::Tokens;
 use crate::ui;
 use crate::workbench::Workbench;
-
-pub const SECTIONS: &[&str] = &["Your account", "Remote access", "Phones", "Hosts"];
 
 const DELETE_ACCOUNT_URL: &str = "https://app.sikemux.com/delete-account";
 
@@ -349,7 +348,7 @@ fn phone_row(
         .flex()
         .items_center()
         .gap(px(12.))
-        .px(px(14.))
+        .px(px(16.))
         .py(px(10.))
         .border_b_1()
         .border_color(t.line_soft)
@@ -576,7 +575,7 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
         .flex()
         .items_center()
         .gap(px(12.))
-        .px(px(14.))
+        .px(px(16.))
         .py(px(10.))
         .border_b_1()
         .border_color(t.line_soft)
@@ -602,6 +601,7 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
 pub fn render(
     bench: &Workbench,
     pages: &super::State,
+    page: Page,
     lit: &dyn Fn(&str) -> bool,
     this: &Entity<Workbench>,
     window: &Window,
@@ -679,7 +679,9 @@ pub fn render(
             })
     };
     access.push(top_row(
-        ui::icon(Icon::Globe, 18.).into_any_element(),
+        ui::icon(Icon::Globe, 16.)
+            .text_color(t.text_secondary)
+            .into_any_element(),
         "Remote access",
         match signed_in {
             true => "Your devices and hosts on your account connect here",
@@ -698,7 +700,9 @@ pub fn render(
                 this.update(cx, |bench, cx| set_require_approval(bench, on, cx))
             });
         access.push(top_row(
-            ui::icon(Icon::Shield, 18.).into_any_element(),
+            ui::icon(Icon::Shield, 16.)
+                .text_color(t.text_secondary)
+                .into_any_element(),
             "Require approval for new devices",
             "Ask before a device or host on your account connects here for the first time",
             approval.into_any_element(),
@@ -708,18 +712,18 @@ pub fn render(
 
     let account_section: AnyElement = match (known, signed_in) {
         (true, false) => rows::section(
-            "Your account",
+            "Account",
             None,
             None,
-            lit("Your account"),
+            lit("Account"),
             sign_in_panel(bench, link, this, cx),
             cx,
         ),
         _ => rows::section(
-            "Your account",
+            "Account",
             None,
             None,
-            lit("Your account"),
+            lit("Account"),
             div().children(top),
             cx,
         ),
@@ -730,10 +734,10 @@ pub fn render(
         .flex_col()
         .gap(px(28.))
         .child(rows::section(
-            "Remote access",
+            "Devices",
             None,
             None,
-            lit("Remote access"),
+            lit("Devices"),
             div().children(access),
             cx,
         ))
@@ -789,10 +793,9 @@ pub fn render(
         }
         _ => div().into_any_element(),
     };
-    vec![
-        account_section,
-        access_section,
-        phones_section,
-        hosts_section,
-    ]
+    match page {
+        Page::Account => vec![account_section],
+        Page::Hosts => vec![hosts_section],
+        _ => vec![access_section, phones_section],
+    }
 }

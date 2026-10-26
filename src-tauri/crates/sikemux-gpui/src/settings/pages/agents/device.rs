@@ -8,6 +8,7 @@ use serde_json::Value;
 use sikemux_wire::notch::{NotchDisplays, NotchFullScreen, NotchOpenWith, NotchPeeks};
 
 use crate::settings::rows::{self, Choice};
+use crate::settings::Page;
 use crate::voice::Phase;
 use crate::workbench::Workbench;
 
@@ -232,6 +233,7 @@ fn simulator_rows(fields: &Fields, cx: &App) -> Vec<Div> {
 pub fn render(
     bench: &Workbench,
     fields: &Fields,
+    page: Page,
     lit: &dyn Fn(&str) -> bool,
     this: &Entity<Workbench>,
     cx: &mut Context<Workbench>,
@@ -336,30 +338,17 @@ pub fn render(
         ))
         .children(simulator_rows(fields, cx));
 
-    let here = |section: &str| crate::settings::index::here(crate::settings::Page::Agents, section);
-    let mut sections = Vec::new();
-    if here("Voice") {
-        sections.push(rows::section("Voice", None, None, lit("Voice"), voice, cx));
-    }
-    if here("Notch") {
-        sections.push(rows::section(
-            "Notch",
-            None,
-            Some("The island over the MacBook notch shows the agents running, what they need from you, and starts new ones.".into()),
-            lit("Notch"),
-            island,
-            cx,
-        ));
-    }
-    if here("iOS Simulator") {
-        sections.push(rows::section(
+    let section = match page {
+        Page::Voice => rows::section("Voice", None, None, lit("Voice"), voice, cx),
+        Page::Notch => rows::section("Notch", None, None, lit("Notch"), island, cx),
+        _ => rows::section(
             "iOS Simulator",
             None,
             None,
             lit("iOS Simulator"),
             simulator,
             cx,
-        ));
-    }
-    sections
+        ),
+    };
+    vec![section]
 }

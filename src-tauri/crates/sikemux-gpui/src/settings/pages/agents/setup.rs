@@ -19,6 +19,7 @@ pub fn render(
     this: &Entity<Workbench>,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
+    let t = crate::theme::Tokens::get(cx).clone();
     let body: AnyElement = match &setup.found {
         None => rows::note("Looking for agents…", cx),
         Some(found) => div()
@@ -28,10 +29,28 @@ pub fn render(
                     AgentStatus::Missing => Some(agent.about.clone().into()),
                     _ => None,
                 };
-                let about: SharedString = match &detail {
-                    Some(detail) => format!("{} · {detail}", status_label(&agent.status)).into(),
-                    None => status_label(&agent.status).into(),
+                let tone = match agent.status {
+                    AgentStatus::Ready { .. } | AgentStatus::Unknown => ui::Tone::Ok,
+                    AgentStatus::SignedOut => ui::Tone::Pending,
+                    AgentStatus::Missing => ui::Tone::Idle,
+                    AgentStatus::Broken { .. } => ui::Tone::Failed,
                 };
+                let status = div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .px(px(8.))
+                    .h(px(22.))
+                    .rounded_full()
+                    .border_1()
+                    .border_color(t.border)
+                    .child(ui::dot(tone, cx))
+                    .child(
+                        div()
+                            .text_size(crate::theme::ui_text(11.))
+                            .text_color(t.text_secondary)
+                            .child(status_label(&agent.status)),
+                    );
                 let folder = bench
                     .accounts
                     .current(&agent.kind)
@@ -53,7 +72,9 @@ pub fn render(
                 };
                 let actions = div()
                     .flex()
+                    .items_center()
                     .gap(px(8.))
+                    .child(status)
                     .children(sign_in.map(|sheet| {
                         sheet_button(format!("agent-sign-in-{}", agent.kind), "Sign in", sheet)
                     }))
@@ -65,9 +86,16 @@ pub fn render(
                         )
                     }));
                 rows::row_with(
-                    Some(ui::mark(&agent.kind, 18.)),
+                    Some(
+                        ui::mark_box(32., ui::mark(&agent.kind, 18.))
+                            .rounded(crate::theme::RADIUS_2)
+                            .bg(t.surface_raised)
+                            .border_1()
+                            .border_color(t.border)
+                            .into_any_element(),
+                    ),
                     agent.label.clone(),
-                    Some(about),
+                    detail,
                     actions,
                     cx,
                 )
@@ -84,10 +112,10 @@ pub fn render(
         SharedString::from(format!("{ready} ready"))
     });
     rows::section(
-        "Agents on this machine",
+        "Agents on this host",
         ready,
         Some("Install an agent here and it lands where its own updater expects, so it works in your terminal too.".into()),
-        lit("Agents on this machine"),
+        lit("Agents on this host"),
         body,
         cx,
     )

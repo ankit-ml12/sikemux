@@ -272,7 +272,7 @@ pub fn render(
             .flex()
             .flex_col()
             .gap(px(6.))
-            .px(px(14.))
+            .px(px(16.))
             .py(px(10.))
             .border_b_1()
             .border_color(t.line_soft)
@@ -325,7 +325,7 @@ pub fn render(
                 .flex()
                 .justify_end()
                 .gap(px(8.))
-                .p(px(14.))
+                .p(px(16.))
                 .when(saved && !built_in, |actions| {
                     actions.child(
                         ui::Button::new("profile-delete", "Delete", ui::Variant::Outline)

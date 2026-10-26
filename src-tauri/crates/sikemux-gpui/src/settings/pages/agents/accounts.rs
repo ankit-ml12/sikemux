@@ -255,7 +255,7 @@ fn account_row(
         .flex()
         .items_center()
         .gap(px(12.))
-        .px(px(14.))
+        .px(px(16.))
         .py(px(10.))
         .border_b_1()
         .border_color(t.line_soft)
@@ -291,16 +291,12 @@ fn account_row(
 
 pub fn render(
     bench: &Workbench,
-    provider: &'static str,
+    provider: &str,
     lit: &dyn Fn(&str) -> bool,
     this: &Entity<Workbench>,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let title = if provider == "claude" {
-        "Claude accounts"
-    } else {
-        "Codex accounts"
-    };
+    let title = super::label(bench, provider);
     let list = bench.accounts.of(provider);
     let current = bench
         .accounts
@@ -308,29 +304,24 @@ pub fn render(
         .map(|profile| profile.id.clone());
     let count = list.len();
     let auto = (count > 1).then(|| {
-        let this = this.clone();
-        let maker = if provider == "claude" {
-            "Anthropic's"
-        } else {
-            "OpenAI's"
-        };
+        let (this, provider) = (this.clone(), provider.to_owned());
         rows::row_with(
             None,
             "Auto-rotate at limits",
-            Some(format!("Check {maker} terms first.").into()),
+            Some(format!("Moves to the next account when one hits its limit. Check {title}'s terms first.").into()),
             Switch::new(SharedString::from(format!("auto-rotate-{provider}")))
-                .checked(bench.accounts.auto_switch(provider))
+                .checked(bench.accounts.auto_switch(&provider))
                 .on_change(move |on: &bool, _, cx| {
                     let on = *on;
                     this.update(cx, |bench, cx| {
-                        accounts::set_auto_switch(bench, provider, on, cx)
+                        accounts::set_auto_switch(bench, &provider, on, cx)
                     })
                 }),
             cx,
         )
     });
     let add = {
-        let this = this.clone();
+        let (this, provider) = (this.clone(), provider.to_owned());
         div().p(px(10.)).child(
             ui::Button::new(
                 SharedString::from(format!("account-add-{provider}")),
@@ -340,7 +331,7 @@ pub fn render(
             .icon(Icon::Plus)
             .on_click(move |_, window, cx| {
                 this.update(cx, |bench, cx| {
-                    accounts::open_dialog(bench, provider, window, cx)
+                    accounts::open_dialog(bench, &provider, window, cx)
                 })
             }),
         )
@@ -361,13 +352,13 @@ pub fn render(
             body.child(rows::note("Reading accounts…", cx))
         });
     rows::section(
-        title,
+        title.clone(),
         Some(match count {
             1 => "1 account".into(),
             count => format!("{count} accounts").into(),
         }),
         None,
-        lit(title),
+        lit("Accounts"),
         body,
         cx,
     )

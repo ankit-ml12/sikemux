@@ -15,8 +15,6 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Your actions", "New action"];
-
 /// The kinds of tab an action can be offered in.
 const CONTEXTS: [&str; 3] = ["project", "command", "ssh"];
 
@@ -193,7 +191,7 @@ pub fn render(
                     .flex()
                     .flex_col()
                     .gap(px(2.))
-                    .px(px(14.))
+                    .px(px(16.))
                     .py(px(9.))
                     .border_b_1()
                     .border_color(t.line_soft)
@@ -278,7 +276,7 @@ pub fn render(
             .flex()
             .flex_col()
             .gap(px(8.))
-            .px(px(14.))
+            .px(px(16.))
             .py(px(10.))
             .border_b_1()
             .border_color(t.line_soft)
@@ -310,7 +308,7 @@ pub fn render(
         .flex()
         .justify_end()
         .gap(px(8.))
-        .p(px(14.))
+        .p(px(16.))
         .child(
             ui::Button::new("action-new", "New", ui::Variant::Outline).on_click(
                 move |_, window, cx| fresh.update(cx, |bench, cx| load(bench, None, window, cx)),

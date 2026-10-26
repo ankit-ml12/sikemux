@@ -571,7 +571,7 @@ impl Host {
     }
 
     /// Signs in to a cloud through the plugin's streamed `method`, opening its pages in the
-    /// browser Settings › Cloud names for single sign-on, else the default one.
+    /// browser Settings › Single sign-on names for single sign-on, else the default one.
     pub fn cloud_sign_in(&mut self, method: &str, params: Value, cx: &mut Context<PluginPane>) {
         let browser = self.bench.upgrade().and_then(|bench| {
             let preferences = bench.read(cx).preferences();

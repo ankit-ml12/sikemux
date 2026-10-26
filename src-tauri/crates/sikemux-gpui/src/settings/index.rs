@@ -7,84 +7,182 @@ use crate::keymap;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Page {
+    Account,
     #[default]
     General,
-    Appearance,
-    Keybindings,
-    Activity,
-    About,
-    Agents,
+    Keyboard,
+    Notifications,
+    Theme,
+    Interface,
+    Buddies,
+    Window,
+    Installed,
+    Permissions,
+    Chats,
+    Skills,
+    Helpers,
+    Accounts,
+    Plans,
+    Providers,
+    LocalModels,
+    Notch,
+    Voice,
+    Simulator,
+    Devices,
+    Hosts,
+    Integrations,
+    SignOn,
     Actions,
     Cli,
-    Devices,
-    Cloud,
-    Plugins,
+    Usage,
+    About,
 }
 
-/// The pages in the list on the left, under their groups.
-pub const GROUPS: [(&str, &[Page]); 2] = [
+use Page::*;
+
+/// The pages in the list on the left, under their groups. Account leads the list
+/// and Usage and About close it, outside any group.
+pub const GROUPS: [(&str, &[Page]); 6] = [
+    ("General", &[General, Keyboard, Notifications]),
+    ("Appearance", &[Theme, Interface, Buddies, Window]),
+    ("Agents", &[Installed, Permissions, Chats, Skills, Helpers]),
+    ("Models", &[Accounts, Plans, Providers, LocalModels]),
+    ("This Mac", &[Notch, Voice, Simulator]),
     (
-        "App",
-        &[
-            Page::General,
-            Page::Appearance,
-            Page::Keybindings,
-            Page::Activity,
-            Page::About,
-        ],
-    ),
-    (
-        "Tools",
-        &[
-            Page::Agents,
-            Page::Actions,
-            Page::Cli,
-            Page::Devices,
-            Page::Cloud,
-            Page::Plugins,
-        ],
+        "Connect",
+        &[Devices, Hosts, Integrations, SignOn, Actions, Cli],
     ),
 ];
+
+/// The pages below the groups, at the foot of the list.
+pub const FOOT: [Page; 2] = [Usage, About];
+
+/// Pages only the Mac has: its window effects, the notch, dictation and the iOS Simulator.
+/// Other systems neither show them nor find them.
+const MAC_ONLY: &[Page] = &[Window, Notch, Voice, Simulator];
 
 impl Page {
     pub fn name(self) -> &'static str {
         match self {
-            Page::General => "General",
-            Page::Appearance => "Appearance",
-            Page::Keybindings => "Keybindings",
-            Page::Activity => "Activity",
-            Page::About => "About",
-            Page::Agents => "Agents",
-            Page::Actions => "Actions",
-            Page::Cli => "Command line",
-            Page::Devices => "Devices",
-            Page::Cloud => "Cloud",
-            Page::Plugins => "Plugins",
+            Account => "Account",
+            General => "General",
+            Keyboard => "Keyboard",
+            Notifications => "Notifications",
+            Theme => "Theme",
+            Interface => "Interface",
+            Buddies => "Buddies",
+            Window => "Window",
+            Installed => "Installed",
+            Permissions => "Permissions",
+            Chats => "Chats",
+            Skills => "Skills",
+            Helpers => "Helpers",
+            Accounts => "Accounts",
+            Plans => "Coding plans",
+            Providers => "API providers",
+            LocalModels => "Local models",
+            Notch => "Notch",
+            Voice => "Voice",
+            Simulator => "iOS Simulator",
+            Devices => "Devices",
+            Hosts => "Hosts",
+            Integrations => "Integrations",
+            SignOn => "Single sign-on",
+            Actions => "Actions",
+            Cli => "Command line",
+            Usage => "Usage",
+            About => "About",
+        }
+    }
+
+    /// One line under the page's name on what it holds.
+    pub fn about(self) -> &'static str {
+        match self {
+            Account => "Your Sikemux account, which links your phone and hosts",
+            General => "Where projects come from and how a session starts",
+            Keyboard => "Every shortcut, and the keys you gave it",
+            Notifications => "How Sikemux tells you an agent needs you",
+            Theme => "One palette for the chrome, the editor and the terminal",
+            Interface => "Text size, and what shows behind each pane",
+            Buddies => "Characters that stand in for agents' logos",
+            Window => "How much of the desktop shows through",
+            Installed => "The agent CLIs on this host",
+            Permissions => "What agents may do before they ask",
+            Chats => "How chats behave while agents work",
+            Skills => "What every agent Sikemux starts can use",
+            Helpers => "The model agents start their helpers on",
+            Accounts => "Subscriptions agents sign in with",
+            Plans => "Monthly plans made for coding agents",
+            Providers => "Hosted models paid by the token",
+            LocalModels => "Models served on this host",
+            Notch => "The island over the MacBook notch",
+            Voice => "Dictation into agents and terminals",
+            Simulator => "Letting agents drive the iOS Simulator",
+            Devices => "Your phone, and reaching this host from it",
+            Hosts => "Other hosts on your account",
+            Integrations => "The services built into Sikemux",
+            SignOn => "Cloud sign-ins started from Sikemux",
+            Actions => "Your own commands, one keystroke away",
+            Cli => "The sikemux command in your shell",
+            Usage => "What your agents did, and what it cost",
+            About => "Version, updates and privacy",
         }
     }
 
     pub fn icon(self) -> Icon {
         match self {
-            Page::General => Icon::Folder,
-            Page::Appearance => Icon::Contrast,
-            Page::Keybindings => Icon::Command,
-            Page::Activity => Icon::Activity,
-            Page::About => Icon::InfoCircle,
-            Page::Agents => Icon::Agent,
-            Page::Actions => Icon::Run,
-            Page::Cli => Icon::Editor,
-            Page::Devices => Icon::Phone,
-            Page::Cloud => Icon::Globe,
-            Page::Plugins => Icon::Plug,
+            Account => Icon::User,
+            General => Icon::Settings,
+            Keyboard => Icon::Keyboard,
+            Notifications => Icon::Inbox,
+            Theme => Icon::Contrast,
+            Interface => Icon::Text,
+            Buddies => Icon::Heart,
+            Window => Icon::Window,
+            Installed => Icon::Agent,
+            Permissions => Icon::Shield,
+            Chats => Icon::Message,
+            Skills => Icon::Book,
+            Helpers => Icon::Agents,
+            Accounts => Icon::User,
+            Plans => Icon::Gauge,
+            Providers => Icon::Network,
+            LocalModels => Icon::Cube,
+            Notch => Icon::Laptop,
+            Voice => Icon::Mic,
+            Simulator => Icon::Tap,
+            Devices => Icon::Phone,
+            Hosts => Icon::Server,
+            Integrations => Icon::Plug,
+            SignOn => Icon::LogIn,
+            Actions => Icon::Run,
+            Cli => Icon::Terminal,
+            Usage => Icon::Activity,
+            About => Icon::InfoCircle,
         }
+    }
+
+    /// Whether this system has the page.
+    pub fn here(self) -> bool {
+        cfg!(target_os = "macos") || !MAC_ONLY.contains(&self)
+    }
+
+    /// Every page on this system, in the order the list shows them.
+    pub fn all() -> impl Iterator<Item = Page> {
+        std::iter::once(Account)
+            .chain(GROUPS.iter().flat_map(|(_, pages)| pages.iter().copied()))
+            .chain(FOOT)
+            .filter(|page| page.here())
+    }
+
+    /// The page called `name`, as the list on the left shows it.
+    pub fn named(name: &str) -> Option<Page> {
+        Page::all().find(|page| page.name().eq_ignore_ascii_case(name))
     }
 
     /// The page after or before this one in the list, wrapping around.
     pub fn step(self, forward: bool) -> Page {
-        let all: Vec<Page> = GROUPS
-            .iter()
-            .flat_map(|(_, pages)| pages.iter().copied())
-            .collect();
+        let all: Vec<Page> = Page::all().collect();
         let at = all.iter().position(|page| *page == self).unwrap_or(0);
         let next = match forward {
             true => (at + 1) % all.len(),
@@ -104,20 +202,6 @@ pub struct Entry {
     pub keywords: &'static str,
     /// The command a search for its shortcut found, which the page filters to.
     pub shortcut: Option<&'static str>,
-}
-
-/// Sections only the Mac has: its window effects, dictation, the notch and the iOS Simulator.
-/// Other systems neither show them nor find them.
-const MAC_ONLY: &[(Page, &str)] = &[
-    (Page::Appearance, "Window"),
-    (Page::Agents, "Voice"),
-    (Page::Agents, "Notch"),
-    (Page::Agents, "iOS Simulator"),
-];
-
-/// Whether `section` of `page` is on this system.
-pub fn here(page: Page, section: &str) -> bool {
-    cfg!(target_os = "macos") || !MAC_ONLY.contains(&(page, section))
 }
 
 const fn section(page: Page, title: &'static str, keywords: &'static str) -> Entry {
@@ -145,80 +229,75 @@ const fn row(
     }
 }
 
-use Page::*;
-
 pub const ENTRIES: &[Entry] = &[
-    section(Plugins, "Built-in plugins", "aws bitbucket bruno database postgres postgresql mysql sqlite sql github actions gitlab jira rundeck signoz slack enable disable switch off turn on extensions integrations"),
+    section(Account, "Account", "account sign in sign out login google github email delete"),
     section(General, "Project folders", "repos repositories directories roots scan depth index picker"),
+    section(General, "Startup", ""),
+    row(General, "Startup", "Restore agent tabs", "resume reopen startup"),
     section(General, "Session transfer", "send move copy host machine chats tabs another server transfer"),
-    section(Appearance, "Theme", "colours colors palette dark light custom fork editor"),
-    section(Appearance, "Interface", ""),
-    row(Appearance, "Interface", "Text size", "font zoom scale larger smaller accessibility"),
-    row(Appearance, "Interface", "Pane texture", "dither dithering shader grain noise background effect"),
-    row(Appearance, "Interface", "Pane image", "picture photo wallpaper background dither dithered custom"),
-    row(Appearance, "Interface", "Pane strength", "dither grain picture opacity intensity texture image"),
-    section(Appearance, "Buddies", "agent icon character avatar mascot face"),
-    row(Appearance, "Buddies", "Show buddies", "agent icon character avatar mascot harness logo"),
-    row(Appearance, "Buddies", "Pack", "agent icon character avatar mascot style"),
-    row(Appearance, "Buddies", "Shape", "agent icon character avatar mixed"),
-    row(Appearance, "Buddies", "Animate faces", "motion blink animation"),
-    section(Appearance, "Window", ""),
-    row(Appearance, "Window", "Opacity", "transparency translucent see-through"),
-    row(Appearance, "Window", "Background blur", "vibrancy frosted glass"),
-    section(Keybindings, "Shortcuts", "keybindings hotkeys keys keyboard remap"),
-    section(Activity, "Overview", "stats statistics analytics dashboard profile usage totals sessions tokens commits hours cost spend dollars money"),
-    section(Activity, "Calendar", "heatmap contributions streak days year"),
-    section(Activity, "By model", "cost price pricing spend opus sonnet gpt models"),
-    section(Activity, "By agent", "claude codex share breakdown"),
-    section(Activity, "By project", "repositories share breakdown"),
-    section(About, "Updates", "version upgrade release"),
-    row(About, "Updates", "Channel", "nightly stable prerelease beta"),
-    row(About, "Updates", "Last checked", "check for updates now"),
-    section(About, "Privacy", "analytics telemetry tracking"),
-    row(About, "Privacy", "Share anonymous usage", "analytics telemetry tracking opt out posthog"),
-    section(About, "Help", "what's new changelog diagnostics welcome onboarding"),
-    section(Agents, "Agents on this machine", "install reinstall missing claude codex opencode hermes pi omp grok cli"),
-    section(Agents, "Launch boundary", "permissions yolo sandbox safety bypass approval"),
-    section(Agents, "Claude accounts", "sign in login logout email subscription max pro switch rotate limit add second work personal"),
-    section(Agents, "Codex accounts", "sign in login logout email chatgpt plus pro switch rotate limit add second work personal"),
-    section(Agents, "Provider profiles", "claude codex accounts"),
-    row(Agents, "Provider profiles", "Name", "profile"),
-    row(Agents, "Provider profiles", "Provider", "claude codex"),
-    row(Agents, "Provider profiles", "Executable path", "binary cli path"),
-    row(Agents, "Provider profiles", "Profile directory", "config account home"),
-    section(Agents, "Coding plans", "zai glm minimax kimi code opencode go synthetic ollama subscription plan key claude codex"),
-    section(Agents, "Model providers", "openrouter baseten together fireworks groq cerebras deepseek moonshot kimi mistral vercel api key hosted open models opencode pi omp claude codex"),
-    section(Agents, "Local models", "ollama lm studio lmstudio local offline runner claude codex"),
-    section(Agents, "Helpers", "cheap model workers scouts reviewers subagents spawn paid by provider"),
-    row(Agents, "Helpers", "Agent", "helper worker scout reviewer subagent cheap model provider"),
-    section(Agents, "Skills", "skill SKILL.md library claude codex opencode pi omp hermes grok global own move"),
-    row(Agents, "Skills", "Add a skill", "new create install git folder"),
-    section(Agents, "Sessions", ""),
-    row(Agents, "Sessions", "Restore agent tabs", "resume reopen startup"),
-    row(Agents, "Sessions", "Notify when an agent needs you", "notification alert badge dock permission finished"),
-    row(Agents, "Sessions", "Test notification", "notification sound permission send try"),
-    row(Agents, "Sessions", "Rail density", "compact comfortable sidebar"),
-    row(Agents, "Sessions", "Agent names", "name theme anime nature naruto one piece characters words"),
-    row(Agents, "Sessions", "Sending while an agent works", "steer queue interrupt enter"),
-    row(Agents, "Sessions", "Idle chats", "sleep memory process agents"),
-    section(Agents, "Voice", "dictation microphone speech talk transcribe"),
-    section(Agents, "Notch", "island dynamic menu bar notch overlay agents running"),
-    row(Agents, "Notch", "Show the island", "notch dynamic island enable disable"),
-    row(Agents, "Notch", "Show on", "display monitor external screen"),
-    row(Agents, "Notch", "Open with", "hover click"),
-    row(Agents, "Notch", "In full-screen apps", "fullscreen hide"),
-    row(Agents, "Notch", "Peek when", "peek finished needs you"),
-    row(Agents, "Notch", "Answer permissions in the notch", "allow deny permission"),
-    row(Agents, "Notch", "Sound when an agent needs you", "sound alert"),
-    row(Agents, "Notch", "Haptic feedback", "haptics trackpad force touch tick vibration swipe"),
-    row(Agents, "Notch", "Step aside for Sikemux Dev", "dev build development"),
-    row(Agents, "Voice", "Dictate with right Option", "dictation microphone speech push to talk hold"),
-    row(Agents, "Voice", "Speech model", "parakeet download neural engine"),
-    section(Agents, "iOS Simulator", "iphone ipad xcode devicehub simulator phone mobile bezel frame buttons"),
-    row(Agents, "iOS Simulator", "Let agents drive the iOS Simulator", "iphone tap swipe app test mobile"),
-    row(Agents, "iOS Simulator", "Xcode", "xcode-select developer tools"),
-    row(Agents, "iOS Simulator", "iOS runtimes", "ios version runtime"),
-    row(Agents, "iOS Simulator", "Simulator helper", "download idb"),
+    section(Keyboard, "Shortcuts", "keybindings hotkeys keys keyboard remap"),
+    section(Notifications, "Notifications", "notification alert badge dock permission finished"),
+    row(Notifications, "Notifications", "Notify when an agent needs you", "notification alert badge dock permission finished"),
+    row(Notifications, "Notifications", "Test notification", "notification sound permission send try"),
+    section(Theme, "Wearing", "colours colors palette dark light custom fork editor wallpaper customize"),
+    section(Theme, "Themes", "colours colors palette dark light custom ghostty search"),
+    section(Interface, "Text", ""),
+    row(Interface, "Text", "Text size", "font zoom scale larger smaller accessibility"),
+    section(Interface, "Panes", ""),
+    row(Interface, "Panes", "Pane texture", "dither dithering shader grain noise background effect"),
+    row(Interface, "Panes", "Pane style", "ascii art characters text letters glyphs dither dots matrix jellyfish"),
+    row(Interface, "Panes", "Pane image", "picture photo wallpaper background dither dithered custom"),
+    row(Interface, "Panes", "Pane strength", "dither grain picture opacity intensity texture image"),
+    section(Buddies, "Buddies", "agent icon character avatar mascot face"),
+    row(Buddies, "Buddies", "Show buddies", "agent icon character avatar mascot harness logo"),
+    row(Buddies, "Buddies", "Pack", "agent icon character avatar mascot style"),
+    row(Buddies, "Buddies", "Shape", "agent icon character avatar mixed"),
+    row(Buddies, "Buddies", "Animate faces", "motion blink animation"),
+    section(Window, "Window", ""),
+    row(Window, "Window", "Opacity", "transparency translucent see-through"),
+    row(Window, "Window", "Background blur", "vibrancy frosted glass"),
+    section(Installed, "Agents on this host", "install reinstall missing claude codex opencode hermes pi omp grok cli"),
+    section(Permissions, "Launch boundary", "permissions yolo sandbox safety bypass approval"),
+    section(Chats, "Chats", "sessions"),
+    row(Chats, "Chats", "Sending while an agent works", "steer queue interrupt enter"),
+    row(Chats, "Chats", "Rail density", "compact comfortable sidebar"),
+    row(Chats, "Chats", "Agent names", "name theme anime nature naruto one piece characters words"),
+    row(Chats, "Chats", "Idle chats", "sleep memory process agents"),
+    section(Skills, "Skills", "skill SKILL.md library claude codex opencode pi omp hermes grok global own move"),
+    row(Skills, "Skills", "Add a skill", "new create install git folder"),
+    row(Skills, "Skills", "Your own skills", "global folder move adopt"),
+    section(Helpers, "Helpers", "cheap model workers scouts reviewers subagents spawn paid by provider"),
+    row(Helpers, "Helpers", "Agent", "helper worker scout reviewer subagent cheap model provider"),
+    section(Accounts, "Accounts", "sign in login logout email subscription max pro plus chatgpt switch rotate limit add second work personal claude codex"),
+    row(Accounts, "Accounts", "Profiles", "provider profiles claude codex executable path profile directory config home"),
+    section(Plans, "Coding plans", "zai glm minimax kimi code opencode go synthetic ollama subscription plan key claude codex"),
+    section(Providers, "API providers", "openrouter baseten together fireworks groq cerebras deepseek moonshot kimi mistral vercel api key hosted open models opencode pi omp claude codex"),
+    section(LocalModels, "Local models", "ollama lm studio lmstudio local offline runner claude codex"),
+    section(Notch, "Notch", "island dynamic menu bar notch overlay agents running"),
+    row(Notch, "Notch", "Show the island", "notch dynamic island enable disable"),
+    row(Notch, "Notch", "Show on", "display monitor external screen"),
+    row(Notch, "Notch", "Open with", "hover click"),
+    row(Notch, "Notch", "In full-screen apps", "fullscreen hide"),
+    row(Notch, "Notch", "Peek when", "peek finished needs you"),
+    row(Notch, "Notch", "Answer permissions in the notch", "allow deny permission"),
+    row(Notch, "Notch", "Sound when an agent needs you", "sound alert"),
+    row(Notch, "Notch", "Haptic feedback", "haptics trackpad force touch tick vibration swipe"),
+    row(Notch, "Notch", "Step aside for Sikemux Dev", "dev build development"),
+    section(Voice, "Voice", "dictation microphone speech talk transcribe"),
+    row(Voice, "Voice", "Dictate with right Option", "dictation microphone speech push to talk hold"),
+    row(Voice, "Voice", "Speech model", "parakeet download neural engine"),
+    section(Simulator, "iOS Simulator", "iphone ipad xcode devicehub simulator phone mobile bezel frame buttons"),
+    row(Simulator, "iOS Simulator", "Let agents drive the iOS Simulator", "iphone tap swipe app test mobile"),
+    row(Simulator, "iOS Simulator", "Xcode", "xcode-select developer tools"),
+    row(Simulator, "iOS Simulator", "iOS runtimes", "ios version runtime"),
+    row(Simulator, "iOS Simulator", "Simulator helper", "download idb"),
+    section(Devices, "Devices", "phone mobile iphone android remote away connect host enable turn on off"),
+    section(Devices, "Phones", "phone mobile iphone android qr code scan revoke remove forget access watch full control"),
+    section(Hosts, "Hosts", "linked hosts machines servers rename remove account link"),
+    section(Integrations, "Integrations", "aws bitbucket bruno database postgres postgresql mysql sqlite sql github actions gitlab jira rundeck signoz slack enable disable switch off turn on extensions integrations plugins"),
+    section(SignOn, "Single sign-on", "sso aws gcp login cloud"),
+    row(SignOn, "Single sign-on", "Browser app", "chrome safari firefox arc"),
+    row(SignOn, "Single sign-on", "Workspace shortcut", "desktop space mission control"),
     section(Actions, "Your actions", "custom commands command deck scripts"),
     section(Actions, "New action", "custom command add create"),
     row(Actions, "New action", "Name", "title"),
@@ -228,14 +307,30 @@ pub const ENTRIES: &[Entry] = &[
     row(Actions, "New action", "Contexts", "project ssh aws bruno plugin"),
     section(Cli, "Shell integration", "install terminal path"),
     section(Cli, "Usage", "editor git commit open"),
-    section(Devices, "Your account", "account sign in sign out login google github email delete"),
-    section(Devices, "Remote access", "phone mobile iphone android remote away connect host enable turn on off"),
-    section(Devices, "Phones", "phone mobile iphone android qr code scan revoke remove forget access watch full control"),
-    section(Devices, "Hosts", "linked hosts machines servers rename remove account link"),
-    section(Cloud, "Single sign-on", "sso aws gcp login"),
-    row(Cloud, "Single sign-on", "Browser app", "chrome safari firefox arc"),
-    row(Cloud, "Single sign-on", "Workspace shortcut", "desktop space mission control"),
+    section(Usage, "Overview", "activity stats statistics analytics dashboard profile usage totals sessions tokens commits hours cost spend dollars money"),
+    section(Usage, "Calendar", "heatmap contributions streak days year"),
+    section(Usage, "By model", "cost price pricing spend opus sonnet gpt models"),
+    section(Usage, "By agent", "claude codex share breakdown"),
+    section(Usage, "By project", "repositories share breakdown"),
+    section(About, "Sikemux", "version build"),
+    section(About, "Updates", "version upgrade release"),
+    row(About, "Updates", "Channel", "nightly stable prerelease beta"),
+    row(About, "Updates", "Last checked", "check for updates now"),
+    section(About, "Privacy", "analytics telemetry tracking"),
+    row(About, "Privacy", "Share anonymous usage", "analytics telemetry tracking opt out posthog"),
+    section(About, "Help", "what's new changelog diagnostics welcome onboarding"),
 ];
+
+/// The sections of `page` in the order it shows them, as searches name them.
+pub fn sections(page: Page) -> Vec<&'static str> {
+    let mut sections: Vec<&'static str> = Vec::new();
+    for entry in ENTRIES.iter().filter(|entry| entry.page == page) {
+        if !sections.contains(&entry.section) {
+            sections.push(entry.section);
+        }
+    }
+    sections
+}
 
 /// The places whose words hold every word of `query`, those whose label
 /// starts with it first, then those whose label holds it. Every command is a
@@ -249,7 +344,7 @@ pub fn search(query: &str, cx: &App) -> Vec<Entry> {
     let shortcuts = keymap::shortcuts().iter().map(|shortcut| {
         let keys = keymap::hint(shortcut.id, cx).unwrap_or_default();
         let entry = Entry {
-            page: Keybindings,
+            page: Keyboard,
             section: "Shortcuts",
             label: shortcut.label,
             keywords: shortcut.detail,
@@ -259,7 +354,7 @@ pub fn search(query: &str, cx: &App) -> Vec<Entry> {
     });
     let mut found: Vec<(usize, usize, Entry)> = ENTRIES
         .iter()
-        .filter(|entry| here(entry.page, entry.section))
+        .filter(|entry| entry.page.here())
         .map(|entry| (*entry, String::new()))
         .chain(shortcuts)
         .enumerate()

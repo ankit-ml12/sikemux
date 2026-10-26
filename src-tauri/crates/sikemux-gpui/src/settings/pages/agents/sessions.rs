@@ -126,7 +126,7 @@ pub fn boundary(
     let cards = div()
         .flex()
         .gap(px(10.))
-        .p(px(14.))
+        .p(px(16.))
         .children(MODES.iter().map(|(mode, name, detail)| {
             let chosen = *mode == current;
             let danger = *mode == "bypass";
@@ -191,13 +191,11 @@ pub fn boundary(
 }
 
 pub fn render(
-    bench: &Workbench,
     fields: &Fields,
     lit: &dyn Fn(&str) -> bool,
     this: &Entity<Workbench>,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let preferences = bench.preferences();
     let keys = if cfg!(target_os = "macos") {
         "⌘↵"
     } else {
@@ -217,33 +215,6 @@ pub fn render(
         )
     };
     let body = div()
-        .child(rows::row(
-            "Restore agent tabs",
-            Some("Resumable tabs come back asleep and start only when selected."),
-            rows::switch("restore-agent-tabs", "restoreAgentTabs", preferences.restore_agent_tabs, this),
-            cx,
-        ))
-        .child(rows::row(
-            "Notify when an agent needs you",
-            Some("While Sikemux is in the background, a notification says when an agent asks for input or finishes."),
-            rows::switch(
-                "agent-notifications",
-                "agentNotifications",
-                preferences.agent_notifications,
-                this,
-            ),
-            cx,
-        ))
-        .child(rows::row(
-            "Test notification",
-            Some("Sends one now, with its sound. The first one also has macOS ask whether Sikemux may notify you."),
-            {
-                let this = this.clone();
-                ui::Button::new("notification-test", "Send test", ui::Variant::Outline)
-                    .on_click(move |_, _, cx| this.update(cx, |_, cx| crate::notifications::test(cx)))
-            },
-            cx,
-        ))
         .child(rows::row_with(
             None,
             "Sending while an agent works",
@@ -275,5 +246,38 @@ pub fn render(
             "Only confirmed native session IDs are written to disk. Startup commands and terminal output never are.",
             cx,
         ));
-    rows::section("Sessions", None, None, lit("Sessions"), body, cx)
+    rows::section("Chats", None, None, lit("Chats"), body, cx)
+}
+
+/// Whether Sikemux says when an agent needs the person, and a test of it.
+pub fn notifications(
+    bench: &Workbench,
+    lit: &dyn Fn(&str) -> bool,
+    this: &Entity<Workbench>,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let preferences = bench.preferences();
+    let body = div()
+        .child(rows::row(
+            "Notify when an agent needs you",
+            Some("While Sikemux is in the background, a notification says when an agent asks for input or finishes."),
+            rows::switch(
+                "agent-notifications",
+                "agentNotifications",
+                preferences.agent_notifications,
+                this,
+            ),
+            cx,
+        ))
+        .child(rows::row(
+            "Test notification",
+            Some("Sends one now, with its sound. The first one also has macOS ask whether Sikemux may notify you."),
+            {
+                let this = this.clone();
+                ui::Button::new("notification-test", "Send test", ui::Variant::Outline)
+                    .on_click(move |_, _, cx| this.update(cx, |_, cx| crate::notifications::test(cx)))
+            },
+            cx,
+        ));
+    rows::section("Notifications", None, None, lit("Notifications"), body, cx)
 }

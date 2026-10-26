@@ -346,7 +346,7 @@ pub fn open_sign_in(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) {
-    bench.open_settings(crate::settings::Page::Agents, window, cx);
+    bench.open_settings(crate::settings::Page::Accounts, window, cx);
     open_dialog(bench, provider, window, cx);
     if let Some(id) = id {
         sign_in_again(bench, id, cx);

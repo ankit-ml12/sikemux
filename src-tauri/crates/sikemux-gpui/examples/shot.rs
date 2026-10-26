@@ -28,7 +28,8 @@
 //!                                 JSON after "menu name: ", each a list of its items in order with their label
 //!                                 and whether they are disabled or checked (null where the menu does not say,
 //!                                 as Kit's items do not), and separators as {"separator":true};
-//!                                 "toast success|info|error text" shows a toast saying the text
+//!                                 "toast success|info|error text" shows a toast saying the text;
+//!                                 "settings <page>" opens settings at the page of that name
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -289,6 +290,16 @@ fn main() -> anyhow::Result<()> {
                     window.push_notification(note, cx);
                 }
                 "activate" => window.activate_window(),
+                "settings" => {
+                    let page = sikemux_gpui::settings::Page::named(rest.trim())
+                        .ok_or_else(|| anyhow::anyhow!("settings <page name>"))?;
+                    if let Some(bench) = bench.borrow().clone() {
+                        bench.update(cx, |bench, cx| {
+                            sikemux_gpui::settings::open(bench, page, window, cx)
+                        });
+                    }
+                    window.draw(cx).clear(cx);
+                }
                 "picker" => {
                     if let Some(bench) = bench.borrow().clone() {
                         match bench.read(cx).front_models() {

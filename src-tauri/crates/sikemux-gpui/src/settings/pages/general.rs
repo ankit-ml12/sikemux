@@ -21,8 +21,6 @@ use crate::workbench::Workbench;
 const INDEX_COLUMN: f32 = 104.;
 const DEPTH_COLUMN: f32 = 108.;
 
-pub const SECTIONS: &[&str] = &["Project folders", "Session transfer"];
-
 /// The folder being added: its path as typed, how deep to search it, and
 /// whether it is a project itself.
 pub struct Fields {
@@ -212,7 +210,7 @@ pub fn render(
             .flex()
             .items_center()
             .gap(px(12.))
-            .px(px(14.))
+            .px(px(16.))
             .py(px(8.))
             .border_b_1()
             .border_color(t.line_soft)
@@ -291,7 +289,7 @@ pub fn render(
             .flex()
             .flex_col()
             .gap(px(8.))
-            .p(px(14.))
+            .p(px(16.))
             .child(
                 div()
                     .flex()
@@ -367,7 +365,7 @@ pub fn render(
             .flex()
             .items_center()
             .gap(px(12.))
-            .px(px(14.))
+            .px(px(16.))
             .pt(px(10.))
             .pb(px(4.))
             .border_b_1()
@@ -397,6 +395,24 @@ pub fn render(
             Some("Each folder is scanned for git repos, as deep as its depth allows.".into()),
             lit("Project folders"),
             body,
+            cx,
+        ),
+        rows::section(
+            "Startup",
+            None,
+            None,
+            lit("Startup"),
+            rows::row(
+                "Restore agent tabs",
+                Some("Resumable tabs come back asleep and start only when selected."),
+                rows::switch(
+                    "restore-agent-tabs",
+                    "restoreAgentTabs",
+                    bench.preferences().restore_agent_tabs,
+                    this,
+                ),
+                cx,
+            ),
             cx,
         ),
         rows::section(
@@ -456,7 +472,7 @@ fn transfer(
         .flex()
         .flex_col()
         .gap(px(10.))
-        .p(px(14.))
+        .p(px(16.))
         .child(
             div()
                 .flex()

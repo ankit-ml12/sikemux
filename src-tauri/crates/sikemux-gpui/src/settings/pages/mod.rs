@@ -42,20 +42,8 @@ pub struct State {
 }
 
 /// The sections of a page in the order it shows them, as searches name them.
-pub fn sections(page: Page) -> &'static [&'static str] {
-    match page {
-        Page::General => general::SECTIONS,
-        Page::Appearance => appearance::SECTIONS,
-        Page::Keybindings => keybindings::SECTIONS,
-        Page::Activity => activity::SECTIONS,
-        Page::About => about::SECTIONS,
-        Page::Agents => agents::SECTIONS,
-        Page::Actions => actions::SECTIONS,
-        Page::Cli => cli::SECTIONS,
-        Page::Devices => devices::SECTIONS,
-        Page::Cloud => cloud::SECTIONS,
-        Page::Plugins => plugins::SECTIONS,
-    }
+pub fn sections(page: Page) -> Vec<&'static str> {
+    super::index::sections(page)
 }
 
 /// The sections of the page settings show.
@@ -68,19 +56,39 @@ pub fn render(
     cx: &mut Context<Workbench>,
 ) -> Vec<AnyElement> {
     let lit = |section: &str| flash == Some(section);
-    match settings.page {
+    let pages = &settings.pages;
+    let page = settings.page;
+    let mut sections = match page {
+        Page::Account | Page::Devices | Page::Hosts => {
+            devices::render(bench, pages, page, &lit, this, window, cx)
+        }
+        Page::General => general::render(bench, pages, &lit, this, window, cx),
+        Page::Keyboard => keybindings::render(bench, pages, &lit, this, window, cx),
+        Page::Theme | Page::Interface | Page::Buddies | Page::Window => {
+            appearance::render(bench, pages, page, &lit, this, window, cx)
+        }
+        Page::Notifications
+        | Page::Installed
+        | Page::Permissions
+        | Page::Chats
+        | Page::Skills
+        | Page::Helpers
+        | Page::Accounts
+        | Page::Plans
+        | Page::Providers
+        | Page::LocalModels
+        | Page::Notch
+        | Page::Voice
+        | Page::Simulator => agents::render(bench, pages, page, &lit, this, window, cx),
+        Page::Integrations => plugins::render(bench, &lit, this, cx),
+        Page::SignOn => cloud::render(bench, pages, &lit, this, window, cx),
+        Page::Actions => actions::render(bench, pages, &lit, this, window, cx),
+        Page::Cli => cli::render(bench, pages, &lit, this, window, cx),
+        Page::Usage => activity::render(bench, pages, &lit, this, window, cx),
         Page::About => about::render(bench, &lit, this, cx),
-        Page::Actions => actions::render(bench, &settings.pages, &lit, this, window, cx),
-        Page::Agents => agents::render(bench, &settings.pages, &lit, this, window, cx),
-        Page::Activity => activity::render(bench, &settings.pages, &lit, this, window, cx),
-        Page::Appearance => appearance::render(bench, &settings.pages, &lit, this, window, cx),
-        Page::Cli => cli::render(bench, &settings.pages, &lit, this, window, cx),
-        Page::Devices => devices::render(bench, &settings.pages, &lit, this, window, cx),
-        Page::Cloud => cloud::render(bench, &settings.pages, &lit, this, window, cx),
-        Page::Plugins => plugins::render(bench, &lit, this, cx),
-        Page::General => general::render(bench, &settings.pages, &lit, this, window, cx),
-        Page::Keybindings => keybindings::render(bench, &settings.pages, &lit, this, window, cx),
-    }
+    };
+    sections.extend(agents::dialogs(bench, this, window, cx));
+    sections
 }
 
 /// Lists the account's other hosts again while the Devices page shows them,

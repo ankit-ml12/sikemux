@@ -137,7 +137,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 .child(
                     ui::Button::new("set-up-agent", "Set one up", ui::Variant::Outline).on_click(
                         cx.listener(|bench, _, window, cx| {
-                            bench.open_settings(crate::settings::Page::Agents, window, cx)
+                            bench.open_settings(crate::settings::Page::Installed, window, cx)
                         }),
                     ),
                 )

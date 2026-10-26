@@ -18,8 +18,6 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Shortcuts"];
-
 /// The filter, the command whose keys are being recorded, and what the last change did.
 pub struct Fields {
     filter: Entity<InputState>,
@@ -331,7 +329,7 @@ pub fn render(
                         .flex()
                         .items_baseline()
                         .gap(px(6.))
-                        .px(px(14.))
+                        .px(px(16.))
                         .pt(px(12.))
                         .pb(px(4.))
                         .child(
@@ -374,7 +372,7 @@ pub fn render(
         .flex()
         .items_center()
         .gap(px(8.))
-        .p(px(14.))
+        .p(px(16.))
         .border_b_1()
         .border_color(t.line_soft)
         .child(
@@ -391,7 +389,7 @@ pub fn render(
         .flex()
         .items_center()
         .gap(px(8.))
-        .px(px(14.))
+        .px(px(16.))
         .py(px(8.))
         .border_b_1()
         .border_color(t.line_soft)

@@ -23,7 +23,7 @@ const OPEN: &str = "open:";
 const RESUME: &str = "resume:";
 
 /// Agents whose accounts the core signs in to itself; the rest sign in with their own
-/// command, in the sheet Settings › Agents shows.
+/// command, in the sheet Settings › Installed shows.
 const SIGNS_IN: [&str; 2] = ["claude", "codex"];
 const SAFE: &str = "workspace-write";
 const YOLO: &str = "bypass";
@@ -223,7 +223,7 @@ fn kind_of(bench: &Workbench, provider: &str) -> Option<Value> {
 }
 
 /// Signs the launcher's agent in: the core does it for the agents whose accounts it keeps,
-/// and the agent's own command runs in Settings › Agents for the rest.
+/// and the agent's own command runs in Settings › Installed for the rest.
 fn sign_in(
     bench: &mut Workbench,
     launcher: &str,
@@ -237,7 +237,7 @@ fn sign_in(
         bench.call("signInLauncher", json!({ "launcher": launcher }));
         return;
     }
-    bench.open_settings(crate::settings::Page::Agents, window, cx);
+    bench.open_settings(crate::settings::Page::Installed, window, cx);
     let folder = bench
         .accounts
         .current(&provider)
@@ -254,7 +254,7 @@ fn sign_in(
     }
 }
 
-/// Runs the agent's installer in Settings › Agents, as the agent's own sign-in runs there.
+/// Runs the agent's installer in Settings › Installed, as the agent's own sign-in runs there.
 fn install(
     bench: &mut Workbench,
     launcher: &str,
@@ -274,7 +274,7 @@ fn install(
         return;
     };
     let sheet = crate::agent_setup::installer(&launcher.provider, &launcher.label, command);
-    bench.open_settings(crate::settings::Page::Agents, window, cx);
+    bench.open_settings(crate::settings::Page::Installed, window, cx);
     crate::agent_setup::run(bench, sheet, cx);
 }
 

@@ -1,4 +1,4 @@
-//! The browser Settings › Cloud names for single sign-on: cloud sign-in pages open there, after
+//! The browser Settings › Single sign-on names for single sign-on: cloud sign-in pages open there, after
 //! the shortcut that brings forward the desktop space it lives on.
 
 use sikemux_process::user_environment::command;

@@ -9,8 +9,6 @@ use crate::settings::rows;
 use crate::ui;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Single sign-on"];
-
 /// The two fields, each setting its preference as it is typed in.
 pub struct Fields {
     browser: Entity<InputState>,

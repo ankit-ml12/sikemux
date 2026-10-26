@@ -306,7 +306,7 @@ fn welcome_calendar(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElemen
                 .group_hover("welcome-more", move |icon| icon.text_color(t.text_primary)),
         )
         .on_click(cx.listener(|bench, _, window, cx| {
-            bench.open_settings(crate::settings::Page::Activity, window, cx)
+            bench.open_settings(crate::settings::Page::Usage, window, cx)
         }));
     calendar(summary, bench, Some(more.into_any_element()), cx).into_any_element()
 }

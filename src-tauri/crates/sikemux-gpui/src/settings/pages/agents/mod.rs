@@ -4,6 +4,7 @@
 use gpui_kit::{AnyElement, Context, Entity, Window};
 use serde_json::Value;
 
+use crate::settings::Page;
 use crate::workbench::Workbench;
 
 mod accounts;
@@ -13,23 +14,6 @@ mod providers;
 mod sessions;
 mod setup;
 mod skills;
-
-pub const SECTIONS: &[&str] = &[
-    "Agents on this machine",
-    "Launch boundary",
-    "Claude accounts",
-    "Codex accounts",
-    "Provider profiles",
-    "Coding plans",
-    "Model providers",
-    "Local models",
-    "Helpers",
-    "Skills",
-    "Sessions",
-    "Voice",
-    "Notch",
-    "iOS Simulator",
-];
 
 /// What the page keeps between frames, made the first time it shows.
 pub struct Fields {
@@ -83,6 +67,7 @@ fn label(bench: &Workbench, agent: &str) -> String {
 pub fn render(
     bench: &Workbench,
     pages: &super::State,
+    page: Page,
     lit: &dyn Fn(&str) -> bool,
     this: &Entity<Workbench>,
     window: &Window,
@@ -92,26 +77,51 @@ pub fn render(
         cx.defer_in(window, make);
         return Vec::new();
     };
-    let mut sections = vec![
-        setup::render(bench, &bench.agent_setup, lit, this, cx),
-        sessions::boundary(bench, lit, this, cx),
-    ];
-    sections.extend(
-        ["claude", "codex"].map(|provider| accounts::render(bench, provider, lit, this, cx)),
-    );
-    sections.push(profiles::render(bench, &fields.profiles, lit, this, cx));
-    sections.extend(providers::render(
-        bench,
-        &fields.providers,
-        lit,
-        this,
-        window,
-        cx,
-    ));
-    sections.push(skills::render(&fields.skills, lit, this, cx));
-    sections.push(sessions::render(bench, &fields.sessions, lit, this, cx));
-    sections.extend(device::render(bench, &fields.device, lit, this, cx));
-    sections.extend(accounts::dialog(bench, this, cx));
-    sections.extend(crate::agent_setup::sheet(bench, this, window, cx));
-    sections
+    match page {
+        Page::Notifications => vec![sessions::notifications(bench, lit, this, cx)],
+        Page::Installed => vec![setup::render(bench, &bench.agent_setup, lit, this, cx)],
+        Page::Permissions => vec![sessions::boundary(bench, lit, this, cx)],
+        Page::Chats => vec![sessions::render(&fields.sessions, lit, this, cx)],
+        Page::Skills => vec![skills::render(&fields.skills, lit, this, cx)],
+        Page::Accounts => {
+            let mut sections: Vec<AnyElement> = signs_in(bench)
+                .into_iter()
+                .map(|provider| accounts::render(bench, &provider, lit, this, cx))
+                .collect();
+            sections.push(profiles::render(bench, &fields.profiles, lit, this, cx));
+            sections
+        }
+        Page::Plans | Page::Providers | Page::LocalModels | Page::Helpers => {
+            providers::render(bench, &fields.providers, page, lit, this, window, cx)
+        }
+        Page::Notch | Page::Voice | Page::Simulator => {
+            device::render(bench, &fields.device, page, lit, this, cx)
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The agents the catalog says keep each sign-in apart, so the person can hold several accounts.
+fn signs_in(bench: &Workbench) -> Vec<String> {
+    bench
+        .read("catalog")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|kind| kind["accounts"] == true)
+        .filter_map(|kind| kind["type"].as_str().map(str::to_owned))
+        .collect()
+}
+
+/// The add-account dialog and the install or sign-in sheet, over whichever page is open.
+pub fn dialogs(
+    bench: &Workbench,
+    this: &Entity<Workbench>,
+    window: &Window,
+    cx: &mut Context<Workbench>,
+) -> Vec<AnyElement> {
+    let mut open = Vec::new();
+    open.extend(accounts::dialog(bench, this, cx));
+    open.extend(crate::agent_setup::sheet(bench, this, window, cx));
+    open
 }
