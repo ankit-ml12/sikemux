@@ -21,10 +21,6 @@ const state: PageState = {
   agentStatus: {},
 };
 
-export function getState(): PageState {
-  return state;
-}
-
 export function useStore<T>(select: (current: PageState) => T): T {
   return select(state);
 }

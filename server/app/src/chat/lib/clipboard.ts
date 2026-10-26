@@ -25,11 +25,6 @@ export async function copyText(value: string): Promise<void> {
     throw new Error("the platform would not take the clipboard");
 }
 
-/** Reading has no fallback — nothing lets a page take the clipboard unasked. */
-export async function readClipboardText(): Promise<string> {
-  return navigator.clipboard.readText();
-}
-
 /*
  * The text has to be in the document and selectable for the copy to have
  * anything to take, so it cannot be hidden with `display` or `visibility`.

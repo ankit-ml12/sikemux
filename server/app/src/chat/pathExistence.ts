@@ -89,12 +89,6 @@ function ask(key: string, callback: (state: PathState) => void): () => void {
   };
 }
 
-/** Forgets what is known about a path on this host, or about all of them, so the next reference looks again. */
-export function forgetPathState(path?: string): void {
-  if (path === undefined) known.clear();
-  else known.delete(keyOf(undefined, path));
-}
-
 /**
  * What a path is, or null until the answer comes back. Lookups are batched
  * across every reference on screen and the answer is kept.

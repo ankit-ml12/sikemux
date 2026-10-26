@@ -1,6 +1,3 @@
-import { pagesApi } from "./page/pages";
-import { swallow } from "./page/toast";
-import { currentTheme, subscribeTheme } from "./themes/bus";
 import type { Theme } from "./themes/index";
 
 /** The variables a page styles against, named as the guide's `pages` topic lists them. */
@@ -45,18 +42,4 @@ export function pageThemeMessage(theme: Theme) {
       styles: { variables: pageThemeVariables(theme) },
     },
   } as const;
-}
-
-let started = false;
-
-/* Pages are themed as they are served, so the app keeps the current theme. */
-export function startPageTheme(): void {
-  if (started) return;
-  started = true;
-  const send = (theme: Theme) =>
-    void pagesApi
-      .theme(theme.dark, pageThemeVariables(theme))
-      .catch(swallow("page theme"));
-  send(currentTheme());
-  subscribeTheme(send);
 }

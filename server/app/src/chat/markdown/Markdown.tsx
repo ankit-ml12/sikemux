@@ -49,17 +49,6 @@ export interface MarkdownComponents {
   }>;
 }
 
-export const MARKDOWN_GFM: MarkdownOptions = {
-  gfm: true,
-  htmlAsText: false,
-  fileLinks: false,
-};
-export const MARKDOWN_PLAIN: MarkdownOptions = {
-  gfm: false,
-  htmlAsText: false,
-  fileLinks: false,
-};
-
 const NONE: MarkdownComponents = {};
 const ComponentsContext = createContext<MarkdownComponents>(NONE);
 

@@ -72,10 +72,6 @@ export async function warmMarkdown(
   }
 }
 
-export function forgetMarkdownForTests(): void {
-  remembered.clear();
-}
-
 function sameNode(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (

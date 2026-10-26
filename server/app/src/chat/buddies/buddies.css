@@ -215,57 +215,6 @@
   }
 }
 
-/* A line on the top edge of the composer, or of the narrower stack docked on it; the buddy shows only above it. */
-.composer-buddy {
-  position: relative;
-  z-index: 1;
-  width: min(100%, 820px);
-  height: 0;
-  margin: 0 auto;
-  clip-path: inset(-60px -60px 0 -60px);
-  pointer-events: none;
-}
-.composer-buddy:has(+ .chat-live-stack, + .chat-project-strip) {
-  width: calc(min(100%, 820px) - var(--chat-step) * 2);
-}
-.chat-slash-dock > .composer-buddy {
-  width: 100%;
-}
-/* The menu over the composer carries its own peek, so the one beneath it stays out of sight. */
-.chat-composer-wrap:has(.chat-slash-dock) > .composer-buddy {
-  visibility: hidden;
-}
-.composer-buddy > .buddy {
-  position: absolute;
-  right: 20px;
-  bottom: -14px;
-  pointer-events: auto;
-  transition: transform var(--dur-2) var(--ease-out);
-}
-.composer-buddy > .buddy:hover {
-  transform: translateY(-9px);
-}
-@media (prefers-reduced-motion: no-preference) {
-  .composer-buddy > .buddy:not(.still):hover svg {
-    animation: composer-buddy-jump 0.55s cubic-bezier(0.3, 0, 0.3, 1) infinite;
-  }
-}
-@keyframes composer-buddy-jump {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  40% {
-    transform: translateY(-5px);
-  }
-  70% {
-    transform: translateY(0);
-  }
-  82% {
-    transform: translateY(-1.5px);
-  }
-}
-
 .dlg.buddy-dlg {
   width: min(600px, 100%);
 }

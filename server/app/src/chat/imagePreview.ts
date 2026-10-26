@@ -107,20 +107,6 @@ function loadPreview(path: string): Promise<string | null> {
   return request;
 }
 
-/** What the preview cache is holding, in characters. */
-export function previewCacheBytes(): number {
-  return cachedBytes;
-}
-
-/** Reads a local image whole, for a viewer that wants it at its own size. */
-export async function readImageSource(path: string): Promise<string | null> {
-  try {
-    return await readSource(path, false);
-  } catch {
-    return null;
-  }
-}
-
 /* Pictures from another computer, by where they came from, so two shared chats never mix theirs. */
 const remotePreviews = new WeakMap<RemoteOrigin, Map<string, string | null>>();
 
