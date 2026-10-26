@@ -1326,7 +1326,7 @@ impl Workbench {
         };
         let draft = cx.new(|cx| {
             TextareaState::new(window, cx)
-                .auto_grow(3, 12)
+                .auto_grow(2, 12)
                 .submit_on_enter(true)
         });
         let secret = cx.new(|cx| {

@@ -1,16 +1,16 @@
 use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
-use gpui_kit::base::input::InlineTokenContext;
 use gpui_kit::base::Button as BaseButton;
+use gpui_kit::base::input::InlineTokenContext;
 use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
 use gpui_kit::component::input::{Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, size, Anchor, AnyElement, AnyView, App, ClipboardItem, ElementId, Entity,
-    Focusable, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
+    Anchor, AnyElement, AnyView, App, ClipboardItem, ElementId, Entity, Focusable, FontWeight,
+    Hsla, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, Transformation, Window, div, px, radians, size,
 };
 use sikemux_wire::chat::ContextUsage;
 use sikemux_wire::protocol::ConfigPicker;
@@ -337,21 +337,25 @@ impl RenderOnce for Composer {
                     )
                     .children(tiles)
                     .child(
-                        div().py(px(2.)).child(
-                            Textarea::new(&self.draft)
-                                .appearance(false)
-                                .text_size(px(14.5 * self.text_scale))
-                                .line_height(gpui_kit::relative(1.75))
-                                .text_color(t.text_primary)
-                                .when_some(on_paste, |draft, on_paste| {
-                                    draft.on_paste(move |item, window, cx| {
-                                        on_paste(item, window, cx)
+                        div()
+                            .py(px(2.))
+                            .min_h(px(14.5 * self.text_scale * 1.75 * 2.5))
+                            .child(
+                                Textarea::new(&self.draft)
+                                    .appearance(false)
+                                    .text_size(px(14.5 * self.text_scale))
+                                    .line_height(gpui_kit::relative(1.75))
+                                    .text_color(t.text_primary)
+                                    .when_some(on_paste, |draft, on_paste| {
+                                        draft.on_paste(move |item, window, cx| {
+                                            on_paste(item, window, cx)
+                                        })
                                     })
-                                })
-                                .when_some(chip, |draft, chip| {
-                                    draft.token(move |token, window, cx| chip(token, window, cx))
-                                }),
-                        ),
+                                    .when_some(chip, |draft, chip| {
+                                        draft
+                                            .token(move |token, window, cx| chip(token, window, cx))
+                                    }),
+                            ),
                     )
                     .children(self.heard.map(|heard| {
                         div()
