@@ -468,9 +468,6 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         (None, None) if passed.is_some() => Some(div().size(px(7.)).rounded_full().bg(t.live)),
         _ => None,
     };
-    let execution = running
-        .and_then(|run| run["executionId"].as_str())
-        .map(str::to_owned);
     let output = running
         .or(last.filter(|_| failed.is_some()))
         .and_then(|run| run["ptyId"].as_u64())
@@ -505,8 +502,9 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         });
     let menu = Rc::new(RunMenu {
         bench: cx.entity().downgrade(),
-        running: running.map(|_| RunningTask {
+        running: running.map(|run| RunningTask {
             id: id.clone(),
+            execution: run["executionId"].as_str().unwrap_or_default().to_owned(),
             label: label.clone(),
             started_at: running.and_then(|run| run["startedAt"].as_i64()),
             port: port_number,
@@ -525,83 +523,41 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .map(|project| project.name.clone())
             .unwrap_or_default(),
     });
-    let primary = if running.is_some() {
-        format!("Stop {label}")
-    } else {
-        format!("Run {label}")
-    };
-    let (glyph, tint) = if running.is_some() {
-        (Icon::Stop, t.danger)
-    } else {
-        (Icon::Run, t.live)
-    };
-    let chip = div()
+    let chip = Button::new("run-task")
+        .ghost()
+        .compact()
         .h(px(24.))
-        .flex()
+        .max_w(px(320.))
+        .px(px(8.))
+        .gap(px(6.))
         .rounded(crate::theme::RADIUS_2)
-        .bg(Hsla {
-            a: 0.94,
-            ..t.surface
+        .text_size(crate::theme::ui_text(12.))
+        .text_color(t.text_secondary)
+        .child(match dot {
+            Some(dot) => dot.into_any_element(),
+            None => ui::icon(Icon::Run, 11.)
+                .text_color(t.live)
+                .into_any_element(),
         })
-        .border_1()
-        .border_color(Hsla {
-            a: 0.06,
-            ..t.text_primary
-        })
+        .child(if running.is_some() { "Running" } else { "Run" })
         .child(
             div()
-                .id("run-task")
-                .px(px(8.))
                 .flex()
-                .items_center()
-                .gap(px(5.))
-                .text_size(crate::theme::ui_text(12.))
-                .text_color(t.text_secondary)
-                .hover(move |style| style.text_color(t.text_primary).bg(t.surface_hover))
-                .tooltip(ui::tooltip(primary))
-                .on_click(cx.listener(move |bench, _, _, cx| match &execution {
-                    Some(execution) => bench.stop_run(execution),
-                    None => bench.start_task(&id, cx),
-                }))
-                .child(ui::icon(glyph, 11.).text_color(tint)),
-        )
-        .child(
-            Button::new("choose-task")
-                .ghost()
-                .compact()
-                .rounded(px(0.))
-                .h_full()
-                .max_w(px(320.))
-                .pl(px(8.))
-                .pr(px(6.))
-                .gap(px(5.))
-                .border_l_1()
-                .border_color(Hsla {
-                    a: 0.08,
-                    ..t.text_primary
-                })
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
                 .font_family(crate::theme::MONO)
                 .text_size(crate::theme::ui_text(11.))
-                .text_color(t.text_tertiary)
-                .children(dot)
-                .child(
-                    div()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .whitespace_nowrap()
-                        .child(label),
-                )
-                .children(status)
-                .child(
-                    ui::icon(Icon::Chevron, 10.)
-                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                        .text_color(t.text_tertiary),
-                )
-                .dropdown_menu_with_anchor(
-                    Anchor::TopRight,
-                    ui::menu(move |popup, window, cx| menu.build(popup, window, cx)),
-                ),
+                .children(status),
+        )
+        .child(
+            ui::icon(Icon::Chevron, 10.)
+                .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                .text_color(t.text_tertiary),
+        )
+        .dropdown_menu_with_anchor(
+            Anchor::TopRight,
+            ui::menu(move |popup, window, cx| menu.build(popup, window, cx)),
         );
     Some(
         div()
@@ -673,6 +629,7 @@ struct RunMenu {
 
 struct RunningTask {
     id: String,
+    execution: String,
     label: String,
     started_at: Option<i64>,
     port: Option<u64>,
@@ -704,6 +661,14 @@ impl RunMenu {
                 None => format!("running · {}s", seconds_since(running.started_at)),
             };
             popup = popup.label(format!("{} · {meta}", running.label));
+            let execution = running.execution.clone();
+            popup = popup.item(
+                PopupMenuItem::new("Stop")
+                    .icon(Icon::Stop)
+                    .on_click(on_bench(&self.bench, move |bench, _| {
+                        bench.stop_run(&execution)
+                    })),
+            );
             if let Some(port) = running.port {
                 let url = format!("http://localhost:{port}");
                 popup = popup.item(
@@ -739,7 +704,8 @@ impl RunMenu {
                         .icon(Icon::Run)
                         .checked(*task == self.selected)
                         .on_click(on_bench(&self.bench, move |bench, cx| {
-                            bench.pick_task(&picked, cx)
+                            bench.pick_task(&picked, cx);
+                            bench.start_task(&picked, cx);
                         })),
                 );
             }
