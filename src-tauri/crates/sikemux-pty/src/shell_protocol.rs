@@ -4,9 +4,6 @@ pub use sikemux_wire::pty::shell_protocol::{
     PtyShellMetadataEvent, ShellBoundary, ShellMetadataSnapshot, ShellPhase, SshLink,
 };
 
-/// Stable frontend event for opt-in local shell metadata. The terminal byte
-/// stream remains untouched; this is a second, typed signal derived from it.
-pub const PTY_SHELL_METADATA_EVENT: &str = "pty_shell_metadata";
 const MAX_SHELL_OSC_BYTES: usize = 8 * 1024;
 const MAX_SHELL_PATH_BYTES: usize = 4 * 1024;
 const MAX_SHELL_EXIT_CODE_BYTES: usize = 11;

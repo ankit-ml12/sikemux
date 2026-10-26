@@ -18,7 +18,6 @@ use crate::{BrowserShortcut, TabEvents, TabStall};
 /// JavaScript, so the page cannot tamper with what runs there.
 const HELPER_WORLD: &str = "sikemux";
 const JPEG_QUALITY: &str = "82";
-const STILL_QUALITY: &str = "80";
 
 type Shortcut = Box<dyn Fn(BrowserShortcut) + Send + Sync>;
 
@@ -259,17 +258,6 @@ pub fn full_page_jpeg(
             picture.and_then(|(pixbuf, scale)| cropped(&pixbuf, scale, crop)),
             JPEG_QUALITY,
             done,
-        );
-    });
-}
-
-/// The page as it stands, for the app to slide in its place while the stage moves.
-pub fn still_jpeg(webview: &WebView, done: Box<dyn FnOnce(Option<Vec<u8>>) + Send>) {
-    snapshot(webview, SnapshotRegion::Visible, move |picture| {
-        encode(
-            picture.map(|(pixbuf, _)| pixbuf),
-            STILL_QUALITY,
-            Box::new(move |jpeg: Result<Vec<u8>, String>| done(jpeg.ok())),
         );
     });
 }

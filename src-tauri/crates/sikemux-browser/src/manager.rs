@@ -808,30 +808,6 @@ impl BrowserManager {
             .suggest(self.host().state_dir().as_deref(), query)
     }
 
-    /// A picture of the agent's page as it stands, for sliding in its place
-    /// while the stage moves: a native view cannot keep step with it.
-    pub async fn page_still(&self, agent_id: &str) -> BrowserResult<Vec<u8>> {
-        if self.reloading(agent_id) {
-            return Err(Error::Window(
-                "the page is loading again and keeps its last picture".into(),
-            ));
-        }
-        let (_, view) = self.active_view(agent_id)?;
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        view.run(move |webview| {
-            page::still_jpeg(
-                webview,
-                Box::new(move |jpeg| {
-                    let _ = sender.send(jpeg);
-                }),
-            )
-        });
-        match tokio::time::timeout(STILL_TIMEOUT, receiver).await {
-            Ok(Ok(Some(jpeg))) => Ok(jpeg),
-            _ => Err(Error::Window("the page could not be captured".into())),
-        }
-    }
-
     pub fn reload(&self, agent_id: &str) -> BrowserResult<()> {
         let (_, view) = self.active_view(agent_id)?;
         view.reload();
@@ -1338,7 +1314,6 @@ pub(crate) fn place(view: &Tab, layout: viewport::Layout, _awake: bool) {
 }
 
 const MAX_HOLES: usize = 32;
-const STILL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub(crate) fn validate_bounds(bounds: &BrowserBounds) -> BrowserResult<()> {
     let finite = [

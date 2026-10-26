@@ -82,10 +82,6 @@ pub fn cli_link_directory() -> Option<&'static Path> {
     CLI_ON_PATH.get()?.parent()
 }
 
-pub fn cli_command_path() -> Option<PathBuf> {
-    CLI_ON_PATH.get().cloned().or_else(cli_executable_path)
-}
-
 fn link_cli(executable: &Path, directory: &Path) -> std::io::Result<PathBuf> {
     fs::create_dir_all(directory)?;
     let link = directory.join(if cfg!(windows) {

@@ -30,14 +30,6 @@ pub struct ParentView {
 }
 
 impl ParentView {
-    pub fn on_top(view: *mut std::ffi::c_void) -> Self {
-        Self {
-            view,
-            beneath: false,
-            ground: None,
-        }
-    }
-
     pub fn beneath(view: *mut std::ffi::c_void) -> Self {
         Self {
             view,

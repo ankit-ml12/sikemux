@@ -724,27 +724,6 @@ impl CoreClient {
         }
     }
 
-    pub async fn acp_steer(
-        &self,
-        agent_id: String,
-        text: String,
-        paths: Vec<String>,
-        context: Vec<ChatContext>,
-    ) -> Result<String, ClientError> {
-        match self
-            .request(Request::AcpSteer {
-                agent_id,
-                text,
-                paths,
-                context,
-            })
-            .await?
-        {
-            Response::Steered { outcome } => Ok(outcome),
-            _ => Err(ClientError::UnexpectedReply),
-        }
-    }
-
     pub async fn acp_cancel(&self, agent_id: String) -> Result<(), ClientError> {
         self.request_done(Request::AcpCancel { agent_id }).await
     }

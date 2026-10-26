@@ -79,8 +79,6 @@ opt-level = "z"
 opt-level = 3
 [profile.release.package.sikemux-wire]
 opt-level = 3
-[profile.release.package.vt100]
-opt-level = 3
 [profile.release.package.vte]
 opt-level = 3
 [profile.release.package.unicode-width]

@@ -194,22 +194,6 @@ pub enum CliCloseReason {
     AppExit,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CliFrontendRequest {
-    pub request: CliOpenRequest,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CliOpenResult {
-    pub request_id: String,
-    pub target_id: String,
-    pub pane_id: Option<String>,
-    pub path: String,
-    pub error: Option<String>,
-}
-
 pub const PLUGIN_METHODS: &[&str] = &["plugins.tools", "plugins.call"];
 /// The tools server waits on this to hear that plugins may offer its agent
 /// different tools, such as after the person signs in to one.
