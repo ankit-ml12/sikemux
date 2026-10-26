@@ -76,6 +76,7 @@ pub(crate) fn for_person(method: &str) -> bool {
 
 calls! { core, client, params;
     "chatFile": Watch, any_program => answer(chat_file(&core, &client.peer, parse(params)?).await?),
+    "keepPasted": Full => answer(keep_pasted(&core, parse(params)?).await?),
     "page": Watch, any_program => answer(page(&core, parse(params)?).await?),
     "nameAgent": Local => answer(name_agent(&core, parse(params)?).await?),
     "renameAgent": Full => answer(rename_agent(&core, parse(params)?).await?),
@@ -842,6 +843,31 @@ async fn chat_file(core: &Core, peer: &Peer, params: ChatFileParams) -> CoreResu
     }
     let data = blocking(move || attachments::read(&path)).await?;
     Ok(ChatFile { data })
+}
+
+#[derive(Deserialize)]
+struct KeepPastedParams {
+    name: String,
+    mime: String,
+    data: String,
+}
+
+#[derive(Serialize)]
+struct Kept {
+    path: PathBuf,
+}
+
+/// A file pasted into a terminal, kept where pictures pasted into chats are, so the
+/// program in the terminal can be given its path.
+async fn keep_pasted(core: &Core, params: KeepPastedParams) -> CoreResult<Kept> {
+    let dir = core
+        .listening
+        .get()
+        .and_then(|listening| listening.config.attachment_dir.clone())
+        .ok_or_else(|| CoreError::from("this host has nowhere to keep files"))?;
+    let path =
+        blocking(move || attachments::save(&dir, &params.name, &params.mime, &params.data)).await?;
+    Ok(Kept { path })
 }
 
 #[derive(Deserialize)]

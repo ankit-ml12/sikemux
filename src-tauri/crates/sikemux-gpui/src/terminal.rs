@@ -9,14 +9,15 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::component::input::{Copy, InputEvent, InputState, Paste, SelectAll};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
+use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, canvas, div, font, px, AnyElement, AnyView, App, AppContext, Bounds, ClickEvent,
-    ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle, FontFallbacks, Hsla,
-    InputHandler, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, Keystroke, Modifiers,
-    MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, Render, Rgba, ScrollWheelEvent, SharedString, StyleRefinement, Styled, Subscription,
-    Task, UTF16Selection, WeakEntity, Window,
+    ClipboardEntry, ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle,
+    FontFallbacks, Hsla, Image, InputHandler, InteractiveElement, IntoElement, KeyBinding,
+    KeyDownEvent, Keystroke, Modifiers, MouseButton as Button, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, ParentElement, Pixels, Point, Render, Rgba, ScrollWheelEvent, SharedString,
+    StyleRefinement, Styled, Subscription, Task, UTF16Selection, WeakEntity, Window,
 };
 use gpui_terminal_grid::{
     Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline,
@@ -96,6 +97,29 @@ fn routed(places: &RefCell<Vec<Place>>, key: TermKey, ask: TerminalAsk) -> Ask {
     match places.borrow().get(usize::from(key.place)) {
         Some(Place::Account(host)) => Ask::On(host.clone(), Box::new(ask)),
         _ => ask,
+    }
+}
+
+/// A call to the core of the host terminal `key` runs on, answered on `reply`.
+fn requested(
+    places: &RefCell<Vec<Place>>,
+    key: TermKey,
+    method: &'static str,
+    params: serde_json::Value,
+    reply: oneshot::Sender<Result<serde_json::Value, String>>,
+) -> Ask {
+    match places.borrow().get(usize::from(key.place)) {
+        Some(Place::Account(host)) => Ask::HostRequest {
+            host: host.clone(),
+            method,
+            params,
+            reply,
+        },
+        _ => Ask::Request {
+            method,
+            params,
+            reply,
+        },
     }
 }
 
@@ -598,7 +622,11 @@ fn draw(
             }),
         )
         .on_action(window.listener_for(&this, move |bench, _: &Copy, _, _| copy(bench, id)))
-        .on_action(window.listener_for(&this, move |bench, _: &Paste, _, cx| paste(bench, id, cx)))
+        .on_action(
+            window.listener_for(&this, move |bench, _: &Paste, window, cx| {
+                paste(bench, id, window, cx)
+            }),
+        )
         .on_action(
             window.listener_for(&this, move |bench, _: &SelectAll, _, cx| {
                 if let Some(terminal) = bench.terminals.open.get_mut(&id) {
@@ -1762,11 +1790,63 @@ pub(crate) fn resize_text(bench: &Workbench, grow: Option<bool>) {
     });
 }
 
-fn paste(bench: &mut Workbench, id: TermKey, cx: &mut App) {
-    if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+fn paste(bench: &mut Workbench, id: TermKey, window: &mut Window, cx: &mut Context<Workbench>) {
+    let Some(item) = cx.read_from_clipboard() else {
+        return;
+    };
+    if let Some(text) = item.text() {
         send(bench, id, TerminalInput::Paste { text });
         bench.terminals.redraw(id, cx);
+        return;
     }
+    for entry in item.entries() {
+        if let ClipboardEntry::Image(image) = entry {
+            paste_picture(id, image.clone(), window, cx);
+        }
+    }
+}
+
+/// Keeps a pasted picture on the terminal's host and types its path, which is how agents
+/// in a terminal take a picture.
+fn paste_picture(id: TermKey, image: Image, window: &mut Window, cx: &mut Context<Workbench>) {
+    let stamp = chrono::Local::now()
+        .format("pasted-%Y%m%d-%H%M%S%3f")
+        .to_string();
+    let readable = cx.background_spawn(async move { crate::pasted::readable(image) });
+    cx.spawn_in(window, async move |this, cx| {
+        use base64::Engine;
+        let image = readable.await;
+        let params = serde_json::json!({
+            "name": format!("{stamp}.{}", image.format.extension()),
+            "mime": image.format.mime_type(),
+            "data": base64::engine::general_purpose::STANDARD.encode(&image.bytes),
+        });
+        let (reply, answer) = oneshot::channel();
+        this.update(cx, |bench, _| {
+            let ask = requested(&bench.terminals.places, id, "keepPasted", params, reply);
+            let _ = bench.asks.send(ask);
+        })
+        .ok();
+        let kept = match answer.await {
+            Ok(Ok(kept)) => kept,
+            Ok(Err(error)) => {
+                let note = format!("The pasted picture was not kept: {error}");
+                cx.update(|window, cx| window.push_notification(note, cx))
+                    .ok();
+                return;
+            }
+            Err(_) => return,
+        };
+        if let Some(path) = kept["path"].as_str() {
+            let paths = vec![path.to_owned()];
+            this.update(cx, |bench, cx| {
+                send(bench, id, TerminalInput::Paths { paths });
+                bench.terminals.redraw(id, cx);
+            })
+            .ok();
+        }
+    })
+    .detach();
 }
 
 /// The find bar over the pane's top right corner.
