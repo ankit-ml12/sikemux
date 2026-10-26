@@ -704,13 +704,19 @@ impl Render for Menu {
             (true, None) => Some("This agent offers no models to pick"),
             (false, _) => None,
         };
+        let footer = options
+            .iter()
+            .cloned()
+            .enumerate()
+            .find(|(_, row)| matches!(row.act, Act::AddProvider))
+            .map(|(at, row)| self.row(at, row, &typed, found, &t, &this));
         let mut list: Vec<AnyElement> = Vec::new();
         for (group, heading) in groups.iter().enumerate() {
             let rows: Vec<(usize, Row)> = options
                 .iter()
                 .cloned()
                 .enumerate()
-                .filter(|(_, row)| row.group == group)
+                .filter(|(_, row)| row.group == group && !matches!(row.act, Act::AddProvider))
                 .collect();
             let noted = group == 0 && note.is_some();
             if rows.is_empty() && !noted {
@@ -796,6 +802,13 @@ impl Render for Menu {
                     .overflow_y_scroll()
                     .children(list),
             )
+            .children(footer.map(|footer| {
+                div()
+                    .p(px(5.))
+                    .border_t_1()
+                    .border_color(t.line)
+                    .child(footer)
+            }))
     }
 }
 
