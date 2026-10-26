@@ -173,7 +173,7 @@ fn set_up_offer(bench: &Workbench, alias: &str, cx: &mut Context<Workbench>) -> 
             } else {
                 t.text_primary
             })
-            .hover(move |style| style.bg(t.surface_chosen))
+            .hover(move |style| style.bg(t.surface_hover))
             .child(mark((set_up.icon(), t.text_secondary)))
             .child(div().min_w_0().truncate().child(label))
             .on_click(cx.listener(move |bench, _, _, cx| bench.set_up_host(&alias, set_up, cx)))
@@ -198,7 +198,7 @@ fn pill(id: &'static str, shown: Choice, cx: &App) -> BaseButton {
         .text_size(crate::theme::ui_text(12.))
         .font_weight(FontWeight::MEDIUM)
         .text_color(t.text_primary)
-        .hover(move |style| style.bg(t.surface_chosen))
+        .hover(move |style| style.bg(t.surface_hover))
         .styles(move |styles| styles.selected(move |style| style.bg(t.surface_chosen)))
         .child(mark(shown.mark))
         .child(div().min_w_0().truncate().child(shown.label))

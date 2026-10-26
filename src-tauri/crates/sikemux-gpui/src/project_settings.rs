@@ -374,7 +374,7 @@ pub fn pane(
             .text_size(crate::theme::ui_text(13.))
             .text_color(ink)
             .when(on, |row| row.bg(t.surface_chosen))
-            .hover(|row| row.bg(t.surface_hover))
+            .when(!on, |row| row.hover(|row| row.bg(t.surface_hover)))
             .child(ui::icon(icon, 13.).text_color(ink))
             .child(div().flex_1().child(label))
             .when(page == Page::Config && invalid, |row| {
@@ -855,7 +855,7 @@ fn git(
                     .border_b_1()
                     .border_color(t.line_soft)
                     .when(on, |row| row.bg(t.surface_chosen))
-                    .hover(|row| row.bg(t.surface_hover))
+                    .when(!on, |row| row.hover(|row| row.bg(t.surface_hover)))
                     .children(mark.map(|mark| ui::icon(mark, 12.).text_color(t.text_secondary)))
                     .child(
                         div()

@@ -82,7 +82,11 @@ pub fn section_with(
                 .border_1()
                 .border_color(t.border)
                 .rounded(theme::RADIUS_3)
-                .child(body),
+                .child(
+                    div()
+                        .overflow_hidden()
+                        .child(div().mb(px(-1.)).flex().flex_col().child(body)),
+                ),
         )
         .into_any_element()
 }

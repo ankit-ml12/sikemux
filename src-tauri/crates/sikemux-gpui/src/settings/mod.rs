@@ -411,7 +411,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                     .rounded(theme::RADIUS_2)
                     .cursor_pointer()
                     .when(chosen, |row| row.bg(t.surface_chosen))
-                    .hover(|style| style.bg(t.surface_hover))
+                    .when(!chosen, |row| row.hover(|style| style.bg(t.surface_hover)))
                     .on_click(move |_, window, cx| {
                         this.update(cx, |bench, cx| go_to(bench, entry, window, cx))
                     })
