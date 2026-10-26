@@ -64,6 +64,10 @@ for (const agent of agents) {
     if (typeof agent[field] !== "string" || !agent[field])
       throw new Error(`${agent.type} has no ${field}`);
   }
+  if (agent.maker !== null && !(typeof agent.maker === "string" && agent.maker))
+    throw new Error(
+      `${agent.type} maker must be null or the company whose account it runs on`,
+    );
   for (const flag of FLAGS) {
     if (typeof agent[flag] !== "boolean")
       throw new Error(`${agent.type} does not say whether it has ${flag}`);
@@ -211,6 +215,7 @@ const entries = agents.map((agent) => ({
   about: agent.about,
   command: agent.command,
   brand: agent.brand,
+  maker: agent.maker,
   ...Object.fromEntries(FLAGS.map((flag) => [flag, agent[flag]])),
   bypass: agent.terminal.bypass !== null,
   commitModels: agent.commitMessages?.models ?? [],
@@ -317,6 +322,7 @@ ${privateField}
         about: ${rustString(agent.about)},
         command: ${rustString(agent.command)},
         brand: ${rustString(agent.brand)},
+        maker: ${rustOption(agent.maker, rustString)},
 ${FLAGS.map((flag) => `        ${snake(flag)}: ${agent[flag]},`).join("\n")}
         bypass: ${terminal.bypass !== null},
 ${rustList(8, "commit_models", agent.commitMessages?.models ?? [])}
@@ -427,6 +433,8 @@ pub struct AgentEntry {
     pub about: &'static str,
     pub command: &'static str,
     pub brand: &'static str,
+    /// The company whose account it runs on by default; none when it has no account of its own.
+    pub maker: Option<&'static str>,
 ${FLAGS.map((flag) => `    pub ${snake(flag)}: bool,`).join("\n")}
     pub bypass: bool,
     /// The models it writes commit messages with, the default first; none when it cannot.

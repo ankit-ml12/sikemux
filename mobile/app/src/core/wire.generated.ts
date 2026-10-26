@@ -2073,6 +2073,11 @@ export interface CatalogAgent {
   command: string;
   /** Its colour, as `#rrggbb`. */
   brand: string;
+  /**
+   * The company whose account it runs on by default, which heads the models it
+   * offers from that account; none when it has no account of its own.
+   */
+  maker?: string;
   /** Offered first, before anything else is installed. */
   featured: boolean;
   /**

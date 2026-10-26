@@ -28,6 +28,9 @@ pub(crate) struct CatalogAgent {
     pub command: &'static str,
     /// Its colour, as `#rrggbb`.
     pub brand: &'static str,
+    /// The company whose account it runs on by default, which heads the models it
+    /// offers from that account; none when it has no account of its own.
+    pub maker: Option<&'static str>,
     /// Offered first, before anything else is installed.
     pub featured: bool,
     /// It keeps each sign-in in its own folder, so the person can hold
@@ -65,6 +68,7 @@ pub(crate) fn view() -> Vec<CatalogAgent> {
             about: agent.about,
             command: agent.command,
             brand: agent.brand,
+            maker: agent.maker,
             featured: agent.featured,
             accounts: agent.accounts,
             usage: agent.usage,
