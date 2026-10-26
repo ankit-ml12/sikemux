@@ -16,6 +16,7 @@ mod board_panels;
 mod boot;
 mod buddy_picker;
 mod chat;
+mod ci_card;
 mod closing;
 #[cfg(target_os = "macos")]
 mod cloud_browser;

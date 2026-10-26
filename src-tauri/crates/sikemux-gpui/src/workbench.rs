@@ -128,6 +128,7 @@ pub struct Workbench {
     pub shown: crate::experience::Shown,
     /// The repository and branch whose latest CI run the top bar shows.
     pub watched_ci: Option<CiRepo>,
+    pub ci_card: Entity<crate::ci_card::CiCard>,
     /// The commit whose runs from every workflow, tags' included, the glyph sums up.
     watched_head: Option<String>,
     /// The account's picture, and the hash the core named the one asked for by.
@@ -661,6 +662,10 @@ impl Workbench {
             watched_place: crate::hosts::Place::This,
             watched_ci: None,
             watched_head: None,
+            ci_card: {
+                let bench = cx.weak_entity();
+                cx.new(|_| crate::ci_card::CiCard::new(bench))
+            },
             battery: crate::battery::read(),
             agent_setup: Default::default(),
             experience: None,
@@ -2204,18 +2209,17 @@ impl Workbench {
     }
 
     /// Every run of the branch's newest commit, while the core is checking it.
-    pub fn head_runs(&self) -> Vec<&Value> {
+    pub fn head_runs(&self) -> Vec<sikemux_wire::codehost::Run> {
         let (Some(_), Some(head)) = (&self.watched_ci, &self.watched_head) else {
             return Vec::new();
         };
         self.read("ci-head")
             .and_then(|runs| runs["value"]["runs"].as_array())
-            .map(|runs| {
-                runs.iter()
-                    .filter(|run| run["sha"] == head.as_str())
-                    .collect()
-            })
-            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+            .filter(|run| run["sha"] == head.as_str())
+            .filter_map(|run| serde_json::from_value(run.clone()).ok())
+            .collect()
     }
 
     /// Asks for the account's picture when it is one this window has not got.

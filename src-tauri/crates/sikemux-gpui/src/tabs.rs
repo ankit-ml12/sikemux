@@ -237,59 +237,44 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     )
 }
 
-/// How CI went for the branch's newest commit, across all its workflows, in the space of one
-/// mark: the most pressing run's state, with each run listed in the tooltip.
+/// How CI went for the branch's newest commit across all its workflows: the most pressing
+/// run's mark and a count, with every run in the card that opens over it.
 fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     let t = Tokens::get(cx).clone();
     let runs = bench.head_runs();
     let outcome = runs
         .iter()
-        .filter_map(|run| run["outcome"].as_str())
-        .min_by_key(|outcome| outcome_urgency(outcome))?;
-    let head = runs.first()?;
-    let sha = head["shortSha"].as_str()?;
-    let ago = chrono::DateTime::parse_from_rfc3339(head["createdAt"].as_str()?)
-        .ok()?
-        .timestamp_millis()
-        .max(0) as u64;
-    let ago = match crate::agents::age(ago) {
-        now if now == "now" => now,
-        age => format!("{age} ago"),
-    };
-    let about = std::iter::once(format!("{} · {sha} · {ago}", outcome_label(outcome)))
-        .chain(runs.iter().map(|run| {
-            format!(
-                "{} #{} · {}",
-                run["name"].as_str().unwrap_or_default(),
-                run["runNumber"].as_u64().unwrap_or_default(),
-                outcome_label(run["outcome"].as_str().unwrap_or_default())
-            )
-        }))
-        .collect::<Vec<_>>()
-        .join("\n");
+        .map(|run| run.outcome)
+        .min_by_key(|outcome| crate::ci_card::urgency(*outcome))?;
+    let card = bench.ci_card.clone();
+    let hovered = card.clone();
+    let clicked = card.clone();
     Some(
         div()
             .id("ci-glyph")
-            .on_click(|_, window, cx| {
+            .relative()
+            .on_hover(move |inside: &bool, _, cx| {
+                hovered.update(cx, |card, cx| card.hover(*inside, cx))
+            })
+            .on_click(move |_, window, cx| {
+                clicked.update(cx, |card, cx| card.close(cx));
                 let area = crate::codehost::Area::Actions;
                 window.dispatch_action(Box::new(crate::codehost::OpenArea { area }), cx)
             })
             .h(px(24.))
-            .px(px(4.))
+            .px(px(6.))
             .flex()
             .items_center()
             .gap(px(6.))
             .rounded(crate::theme::RADIUS_1)
-            .text_size(crate::theme::ui_text(11.))
-            .text_color(t.text_secondary)
-            .hover(move |style| style.text_color(t.text_primary))
-            .tooltip(ui::tooltip(about))
-            .child(ui::status_of_run(outcome, 12., cx))
-            .child(
-                ui::mono(sha.to_owned(), 11., cx)
-                    .font_features(crate::theme::tabular())
-                    .text_color(t.text_secondary),
-            )
+            .hover(move |style| style.bg(t.surface_chosen))
+            .child(ui::status_of_run(
+                crate::ci_card::outcome_key(outcome),
+                12.,
+                cx,
+            ))
+            .child(crate::ci_card::chip_count(&runs, cx))
+            .child(div().absolute().bottom_0().right_0().child(card))
             .into_any_element(),
     )
 }
@@ -386,31 +371,6 @@ fn battery_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             )
             .into_any_element(),
     )
-}
-
-fn outcome_urgency(outcome: &str) -> u8 {
-    match outcome {
-        "failure" => 0,
-        "running" => 1,
-        "queued" => 2,
-        "blocked" => 3,
-        "cancelled" => 4,
-        "success" => 5,
-        _ => 6,
-    }
-}
-
-fn outcome_label(outcome: &str) -> &str {
-    match outcome {
-        "running" => "Running",
-        "queued" => "Queued",
-        "success" => "Passed",
-        "failure" => "Failed",
-        "cancelled" => "Cancelled",
-        "skipped" => "Skipped",
-        "blocked" => "Waiting for approval",
-        _ => "Unknown",
-    }
 }
 
 fn host_label(host: &str) -> &str {
