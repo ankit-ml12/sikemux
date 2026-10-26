@@ -228,6 +228,36 @@ impl HostArea {
         );
     }
 
+    /// Closes the pull request, saying what was written first. A host that cannot open it
+    /// again asks before, and then closes it without the comment.
+    fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(opened) = &self.pull else {
+            return;
+        };
+        if !self.host.pulls.reopen {
+            let number = opened.number;
+            let title = (opened.view.as_ref())
+                .and_then(|view| view.as_ref().ok())
+                .map(|view| view.pull.title.clone())
+                .unwrap_or_default();
+            let asking = super::Asking::new(
+                format!("Close #{number} without merging?"),
+                format!("{title}\n\nIt cannot be opened again."),
+                "Close pull request",
+                true,
+                |area, cx| area.set_state(false, cx),
+            );
+            self.ask(asking, cx);
+            return;
+        }
+        let written =
+            (opened.draft.as_ref()).is_some_and(|draft| !draft.read(cx).value().trim().is_empty());
+        if written {
+            self.send(None, window, cx);
+        }
+        self.set_state(false, cx);
+    }
+
     /// Checks the pull request out in the project, as the core does it.
     fn checkout(&mut self, cx: &mut Context<Self>) {
         let Some(opened) = &mut self.pull else {
@@ -1102,15 +1132,7 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                     .child(
                         ui::text("Closed without merging", 12., FontWeight::MEDIUM)
                             .text_color(t.text_primary),
-                    )
-                    .child(div().flex_1())
-                    .when(area.host.pulls.reopen, |row| {
-                        row.child(
-                            Button::new("pull-reopen", "Reopen", Variant::Outline)
-                                .disabled(opened.busy)
-                                .on_click(cx.listener(|area, _, _, cx| area.set_state(true, cx))),
-                        )
-                    }),
+                    ),
             )
             .children(checks)
             .into_any_element();
@@ -1211,23 +1233,6 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                             );
                         })),
                 )
-        })
-        .child({
-            let title = pull.title.clone();
-            Button::new("pull-close", "Close", Variant::Outline)
-                .disabled(opened.busy)
-                .on_click(cx.listener(move |area, _, _, cx| {
-                    area.ask(
-                        super::Asking::new(
-                            format!("Close #{number} without merging?"),
-                            title.clone(),
-                            "Close pull request",
-                            true,
-                            |area, cx| area.set_state(false, cx),
-                        ),
-                        cx,
-                    );
-                }))
         });
     card.child(verdict)
         .children(checks)
@@ -1523,6 +1528,35 @@ fn composer(
                     cx.listener(|area, _, window, cx| area.send(Some("APPROVE"), window, cx)),
                 ),
         );
+    }
+    let state = (opened.view.as_ref())
+        .and_then(|view| view.as_ref().ok())
+        .map(|view| view.pull.state.clone())
+        .unwrap_or_default();
+    let reopens = area.host.pulls.reopen;
+    match state.as_str() {
+        "open" => {
+            let closing = if written && reopens {
+                "Close with comment"
+            } else {
+                "Close pull request"
+            };
+            foot = foot.child(
+                Button::new("pull-close", closing, Variant::Outline)
+                    .icon(Icon::PullRequest)
+                    .disabled(busy)
+                    .on_click(cx.listener(|area, _, window, cx| area.close(window, cx))),
+            );
+        }
+        "closed" if reopens => {
+            foot = foot.child(
+                Button::new("pull-reopen", "Reopen pull request", Variant::Outline)
+                    .icon(Icon::PullRequest)
+                    .disabled(busy)
+                    .on_click(cx.listener(|area, _, _, cx| area.set_state(true, cx))),
+            );
+        }
+        _ => {}
     }
     let commenting = if sending == Some("comment") {
         "Sending…"
