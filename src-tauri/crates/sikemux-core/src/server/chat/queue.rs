@@ -137,6 +137,7 @@ fn send(chat: &Chat, batch: Vec<Queued>) {
         text,
         paths,
         context,
+        shown: false,
     });
 }
 

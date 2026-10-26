@@ -74,6 +74,8 @@ pub(crate) enum ChatCommand {
         text: String,
         paths: Vec<String>,
         context: Vec<ChatContext>,
+        /// Its row was put in the chat as it was sent, while the agent was still starting.
+        shown: bool,
     },
     SetPermissionMode {
         mode: PermissionMode,
@@ -880,6 +882,11 @@ impl Chat {
     /// The chat waits for the person before its agent starts.
     pub(crate) fn unstarted(&self) -> bool {
         self.unstarted.load(Ordering::Acquire)
+    }
+
+    /// Whether the agent's first start brings no history the chat doesn't show already.
+    pub(crate) fn history_in_place(&self) -> bool {
+        self.launch.resume_id.is_none() || self.saved_shown.load(Ordering::Acquire)
     }
 
     /// Sends the prompt a failed turn stopped again, as the person asked.
@@ -2247,11 +2254,20 @@ pub(crate) fn prompt(
         &text
     });
     super::workspace::retitle(core, agent_id, title, true);
-    core.chats.running(agent_id)?.send(ChatCommand::Prompt {
+    let chat = core.chats.running(agent_id)?;
+    // The agent reads it only once it has started, which takes seconds, so the person
+    // sees it sent now.
+    let shown = !chat.is_ready() && chat.history_in_place();
+    if shown {
+        chat.feed
+            .prompted(Some(&message_id), &text, &paths, &context);
+    }
+    chat.send(ChatCommand::Prompt {
         message_id: Some(message_id),
         text,
         paths,
         context,
+        shown,
     })
 }
 

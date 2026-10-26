@@ -551,6 +551,7 @@ pub(crate) async fn run<B: Backend>(
     };
     let (mut backend, mut state, replay) = match opening {
         Begin::Start { rebind, notice } => {
+            let first = rebind.is_none();
             chat.emit(ChatEventKind::Status, json!({ "state": "starting" }));
             let signed_in_at_start = account::signed_in(&provider, &launch.env);
             let Carried {
@@ -560,9 +561,13 @@ pub(crate) async fn run<B: Backend>(
                 notice: carried,
                 quiet_load,
             } = Carried::from(rebind);
-            let sink = sink(quiet_load || chat.saved_shown.swap(false, Ordering::AcqRel));
+            let sink = sink(quiet_load || chat.saved_shown.load(Ordering::Acquire));
             chat.emit(ChatEventKind::Status, json!({ "state": "initializing" }));
             chat.feed.hold();
+            // With no history to come, a message sent while the agent starts shows at once.
+            if first && chat.history_in_place() {
+                chat.feed.let_out();
+            }
             let started = B::start(&launch, sink.clone()).await;
             chat.feed.let_out();
             let (backend, opened) = started?;
@@ -796,6 +801,7 @@ pub(crate) async fn run<B: Backend>(
                     text,
                     paths: Vec::new(),
                     context: Vec::new(),
+                    shown: false,
                 }
             }
             command => command,
@@ -829,16 +835,18 @@ pub(crate) async fn run<B: Backend>(
                 text,
                 paths,
                 context,
+                shown,
             } => {
                 if chat.running.swap(true, Ordering::AcqRel) {
                     // Another agent's message can start a turn just as the
                     // person sends one, so theirs goes next rather than lost.
-                    if letter_turn {
+                    if letter_turn || shown {
                         let held = ChatCommand::Prompt {
                             message_id,
                             text,
                             paths,
                             context,
+                            shown,
                         };
                         after_turn(chat.clone(), held);
                     } else if !chat.feed.enqueue(super::super::queue::Queued::new(
@@ -878,12 +886,14 @@ pub(crate) async fn run<B: Backend>(
                         }));
                     }
                 }
-                chat.feed.prompted(
-                    replay.message_id.as_deref(),
-                    &replay.text,
-                    &replay.paths,
-                    &replay.context,
-                );
+                if !shown {
+                    chat.feed.prompted(
+                        replay.message_id.as_deref(),
+                        &replay.text,
+                        &replay.paths,
+                        &replay.context,
+                    );
+                }
                 state.turn += 1;
                 begin(&chat, &mut backend, state.turn, Prompt::from(&replay)).await;
                 state.last_prompt = Some(Replay {
