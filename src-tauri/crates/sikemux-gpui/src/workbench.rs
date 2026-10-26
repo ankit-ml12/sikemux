@@ -288,6 +288,7 @@ pub struct Workbench {
     pub(crate) rail_slide: crate::track::Slide<RailPage>,
     /// The task the person is writing in the Add a task dialog, while it is open.
     pub adding_task: Option<crate::add_task::AddTask>,
+    pub adding_provider: Option<crate::add_provider::AddProvider>,
     pub buddy_picker: Option<crate::buddy_picker::BuddyPicker>,
     /// A task its checks held back, waiting on the person.
     pub run_check: Option<crate::run_check::RunCheck>,
@@ -715,6 +716,7 @@ impl Workbench {
             track: crate::track::Slide::default(),
             rail_slide: crate::track::Slide::default(),
             adding_task: None,
+            adding_provider: None,
             buddy_picker: None,
             run_check: None,
             runs_to_show: HashSet::new(),
@@ -905,6 +907,7 @@ impl Workbench {
                     &self.asks,
                 );
                 crate::editor::keep(self);
+                crate::agent_setup::settle(self, cx);
                 self.settle_open_waits();
                 crate::notifications::badge(self);
                 crate::notifications::kept_running(self, cx);
@@ -2487,6 +2490,13 @@ impl Workbench {
     pub fn terminal_launchers(&self) -> &[LauncherInfo] {
         self.shown()
             .map_or(&[], |view| view.workspace.terminal_launchers.as_slice())
+    }
+
+    /// Whether the host in front has the agent `provider`.
+    pub fn has_agent(&self, provider: &str) -> bool {
+        self.launchers().iter().any(|launcher| {
+            launcher.provider == provider && launcher.status.as_deref() != Some("missing")
+        })
     }
 
     /// Whether agents of `provider` have the built-in chat, as the core's catalog says; any agent
@@ -5034,6 +5044,7 @@ impl Render for Workbench {
             })
             .children(asked)
             .children(crate::add_task::view(self, cx))
+            .children(crate::add_provider::view(self, cx))
             .children(crate::buddy_picker::view(self, cx))
             .children(crate::share::view(self, cx))
             .children(crate::boot::reconnecting(self, cx))

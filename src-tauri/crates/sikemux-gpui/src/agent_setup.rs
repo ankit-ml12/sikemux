@@ -53,16 +53,45 @@ pub struct Sheet {
     phase: Phase,
 }
 
-/// The agents found, once the core has said, and the sheet while one shows.
+/// The agents found, once the core has said, the sheet while one shows, and the installs
+/// started from a chat's model menu or the add-provider dialog, which run with no sheet.
 #[derive(Default)]
 pub struct Setup {
     pub found: Option<Vec<Found>>,
     sheet: Option<Sheet>,
+    behind: Vec<Sheet>,
+}
+
+/// How an install running with no sheet is going.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Installing {
+    Running,
+    Failed,
+}
+
+impl Setup {
+    /// The sheet running `session`, shown or not.
+    fn running(&mut self, session: SessionId) -> Option<&mut Sheet> {
+        self.sheet
+            .iter_mut()
+            .chain(self.behind.iter_mut())
+            .find(|sheet| sheet.session == Some(session))
+    }
+
+    /// How the install of `kind` started with no sheet is going.
+    pub fn installing(&self, kind: &str) -> Option<Installing> {
+        let sheet = self.behind.iter().find(|sheet| sheet.kind == kind)?;
+        Some(match sheet.phase {
+            Phase::Running | Phase::Checking => Installing::Running,
+            _ => Installing::Failed,
+        })
+    }
 }
 
 /// What draws the agents and the sheet: Settings on the stage, or the welcome over it.
 fn redraw(bench: &Workbench, cx: &mut Context<Workbench>) {
     bench.parts.redraw(&bench.parts.stage, cx);
+    cx.notify();
 }
 
 /// What the agent `kind` finds itself to be, on the account it runs on now.
@@ -225,8 +254,63 @@ pub fn signing_in(agent: &Found, folder: Option<&str>) -> Option<Sheet> {
     })
 }
 
-/// Starts the sheet's command in a terminal of its own.
+/// Starts the sheet's command in a terminal of its own, in the sheet over the window.
 pub fn run(bench: &mut Workbench, sheet: Sheet, cx: &mut Context<Workbench>) {
+    bench.agent_setup.sheet = Some(sheet.clone());
+    start(bench, sheet, cx);
+}
+
+/// Installs the agent `kind` with its own installer, with no sheet over the window, unless an
+/// install of it already runs.
+pub fn install_behind(bench: &mut Workbench, kind: &str, cx: &mut Context<Workbench>) {
+    if bench.agent_setup.installing(kind) == Some(Installing::Running) {
+        return;
+    }
+    let Some(sheet) = catalog_installer(bench, kind) else {
+        return;
+    };
+    bench.agent_setup.behind.retain(|each| each.kind != kind);
+    bench.agent_setup.behind.push(sheet.clone());
+    start(bench, sheet, cx);
+}
+
+/// Shows the install of `kind` that ran with no sheet in Settings › Agents, where its output
+/// says why it stopped.
+pub fn show_install(
+    bench: &mut Workbench,
+    kind: &str,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    let Some(at) = bench
+        .agent_setup
+        .behind
+        .iter()
+        .position(|each| each.kind == kind)
+    else {
+        return;
+    };
+    let sheet = bench.agent_setup.behind.remove(at);
+    bench.agent_setup.sheet = Some(sheet);
+    bench.open_settings(crate::settings::Page::Installed, window, cx);
+    redraw(bench, cx);
+}
+
+/// The catalog's installer of the agent `kind`.
+fn catalog_installer(bench: &Workbench, kind: &str) -> Option<Sheet> {
+    let entry = bench
+        .read("catalog")
+        .and_then(Value::as_array)?
+        .iter()
+        .find(|entry| entry["type"] == kind)?;
+    Some(installer(
+        kind,
+        entry["label"].as_str().unwrap_or(kind),
+        entry["install"].as_str()?.to_owned(),
+    ))
+}
+
+fn start(bench: &mut Workbench, sheet: Sheet, cx: &mut Context<Workbench>) {
     let spawn = TerminalSpawn {
         cols: 100,
         rows: 26,
@@ -234,16 +318,22 @@ pub fn run(bench: &mut Workbench, sheet: Sheet, cx: &mut Context<Workbench>) {
         startup: Some(sheet.command.clone()),
         ..TerminalSpawn::default()
     };
-    bench.agent_setup.sheet = Some(sheet);
     let (started, session) = oneshot::channel();
     let _ = bench.asks.send(Ask::Spawn {
         spawn: Box::new(spawn),
         started,
     });
+    let kind = sheet.kind;
     cx.spawn(async move |bench, cx| {
         let session = session.await;
         let _ = bench.update(cx, |bench, cx| {
-            if let Some(sheet) = bench.agent_setup.sheet.as_mut() {
+            let setup = &mut bench.agent_setup;
+            let waiting = setup
+                .sheet
+                .iter_mut()
+                .chain(setup.behind.iter_mut())
+                .find(|sheet| sheet.kind == kind && sheet.session.is_none());
+            if let Some(sheet) = waiting {
                 match session {
                     Ok(Ok(session)) => sheet.session = Some(session),
                     Ok(Err(error)) => sheet.phase = Phase::Refused(error),
@@ -257,14 +347,37 @@ pub fn run(bench: &mut Workbench, sheet: Sheet, cx: &mut Context<Workbench>) {
     redraw(bench, cx);
 }
 
+/// Moves on every sheet whose command ended, as the core's view says.
+pub fn settle(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    let ended: Vec<(SessionId, Option<u32>)> =
+        bench
+            .view
+            .as_ref()
+            .map_or(&[][..], |view| view.sessions.as_slice())
+            .iter()
+            .filter_map(|session| Some((session.id, session.exit.as_ref()?.code)))
+            .filter(|(id, _)| {
+                let setup = &bench.agent_setup;
+                setup.sheet.iter().chain(setup.behind.iter()).any(|sheet| {
+                    sheet.session == Some(*id) && matches!(sheet.phase, Phase::Running)
+                })
+            })
+            .collect();
+    for (session, code) in ended {
+        self::ended(bench, session, code, cx);
+    }
+}
+
 /// Moves the sheet on once its command ended: looks for the agent again after it worked.
-fn ended(bench: &mut Workbench, code: Option<u32>, cx: &mut Context<Workbench>) {
-    let Some(sheet) = bench.agent_setup.sheet.as_mut() else {
+fn ended(
+    bench: &mut Workbench,
+    session: SessionId,
+    code: Option<u32>,
+    cx: &mut Context<Workbench>,
+) {
+    let Some(sheet) = bench.agent_setup.running(session) else {
         return;
     };
-    if !matches!(sheet.phase, Phase::Running) {
-        return;
-    }
     if code != Some(0) {
         sheet.phase = Phase::Failed(code);
         return redraw(bench, cx);
@@ -280,8 +393,12 @@ fn ended(bench: &mut Workbench, code: Option<u32>, cx: &mut Context<Workbench>) 
         let _ = core::request(&asks, "forgetAgentStatus", json!({})).await;
         let (status, _) = availability(&asks, &kind, config).await;
         let _ = bench.update(cx, |bench, cx| {
-            if let Some(sheet) = bench.agent_setup.sheet.as_mut() {
-                let found = !matches!(status, AgentStatus::Missing);
+            let found = !matches!(status, AgentStatus::Missing);
+            let setup = &mut bench.agent_setup;
+            if found {
+                setup.behind.retain(|sheet| sheet.session != Some(session));
+            }
+            if let Some(sheet) = setup.running(session) {
                 sheet.phase = Phase::Done(found.then_some(status));
             }
             read(bench, cx);
@@ -350,16 +467,6 @@ pub fn sheet(
 ) -> Option<AnyElement> {
     let sheet = bench.agent_setup.sheet.as_ref()?;
     let t = Tokens::get(cx).clone();
-    if let (Phase::Running, Some(session)) = (&sheet.phase, sheet.session) {
-        let exit = bench
-            .view
-            .as_ref()
-            .and_then(|view| view.sessions.iter().find(|each| each.id == session))
-            .and_then(|each| each.exit.clone());
-        if let Some(exit) = exit {
-            cx.defer_in(window, move |bench, _, cx| ended(bench, exit.code, cx));
-        }
-    }
     let title = match sheet.install {
         true => format!("Install {}", sheet.label),
         false => format!("Sign in to {}", sheet.label),

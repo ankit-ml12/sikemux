@@ -3,13 +3,19 @@ title: Model providers
 description: "Run chats on a model provider's API key instead of an agent's own account, and add any OpenAI-compatible provider."
 ---
 
-An agent normally runs on its maker's account: Claude on Anthropic's, Codex on OpenAI's. A chat can run on a model provider instead, such as OpenRouter, DeepSeek, Groq, a coding plan, Ollama on this computer, or any provider with an OpenAI-compatible API.
+An agent normally runs on its maker's account: Claude on Anthropic's, Codex on OpenAI's. A chat can run on a model provider instead, such as OpenRouter, DeepSeek, Groq, a coding plan, Ollama on this host, or any provider with an OpenAI-compatible API.
 
 ## Picking a model
 
 The model picker in a chat lists models by provider: the agent's own account first, headed by its maker, then every provider you connected, then **+ Add provider**.
 
-A model the chosen agent can't run still shows, marked with the agent that can, such as **via OMP**. Picking it moves a chat that hasn't started yet to that agent.
+Each model shows its context size, its price per million tokens and whether its tool calls work with agents, when Sikemux knows them. Models served on this host are headed with **local**.
+
+A model the chosen agent can't run still shows, marked with the agent that can, such as **via OMP**. Picking it moves a chat that hasn't started yet to that agent, installing it first if this host doesn't have it.
+
+Above the models, every chat agent sits in one row. One this host doesn't have is dimmed: click it to install it with its own installer.
+
+Once a chat has started, it keeps its agent and provider, and the picker lists only the models it offers there.
 
 ## Adding a provider
 
@@ -29,6 +35,6 @@ Each provider runs with the agent that speaks its API:
 | OpenAI's Responses API | Codex |
 | Only chat completions | OMP, or OpenCode |
 
-When that agent isn't installed, adding the provider installs it with the agent's own installer, and you can carry on while it runs.
+When that agent isn't installed, Sikemux installs it with the agent's own installer as soon as the key checks out, and you can add the provider while it runs. If the install fails, click **Install failed** to see its output.
 
 OMP and OpenCode can run any provider. Sikemux tells them of it for that one chat: your own OMP and OpenCode settings, sign-ins and models stay as they are.
