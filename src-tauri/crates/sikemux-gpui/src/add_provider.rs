@@ -1,15 +1,15 @@
-//! The dialog that adds a model provider from whatever the person pastes: a key, a base URL
-//! or the provider's whole quickstart. The core reads it, checks the key and says which agent
-//! runs it; this host installs that agent meanwhile when it lacks it.
+//! The dialog that adds a model provider from its base URL and key. The core checks the key,
+//! names the provider and says which agent runs it; this host installs that agent meanwhile
+//! when it lacks it.
 
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, Animation, AnimationExt, AnyElement, AppContext, Context, Entity, FontWeight,
+    div, px, Animation, AnimationExt, AnyElement, App, AppContext, Context, Entity, FontWeight,
     InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
     Styled, Subscription, Window,
 };
@@ -19,89 +19,109 @@ use crate::agent_setup::{self, Installing};
 use crate::core::Target;
 use crate::hosts::Place;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::Tokens;
 use crate::toast;
 use crate::ui::{self, dialog};
 use crate::workbench::Workbench;
 
-/// How long typing rests before what was pasted is read.
+/// How long typing rests before the URL and key are checked.
 const SETTLE: Duration = Duration::from_millis(350);
+
+/// The URL and key a check was asked about.
+type Asked = (String, String);
 
 pub struct AddProvider {
     target: Target,
-    field: Entity<TextareaState>,
-    /// The core's reading of the text it was asked about.
-    read: Option<(String, Value)>,
+    url: Entity<InputState>,
+    key: Entity<InputState>,
+    name: Entity<InputState>,
+    /// The name the core suggested last, which the field keeps until the person types their own.
+    suggested: String,
+    /// The core's check of the URL and key it was asked about.
+    read: Option<(Asked, Value)>,
     reading: bool,
     adding: bool,
     failure: Option<String>,
-    /// What the person pasted, while the field shows it with its key masked.
-    hidden: Option<Hidden>,
-    _typing: Subscription,
+    _typing: Vec<Subscription>,
 }
 
-/// A paste and how the field shows it, its key cut down to its first and last letters, as
-/// people share their screens.
-struct Hidden {
-    pasted: String,
-    shown: String,
+fn input(
+    placeholder: &'static str,
+    masked: bool,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) -> Entity<InputState> {
+    cx.new(|cx| {
+        InputState::new(window, cx)
+            .placeholder(placeholder)
+            .masked(masked)
+    })
 }
 
 impl AddProvider {
     fn new(target: Target, window: &mut Window, cx: &mut Context<Workbench>) -> Self {
-        let field = cx.new(|cx| {
-            TextareaState::new(window, cx)
-                .auto_grow(3, 8)
-                .placeholder("sk-…, https://api.example.com/v1, or the quickstart")
-        });
-        field.update(cx, |field, cx| field.focus(window, cx));
-        let typing = cx.subscribe_in(
-            &field,
+        let url = input("https://api.example.com/v1", false, window, cx);
+        let key = input(
+            "Not needed for a model server on this host",
+            true,
             window,
-            |bench, _, event: &InputEvent, window, cx| {
-                let Some(adding) = bench.adding_provider.as_mut() else {
-                    return;
-                };
-                if !matches!(event, InputEvent::Change) || adding.masking(cx) {
-                    return;
-                }
-                adding.hidden = None;
-                let text = adding.text(cx);
-                settle(bench, text, window, cx);
-            },
+            cx,
         );
+        let name = input("Named from the URL", false, window, cx);
+        url.update(cx, |url, cx| url.focus(window, cx));
+        let checks =
+            |field: &Entity<InputState>, window: &mut Window, cx: &mut Context<Workbench>| {
+                cx.subscribe_in(field, window, |bench, _, event: &InputEvent, window, cx| {
+                    match event {
+                        InputEvent::Change => settle(bench, window, cx),
+                        InputEvent::PressEnter { .. } => add(bench, window, cx),
+                        _ => {}
+                    }
+                })
+            };
+        let typing =
+            vec![
+                checks(&url, window, cx),
+                checks(&key, window, cx),
+                cx.subscribe_in(&name, window, |bench, _, event: &InputEvent, window, cx| {
+                    match event {
+                        InputEvent::PressEnter { .. } => add(bench, window, cx),
+                        _ => cx.notify(),
+                    }
+                }),
+            ];
         Self {
             target,
-            field,
+            url,
+            key,
+            name,
+            suggested: String::new(),
             read: None,
             reading: false,
             adding: false,
             failure: None,
-            hidden: None,
             _typing: typing,
         }
     }
 
-    /// Whether the field shows the paste with its key masked.
-    fn masking(&self, cx: &gpui_kit::App) -> bool {
-        let shown = self.field.read(cx).value();
-        self.hidden
-            .as_ref()
-            .is_some_and(|hidden| hidden.shown == shown.trim())
+    fn asked(&self, cx: &App) -> Asked {
+        let value = |field: &Entity<InputState>| field.read(cx).value().trim().to_owned();
+        (value(&self.url), value(&self.key))
     }
 
-    /// What the person pasted or typed, key and all.
-    fn text(&self, cx: &gpui_kit::App) -> String {
-        match (&self.hidden, self.masking(cx)) {
-            (Some(hidden), true) => hidden.pasted.clone(),
-            _ => self.field.read(cx).value().trim().to_owned(),
+    /// The check of the URL and key the fields hold now, once the core has given it.
+    fn current(&self, cx: &App) -> Option<&Value> {
+        let (asked, read) = self.read.as_ref()?;
+        (*asked == self.asked(cx)).then_some(read)
+    }
+
+    /// The name the provider is added under: the person's, else the core's suggestion.
+    fn label(&self, cx: &App) -> String {
+        let typed = self.name.read(cx).value().trim().to_owned();
+        match typed.is_empty() {
+            true => self.suggested.clone(),
+            false => typed,
         }
-    }
-
-    /// The reading of what the field holds now, once the core has given it.
-    fn current(&self, cx: &gpui_kit::App) -> Option<&Value> {
-        let (read_for, read) = self.read.as_ref()?;
-        (*read_for == self.text(cx)).then_some(read)
     }
 }
 
@@ -117,42 +137,16 @@ impl Workbench {
     }
 }
 
-/// `text` with each run that looks like a key cut to its first seven and last four letters.
-fn mask(text: &str) -> String {
-    let keyish = |letter: char| letter.is_ascii_alphanumeric() || letter == '_' || letter == '-';
-    let mut masked = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(start) = rest.find(keyish) {
-        masked.push_str(&rest[..start]);
-        rest = &rest[start..];
-        let end = rest.find(|letter| !keyish(letter)).unwrap_or(rest.len());
-        let run = &rest[..end];
-        let key = run.len() >= 20
-            && run.contains(|letter: char| letter.is_ascii_digit())
-            && run.contains(|letter: char| letter.is_ascii_alphabetic());
-        match key {
-            true => {
-                masked.push_str(&run[..7]);
-                masked.push_str(&"•".repeat(12));
-                masked.push_str(&run[run.len() - 4..]);
-            }
-            false => masked.push_str(run),
-        }
-        rest = &rest[end..];
-    }
-    masked.push_str(rest);
-    masked
-}
-
-/// Reads `text` once typing rests on it.
-fn settle(bench: &mut Workbench, text: String, window: &mut Window, cx: &mut Context<Workbench>) {
+/// Checks the URL and key once typing rests on them.
+fn settle(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
     let Some(adding) = bench.adding_provider.as_mut() else {
         return;
     };
+    let asked = adding.asked(cx);
     adding.failure = None;
-    adding.reading = !text.is_empty();
+    adding.reading = !asked.0.is_empty();
     cx.notify();
-    if text.is_empty() {
+    if asked.0.is_empty() {
         return;
     }
     let target = adding.target.clone();
@@ -163,38 +157,38 @@ fn settle(bench: &mut Workbench, text: String, window: &mut Window, cx: &mut Con
                 bench
                     .adding_provider
                     .as_ref()
-                    .is_some_and(|adding| adding.text(cx) == text)
+                    .is_some_and(|adding| adding.asked(cx) == asked)
             })
             .unwrap_or(false);
         if !still {
             return;
         }
+        let (url, key) = asked.clone();
         let read = target
-            .request("modelProviderRead", json!({ "text": text }))
+            .request("modelProviderRead", json!({ "baseUrl": url, "key": key }))
             .await
             .unwrap_or_else(|failure| json!({ "failure": readable(failure) }));
         let _ = bench.update_in(cx, |bench, window, cx| {
             let Some(adding) = bench.adding_provider.as_mut() else {
                 return;
             };
-            if adding.text(cx) != text {
+            if adding.asked(cx) != asked {
                 return;
             }
             adding.reading = false;
-            let shown = mask(&text);
-            if read["hasKey"] == true && shown != text {
-                adding.hidden = Some(Hidden {
-                    pasted: text.clone(),
-                    shown: shown.clone(),
-                });
-                adding
-                    .field
-                    .update(cx, |field, cx| field.set_value(shown, window, cx));
+            if let Some(label) = read["label"].as_str() {
+                let typed = adding.name.read(cx).value().trim().to_owned();
+                if typed.is_empty() || typed == adding.suggested {
+                    adding
+                        .name
+                        .update(cx, |name, cx| name.set_value(label, window, cx));
+                }
+                adding.suggested = label.to_owned();
             }
             let works = read["failure"].is_null() && read["models"].is_array();
             let agent = read["runsWith"].as_str().map(str::to_owned);
             let here = matches!(adding.target.place(), Place::This);
-            adding.read = Some((text, read));
+            adding.read = Some((asked, read));
             if let Some(agent) = agent.filter(|agent| works && here && !bench.has_agent(agent)) {
                 agent_setup::install_behind(bench, &agent, cx);
             }
@@ -216,14 +210,17 @@ fn add(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) 
     let Some(read) = adding.current(cx).cloned() else {
         return;
     };
-    if adding.adding || !read["failure"].is_null() || !read["models"].is_array() {
+    let label = adding.label(cx);
+    if adding.adding || !read["failure"].is_null() || !read["models"].is_array() || label.is_empty()
+    {
         return;
     }
-    let text = adding.text(cx);
+    let (url, key) = adding.asked(cx);
     adding.adding = true;
-    let added = adding
-        .target
-        .request("modelProviderAdd", json!({ "text": text }));
+    let added = adding.target.request(
+        "modelProviderAdd",
+        json!({ "baseUrl": url, "key": key, "label": label }),
+    );
     cx.notify();
     cx.spawn_in(window, async move |bench, cx| {
         let added = added.await;
@@ -281,23 +278,6 @@ fn reason(name: &str, read: &Value) -> String {
     }
 }
 
-/// A line under the field: what it names, then what was found.
-fn fact(name: &'static str, value: AnyElement, t: &Tokens) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(10.))
-        .text_size(crate::theme::ui_text(12.))
-        .child(
-            div()
-                .w(px(36.))
-                .flex_none()
-                .text_color(t.text_tertiary)
-                .child(name),
-        )
-        .child(div().flex_1().min_w_0().truncate().child(value))
-}
-
 /// A thin bar a short stroke runs along while the install has no end in sight; still for a
 /// person who asked for less motion.
 fn running_bar(t: &Tokens, still: bool) -> AnyElement {
@@ -341,11 +321,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     let t = Tokens::get(cx).clone();
     let this = cx.entity();
     let read = adding.current(cx).cloned();
-    let name = read
-        .as_ref()
-        .and_then(|read| read["label"].as_str())
-        .unwrap_or("provider")
-        .to_owned();
+    let name = adding.label(cx);
     let models = read
         .as_ref()
         .and_then(|read| read["models"].as_array())
@@ -354,70 +330,21 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         .failure
         .clone()
         .or_else(|| read.as_ref()?["failure"].as_str().map(str::to_owned));
-    let ready = read.is_some() && failure.is_none() && models.is_some() && !adding.adding;
-    let field = div()
-        .px(px(10.))
-        .py(px(8.))
-        .border_1()
-        .border_color(t.border_strong)
-        .rounded(RADIUS_2)
-        .bg(t.surface_sunken)
-        .font_family(theme::MONO)
-        .text_color(t.text_secondary)
-        .child(
-            Textarea::new(&adding.field)
-                .appearance(false)
-                .text_size(crate::theme::ui_text(11.)),
-        );
-    let found = read
-        .as_ref()
-        .filter(|read| !read["baseUrl"].is_null() || !read["label"].is_null())
-        .map(|read| {
-            let url = read["baseUrl"]
-                .as_str()
-                .map(|url| {
-                    url.split_once("://")
-                        .map_or(url, |(_, rest)| rest)
-                        .to_owned()
-                })
-                .unwrap_or_default();
-            let key = match (&failure, models) {
-                (Some(failure), _) => {
-                    ui::text(failure.clone(), 12., FontWeight::NORMAL).text_color(t.danger)
-                }
-                (None, Some(count)) => ui::text(
-                    format!("Works · {count} model{}", if count == 1 { "" } else { "s" }),
-                    12.,
-                    FontWeight::NORMAL,
-                )
-                .text_color(t.live),
-                (None, None) => {
-                    ui::text("Checking…", 12., FontWeight::NORMAL).text_color(t.text_tertiary)
-                }
-            };
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(5.))
-                .child(fact(
-                    "Name",
-                    ui::text(name.clone(), 12., FontWeight::NORMAL)
-                        .text_color(t.text_primary)
-                        .into_any_element(),
-                    &t,
-                ))
-                .child(fact(
-                    "URL",
-                    ui::mono(url, 11., cx)
-                        .text_color(t.text_primary)
-                        .into_any_element(),
-                    &t,
-                ))
-                .child(fact("Key", key.into_any_element(), &t))
-        });
-    let checking = (adding.reading && found.is_none())
-        .then(|| ui::text("Reading…", 12., FontWeight::NORMAL).text_color(t.text_tertiary));
-    let unread = found.is_none() && failure.is_some();
+    let ready = models.is_some() && failure.is_none() && !adding.adding && !name.is_empty();
+    let keyed = !adding.asked(cx).1.is_empty();
+    let check = match (&failure, models, adding.reading) {
+        (Some(failure), _, _) => Some((failure.clone(), t.danger)),
+        (None, Some(count), _) => Some((
+            format!(
+                "{} · {count} model{}",
+                if keyed { "Key works" } else { "Works" },
+                if count == 1 { "" } else { "s" }
+            ),
+            t.live,
+        )),
+        (None, None, true) => Some(("Checking…".to_owned(), t.text_tertiary)),
+        (None, None, false) => None,
+    };
     let runs = read
         .as_ref()
         .filter(|_| ready || adding.adding)
@@ -506,30 +433,28 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 .text_size(crate::theme::ui_text(12.))
                 .line_height(crate::theme::ui_text(17.))
                 .text_color(t.text_tertiary)
-                .child("Paste an API key, a base URL, or the quickstart from the provider's dashboard."),
+                .child(
+                    "Any provider with an OpenAI-compatible API, or a model server on this host.",
+                ),
         )
-        .child(field)
-        .children(checking)
-        .children(found)
-        .when(unread, |body| {
-            body.child(
-                ui::text(failure.clone().unwrap_or_default(), 12., FontWeight::NORMAL)
-                    .text_color(t.danger),
-            )
-        })
+        .child(dialog::field("Base URL", &adding.url, true, cx))
+        .child(dialog::field("API key", &adding.key, false, cx))
+        .child(dialog::field("Name", &adding.name, false, cx))
+        .children(check.map(|(words, ink)| {
+            ui::text(words, 12., FontWeight::NORMAL)
+                .text_color(ink)
+                .whitespace_normal()
+        }))
         .children(runs)
         .into_any_element();
     let (adds, closing) = (this.clone(), this);
     let yes: dialog::Answer =
         Rc::new(move |window, cx| adds.update(cx, |bench, cx| add(bench, window, cx)));
     let no: dialog::Answer = Rc::new(move |_, cx| closing.update(cx, close));
-    let label: SharedString = match (
-        adding.adding,
-        read.as_ref().and_then(|read| read["label"].as_str()),
-    ) {
+    let label: SharedString = match (adding.adding, name.is_empty()) {
         (true, _) => "Adding…".into(),
-        (false, Some(name)) => format!("Add {name}").into(),
-        (false, None) => "Add".into(),
+        (false, false) => format!("Add {name}").into(),
+        (false, true) => "Add".into(),
     };
     let foot = dialog::hinted_foot(dialog::escape("cancel", cx), cx)
         .child(dialog::button(

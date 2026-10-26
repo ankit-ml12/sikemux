@@ -120,6 +120,31 @@ pub(crate) fn hinted_foot(note: impl IntoElement, cx: &App) -> Div {
     )
 }
 
+/// A one-line field of a sheet's body, under its name, in the mono face for what the machine
+/// reads, such as a command or a URL.
+pub(crate) fn field(name: &'static str, input: &Entity<InputState>, mono: bool, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(6.))
+        .child(text(name, 12., FontWeight::MEDIUM).text_color(t.text_secondary))
+        .child(
+            div()
+                .h(px(32.))
+                .px(px(10.))
+                .flex()
+                .items_center()
+                .border_1()
+                .border_color(t.border_strong)
+                .rounded(RADIUS_2)
+                .bg(t.surface_sunken)
+                .text_size(crate::theme::ui_text(12.))
+                .when(mono, |field| field.font_family(theme::MONO))
+                .child(Input::new(input).appearance(false)),
+        )
+}
+
 /// What Escape does, as a foot's note says it.
 pub(crate) fn escape(word: &'static str, cx: &App) -> Div {
     div()

@@ -3,9 +3,8 @@
 
 use std::rc::Rc;
 
-use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::input::InputState;
 use gpui_kit::component::WindowExt;
-use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, AppContext, Context, Entity, FontWeight, IntoElement, ParentElement,
     SharedString, Styled, Window,
@@ -13,7 +12,7 @@ use gpui_kit::{
 use serde_json::{json, Value};
 
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::Tokens;
 use crate::toast;
 use crate::ui::{self, dialog, Segmented};
 use crate::workbench::Workbench;
@@ -86,27 +85,6 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     let adding = bench.adding_task.as_ref()?;
     let editing = adding.replaces.is_some();
     let t = Tokens::get(cx).clone();
-    let field = |name: &'static str, input: &Entity<InputState>, mono: bool| {
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(6.))
-            .child(ui::text(name, 12., FontWeight::MEDIUM).text_color(t.text_secondary))
-            .child(
-                div()
-                    .h(px(32.))
-                    .px(px(10.))
-                    .flex()
-                    .items_center()
-                    .border_1()
-                    .border_color(t.border_strong)
-                    .rounded(RADIUS_2)
-                    .bg(t.surface_sunken)
-                    .text_size(crate::theme::ui_text(12.))
-                    .when(mono, |field| field.font_family(theme::MONO))
-                    .child(Input::new(input).appearance(false)),
-            )
-    };
     let note = if adding.team {
         "Goes in sikemux.json, which you commit."
     } else {
@@ -119,9 +97,9 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     let body = dialog::marked_body()
         .pt(px(12.))
         .gap(px(12.))
-        .child(field("Name", &adding.label, false))
-        .child(field("Command", &adding.command, true))
-        .child(field("Folder", &adding.folder, false))
+        .child(dialog::field("Name", &adding.label, false, cx))
+        .child(dialog::field("Command", &adding.command, true, cx))
+        .child(dialog::field("Folder", &adding.folder, false, cx))
         .child(
             div()
                 .flex()
