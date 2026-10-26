@@ -521,7 +521,14 @@ fn item_of(view: &Entity<HostArea>, log: &Log, item: Item, job: &str, cx: &App) 
                     crate::motion::LIST_FOLD,
                     ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary),
                 ))
-                .children(outcome.map(|outcome| ui::status_of_run(outcome_word(outcome), 14., cx)))
+                .children(outcome.map(|outcome| {
+                    ui::run_mark(
+                        format!("log-mark-{}", section.key),
+                        outcome_word(outcome),
+                        14.,
+                        cx,
+                    )
+                }))
                 .child(
                     div()
                         .flex_1()

@@ -207,7 +207,12 @@ fn row(
             .gap(px(6.))
             .tooltip(ui::tooltip(about))
             .child("·")
-            .child(ui::status_of_run(outcome_word(tally.outcome), 13., cx))
+            .child(ui::run_mark(
+                format!("pull-checks-{index}"),
+                outcome_word(tally.outcome),
+                13.,
+                cx,
+            ))
             .child(
                 div()
                     .font_features(theme::tabular())

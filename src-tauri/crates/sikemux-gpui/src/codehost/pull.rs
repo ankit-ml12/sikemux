@@ -420,10 +420,14 @@ fn stacked_view(
         .and_then(|thread| thread.as_ref().ok())
         .map(|blocks| (thread::said(blocks) + 1) as u64);
     let count = |count: Option<u64>| count.map(|count| tally(count, cx));
-    let checks_mark = found
-        .checks
-        .as_ref()
-        .map(|tally| ui::status_of_run(outcome_word(tally.outcome), 12., cx));
+    let checks_mark = found.checks.as_ref().map(|tally| {
+        ui::run_mark(
+            format!("pull-checks-{}", pull.number),
+            outcome_word(tally.outcome),
+            12.,
+            cx,
+        )
+    });
     let sections = [
         (Section::Conversation, "Conversation", count(said)),
         (Section::Files, "Files", count(pull.changed_files)),
@@ -921,6 +925,7 @@ fn commits_page(opened: &Opened, cx: &App) -> AnyElement {
 /// One line of the merge box: a mark, what it says, and why.
 fn part(outcome: Outcome, title: impl Into<SharedString>, detail: Option<String>, cx: &App) -> Div {
     let t = Tokens::get(cx);
+    let title: SharedString = title.into();
     div()
         .px(px(12.))
         .py(px(9.))
@@ -934,8 +939,13 @@ fn part(outcome: Outcome, title: impl Into<SharedString>, detail: Option<String>
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(ui::status_of_run(outcome_word(outcome), 14., cx))
-                .child(ui::text(title.into(), 12., FontWeight::MEDIUM).text_color(t.text_primary)),
+                .child(ui::run_mark(
+                    format!("merge-part-{title}"),
+                    outcome_word(outcome),
+                    14.,
+                    cx,
+                ))
+                .child(ui::text(title, 12., FontWeight::MEDIUM).text_color(t.text_primary)),
         )
         .children(detail.map(|detail| ui::meta(detail, cx).pl(px(22.))))
 }
@@ -1209,7 +1219,12 @@ fn checks(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
                             area.open_run(id.clone(), Some(number), cx)
                         }
                     }))
-                    .child(ui::status_of_run(outcome_word(run.outcome), 13., cx))
+                    .child(ui::run_mark(
+                        format!("pull-check-{}", run.id),
+                        outcome_word(run.outcome),
+                        13.,
+                        cx,
+                    ))
                     .child(
                         div()
                             .min_w_0()

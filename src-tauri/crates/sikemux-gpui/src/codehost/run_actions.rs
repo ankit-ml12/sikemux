@@ -649,7 +649,12 @@ pub fn job_bar(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> Div {
         .gap(px(8.))
         .border_b_1()
         .border_color(t.border)
-        .child(ui::status_of_run(outcome_word(job.outcome), 14., cx))
+        .child(ui::run_mark(
+            format!("job-head-{}", job.id),
+            outcome_word(job.outcome),
+            14.,
+            cx,
+        ))
         .child(ui::text(job.name.clone(), 12.5, FontWeight::SEMIBOLD).text_color(t.text_primary))
         .children(
             job.runner

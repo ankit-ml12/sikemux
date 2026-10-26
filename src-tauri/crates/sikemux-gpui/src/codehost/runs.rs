@@ -453,7 +453,8 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                                         .flex()
                                         .items_center()
                                         .gap(px(8.))
-                                        .child(ui::status_of_run(
+                                        .child(ui::run_mark(
+                                            format!("run-row-{}", run.id),
                                             outcome_word(run.outcome),
                                             16.,
                                             cx,
@@ -599,7 +600,12 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
         .items_center()
         .gap(px(8.))
         .child(back_button(back, cx))
-        .child(ui::status_of_run(outcome_word(run.outcome), 15., cx))
+        .child(ui::run_mark(
+            format!("run-head-{}", run.id),
+            outcome_word(run.outcome),
+            15.,
+            cx,
+        ))
         .child(ui::mono(format!("#{}", run.run_number), 12., cx).text_color(t.text_primary))
         .children(
             run.branch
@@ -763,7 +769,12 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
                 .when(chosen, |row| row.bg(t.surface_chosen))
                 .hover(move |row| row.bg(t.surface_hover))
                 .on_click(cx.listener(move |area, _, _, cx| area.show_job(id.clone(), cx)))
-                .child(ui::status_of_run(outcome_word(job.outcome), 14., cx))
+                .child(ui::run_mark(
+                    format!("run-job-{}", job.id),
+                    outcome_word(job.outcome),
+                    14.,
+                    cx,
+                ))
                 .child(
                     div()
                         .flex_1()
@@ -892,7 +903,12 @@ fn main(
                                 .flex()
                                 .items_center()
                                 .gap(px(8.))
-                                .child(ui::status_of_run(outcome_word(run.outcome), 16., cx))
+                                .child(ui::run_mark(
+                                    format!("run-summary-{}", run.id),
+                                    outcome_word(run.outcome),
+                                    16.,
+                                    cx,
+                                ))
                                 .child(
                                     ui::text(
                                         if run.title.is_empty() {
@@ -1214,7 +1230,12 @@ fn graph(found: &OpenRun, chosen: Option<&str>, cx: &mut Context<HostArea>) -> A
                         t.text_tertiary
                     })
                     .when(on, |row| row.bg(t.surface_chosen))
-                    .child(ui::status_of_run(outcome, 14., cx))
+                    .child(ui::run_mark(
+                        format!("graph-mark-{}-{index}", graph_box.id),
+                        outcome,
+                        14.,
+                        cx,
+                    ))
                     .child(
                         div()
                             .flex_1()

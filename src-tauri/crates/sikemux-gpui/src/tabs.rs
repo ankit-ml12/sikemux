@@ -441,13 +441,7 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     };
     let dot = match (running, &failed) {
         (Some(_), _) if port.is_some() => Some(div().size(px(7.)).rounded_full().bg(t.live)),
-        (Some(_), _) => Some(
-            div()
-                .size(px(7.))
-                .rounded_full()
-                .border(px(1.5))
-                .border_color(t.warn),
-        ),
+        (Some(_), _) => Some(div().child(ui::run_mark("run-chip-mark", "running", 8.5, cx))),
         (None, Some(_)) => Some(div().size(px(7.)).rounded_full().bg(t.danger)),
         (None, None) if passed.is_some() => Some(div().size(px(7.)).rounded_full().bg(t.live)),
         _ => None,
