@@ -79,30 +79,62 @@ fn theirs(tool: &ToolCall, args: &Map<String, Value>) -> ToolRow {
         action,
         ToolAction::Read | ToolAction::Edit | ToolAction::Delete | ToolAction::Move
     );
+    let patched = match (action, &tool.path) {
+        (ToolAction::Edit, None) => args
+            .get("input")
+            .and_then(Value::as_str)
+            .map(patch_files)
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
     let file = tool
         .path
         .as_deref()
         .map(without_line)
-        .filter(|path| !command && (touches_file || names_file(line, path)));
+        .filter(|path| !command && (touches_file || names_file(line, path)))
+        .or(patched.first().copied());
+    let searched = args
+        .get("pattern")
+        .and_then(Value::as_str)
+        .filter(|pattern| {
+            action == ToolAction::Search && !pattern.is_empty() && !line.contains(*pattern)
+        });
+    let folders = searched
+        .and(args.get("path").and_then(Value::as_str))
+        .map(|path| {
+            path.split(';')
+                .map(str::trim)
+                .filter(|folder| !matches!(*folder, "" | "." | "./"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .filter(|folders| !folders.is_empty());
     let ran = args
         .get("command")
         .and_then(Value::as_str)
         .map(|ran| ran.split('\n').next().unwrap_or_default().trim())
         .filter(|ran| command && !ran.is_empty());
-    let aside = match (file, ran) {
-        (Some(path), _) => (!line.is_empty() && !names_file(line, path)).then_some(line),
-        (None, Some(ran)) => {
-            (!line.is_empty() && line.trim_start_matches("$ ") != ran).then_some(line)
+    let aside = match (file, ran, searched) {
+        (_, _, Some(_)) => folders.clone().or_else(|| Some(line.to_owned())),
+        (Some(path), _, _) => {
+            (!line.is_empty() && !names_file(line, path)).then(|| line.to_owned())
         }
-        (None, None) => None,
+        (None, Some(ran), _) => {
+            (!line.is_empty() && line.trim_start_matches("$ ") != ran).then(|| line.to_owned())
+        }
+        (None, None, None) => None,
     }
-    .map(str::to_owned);
-    let target = match (server, file, ran) {
-        (Some(_), _, _) => line.replace('_', " "),
-        (None, Some(path), _) => basename(path).to_owned(),
-        (None, None, Some(ran)) => ran.to_owned(),
-        (None, None, None) if !command && is_path(line) => basename(line).to_owned(),
-        (None, None, None) => line.to_owned(),
+    .filter(|aside| !aside.is_empty());
+    let target = match (server, file, ran, searched) {
+        (Some(_), ..) => line.replace('_', " "),
+        (None, _, _, Some(pattern)) => pattern.to_owned(),
+        (None, Some(path), _, _) => match patched.len() {
+            0 | 1 => basename(path).to_owned(),
+            files => format!("{} and {} more", basename(path), files - 1),
+        },
+        (None, None, Some(ran), _) => ran.to_owned(),
+        (None, None, None, None) if !command && is_path(line) => basename(line).to_owned(),
+        (None, None, None, None) => line.to_owned(),
     };
     let verb = (action == ToolAction::Other).then(|| {
         let word = name
@@ -123,9 +155,11 @@ fn theirs(tool: &ToolCall, args: &Map<String, Value>) -> ToolRow {
             .then(|| {
                 tool.path
                     .clone()
+                    .or_else(|| patched.first().map(|path| (*path).to_owned()))
                     .or_else(|| is_path(line).then(|| line.to_owned()))
             })
-            .flatten(),
+            .flatten()
+            .filter(|path| !path.contains(';')),
         icon: (verb.as_deref() == Some("toolsearch")).then(|| "wrench".to_owned()),
         activity: (says && !target.is_empty() && fits(&target, MAX_ACTIVITY_CHARS))
             .then(|| target.clone()),
@@ -157,6 +191,29 @@ fn label(title: &str) -> (Option<&str>, &str) {
         (Some("mcp"), Some(server), Some(name)) => (Some(server), name),
         _ => (None, title),
     }
+}
+
+/// The files a patch names, in order: `*** Update File: path` as Codex and OMP write
+/// them, or `+++ b/path` as a unified diff does.
+pub(super) fn patch_files(patch: &str) -> Vec<&str> {
+    let mut files: Vec<&str> = Vec::new();
+    for line in patch.lines() {
+        let named = [
+            "*** Update File: ",
+            "*** Add File: ",
+            "*** Delete File: ",
+            "+++ b/",
+            "+++ ",
+        ]
+        .into_iter()
+        .find_map(|prefix| line.strip_prefix(prefix))
+        .map(str::trim)
+        .filter(|path| !path.is_empty() && *path != "/dev/null");
+        if let Some(path) = named.filter(|path| !files.contains(path)) {
+            files.push(path);
+        }
+    }
+    files
 }
 
 /// `path` without the `:line` or `:first-last` lines a call's location adds.

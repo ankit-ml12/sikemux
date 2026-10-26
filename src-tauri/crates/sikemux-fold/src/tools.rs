@@ -494,6 +494,15 @@ fn first_line(text: &str) -> String {
 fn short(value: &Value) -> Option<Value> {
     match value {
         Value::String(text) => {
+            let files = super::row::patch_files(text);
+            if !files.is_empty() {
+                let named: Vec<String> = files
+                    .iter()
+                    .take(MAX_ARGUMENTS)
+                    .map(|file| format!("*** Update File: {}", first_line(file)))
+                    .collect();
+                return Some(Value::String(named.join("\n")));
+            }
             let line = first_line(text);
             (!line.is_empty()).then(|| Value::String(line))
         }

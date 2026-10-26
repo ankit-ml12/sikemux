@@ -36,7 +36,15 @@ fn omp_write(update: &mut Value, servers: &[String]) -> bool {
             .and_then(|path| path.strip_prefix(prefix))
             .map(str::to_owned)
     };
-    let written = named("/rawInput/path", TOOL_PATH);
+    let written = update["rawInput"]
+        .as_object()
+        .and_then(|input| {
+            input
+                .values()
+                .filter_map(Value::as_str)
+                .find_map(|value| value.strip_prefix(TOOL_PATH))
+        })
+        .map(str::to_owned);
     let (server, tool) = match inner.map(|inner| (&inner["serverName"], &inner["mcpToolName"])) {
         Some((Value::String(server), Value::String(tool))) => (server.clone(), tool.clone()),
         _ => match written
