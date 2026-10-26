@@ -1112,6 +1112,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
         .map(seen)
         .collect();
     let open = bench.accounts.limits_open && !others.is_empty();
+    let (top_label, top_signed_out) = (top.name.clone(), top.signed_out);
     let top = if top.signed_out {
         let title = match top.id {
             Some(_) => format!("Sign in to {}", top.name),
@@ -1128,13 +1129,22 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
             }))
             .into_any_element()
     } else {
-        account_block(&top, &provider, Some(open), cx)
+        limit_rows(&top, compact, cx)
     };
+    let top_name = (!top_signed_out).then(|| {
+        ui::text(top_label.clone(), 11., FontWeight::MEDIUM)
+            .px(px(3.))
+            .truncate()
+            .text_color(t.text_primary)
+    });
     let more = (!others.is_empty()).then(|| {
-        let tall: f32 = others.iter().map(|shown| shown.height() + BLOCK_GAP).sum();
+        let tall: f32 = others
+            .iter()
+            .map(|shown| shown.height(compact) + BLOCK_GAP)
+            .sum();
         let blocks: Vec<AnyElement> = others
             .iter()
-            .map(|shown| account_block(shown, &provider, None, cx))
+            .map(|shown| account_block(shown, &provider, compact, cx))
             .collect();
         let reveal = motion::animated(
             "limits-others",
@@ -1173,7 +1183,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
     let (reveal, chevron) = more.unzip();
     let header = div()
         .h(px(18.))
-        .mb(px(if compact { 6. } else { 7. }))
+        .mb(px(if compact { 8. } else { 9. }))
         .px(px(8.))
         .flex()
         .items_center()
@@ -1184,6 +1194,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
                 .text_color(t.text_tertiary),
         )
         .child(div().flex_1().h(px(1.)).bg(t.border))
+        .children(top_name)
         .child({
             let provider = provider.clone();
             IconButton::new(
@@ -1210,7 +1221,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
             .flex_none()
             .mt(px(if compact { 10. } else { 12. }))
             .mx(px(10.))
-            .mb(px(if compact { 8. } else { 10. }))
+            .mb(px(if compact { 12. } else { 16. }))
             .child(header)
             .child(
                 div()
@@ -1230,11 +1241,19 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
 
 const BLOCK_GAP: f32 = 2.;
 const BLOCK_PAD_TOP: f32 = 7.;
-const BLOCK_PAD_BOTTOM: f32 = 8.;
+const BLOCK_PAD_BOTTOM: f32 = 9.;
 const NAME_LINE: f32 = 16.;
-const NAME_GAP: f32 = 4.;
-const SLIM_ROW: f32 = 14.;
+const NAME_GAP: f32 = 6.;
+const LIMIT_ROW: f32 = 18.;
 const SIGNED_OUT_LINE: f32 = 30.;
+
+fn row_gap(compact: bool) -> f32 {
+    if compact {
+        4.
+    } else {
+        6.
+    }
+}
 
 /// One account as the Limits panel shows it.
 struct Shown {
@@ -1254,42 +1273,70 @@ impl Shown {
     }
 
     /// How tall its block draws, so the panel can open onto every account at its full height.
-    fn height(&self) -> f32 {
+    fn height(&self, compact: bool) -> f32 {
         if self.signed_out {
             return SIGNED_OUT_LINE;
         }
         let rows = self.windows().len().max(1) as f32;
-        BLOCK_PAD_TOP + NAME_LINE + NAME_GAP + rows * SLIM_ROW + BLOCK_PAD_BOTTOM
+        BLOCK_PAD_TOP
+            + NAME_LINE
+            + NAME_GAP
+            + rows * LIMIT_ROW
+            + (rows - 1.) * row_gap(compact)
+            + BLOCK_PAD_BOTTOM
     }
 
-    /// When a used-up window is back, or else when the longest one starts again.
-    fn note(&self) -> Option<(String, bool)> {
-        let windows = self.windows();
-        let used = |window: &Value| window["usedPercent"].as_f64().unwrap_or(0.);
-        let label = |window: &Value| window["label"].as_str().unwrap_or_default().to_owned();
-        if let Some(full) = windows.iter().find(|window| used(window) >= 100.) {
-            let back = reset_at(&full["resetsAt"]).map(day_and_time)?;
-            return Some((format!("{} full · back {back}", label(full)), true));
-        }
-        let longest = windows
+    /// When a used-up window of the account's plan is back.
+    fn back(&self) -> Option<String> {
+        let full = self
+            .windows()
             .iter()
-            .rev()
-            .max_by_key(|window| window["windowMinutes"].as_u64().unwrap_or(0))?;
-        let reset = reset_at(&longest["resetsAt"])?;
-        Some((
-            format!("{} resets {}", label(longest), countdown(Some(reset))),
-            false,
-        ))
+            .find(|window| window["usedPercent"].as_f64().unwrap_or(0.) >= 100.)?;
+        let label = full["label"].as_str().unwrap_or_default();
+        let back = reset_at(&full["resetsAt"]).map(day_and_time)?;
+        Some(format!("{label} full · back {back}"))
     }
 }
 
-/// An account's block: its name with when it is back or resets, then a slim bar for each window.
-/// `top` is whether the panel is open, for the account new chats start on; the others take a
-/// click to start new chats on them.
+/// What an account's plan reports: a row for each window, or why there are none.
+fn limit_rows(shown: &Shown, compact: bool, cx: &App) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let usage = &shown.usage;
+    let windows = shown.windows();
+    let quiet = |text: String| {
+        ui::text(text, 10.5, FontWeight::NORMAL)
+            .h(px(LIMIT_ROW))
+            .px(px(8.))
+            .truncate()
+            .italic()
+            .text_color(t.text_tertiary)
+    };
+    if usage["usage"].is_null() && usage["problem"].is_null() {
+        quiet("Refresh to read plan limits.".into()).into_any_element()
+    } else if !usage["problem"].is_null() {
+        quiet("Could not read plan limits. Refresh to try again.".into()).into_any_element()
+    } else if windows.is_empty() {
+        let reason = usage["usage"]["unavailableReason"]
+            .as_str()
+            .unwrap_or("This account did not report plan limits.");
+        quiet(reason.to_owned()).into_any_element()
+    } else {
+        let key = shown.id.clone().unwrap_or_default();
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(row_gap(compact)))
+            .children(windows.iter().map(|window| limit_row(window, &key, cx)))
+            .into_any_element()
+    }
+}
+
+/// Another of the person's accounts: its name, when a full window is back, and its rows; a click
+/// starts new chats on it.
 fn account_block(
     shown: &Shown,
     provider: &str,
-    top: Option<bool>,
+    compact: bool,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
@@ -1305,7 +1352,7 @@ fn account_block(
             .flex()
             .items_center()
             .child(
-                ui::text(shown.name.clone(), 11.5, FontWeight::MEDIUM)
+                ui::text(shown.name.clone(), 11., FontWeight::MEDIUM)
                     .flex_1()
                     .truncate()
                     .text_color(t.text_tertiary),
@@ -1329,45 +1376,15 @@ fn account_block(
             )
             .into_any_element();
     }
-    let usage = &shown.usage;
-    let windows = shown.windows();
-    let quiet = |text: String| {
-        ui::text(text, 10.5, FontWeight::NORMAL)
-            .h(px(SLIM_ROW))
-            .truncate()
-            .italic()
-            .text_color(t.text_tertiary)
-    };
-    let body = if usage["usage"].is_null() && usage["problem"].is_null() {
-        quiet("Refresh to read plan limits.".into()).into_any_element()
-    } else if !usage["problem"].is_null() {
-        quiet("Could not read plan limits. Refresh to try again.".into()).into_any_element()
-    } else if windows.is_empty() {
-        let reason = usage["usage"]["unavailableReason"]
-            .as_str()
-            .unwrap_or("This account did not report plan limits.");
-        quiet(reason.to_owned()).into_any_element()
-    } else {
-        div()
-            .flex()
-            .flex_col()
-            .children(windows.iter().map(|window| slim_row(window, &key, cx)))
-            .into_any_element()
-    };
-    let note = shown.note().map(|(note, full)| {
-        ui::text(note, 10., FontWeight::NORMAL)
-            .font_features(theme::tabular())
-            .text_color(if full { t.danger } else { t.text_tertiary })
-    });
-    let other = top.is_none();
     let line = div()
         .h(px(NAME_LINE))
         .mb(px(NAME_GAP))
+        .px(px(8.))
         .flex()
         .items_center()
         .gap(px(8.))
         .child(
-            ui::text(shown.name.clone(), 11.5, FontWeight::MEDIUM)
+            ui::text(shown.name.clone(), 11., FontWeight::MEDIUM)
                 .flex_1()
                 .min_w_0()
                 .truncate()
@@ -1377,80 +1394,81 @@ fn account_block(
             div()
                 .relative()
                 .flex_none()
-                .children(note.map(|note| {
-                    note.when(other, |note| {
-                        note.group_hover(group.clone(), |note| note.opacity(0.))
-                    })
+                .children(shown.back().map(|back| {
+                    ui::text(back, 10., FontWeight::NORMAL)
+                        .font_features(theme::tabular())
+                        .text_color(t.danger)
+                        .group_hover(group.clone(), |note| note.opacity(0.))
                 }))
-                .when(other, |line| {
-                    line.child(
-                        ui::text("Use for new chats", 10., FontWeight::NORMAL)
-                            .absolute()
-                            .top_0()
-                            .right_0()
-                            .whitespace_nowrap()
-                            .opacity(0.)
-                            .text_color(t.text_primary)
-                            .group_hover(group.clone(), |text| text.opacity(1.)),
-                    )
-                }),
+                .child(
+                    ui::text("Use for new chats", 10., FontWeight::NORMAL)
+                        .absolute()
+                        .top_0()
+                        .right_0()
+                        .whitespace_nowrap()
+                        .opacity(0.)
+                        .text_color(t.text_primary)
+                        .group_hover(group.clone(), |text| text.opacity(1.)),
+                ),
         );
     let profile = shown.profile.clone();
     div()
         .id(id)
         .group(group.clone())
-        .h(px(shown.height()))
+        .h(px(shown.height(compact)))
         .overflow_hidden()
         .pt(px(BLOCK_PAD_TOP))
-        .px(px(8.))
         .rounded(theme::RADIUS_2)
-        .when(top == Some(true), |block| block.bg(t.surface_chosen))
-        .when(other, |block| {
-            block
-                .cursor_pointer()
-                .hover(|block| block.bg(t.surface_hover))
-                .on_click(cx.listener(move |bench, _, _, cx| {
-                    if let Some(profile) = profile.as_ref() {
-                        crate::accounts::select(bench, profile, cx);
-                    }
-                }))
-        })
+        .cursor_pointer()
+        .hover(|block| block.bg(t.surface_hover))
+        .on_click(cx.listener(move |bench, _, _, cx| {
+            if let Some(profile) = profile.as_ref() {
+                crate::accounts::select(bench, profile, cx);
+            }
+        }))
         .child(line)
-        .child(body)
+        .child(limit_rows(shown, compact, cx))
         .into_any_element()
 }
 
-/// One window of a plan as a slim tick bar, its use beside it and its reset when hovered.
-fn slim_row(window: &Value, key: &str, cx: &App) -> impl IntoElement {
+/// One of a plan's rolling windows: how much of it is used, and when it starts again.
+fn limit_row(window: &Value, key: &str, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let label = window["label"].as_str().unwrap_or_default().to_owned();
     let percent = window["usedPercent"].as_f64().unwrap_or(0.).clamp(0., 100.);
     let signal = signal(percent, &t);
-    let note = match reset_at(&window["resetsAt"]) {
-        Some(at) => format!("Resets {}", day_and_time(at)),
+    let reset = reset_at(&window["resetsAt"]);
+    let note = match reset {
+        Some(at) => format!(
+            "Resets {}",
+            at.with_timezone(&chrono::Local)
+                .format("%-m/%-d/%Y, %-I:%M:%S %p")
+        ),
         None => "Reset time unavailable".into(),
     };
     div()
         .id(SharedString::from(format!("limit-{key}-{label}")))
-        .h(px(SLIM_ROW))
+        .h(px(LIMIT_ROW))
+        .px(px(8.))
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(px(10.))
         .tooltip(ui::tooltip(format!(
             "{label}: {}% used. {note}",
             percent.round()
         )))
         .child(
-            ui::text(label, 10., FontWeight::NORMAL)
-                .w(px(50.))
+            ui::meta(label, cx)
+                .w(px(58.))
                 .flex_none()
-                .truncate()
-                .text_color(t.text_tertiary),
+                .overflow_hidden()
+                .text_ellipsis()
+                .whitespace_nowrap(),
         )
-        .child(ticks(percent, signal, &t).flex_1().h(px(6.)))
+        .child(ticks(percent, signal, &t).flex_1().h(px(10.)))
         .child(
-            ui::text(format!("{}%", percent.round()), 10.5, FontWeight::NORMAL)
-                .w(px(30.))
+            ui::text(format!("{}%", percent.round()), 11., FontWeight::NORMAL)
+                .w(px(28.))
                 .flex_none()
                 .text_right()
                 .font_features(theme::tabular())
@@ -1459,6 +1477,14 @@ fn slim_row(window: &Value, key: &str, cx: &App) -> impl IntoElement {
                 } else {
                     signal
                 }),
+        )
+        .child(
+            ui::text(countdown(reset), 10., FontWeight::NORMAL)
+                .w(px(42.))
+                .flex_none()
+                .text_right()
+                .font_features(theme::tabular())
+                .text_color(t.text_tertiary),
         )
 }
 
