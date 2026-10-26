@@ -268,7 +268,8 @@ fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             .gap(px(6.))
             .rounded(crate::theme::RADIUS_1)
             .hover(move |style| style.bg(t.surface_chosen))
-            .child(ui::status_of_run(
+            .child(ui::run_mark(
+                "ci-glyph-mark",
                 crate::ci_card::outcome_key(outcome),
                 12.,
                 cx,

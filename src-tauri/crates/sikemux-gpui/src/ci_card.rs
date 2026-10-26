@@ -8,8 +8,8 @@ use std::time::Duration;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     anchored, deferred, div, point, px, Anchor, AnchoredPositionMode, AnyElement, App, Context,
-    FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
+    ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::codehost::{Outcome, Run};
@@ -17,6 +17,7 @@ use sikemux_wire::codehost::{Outcome, Run};
 use crate::avatars::Avatars;
 use crate::codehost::Area;
 use crate::theme::Tokens;
+use crate::ui::clock::{self, Slot};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::Workbench;
 
@@ -321,7 +322,7 @@ impl Render for CiCard {
         let t = Tokens::get(cx).clone();
         let going = runs.iter().any(|run| is_going(run.outcome));
         if going {
-            crate::ui::clock::second(window, cx);
+            clock::second(window, cx);
         }
         let failed: Vec<String> = runs
             .iter()
@@ -353,11 +354,14 @@ impl Render for CiCard {
             .flex()
             .gap(px(2.))
             .children(runs.iter().map(|run| {
-                div()
-                    .flex_1()
-                    .h_full()
-                    .rounded(px(2.))
-                    .bg(tint(run.outcome))
+                let segment = div().flex_1().h_full();
+                match run.outcome {
+                    Outcome::Running => segment.child(Slot::new(
+                        ElementId::Name(format!("ci-card-pulse-{}", run.id).into()),
+                        Pulse(t.warn),
+                    )),
+                    outcome => segment.rounded(px(2.)).bg(tint(outcome)),
+                }
             }));
         let summary = match going {
             true => {
@@ -475,7 +479,12 @@ impl Render for CiCard {
                     .cursor_pointer()
                     .hover(|row| row.bg(t.surface_hover))
                     .on_click(cx.listener(move |card, _, _, cx| card.open_run(id.clone(), cx)))
-                    .child(ui::status_of_run(outcome_key(run.outcome), 12., cx))
+                    .child(ui::run_mark(
+                        format!("ci-card-mark-{}", run.id),
+                        outcome_key(run.outcome),
+                        12.,
+                        cx,
+                    ))
                     .child(
                         div()
                             .flex_1()
@@ -617,4 +626,19 @@ pub fn chip_count(runs: &[Run], cx: &App) -> AnyElement {
     ui::mono(total.to_string(), 11., cx)
         .text_color(t.text_secondary)
         .into_any_element()
+}
+
+/// A running run's share of the card's meter, brightening and dimming on the shared clock.
+struct Pulse(Hsla);
+
+impl Render for Pulse {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let lit = match !cx.reduce_motion() && clock::tick(window, cx) {
+            true => {
+                0.35 + 0.65 * (0.5 + 0.5 * (clock::seconds() / 1.4 * std::f32::consts::TAU).cos())
+            }
+            false => 1.,
+        };
+        div().size_full().rounded(px(2.)).bg(self.0).opacity(lit)
+    }
 }

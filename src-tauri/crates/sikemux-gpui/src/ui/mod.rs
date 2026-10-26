@@ -31,9 +31,9 @@ use std::f32::consts::TAU;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, img, point, px, svg, AnyElement, App, Div, FontFallbacks, FontWeight,
-    HighlightStyle, Hsla, IntoElement, ParentElement, PathBuilder, SharedString, Styled,
-    StyledText, Svg,
+    canvas, div, img, point, px, svg, AnyElement, App, Context, Div, ElementId, FontFallbacks,
+    FontWeight, HighlightStyle, Hsla, IntoElement, ParentElement, PathBuilder, Render,
+    SharedString, Styled, StyledText, Svg, Window,
 };
 
 use crate::icons::{self, Icon};
@@ -106,6 +106,42 @@ pub fn status_of_run(outcome: &str, size: f32, cx: &App) -> AnyElement {
             .border_color(t.text_tertiary),
     };
     mark_box(size, mark).into_any_element()
+}
+
+/// A run's mark as `status_of_run` draws it, except that a running one turns a quarter of its
+/// ring round on the shared clock; `key` keeps each turning mark apart.
+pub fn run_mark(key: impl Into<SharedString>, outcome: &str, size: f32, cx: &App) -> AnyElement {
+    if outcome != "running" {
+        return status_of_run(outcome, size, cx);
+    }
+    let t = Tokens::get(cx);
+    let spin = Spin {
+        size: size * 0.82,
+        head: t.warn,
+        track: t.warn.opacity(0.3),
+    };
+    mark_box(size, clock::Slot::new(ElementId::Name(key.into()), spin)).into_any_element()
+}
+
+struct Spin {
+    size: f32,
+    head: Hsla,
+    track: Hsla,
+}
+
+impl Render for Spin {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let turn = match !cx.reduce_motion() && clock::tick(window, cx) {
+            true => (clock::seconds() / 0.9).fract(),
+            false => 0.,
+        };
+        arcs(
+            Some((turn, turn + 0.25, self.head)),
+            self.size,
+            1.5,
+            self.track,
+        )
+    }
 }
 
 /// An agent's face, or its agent's mark while it wears none.
