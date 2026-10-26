@@ -973,7 +973,7 @@ fn surfaces(
                     .items_center()
                     .gap(px(8.))
                     .rounded(RADIUS_2)
-                    .text_color(if lit { t.text_primary } else { t.text_tertiary })
+                    .text_color(if lit { t.accent } else { t.text_tertiary })
                     .when(!lit, |row| {
                         row.hover(move |style| style.text_color(t.text_primary))
                     })
@@ -1002,15 +1002,11 @@ fn surfaces(
                     .child(div().w(px(9.)).flex_none())
                     .child(ui::mark_box(
                         16.,
-                        ui::icon(glyph, 13.).text_color(if lit {
-                            t.text_primary
-                        } else {
-                            t.text_tertiary
-                        }),
+                        ui::icon(glyph, 13.).text_color(if lit { t.live } else { t.text_tertiary }),
                     ))
                     .child(ui::text(label, 12.5, FontWeight::MEDIUM).letter_spacing(0.01))
                     .when_some(keymap::hint(command, cx), |row, keys| {
-                        let keys = ui::kbd(keys, cx);
+                        let keys = ui::kbd(keys, cx).when(lit, |keys| keys.text_color(t.accent));
                         row.child(
                             div()
                                 .ml_auto()
