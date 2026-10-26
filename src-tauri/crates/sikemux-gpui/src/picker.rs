@@ -230,7 +230,7 @@ impl Workbench {
                 rows.push(
                     Row::new(format!("{PROJECT}{}", project.id), project.name.clone())
                         .meta(path.clone())
-                        .mark(Mark::Icon(Icon::Folder))
+                        .mark(Mark::Place(Icon::Folder))
                         .group("Projects")
                         .also(&path),
                 );
@@ -252,7 +252,7 @@ impl Workbench {
                 rows.push(
                     Row::new(format!("{FOLDER}{path}"), name.to_owned())
                         .meta(shown.clone())
-                        .mark(Mark::Icon(Icon::FolderPlus))
+                        .mark(Mark::Place(Icon::FolderPlus))
                         .group("Folders")
                         .also(&shown),
                 );

@@ -46,6 +46,8 @@ pub fn install(cx: &mut App) {
 #[derive(Clone)]
 pub enum Mark {
     Icon(Icon),
+    /// A project or folder, in the green the rail draws places in.
+    Place(Icon),
     /// An agent's CLI, in its brand colour.
     Agent(String),
     /// An open agent: its face, or its CLI's mark when faces are off.
@@ -904,6 +906,7 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                     .justify_center()
                     .child(match mark {
                         Mark::Icon(glyph) => ui::picture(glyph, 14., t.text_tertiary),
+                        Mark::Place(glyph) => ui::picture(glyph, 14., t.live),
                         Mark::Agent(provider) => ui::mark(&provider, 14.),
                         Mark::Open(agent) => ui::agent_mark(&agent, 14., cx),
                     }),
