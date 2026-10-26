@@ -536,7 +536,7 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                     .cursor_pointer()
                     .hover(move |row| row.bg(t.surface_hover))
                     .on_click(cx.listener(move |area, _, _, cx| {
-                        if let Some(composing) = &area.composing {
+                        if let Some(composing) = &mut area.composing {
                             composing.diffs.reveal(&path);
                         }
                         cx.notify();
@@ -786,6 +786,7 @@ fn main(area: &HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> Any
         .child(div().flex_1().min_h_0().child(composing.diffs.list(
             &cx.entity(),
             |area| Some(&area.composing.as_ref()?.diffs),
+            std::rc::Rc::new(|area| Some(&mut area.composing.as_mut()?.diffs)),
             Some(&area.project),
             None,
             window,

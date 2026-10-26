@@ -2,6 +2,7 @@
 //! request's files, or what a branch changes since its base.
 
 use std::cell::Cell;
+use std::collections::HashSet;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -10,7 +11,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, list, px, AnyElement, App, ClipboardItem, Context, Div, Entity, InteractiveElement,
     IntoElement, ListAlignment, ListState, MouseButton, MouseMoveEvent, ParentElement, Pixels,
-    SharedString, Styled, WeakEntity, Window,
+    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use sikemux_core::git::diff::{DiffRow, ROW_ADDED, ROW_DELETED, ROW_HIDDEN};
 use sikemux_wire::codehost::ChangedFile;
@@ -61,7 +62,12 @@ pub struct Diffs {
     items: Vec<Item>,
     /// The rows a press and drag picked: the file, then where the drag began and where it is.
     picked: Rc<Cell<Option<(usize, usize, usize)>>>,
+    /// The files shown by their header alone.
+    folded: HashSet<usize>,
 }
+
+/// Finds the list being drawn in the view, to fold or unfold one of its files.
+pub type FindMut = Rc<dyn Fn(&mut HostArea) -> Option<&mut Diffs>>;
 
 impl Diffs {
     pub fn new(files: Vec<Changed>) -> Self {
@@ -70,6 +76,7 @@ impl Diffs {
             rows: ListState::new(0, ListAlignment::Top, px(600.)),
             items: Vec::new(),
             picked: Rc::default(),
+            folded: HashSet::new(),
         };
         diffs.lay_out();
         diffs
@@ -80,6 +87,9 @@ impl Diffs {
         let mut items = Vec::new();
         for (at, changed) in self.files.iter().enumerate() {
             items.push(Item::Header(at));
+            if self.folded.contains(&at) {
+                continue;
+            }
             let rows = changed.diff.as_ref().map_or(0, Diff::len);
             items.extend((0..rows).map(|index| Item::Row(at, index)));
             items.push(Item::End(at));
@@ -88,8 +98,29 @@ impl Diffs {
         self.items = items;
     }
 
-    /// Scrolls to `path`'s card.
-    pub fn reveal(&self, path: &str) {
+    /// Shows a file by its header alone, or its diff again.
+    pub fn toggle(&mut self, at: usize) {
+        if !self.folded.remove(&at) {
+            self.folded.insert(at);
+        }
+        self.lay_out();
+    }
+
+    /// Folds every file, or unfolds them all.
+    pub fn fold_all(&mut self, folded: bool) {
+        self.folded = match folded {
+            true => (0..self.files.len()).collect(),
+            false => HashSet::new(),
+        };
+        self.lay_out();
+    }
+
+    pub fn all_folded(&self) -> bool {
+        !self.files.is_empty() && self.folded.len() == self.files.len()
+    }
+
+    /// Scrolls to `path`'s card, unfolding it.
+    pub fn reveal(&mut self, path: &str) {
         let Some(at) = self
             .files
             .iter()
@@ -97,6 +128,9 @@ impl Diffs {
         else {
             return;
         };
+        if self.folded.remove(&at) {
+            self.lay_out();
+        }
         if let Some(item) = self.items.iter().position(|item| *item == Item::Header(at)) {
             self.rows.scroll_to_reveal_item(item);
         }
@@ -128,6 +162,7 @@ impl Diffs {
         &self,
         view: &Entity<HostArea>,
         find: impl Fn(&HostArea) -> Option<&Diffs> + 'static,
+        find_mut: FindMut,
         folder: Option<&str>,
         pull: Option<PullOf>,
         window: &mut Window,
@@ -142,6 +177,7 @@ impl Diffs {
                 Some((diffs, item)) => item_of(
                     &view,
                     diffs,
+                    &find_mut,
                     item,
                     folder.as_deref(),
                     pull.as_ref(),
@@ -166,9 +202,11 @@ fn stat(changed: &Changed) -> (u64, u64) {
 }
 
 /// One item of the list; its rows open the file in the editor while it is in `folder`.
+#[allow(clippy::too_many_arguments)]
 fn item_of(
     view: &Entity<HostArea>,
     diffs: &Diffs,
+    find_mut: &FindMut,
     item: Item,
     folder: Option<&str>,
     pull: Option<&PullOf>,
@@ -190,22 +228,51 @@ fn item_of(
             let changed = &diffs.files[at];
             let file = &changed.file;
             let (added, removed) = stat(changed);
+            let open = !diffs.folded.contains(&at);
+            let last = at + 1 == diffs.files.len();
+            let (toggling, find) = (view.clone(), find_mut.clone());
+            let key = SharedString::from(format!("pull-diff-{}", file.path));
             div()
                 .px(px(12.))
                 .pt(px(12.))
+                .when(!open && last, |card| card.pb(px(12.)))
                 .child(
                     div()
+                        .id(key.clone())
                         .h(px(30.))
                         .px(px(10.))
                         .flex()
                         .items_center()
                         .gap(px(8.))
-                        .rounded_t(RADIUS_2)
+                        .map(|head| match open {
+                            true => head.rounded_t(RADIUS_2),
+                            false => head.rounded(RADIUS_2),
+                        })
                         .border_1()
                         .border_color(t.border)
                         .bg(t.surface_raised)
                         .font_family(theme::UI)
                         .text_size(crate::theme::ui_text(12.))
+                        .cursor_pointer()
+                        .on_click(move |_, _, cx| {
+                            toggling.update(cx, |area, cx| {
+                                if let Some(diffs) = find(area) {
+                                    diffs.toggle(at);
+                                }
+                                cx.notify();
+                            })
+                        })
+                        .child(crate::motion::turn(
+                            format!("{key}:chevron"),
+                            crate::motion::fold_angle(open),
+                            crate::motion::DETAIL_FOLD,
+                            crate::ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary),
+                        ))
+                        .child(crate::file_icons::glyph(
+                            file.path.rsplit('/').next().unwrap_or(&file.path),
+                            14.,
+                            cx,
+                        ))
                         .child(
                             div()
                                 .min_w_0()

@@ -4,7 +4,7 @@ use std::io::Read;
 use std::sync::Arc;
 
 use flate2::read::GzDecoder;
-use gpui_kit::{App, Global, Image, ImageFormat};
+use gpui_kit::{px, AnyElement, App, Global, Image, ImageFormat, IntoElement, Styled};
 use serde::Deserialize;
 
 /// The app's file icons and the tables it tells a file's language by, written by
@@ -100,6 +100,20 @@ pub fn icon(name: &str, cx: &App) -> Option<Arc<Image>> {
     let icons = cx.try_global::<FileIcons>()?;
     let bundle = bundle(icons)?;
     drawn(icons, bundle, bundle.icon_of(name))
+}
+
+/// A file's icon at `size`, or the plain file glyph when the bundle has none for it.
+pub fn glyph(name: &str, size: f32, cx: &App) -> AnyElement {
+    match icon(name, cx) {
+        Some(icon) => gpui_kit::img(icon)
+            .size(px(size))
+            .flex_none()
+            .into_any_element(),
+        None => crate::ui::icon(crate::icons::Icon::File, size)
+            .flex_none()
+            .text_color(crate::theme::Tokens::get(cx).text_tertiary)
+            .into_any_element(),
+    }
 }
 
 /// The bundle's icon called `icon`, such as `nodejs`.

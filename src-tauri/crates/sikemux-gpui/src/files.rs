@@ -612,16 +612,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
 
 /// A file's icon by its name, in the box rows line marks up in.
 pub(crate) fn file_glyph(name: &str, cx: &mut Context<Workbench>) -> AnyElement {
-    let glyph = match crate::file_icons::icon(name, cx) {
-        Some(icon) => gpui_kit::img(icon)
-            .size(px(16.))
-            .flex_none()
-            .into_any_element(),
-        None => ui::icon(Icon::File, 16.)
-            .text_color(Tokens::get(cx).text_tertiary)
-            .into_any_element(),
-    };
-    ui::mark_box(22., glyph).into_any_element()
+    ui::mark_box(22., crate::file_icons::glyph(name, 16., cx)).into_any_element()
 }
 
 /// The files open in the project's tabs, listed above its tree as the Mac's Files page does.

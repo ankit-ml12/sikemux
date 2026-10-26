@@ -82,8 +82,6 @@ pub struct Opened {
     pub section: Section,
     /// Too narrow for two columns, as last drawn.
     stacked: bool,
-    /// The stacked view's file list is put away, leaving the diffs the whole width.
-    files_hidden: bool,
     /// The file whose diff was last asked for.
     focused: Option<String>,
     pub method: usize,
@@ -107,7 +105,6 @@ impl Opened {
             tab: Tab::Conversation,
             section: Section::Conversation,
             stacked: false,
-            files_hidden: false,
             focused: None,
             method: 0,
             busy: false,
@@ -159,7 +156,7 @@ impl Opened {
         self.tab = Tab::Files;
         self.section = Section::Files;
         self.focused = Some(path.to_owned());
-        if let Some(Ok(diffs)) = &self.files {
+        if let Some(Ok(diffs)) = &mut self.files {
             diffs.reveal(path);
         }
     }
@@ -416,7 +413,6 @@ fn stacked_view(
     window: &mut Window,
     cx: &mut Context<HostArea>,
 ) -> AnyElement {
-    let t = Tokens::get(cx).clone();
     let opened = area.pull.as_ref().expect("a pull request is open");
     let found = match &opened.view {
         None => return super::notice("Loading pull request", None, cx),
@@ -450,24 +446,9 @@ fn stacked_view(
         .pt(px(14.))
         .pb(px(12.))
         .child(header(area, found, true, cx));
-    let hidden = opened.files_hidden;
-    let list_toggle = (chosen == Section::Files).then(|| {
-        let label = if hidden {
-            "Show the file list"
-        } else {
-            "Hide the file list"
-        };
-        IconButton::new("pull-file-list", Icon::PanelLeft, label)
-            .small()
-            .pressed(!hidden)
-            .on_click(cx.listener(|area, _, _, cx| {
-                if let Some(opened) = &mut area.pull {
-                    opened.files_hidden = !opened.files_hidden;
-                }
-                cx.notify();
-            }))
-            .into_any_element()
-    });
+    let folding = (chosen == Section::Files)
+        .then(|| fold_all(opened, cx))
+        .flatten();
     let tabs = strip(
         sections.into_iter().map(|(section, label, mark)| {
             tab(label, mark, chosen == section, cx).on_click(cx.listener(move |area, _, _, cx| {
@@ -477,7 +458,7 @@ fn stacked_view(
                 cx.notify();
             }))
         }),
-        list_toggle,
+        folding,
         cx,
     );
     let page = |body: AnyElement| {
@@ -490,31 +471,7 @@ fn stacked_view(
     };
     let body = match chosen {
         Section::Conversation => conversation(area, window, cx),
-        Section::Files => {
-            let list = (!hidden).then(|| {
-                div()
-                    .id("pull-file-list")
-                    .w(px(FILE_LIST))
-                    .flex_none()
-                    .h_full()
-                    .border_r_1()
-                    .border_color(t.border)
-                    .overflow_y_scroll()
-                    .child(files_page(opened, cx))
-            });
-            div()
-                .size_full()
-                .flex()
-                .children(list)
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .h_full()
-                        .child(diffs(area, window, cx)),
-                )
-                .into_any_element()
-        }
+        Section::Files => diffs(area, window, cx),
         Section::Commits => page(commits_page(opened, cx)),
         Section::Checks => page(merge_page(area, cx)),
     };
@@ -702,8 +659,30 @@ fn strip(
         .children(end.map(|end| div().ml_auto().child(end)))
 }
 
-/// How wide the stacked view's file list is, beside the diffs.
-const FILE_LIST: f32 = 220.;
+/// Folds every changed file's diff to its header, or unfolds them all, while they show.
+fn fold_all(opened: &Opened, cx: &mut Context<HostArea>) -> Option<AnyElement> {
+    let Some(Ok(diffs)) = &opened.files else {
+        return None;
+    };
+    let folded = diffs.all_folded();
+    let (glyph, label) = match folded {
+        true => (Icon::ExpandAll, "Expand all diffs"),
+        false => (Icon::CollapseAll, "Collapse all diffs"),
+    };
+    Some(
+        IconButton::new("pull-fold-all", glyph, label)
+            .small()
+            .on_click(cx.listener(move |area, _, _, cx| {
+                if let Some(Some(Ok(diffs))) =
+                    area.pull.as_mut().map(|opened| opened.files.as_mut())
+                {
+                    diffs.fold_all(!folded);
+                }
+                cx.notify();
+            }))
+            .into_any_element(),
+    )
+}
 
 /// One tab of a strip: its name, then how many it holds or how it stands.
 fn tab(
@@ -904,15 +883,7 @@ fn file_row(
         "renamed" | "copied" => ("R", t.git_renamed),
         _ => ("M", t.git_modified),
     };
-    let glyph = match crate::file_icons::icon(name, cx) {
-        Some(icon) => gpui_kit::img(icon)
-            .size(px(14.))
-            .flex_none()
-            .into_any_element(),
-        None => ui::icon(Icon::File, 14.)
-            .text_color(t.text_tertiary)
-            .into_any_element(),
-    };
+    let glyph = crate::file_icons::glyph(name, 14., cx);
     div()
         .id(("pull-file", at))
         .h(px(26.))
@@ -1351,6 +1322,9 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
         .pt(px(14.))
         .pb(px(12.))
         .child(header(area, found, false, cx));
+    let folding = (chosen == Tab::Files)
+        .then(|| fold_all(opened, cx))
+        .flatten();
     let tabs = strip(
         tabs.into_iter().map(|(shown, label, count)| {
             tab(
@@ -1366,7 +1340,7 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
                 cx.notify();
             }))
         }),
-        None,
+        folding,
         cx,
     );
     let body = match chosen {
@@ -1459,6 +1433,7 @@ fn diffs(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) -
         Some(Ok(diffs)) => diffs.list(
             &view,
             |area| area.pull.as_ref()?.files.as_ref()?.as_ref().ok(),
+            std::rc::Rc::new(|area| area.pull.as_mut()?.files.as_mut()?.as_mut().ok()),
             area.elsewhere.is_none().then_some(area.project.as_str()),
             Some(super::diffs::PullOf {
                 number: pull.number,
