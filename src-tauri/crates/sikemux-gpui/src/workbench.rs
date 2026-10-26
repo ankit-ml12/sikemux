@@ -186,6 +186,9 @@ pub struct Workbench {
     resizers: [FocusHandle; 2],
     pub peeking: Option<Edge>,
     unpeek: Option<Task<()>>,
+    /// The repository changed while the Git pane was out of sight, so it reads it again once
+    /// it shows rather than on every change.
+    git_behind: bool,
     /// Lets go of the chats out of sight once they have been for a while, counted from when
     /// the chat now in front came there.
     resting_chats: Option<(Option<String>, Task<()>)>,
@@ -715,6 +718,7 @@ impl Workbench {
             peeking: None,
             unpeek: None,
             resting_chats: None,
+            git_behind: false,
             run_clock: cx.new(|_| crate::tabs::RunClock::default()),
             rail_page: RailPage::Agents,
             files: FileTree::default(),
@@ -1084,8 +1088,10 @@ impl Workbench {
             }
             Update::Read("git-overview", value) => {
                 self.files.mark(&value);
-                if let Some(pane) = &self.git {
-                    pane.update(cx, |pane, cx| pane.overview(&value, cx));
+                match (&self.git, self.git_in_front()) {
+                    (Some(pane), true) => pane.update(cx, |pane, cx| pane.overview(&value, cx)),
+                    (Some(_), false) => self.git_behind = true,
+                    (None, _) => {}
                 }
                 self.reads.insert("git-overview", value);
                 self.parts.redraw(&self.parts.top, cx);
@@ -3534,6 +3540,12 @@ impl Workbench {
         }
     }
 
+    fn git_in_front(&self) -> bool {
+        self.tab()
+            .and_then(|tab| tabs::first_view(&tab.pane))
+            .is_some_and(|(kind, _)| kind == PaneKind::Git)
+    }
+
     /// Makes the Git pane when the project's Git tab comes to the front.
     fn git_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.tell_reach(cx);
@@ -3548,12 +3560,18 @@ impl Workbench {
             return;
         }
         let target = self.target();
-        if self.git.as_ref().is_some_and(|pane| {
+        if let Some(pane) = self.git.as_ref().filter(|pane| {
             let pane = pane.read(cx);
             pane.repo == repo && pane.place() == target.place()
         }) {
+            if std::mem::take(&mut self.git_behind) {
+                if let Some(overview) = self.reads.get("git-overview") {
+                    pane.update(cx, |pane, cx| pane.overview(overview, cx));
+                }
+            }
             return;
         }
+        self.git_behind = false;
         let bench = cx.entity().downgrade();
         let away = self.out_of_reach();
         let (host, signed_in) = (self.code_host_of(&repo), self.host_signed_in(cx));
@@ -3845,6 +3863,9 @@ impl Workbench {
     fn host_area(&mut self, cx: &mut Context<Self>) {
         let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
         let (Some((PaneKind::Git, _)), Some(project)) = (front, self.project()) else {
+            if let Some(shown) = &self.host {
+                shown.update(cx, |shown, _| shown.hide());
+            }
             return;
         };
         let Some(host) = project.code_host.clone() else {
@@ -3877,6 +3898,9 @@ impl Workbench {
                 });
             }
             _ => {
+                if let Some(old) = &self.host {
+                    old.update(cx, |old, _| old.hide());
+                }
                 let (target, bench) = (self.target(), cx.entity().downgrade());
                 let away = self.out_of_reach();
                 let shown = cx.new(|_| HostArea::new(target, bench, folder, host, account, branch));

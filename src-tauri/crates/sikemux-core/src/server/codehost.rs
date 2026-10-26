@@ -335,6 +335,15 @@ pub(crate) struct JobLogParams {
     count: Option<usize>,
 }
 
+/// The connection shows none of the code host's lists any more, so they stop being read
+/// again for it until it asks for one.
+pub(crate) fn away(core: &Core, client: ClientId) {
+    let mut state = core.code_host_lists.state.locked();
+    state
+        .shown
+        .retain(|(shown_to, _, _), _| *shown_to != client);
+}
+
 pub(crate) async fn job_log(core: &Arc<Core>, client: ClientId, params: JobLogParams) -> Answer {
     let list = List::JobLog {
         run: params.run_id,

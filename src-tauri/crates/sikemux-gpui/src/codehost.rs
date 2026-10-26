@@ -162,7 +162,21 @@ pub struct HostArea {
     /// How long to wait before reading a rate limit again that says it is spent but past its reset.
     budget_again: crate::retry::Backoff,
     pictures: crate::avatars::Avatars,
+    /// Out of sight, so nothing is watched until it shows again.
+    hidden: bool,
 }
+
+/// Every list and page the areas watch, by key.
+const WATCHED: [&str; 8] = [
+    pulls::KEY,
+    pull::VIEW,
+    pull::FILES,
+    runs::LIST,
+    runs::RUN,
+    logs::KEY,
+    issues::KEY,
+    releases::KEY,
+];
 
 impl HostArea {
     pub fn new(
@@ -192,6 +206,7 @@ impl HostArea {
             elsewhere: None,
             status: None,
             asked_status: false,
+            hidden: false,
             signing: None,
             menu: false,
             accounts: Vec::new(),
@@ -229,11 +244,27 @@ impl HostArea {
             self.asked_status = true;
             self.read_status(cx);
         }
-        if self.area != area {
+        if self.area != area || std::mem::take(&mut self.hidden) {
             self.area = area;
+            self.unwatch_all();
             self.watch();
             cx.notify();
         }
+    }
+
+    /// Stops watching anything while the area is out of sight, here and in the core, which
+    /// otherwise keeps reading the host for what was last shown.
+    pub fn hide(&mut self) {
+        if !std::mem::replace(&mut self.hidden, true) {
+            self.unwatch_all();
+        }
+    }
+
+    fn unwatch_all(&self) {
+        for key in WATCHED {
+            self.core.unwatch(key);
+        }
+        self.core.call("codeHostAway", json!({}));
     }
 
     /// Opens pull request or issue `number` of `repo` in `area`.
@@ -498,6 +529,9 @@ impl HostArea {
     }
 
     fn ask_watch(&self, key: &'static str, method: &'static str, params: Value) {
+        if self.hidden {
+            return;
+        }
         self.core
             .watch(key, Watch::new(method, params, &["codeHost"]));
     }

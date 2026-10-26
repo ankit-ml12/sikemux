@@ -457,6 +457,10 @@ calls! { core, client, params;
     "codeHostTracked": Watch => answer(super::codehost::tracked(&core, client.id, parse(params)?).await),
     "codeHostRun": Watch => answer(super::codehost::run(&core, client.id, parse(params)?).await),
     "codeHostJobLog": Watch => answer(super::codehost::job_log(&core, client.id, parse(params)?).await),
+    "codeHostAway": Watch => {
+        super::codehost::away(&core, client.id);
+        answer(Value::Null)
+    },
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),
     "installHost": Person => answer(super::hosts::install::install_host(&core, parse(params)?).await?),
