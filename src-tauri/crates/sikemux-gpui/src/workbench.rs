@@ -2131,7 +2131,7 @@ impl Workbench {
         }
         let repos: Vec<Value> = shown
             .iter()
-            .map(|ci| json!({ "provider": ci.host, "owner": ci.owner, "name": ci.name, "account": ci.account, "host": null }))
+            .map(|ci| json!({ "provider": format!("sikemux.{}", ci.host), "owner": ci.owner, "name": ci.name, "account": ci.account, "host": null }))
             .collect();
         let _ = self.asks.send(Ask::Watch(
             "ci-shown",
@@ -2178,7 +2178,7 @@ impl Workbench {
     /// The latest CI run of the branch in front, while the core is checking it.
     pub fn latest_run(&self) -> Option<&Value> {
         self.watched_ci.as_ref()?;
-        self.read("ci")?["runs"].as_array()?.first()
+        self.read("ci")?["value"]["runs"].as_array()?.first()
     }
 
     /// Asks for the account's picture when it is one this window has not got.
