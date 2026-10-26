@@ -492,6 +492,7 @@ impl RenderOnce for Tab {
             .min_w(px(120.))
             .flex()
             .items_center()
+            .gap(px(4.))
             .rounded(RADIUS_2)
             .bg(tint)
             .text_color(ink)
@@ -524,7 +525,7 @@ impl RenderOnce for Tab {
             .child(
                 div()
                     .size(px(20.))
-                    .mr(px(8.))
+                    .mr(px(3.))
                     .flex_none()
                     .flex()
                     .items_center()
