@@ -1088,11 +1088,26 @@ impl Workbench {
 
     /// Opens what was typed in the agent's address, or reloads the page when it is unchanged.
     fn go_typed(&self, agent: &str, input: &str) {
-        let unchanged = self.front_url(agent).map(shown_address).as_deref() == Some(input);
-        match input.is_empty() || unchanged {
+        let Some(front) = self.front_url(agent) else {
+            return self.open_typed(agent, input);
+        };
+        match input.is_empty() || shown_address(front) == input {
             true => self.with_engine(|engine| engine.reload(agent)),
             false => self.with_engine(|engine| engine.navigate_typed(agent, input)),
         }
+    }
+
+    /// Opens what was typed in a new page, for a desk whose pages are all closed.
+    fn open_typed(&self, agent: &str, input: &str) {
+        let Some(engine) = self.desks.engine.clone() else {
+            return;
+        };
+        let (agent, input) = (agent.to_owned(), input.to_owned());
+        runtime().spawn(async move {
+            if let Err(error) = engine.open_typed(&agent, &input).await {
+                eprintln!("sikemux: the desk could not open {input}: {error}");
+            }
+        });
     }
 
     fn with_engine(&self, act: impl FnOnce(&BrowserManager) -> sikemux_browser::BrowserResult<()>) {

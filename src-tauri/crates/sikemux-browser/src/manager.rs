@@ -779,13 +779,27 @@ impl BrowserManager {
 
     /// Opens what the person typed in the address bar, and remembers it as typed.
     pub fn navigate_typed(&self, agent_id: &str, input: &str) -> BrowserResult<()> {
-        let local = matches!(address::resolve(input), address::Address::Local(_));
         let opened = self.navigate(agent_id, input)?;
-        if !local {
-            self.history
-                .note_typed(self.host().state_dir().as_deref(), &opened);
-        }
+        self.note_typed(input, &opened);
         Ok(())
+    }
+
+    /// Opens what the person typed in a new tab, for a desk with no tab to go to.
+    pub async fn open_typed(&self, agent_id: &str, input: &str) -> BrowserResult<()> {
+        if input.is_empty() {
+            return self.open_tab(agent_id, None).await.map(drop);
+        }
+        let opened = self.page_url(input)?;
+        self.open_tab(agent_id, Some(input)).await?;
+        self.note_typed(input, &opened);
+        Ok(())
+    }
+
+    fn note_typed(&self, input: &str, opened: &str) {
+        if !matches!(address::resolve(input), address::Address::Local(_)) {
+            self.history
+                .note_typed(self.host().state_dir().as_deref(), opened);
+        }
     }
 
     /// What the address bar offers for what the person has typed so far.

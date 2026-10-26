@@ -278,7 +278,12 @@ impl Workbench {
             Some(Suggested {
                 to: Target::Page(url),
                 ..
-            }) => self.with_engine(|engine| engine.navigate(&agent, &url).map(drop)),
+            }) => match self.front_url(&agent) {
+                Some(_) => self.with_engine(|engine| engine.navigate(&agent, &url).map(drop)),
+                None => {
+                    self.show_on_desk(&agent, &url);
+                }
+            },
             _ => self.go_typed(&agent, &value),
         }
         self.close_address(true, window, cx);
