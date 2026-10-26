@@ -326,17 +326,22 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
     let nav = index::GROUPS
         .iter()
         .filter(|(_, pages)| pages.iter().any(|page| page.here()))
-        .map(|(group, pages)| {
+        .enumerate()
+        .map(|(at, (group, pages))| {
             div()
                 .flex()
                 .flex_col()
                 .gap(px(1.))
                 .child(
                     div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
                         .px(px(8.))
-                        .pt(px(10.))
-                        .pb(px(1.))
-                        .child(ui::caps(group, cx)),
+                        .pt(px(if at == 0 { 10. } else { 20. }))
+                        .pb(px(5.))
+                        .child(ui::caps(group, cx))
+                        .child(div().flex_1().h(px(1.)).bg(t.border)),
                 )
                 .children(
                     pages
@@ -490,6 +495,9 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
             div()
                 .id("settings-nav")
                 .track_scroll(&settings.nav)
+                .mt(px(6.))
+                .border_t_1()
+                .border_color(t.border)
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
