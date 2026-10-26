@@ -14,7 +14,7 @@ use sikemux_core::git::branches::GitBranch;
 use sikemux_core::git::remote::{GitRemote, GitRemoteBranch};
 use sikemux_wire::codehost::{PullList, PullState};
 
-use super::{row_button, tree_lines, GitPane, Pick, ROW_HEIGHT};
+use super::{row_button, GitPane, Pick, ROW_HEIGHT};
 use crate::codehost::Area;
 use crate::icons::Icon;
 use crate::motion;
@@ -690,44 +690,17 @@ pub(super) fn branches_page(pane: &mut GitPane, cx: &mut Context<GitPane>) -> im
             )
         })
         .child(
-            list(pane.branch_rows.clone(), move |index, window, cx| {
+            list(pane.branch_rows.clone(), move |index, _, cx| {
                 let cx = &*cx;
                 let pane = view.read(cx);
                 match pane.branches.entries.get(index) {
-                    Some(entry) => branch_row(&view, pane, entry, index, window, cx),
+                    Some(entry) => branch_row(&view, pane, entry, index, cx),
                     None => div().into_any_element(),
                 }
             })
             .flex_1()
             .px(px(6.))
             .pt(px(4.)),
-        )
-        .child(
-            div()
-                .flex_none()
-                .p(px(10.))
-                .border_t_1()
-                .border_color(t.border)
-                .child(
-                    gpui_kit::base::Button::new("git-new-branch")
-                        .accessibility_label("New branch")
-                        .w_full()
-                        .h(px(30.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .gap(px(6.))
-                        .border_1()
-                        .border_color(t.border_strong)
-                        .text_size(crate::theme::ui_text(12.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(t.text_secondary)
-                        .hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
-                        .on_click(cx.listener(|pane, _, _, cx| pane.new_branch(None, cx)))
-                        .child(ui::icon(Icon::Plus, 12.).text_color(t.text_tertiary))
-                        .child("New branch")
-                        .child(ui::kbd("N", cx)),
-                ),
         )
 }
 
@@ -736,11 +709,10 @@ fn branch_row(
     pane: &GitPane,
     entry: &BranchEntry,
     index: usize,
-    window: &gpui_kit::Window,
     cx: &App,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let chosen = index == pane.branches.chosen && pane.focus.contains_focused(window, cx);
+    let chosen = index == pane.branches.chosen;
     let key = SharedString::from(format!("branch:{index}"));
     let hovered = pane.hovered.as_ref() == Some(&key);
     let choosing = view.clone();
@@ -752,13 +724,14 @@ fn branch_row(
         .flex()
         .items_center()
         .rounded(RADIUS_2)
-        .border_1()
-        .border_color(if chosen {
-            t.border_selected
-        } else {
-            gpui_kit::transparent_black()
+        .cursor_pointer()
+        .map(|row| {
+            if chosen {
+                row.bg(t.surface_chosen)
+            } else {
+                row.hover(move |row| row.bg(t.surface_hover))
+            }
         })
-        .hover(move |row| row.bg(t.surface_hover))
         .on_hover(super::hover(view, key))
         .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
         .on_click(move |_, window, cx| {
@@ -805,7 +778,7 @@ fn branch_row(
                     .child(count.to_string())
             }))
     };
-    let dot = |ink: Hsla, glow: bool| {
+    let dot = |ink: Hsla| {
         div()
             .size(px(13.))
             .mx(px(1.))
@@ -814,33 +787,66 @@ fn branch_row(
             .items_center()
             .justify_center()
             .rounded_full()
-            .when(glow, |halo| halo.bg(ink.opacity(0.18)))
             .child(div().size(px(7.)).rounded_full().bg(ink))
     };
-    let leaf = |entry: Option<&BranchEntry>| {
-        matches!(
-            entry,
-            Some(BranchEntry::Branch(_) | BranchEntry::RemoteBranch { .. })
-        )
+    let name_and_tip = |name: &str, ink: Hsla, subject: &str| {
+        let (folder, leaf) = match name.rfind('/') {
+            Some(slash) => name.split_at(slash + 1),
+            None => ("", name),
+        };
+        [
+            div()
+                .flex()
+                .flex_shrink(1.)
+                .min_w_0()
+                .text_size(crate::theme::ui_text(13.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(ink)
+                .when(!folder.is_empty(), |name| {
+                    name.child(
+                        div()
+                            .flex_none()
+                            .text_color(t.text_tertiary)
+                            .child(folder.to_owned()),
+                    )
+                })
+                .child(div().min_w_0().truncate().child(leaf.to_owned())),
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_color(t.text_tertiary)
+                .child(subject.to_owned()),
+        ]
     };
-    let lines = tree_lines(
-        !leaf(
-            index
-                .checked_sub(1)
-                .and_then(|before| pane.branches.entries.get(before)),
-        ),
-        !leaf(pane.branches.entries.get(index + 1)),
-        &t,
-    );
+    let age = |date: &str| {
+        div()
+            .flex_none()
+            .font_family(theme::MONO)
+            .text_size(crate::theme::ui_text(11.))
+            .text_color(t.text_tertiary)
+            .child(date.to_owned())
+    };
     match entry {
-        BranchEntry::Local { count } => group(
-            base,
-            Icon::Laptop,
-            "Local".into(),
-            Some(*count),
-            !pane.branches.local_folded,
-        )
-        .into_any_element(),
+        BranchEntry::Local { count } => {
+            let starting = view.clone();
+            group(
+                base,
+                Icon::Laptop,
+                "Local".into(),
+                Some(*count),
+                !pane.branches.local_folded,
+            )
+            .child(
+                row_button("git-new-branch", Icon::Plus, 12., "New branch", cx).on_click(
+                    move |_, _, cx| {
+                        cx.stop_propagation();
+                        starting.update(cx, |pane, cx| pane.new_branch(None, cx));
+                    },
+                ),
+            )
+            .into_any_element()
+        }
         BranchEntry::Remote { remote, open } => {
             let fetched = remote.name.clone();
             let name = remote.name.clone();
@@ -875,62 +881,48 @@ fn branch_row(
             let mut row = base
                 .gap(px(8.))
                 .pl(px(18.))
-                .children(lines)
                 .pr(px(6.))
-                .text_size(crate::theme::ui_text(13.))
-                .text_color(if branch.current {
-                    t.text_primary
-                } else {
-                    t.text_secondary
-                })
-                .child(dot(
+                .text_size(crate::theme::ui_text(12.5))
+                .whitespace_nowrap()
+                .child(pane.author_face(&branch.author, &branch.author_email, 15., cx))
+                .children(name_and_tip(
+                    &branch.name,
                     if branch.current {
-                        t.live
+                        t.accent
+                    } else if chosen {
+                        t.text_primary
                     } else {
-                        t.text_disabled
+                        t.text_secondary
                     },
-                    branch.current,
+                    &branch.subject,
                 ))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .child(branch.name.clone()),
-                )
                 .children(pull_chip(pane, &branch.name, index, cx));
             if branch.current && ahead > 0 {
                 let pushing = view.clone();
+                let label = format!("Push {ahead} commit{}", if ahead > 1 { "s" } else { "" });
                 row = row.child(
                     gpui_kit::base::Button::new("git-sync-chip")
-                        .accessibility_label(SharedString::from(format!(
-                            "Push {ahead} commit{}",
-                            if ahead > 1 { "s" } else { "" }
-                        )))
-                        .tooltip(ui::tooltip(format!(
-                            "Push {ahead} commit{}",
-                            if ahead > 1 { "s" } else { "" }
-                        )))
-                        .h(px(20.))
-                        .px(px(6.))
+                        .accessibility_label(SharedString::from(label.clone()))
+                        .tooltip(ui::tooltip(label))
+                        .h(px(18.))
+                        .px(px(4.))
                         .flex()
+                        .flex_none()
                         .items_center()
-                        .gap(px(3.))
-                        .border_1()
-                        .border_color(t.warn.opacity(0.32))
+                        .gap(px(2.))
+                        .rounded(RADIUS_2)
                         .font_family(theme::MONO)
                         .text_size(crate::theme::ui_text(11.))
                         .text_color(t.warn)
-                        .hover(move |style| style.bg(t.warn.opacity(0.12)))
+                        .hover(move |style| style.bg(t.surface_hover))
                         .on_click(move |_, _, cx| {
                             cx.stop_propagation();
                             pushing.update(cx, |pane, cx| pane.push(cx));
                         })
-                        .child(ui::icon(Icon::Push, 10.).text_color(t.warn))
-                        .child(ahead.to_string()),
+                        .child(format!("↑{ahead}")),
                 );
             }
-            if branch.current && behind > 0 && !hovered {
+            if branch.current && behind > 0 {
                 row = row.child(
                     div()
                         .flex_none()
@@ -939,6 +931,9 @@ fn branch_row(
                         .text_color(t.git_renamed)
                         .child(format!("↓{behind}")),
                 );
+            }
+            if !hovered {
+                row = row.child(age(&branch.date));
             }
             if hovered {
                 let into = pane.current_branch();
@@ -988,18 +983,19 @@ fn branch_row(
             let mut row = base
                 .gap(px(8.))
                 .pl(px(18.))
-                .children(lines)
                 .pr(px(6.))
-                .text_size(crate::theme::ui_text(13.))
-                .text_color(t.text_secondary)
-                .child(dot(t.git_renamed, false))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .child(branch.name.clone()),
-                )
+                .text_size(crate::theme::ui_text(12.5))
+                .whitespace_nowrap()
+                .child(dot(t.git_renamed))
+                .children(name_and_tip(
+                    &branch.name,
+                    if chosen {
+                        t.text_primary
+                    } else {
+                        t.text_secondary
+                    },
+                    branch.subject.as_deref().unwrap_or_default(),
+                ))
                 .children(
                     (remote == "origin")
                         .then(|| pull_chip(pane, &branch.name, index, cx))
@@ -1323,10 +1319,8 @@ pub(super) fn branch_card(
     };
     let current = matches!(entry, BranchEntry::Branch(branch) if branch.current);
     Some(
-        div()
+        ui::panel(cx)
             .flex_none()
-            .border_b_1()
-            .border_color(t.border)
             .child(
                 div()
                     .px(px(16.))

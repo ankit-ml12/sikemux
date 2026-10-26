@@ -1,6 +1,7 @@
 use git2::{BranchType, Repository};
 use serde::{Deserialize, Serialize};
 
+use super::log::relative_time;
 use super::{git_ok, open_repo, remote_names, run_blocking};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
@@ -8,6 +9,15 @@ pub struct GitBranch {
     pub name: String,
     pub current: bool,
     pub upstream: Option<String>,
+    /// The commit at the branch's tip: what it says, who wrote it and how long ago.
+    #[serde(default)]
+    pub subject: String,
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub author_email: String,
+    #[serde(default)]
+    pub date: String,
 }
 
 pub(super) fn read_branches(repo: &Repository) -> Result<Vec<GitBranch>, String> {
@@ -37,18 +47,33 @@ pub(super) fn read_branches(repo: &Repository) -> Result<Vec<GitBranch>, String>
             .ok()
             .and_then(|up| up.name().ok().flatten().map(String::from));
         let is_current = branch.is_head();
-        // Tip-of-branch commit time; 0 if we can't resolve (won't push it
-        // above a real branch — the sort prefers larger timestamps).
-        let committed_at = branch
-            .get()
-            .peel_to_commit()
-            .map(|c| c.time().seconds())
-            .unwrap_or(0);
+        let tip = branch.get().peel_to_commit().ok();
+        // 0 when the tip can't be read, so it sorts below every real branch.
+        let committed_at = tip.as_ref().map_or(0, |c| c.time().seconds());
+        let author = tip.as_ref().map(|c| c.author());
         rows.push(Row {
             branch: GitBranch {
                 name,
                 current: is_current,
                 upstream,
+                subject: tip
+                    .as_ref()
+                    .and_then(|c| {
+                        c.summary_bytes()
+                            .map(|said| String::from_utf8_lossy(said).into_owned())
+                    })
+                    .unwrap_or_default(),
+                author: author
+                    .as_ref()
+                    .map(|a| String::from_utf8_lossy(a.name_bytes()).into_owned())
+                    .unwrap_or_default(),
+                author_email: author
+                    .as_ref()
+                    .map(|a| String::from_utf8_lossy(a.email_bytes()).into_owned())
+                    .unwrap_or_default(),
+                date: tip
+                    .as_ref()
+                    .map_or_else(String::new, |_| relative_time(committed_at)),
             },
             committed_at,
             is_current,

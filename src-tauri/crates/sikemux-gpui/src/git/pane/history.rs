@@ -455,7 +455,7 @@ pub fn commit_row(
 }
 
 /// The card heading a commit's review: what it says, who wrote it and when, and its hash
-/// with the refs it carries, running edge to edge across the top of the review.
+/// with the refs it carries, on a panel above the review.
 pub fn commit_card(
     pane: &GitPane,
     commit: &GitCommit,
@@ -568,10 +568,8 @@ pub fn commit_card(
                 ))
                 .child(fact("Commit", hash.into_any_element())),
         );
-    div()
+    ui::panel(cx)
         .flex_none()
-        .border_b_1()
-        .border_color(t.border)
         .font_family(theme::UI)
         .child(body)
         .child(commit_foot(commit, cx))

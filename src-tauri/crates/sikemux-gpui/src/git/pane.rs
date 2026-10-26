@@ -2248,7 +2248,7 @@ impl Render for GitPane {
             self.draft
                 .update(cx, |draft, cx| draft.set_value(written, window, cx));
         }
-        if self.page == Page::History {
+        if matches!(self.page, Page::History | Page::Branches) {
             self.read_authors(cx);
         }
         let reviewed = review(self, window, cx);

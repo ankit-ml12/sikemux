@@ -2129,6 +2129,11 @@ export interface GitBranch {
     name: string;
     current: boolean;
     upstream: string | null;
+    /** The commit at the branch's tip: what it says, who wrote it and how long ago. */
+    subject: string;
+    author: string;
+    author_email: string;
+    date: string;
 }
 
 export interface GitCommit {
