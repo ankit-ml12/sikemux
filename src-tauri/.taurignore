@@ -1,2 +1,0 @@
-# The sikemux-sim helper is built on its own, by pnpm build:sim; the app does not compile it.
-sim/
