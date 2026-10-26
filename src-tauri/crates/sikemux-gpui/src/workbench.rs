@@ -562,22 +562,12 @@ impl Workbench {
         let _ = asks.send(Ask::Follow("agentSignIn"));
         let _ = asks.send(Ask::Follow("agentStatus"));
         let _ = asks.send(Ask::Follow("agentAccounts"));
-        cx.spawn(async move |this, cx| {
-            let mut minute = chrono::Local::now().minute();
-            loop {
-                let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
-                    break;
-                };
-                cx.background_executor().timer(wait).await;
-                let now = chrono::Local::now().minute();
-                let ticked = this.update(cx, |bench, cx| match now != minute {
-                    true => cx.notify(),
-                    false => bench.parts.redraw(&bench.parts.stage, cx),
-                });
-                minute = now;
-                if ticked.is_err() {
-                    break;
-                }
+        cx.spawn(async move |this, cx| loop {
+            cx.background_executor()
+                .timer(Self::until_next_minute())
+                .await;
+            if this.update(cx, |_, cx| cx.notify()).is_err() {
+                break;
             }
         })
         .detach();
@@ -970,7 +960,7 @@ impl Workbench {
                     .chats
                     .get_mut(&agent)
                     .is_some_and(Chat::take_head_moved);
-                if restage {
+                if restage && self.agent().is_some_and(|front| front.id == agent) {
                     self.parts.redraw(&self.parts.stage, cx);
                 }
                 return;
@@ -2171,19 +2161,12 @@ impl Workbench {
         }
     }
 
-    /// The clock and every "ago" move each minute, which draws the whole window again, and a
-    /// running tool call's seconds each second while a chat runs, which draws only the stage.
-    /// The Run chip counts its own seconds.
-    fn until_next_tick(&self) -> Duration {
+    /// The clock and every "ago" move each minute, which draws the whole window again. What
+    /// counts seconds, such as a running tool call or the Run chip, counts them itself.
+    fn until_next_minute() -> Duration {
         let now = chrono::Local::now();
         let into_second = Duration::from_nanos(u64::from(now.timestamp_subsec_nanos()));
-        let counting = self.chats.values().any(Chat::running);
-        let seconds = if counting {
-            1
-        } else {
-            60 - u64::from(now.second())
-        };
-        Duration::from_secs(seconds) - into_second
+        Duration::from_secs(60 - u64::from(now.second())) - into_second
     }
 
     /// The run of the project in front's tasks the person started that is going, and the last.

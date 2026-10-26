@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use gpui::{Context, Render};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, relative, Action, AnyElement, App, ClipboardItem, Div, ElementId, HighlightStyle,
@@ -23,6 +24,7 @@ use crate::motion;
 use crate::picture::{self, Picture};
 use crate::theme;
 use crate::ui;
+use crate::ui::clock::{self, Slot};
 use crate::ui::shimmer::shimmer;
 
 /// An output longer than this opens on its first lines, and the reader asks for the rest.
@@ -178,6 +180,24 @@ fn now() -> u64 {
 }
 
 /// Whole seconds, as a running call counts them.
+/// The seconds since `started`, after `before` already spent, which the clock counts on in
+/// place without drawing the transcript again.
+fn running_for(key: String, started: u64, before: u64) -> AnyElement {
+    Slot::new(key, RunningFor { started, before }).into_any_element()
+}
+
+struct RunningFor {
+    started: u64,
+    before: u64,
+}
+
+impl Render for RunningFor {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        clock::second(window, cx);
+        seconds(now().saturating_sub(self.started) + self.before)
+    }
+}
+
 fn seconds(ms: u64) -> String {
     if ms < 1000 {
         return "0s".into();
@@ -294,10 +314,12 @@ pub fn run(
             .child(calls_said),
     };
     let time = match current {
-        Some(call) => Some(seconds(
-            now().saturating_sub(call.started.unwrap_or_else(now)) + spent,
+        Some(call) => Some(running_for(
+            format!("run-seconds:{key}"),
+            call.started.unwrap_or_else(now),
+            spent,
         )),
-        None => (spent > 0).then(|| duration(spent)),
+        None => (spent > 0).then(|| duration(spent).into_any_element()),
     };
     let (reader, hover, ink) = (looks.reader.clone(), looks.hover, looks.ink);
     let sum = div()
@@ -395,14 +417,14 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
     let tint = tint(call, looks);
     let target = (!row.target.is_empty()).then(|| target(row, running, &id, looks));
     let elapsed = if call.status() == "cancelled" {
-        Some("stopped".to_owned())
+        Some("stopped".into_any_element())
     } else if running {
         call.started
-            .map(|started| seconds(now().saturating_sub(started)))
+            .map(|started| running_for(format!("call-seconds:{id}"), started, 0))
     } else {
         call.ended
             .zip(call.started)
-            .map(|(ended, started)| duration(ended.saturating_sub(started)))
+            .map(|(ended, started)| duration(ended.saturating_sub(started)).into_any_element())
     };
     let quiet = call.diff.is_none() && call.status() != "failed";
     let group = SharedString::from(format!("tool:{id}"));
