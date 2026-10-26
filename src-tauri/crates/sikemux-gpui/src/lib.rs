@@ -58,6 +58,7 @@ mod opening;
 mod pairing;
 mod palette;
 mod panes;
+mod pasted;
 mod picker;
 mod picture;
 mod pinch;

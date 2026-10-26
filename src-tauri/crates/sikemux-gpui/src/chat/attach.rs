@@ -432,15 +432,20 @@ impl Workbench {
             match entry {
                 ClipboardEntry::Image(image) => {
                     let stamp = chrono::Local::now().format("pasted-%Y%m%d-%H%M%S%3f");
-                    let name = format!("{stamp}.{}", image.format.extension());
-                    self.keep(
-                        agent,
-                        name,
-                        image.format.mime_type(),
-                        image.bytes.clone(),
-                        window,
-                        cx,
-                    );
+                    let (stamp, agent, image) =
+                        (stamp.to_string(), agent.to_owned(), image.clone());
+                    let readable =
+                        cx.background_spawn(async move { crate::pasted::readable(image) });
+                    cx.spawn_in(window, async move |this, cx| {
+                        let image = readable.await;
+                        let name = format!("{stamp}.{}", image.format.extension());
+                        this.update_in(cx, |bench, window, cx| {
+                            let mime = image.format.mime_type();
+                            bench.keep(&agent, name, mime, image.bytes, window, cx)
+                        })
+                        .ok();
+                    })
+                    .detach();
                     taken = true;
                 }
                 ClipboardEntry::ExternalPaths(paths) => {
