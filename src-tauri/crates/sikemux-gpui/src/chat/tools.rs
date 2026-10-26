@@ -530,7 +530,7 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn, cx: &App) -> AnyElem
         .child(spine(last, looks))
         .child(line)
         .when(opens, |node| node.cursor_pointer().on_click(toggle))
-        .when(open, |node| node.child(detail(call, looks)));
+        .when(open, |node| node.child(detail(call, looks, cx)));
     node.into_any_element()
 }
 
@@ -692,13 +692,14 @@ fn spine(last: bool, looks: &Drawn) -> Div {
 }
 
 /// What an opened call did: its change, the command and what it printed, or why it failed.
-fn detail(call: &Call, looks: &Drawn) -> AnyElement {
+fn detail(call: &Call, looks: &Drawn, cx: &App) -> AnyElement {
     let id = &call.tool.tool_call_id;
     let asked = looks.reading.tools.details.get(id);
     let held = asked.and_then(|asked| asked.detail.as_ref());
     let body = if call.diff.is_some() {
         held.and_then(|held| held.diff.as_ref()).map(|diff| {
-            diff_body(id, &diff.path, diff.adds, diff.dels, &diff.lines, looks).into_any_element()
+            diff_body(id, &diff.path, diff.adds, diff.dels, &diff.lines, looks, cx)
+                .into_any_element()
         })
     } else if call.command().is_some() || call.output.is_some() {
         let picture = asked.and_then(|asked| asked.picture.clone());
@@ -888,7 +889,15 @@ fn terminal(
 }
 
 /// The lines a change made, numbered, with the lines around it and a gap for the rest.
-fn diff_body(id: &str, path: &str, adds: u64, dels: u64, lines: &[DiffLine], looks: &Drawn) -> Div {
+fn diff_body(
+    id: &str,
+    path: &str,
+    adds: u64,
+    dels: u64,
+    lines: &[DiffLine],
+    looks: &Drawn,
+    cx: &App,
+) -> Div {
     let open = OpenAt {
         path: PathBuf::from(path),
         line: lines
@@ -898,6 +907,10 @@ fn diff_body(id: &str, path: &str, adds: u64, dels: u64, lines: &[DiffLine], loo
             .map_or(0, |line| line.saturating_sub(1) as u32),
         column: None,
     };
+    let name = std::path::Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let whole = looks.reading.tools.whole.contains(id);
     let head = div()
         .h(px(22.))
@@ -909,7 +922,7 @@ fn diff_body(id: &str, path: &str, adds: u64, dels: u64, lines: &[DiffLine], loo
         .border_color(looks.tints.line_soft)
         .text_size(crate::theme::ui_text(10.))
         .text_color(looks.faint)
-        .child(ui::icon(Icon::File, 12.).text_color(looks.faint))
+        .child(crate::file_icons::glyph(&name, 12., cx))
         .child(
             div()
                 .id(SharedString::from(format!("open:{id}")))
