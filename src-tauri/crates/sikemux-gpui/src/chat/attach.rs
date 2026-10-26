@@ -2,6 +2,7 @@
 //! the draft, each picture also named in the draft where it belongs, as `[Image #n]`.
 
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use gpui_kit::base::input::{InlineToken, InlineTokenContext};
 use gpui_kit::component::attachment::{
@@ -547,43 +548,233 @@ fn drawn_chip(
     bench: &WeakEntity<Workbench>,
     cx: &mut App,
 ) -> impl IntoElement {
-    let t = Tokens::get(cx).clone();
-    let id = token.token().id();
-    let (key, title) = chip_words(id, token.token().label());
+    let (key, title) = chip_words(token.token().id(), token.token().label());
     div().h(token.line_height()).flex().items_center().child(
-        div()
-            .h(token.line_height() - px(4.))
-            .max_w(token.available_width().min(px(300.)))
-            .mx(px(1.))
-            .pl(px(4.))
-            .pr(px(6.))
-            .flex()
-            .items_center()
-            .gap(px(5.))
-            .rounded(theme::RADIUS_2)
-            .bg(if token.is_selected() {
-                Hsla {
-                    a: 0.2,
-                    ..t.text_primary
-                }
-            } else {
-                t.surface_chosen
-            })
-            .text_color(t.text_primary)
-            .whitespace_nowrap()
-            .child(mark(id, t.text_tertiary, bench, cx))
-            .child(div().flex_none().child(key))
-            .when_some(title, |chip, title| {
-                chip.child(
-                    div()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .text_color(t.text_secondary)
-                        .child(title),
-                )
-            }),
+        chip_face(
+            token.token().id(),
+            key,
+            title,
+            token.is_selected(),
+            bench,
+            cx,
+        )
+        .h(token.line_height() - px(4.))
+        .max_w(token.available_width().min(px(CHIP_WIDEST))),
     )
+}
+
+/// The widest a chip grows before its title is cut short.
+const CHIP_WIDEST: f32 = 300.;
+/// What a chip holds besides its words: the space before its mark, the mark, the space after
+/// it, and the space after its words.
+const CHIP_MARK: f32 = 15.;
+const CHIP_FRAME: f32 = 4. + CHIP_MARK + 5. + 6.;
+const CHIP_TITLE_GAP: f32 = 5.;
+
+/// A chip as the draft and a sent message both draw it: its mark, its handle, and the title
+/// after it a step quieter, on a slightly rounded grey lift.
+fn chip_face(
+    id: &str,
+    key: SharedString,
+    title: Option<SharedString>,
+    selected: bool,
+    bench: &WeakEntity<Workbench>,
+    cx: &App,
+) -> Div {
+    let t = Tokens::get(cx).clone();
+    div()
+        .pl(px(4.))
+        .pr(px(6.))
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .rounded(theme::RADIUS_2)
+        .bg(if selected {
+            Hsla {
+                a: 0.2,
+                ..t.text_primary
+            }
+        } else {
+            t.surface_chosen
+        })
+        .text_color(t.text_primary)
+        .whitespace_nowrap()
+        .child(
+            div()
+                .w(px(CHIP_MARK))
+                .flex_none()
+                .flex()
+                .justify_center()
+                .child(mark(id, t.text_tertiary, bench, cx)),
+        )
+        .child(div().flex_none().child(key))
+        .when_some(title, |chip, title| {
+            chip.child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .text_color(t.text_secondary)
+                    .child(title),
+            )
+        })
+}
+
+/// A sent message's look with the chips it wrote drawn in its text as the draft drew them.
+pub fn with_chips(
+    look: Rc<gpui_transcript::Style>,
+    message: &ChatMessage,
+    bench: &WeakEntity<Workbench>,
+    window: &mut Window,
+    cx: &App,
+) -> Rc<gpui_transcript::Style> {
+    let agents = bench
+        .upgrade()
+        .map(|bench| named_agents(bench.read(cx)))
+        .unwrap_or_default();
+    let mentions = mentions(message, &agents);
+    if mentions.is_empty() {
+        return look;
+    }
+    let (size, font) = (look.text_size, look.font.clone());
+    let height = (size * look.line_height).floor() - px(4.);
+    let measure = |text: &str| {
+        let mut style = window.text_style();
+        style.font_family = look.font.clone();
+        let run = style.to_run(text.len());
+        window
+            .text_system()
+            .shape_line(text.to_owned().into(), size, &[run], None)
+            .width
+    };
+    let chips: Vec<gpui_transcript::Chip> = mentions
+        .into_iter()
+        .map(|mention| {
+            let (key, title) = chip_words(&mention.id, &mention.label.into());
+            let words = measure(&key)
+                + title
+                    .as_ref()
+                    .map_or(px(0.), |title| px(CHIP_TITLE_GAP) + measure(title));
+            let width = (words + px(CHIP_FRAME + 1.)).min(px(CHIP_WIDEST)).ceil();
+            let (bench, font) = (bench.clone(), font.clone());
+            gpui_transcript::Chip {
+                written: mention.written.into(),
+                width,
+                draw: Rc::new(move |_, cx| {
+                    div()
+                        .size_full()
+                        .flex()
+                        .items_center()
+                        .text_size(size)
+                        .font_family(font.clone())
+                        .child(
+                            chip_face(&mention.id, key.clone(), title.clone(), false, &bench, cx)
+                                .w_full()
+                                .h(height),
+                        )
+                        .into_any_element()
+                }),
+            }
+        })
+        .collect();
+    Rc::new(gpui_transcript::Style {
+        chips: chips.into(),
+        ..(*look).clone()
+    })
+}
+
+/// Something a sent message names in its text: the words it wrote, the chip they stood for
+/// in the draft, and the file or address it carried for it.
+struct Mention {
+    written: String,
+    id: String,
+    label: String,
+    carried: String,
+}
+
+/// Every named agent the app knows, by name and id, for the `@` mentions sent messages wrote.
+fn named_agents(bench: &Workbench) -> Vec<(String, String)> {
+    bench
+        .projects()
+        .iter()
+        .flat_map(|project| bench.agents_of(&project.id))
+        .filter_map(|row| Some((row.name?, row.id)))
+        .collect()
+}
+
+/// What a sent message's text names, as the draft's chips wrote it. Agents are named only
+/// in the text, so `agents` says which `@` words are agents.
+fn mentions(message: &ChatMessage, agents: &[(String, String)]) -> Vec<Mention> {
+    let written = super::edit::written(message);
+    let mut found: Vec<Mention> = agents
+        .iter()
+        .map(|(name, id)| Mention {
+            written: format!("@{name}"),
+            id: format!("agent:{id}"),
+            label: format!("@{name}"),
+            carried: format!("sikemux://agent/{id}"),
+        })
+        .collect();
+    for (index, path) in message.attachments.iter().enumerate() {
+        let number = index + 1;
+        if is_image(Path::new(path)) {
+            found.push(Mention {
+                written: format!("[Image #{number}]"),
+                id: format!("{IMAGE}{path}"),
+                label: format!("Image {number}"),
+                carried: path.clone(),
+            });
+            continue;
+        }
+        let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+        let tag = (1..=parts.len())
+            .rev()
+            .map(|from| format!("+{}", parts[parts.len() - from..].join("/")))
+            .find(|tag| written.contains(tag.as_str()));
+        if let Some(tag) = tag {
+            let kind = if Path::new(path).is_dir() {
+                "folder"
+            } else {
+                "file"
+            };
+            found.push(Mention {
+                written: tag.clone(),
+                id: format!("{kind}:{path}"),
+                label: tag,
+                carried: path.clone(),
+            });
+        }
+    }
+    for item in &message.context {
+        let named = item.title.starts_with('@');
+        let mention = item
+            .uri
+            .strip_prefix("sikemux://earlier/")
+            .filter(|_| named)
+            .map(|chat| format!("earlier:{chat}"));
+        if let Some(id) = mention {
+            found.push(Mention {
+                written: item.title.clone(),
+                id,
+                label: item.title.clone(),
+                carried: item.uri.clone(),
+            });
+        } else if let Some((icon, number)) = tracked(&item.uri) {
+            let (sign, kind) = if matches!(icon, Icon::PullRequest) {
+                ('!', "pull")
+            } else {
+                ('#', "issue")
+            };
+            found.push(Mention {
+                written: format!("{sign}{number}"),
+                id: format!("tracked:{kind}:{number}:{}", item.uri),
+                label: format!("#{number} {}", tracked_title(&item.title, number)),
+                carried: item.uri.clone(),
+            });
+        }
+    }
+    found.retain(|mention| written.contains(mention.written.as_str()));
+    found
 }
 
 /// What a chip says: its handle without the sign typed to make it, and for an issue or pull
@@ -700,6 +891,14 @@ fn badge(number: usize, t: &Tokens, cx: &App) -> Div {
 }
 
 /// An issue's or pull request's number in its link, when the link is to one.
+/// An issue's or pull request's title without the kind and number its context names it by.
+fn tracked_title<'a>(title: &'a str, number: &str) -> &'a str {
+    let bare = title.trim_start_matches("Issue ");
+    let bare = bare.trim_start_matches("Pull request ");
+    bare.strip_prefix(&format!("#{number}"))
+        .map_or(title, |rest| rest.trim_start_matches(':').trim_start())
+}
+
 fn tracked(uri: &str) -> Option<(Icon, &str)> {
     let kinds = [
         ("/issues/", Icon::Issue),
@@ -721,14 +920,12 @@ fn tracked(uri: &str) -> Option<(Icon, &str)> {
 /// earlier chat or anything else.
 fn context_chip(id: String, uri: &str, title: &str, t: &Tokens) -> Attachment {
     let (icon, title) = match tracked(uri) {
-        Some((icon, number)) => {
-            let bare = title.trim_start_matches("Issue ");
-            let bare = bare.trim_start_matches("Pull request ");
-            let bare = bare
-                .strip_prefix(&format!("#{number}"))
-                .map_or(title, |rest| rest.trim_start_matches(':').trim_start());
-            (icon, format!("#{number} {bare}").trim_end().to_owned())
-        }
+        Some((icon, number)) => (
+            icon,
+            format!("#{number} {}", tracked_title(title, number))
+                .trim_end()
+                .to_owned(),
+        ),
         None if uri.starts_with("sikemux://earlier/") => (Icon::Message, title.to_owned()),
         None if title.is_empty() => (Icon::File, uri.to_owned()),
         None => (Icon::File, title.to_owned()),
@@ -754,7 +951,18 @@ pub fn sent(
     }
     let t = Tokens::get(cx).clone();
     let written = super::edit::written(message);
-    let files = message.attachments.iter().enumerate().map(|(index, path)| {
+    let inline = mentions(message, &[]);
+    let in_text = |carried: &str| {
+        inline
+            .iter()
+            .any(|mention| mention.carried == carried && !mention.id.starts_with(IMAGE))
+    };
+    let files = message
+        .attachments
+        .iter()
+        .enumerate()
+        .filter(|(_, path)| !in_text(path));
+    let files = files.map(|(index, path)| {
         let path = PathBuf::from(path);
         let id = SharedString::from(format!("sent-{}-{index}", message.id));
         if !is_image(&path) {
@@ -803,14 +1011,22 @@ pub fn sent(
             .on_click(move |_, window, cx| open(path.clone(), window, cx))
             .into_any_element()
     });
-    let context = message.context.iter().enumerate().map(|(index, item)| {
-        context_chip(
-            format!("sent-context-{}-{index}", message.id),
-            &item.uri,
-            &item.title,
-            &t,
-        )
-    });
+    let context = message.context.iter().enumerate();
+    let context: Vec<_> = context
+        .filter(|(_, item)| !in_text(&item.uri))
+        .map(|(index, item)| {
+            context_chip(
+                format!("sent-context-{}-{index}", message.id),
+                &item.uri,
+                &item.title,
+                &t,
+            )
+        })
+        .collect();
+    let files: Vec<_> = files.collect();
+    if files.is_empty() && context.is_empty() {
+        return None;
+    }
     Some(
         div()
             .flex()

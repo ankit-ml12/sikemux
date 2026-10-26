@@ -63,6 +63,17 @@ pub type OnFile = Rc<dyn Fn(&str, FileKind, FilePress, &mut Window, &mut App)>;
 /// The icon drawn inside the text before a file's name, by its name as written, `size` square.
 pub type FileIcon = Rc<dyn Fn(&str, FileKind, Pixels, &mut Window, &mut App) -> Option<AnyElement>>;
 
+/// Words a message wrote for something it names, drawn in their place as a chip `width` wide.
+#[derive(Clone)]
+pub struct Chip {
+    pub written: SharedString,
+    pub width: Pixels,
+    pub draw: Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>,
+}
+
+/// The space kept on each side of a chip in the text.
+const CHIP_SPACE: Pixels = px(2.);
+
 /// A file's icon beside its name, in ems of the text it sits in, and the space after it.
 const FILE_ICON_EMS: f32 = 0.95;
 const FILE_ICON_SPACE_EMS: f32 = 0.3;
@@ -104,6 +115,7 @@ pub struct Style {
     pub fence: Option<DrawFence>,
     pub code: Option<CodeColours>,
     pub image: Option<DrawImage>,
+    pub chips: Rc<[Chip]>,
     /// Level-two headings lead with their number, `01` and on, in the accent's mono face.
     pub numbered_sections: bool,
     pub italic: bool,
@@ -156,6 +168,7 @@ impl Default for Style {
             fence: None,
             code: None,
             image: None,
+            chips: Rc::from(Vec::new()),
             numbered_sections: false,
             italic: false,
         }
@@ -837,11 +850,13 @@ impl Draw<'_> {
             .marks
             .iter()
             .filter(|(_, marks)| marks.has(Marks::CODE));
+        let chips = chips_in(rich, &style.chips);
         let files: Vec<(Range<usize>, SharedString, FileKind)> = match &style.file_of {
             Some(file_of) => rich
                 .paths
                 .iter()
                 .chain(&rich.links)
+                .filter(|(range, _)| !chips.iter().any(|(chip, _)| overlap(chip, range)))
                 .filter_map(|(range, name)| Some((range.clone(), name.clone(), file_of(name, cx)?)))
                 .collect(),
             None => Vec::new(),
@@ -853,7 +868,7 @@ impl Draw<'_> {
             };
             (range.clone(), look)
         });
-        let own: Vec<_> = combine_highlights(file_looks, own).collect();
+        let own = hide_chip_words(combine_highlights(file_looks, own).collect(), &chips);
         let looks = match colours {
             Some(colours) => combine_highlights(colours.iter().cloned(), own).collect(),
             None => own,
@@ -871,6 +886,11 @@ impl Draw<'_> {
                 .collect(),
             None => Vec::new(),
         };
+        gaps.extend(
+            chips
+                .iter()
+                .map(|(range, chip)| (range.start, chip.width + CHIP_SPACE * 2.)),
+        );
         gaps.sort_by_key(|(at, _)| *at);
         gaps.dedup_by_key(|(at, _)| *at);
         #[cfg(feature = "counts")]
@@ -945,6 +965,46 @@ impl Draw<'_> {
                     .into_any_element()
             }
             _ => inner,
+        };
+        let inner = if chips.is_empty() {
+            inner
+        } else {
+            let (chips, layout) = (chips.clone(), layout.clone());
+            div()
+                .relative()
+                .child(inner)
+                .child(
+                    canvas(
+                        move |_, window, cx| {
+                            let line = layout.line_height();
+                            chips
+                                .iter()
+                                .filter_map(|(range, chip)| {
+                                    let at = layout.gap_origin(range.start)?;
+                                    let mut drawn = (chip.draw)(window, cx);
+                                    drawn.prepaint_as_root(
+                                        point(at.x + CHIP_SPACE, at.y),
+                                        size(
+                                            AvailableSpace::Definite(chip.width),
+                                            AvailableSpace::Definite(line),
+                                        ),
+                                        window,
+                                        cx,
+                                    );
+                                    Some(drawn)
+                                })
+                                .collect::<Vec<_>>()
+                        },
+                        |_, mut drawn, window, cx| {
+                            for chip in &mut drawn {
+                                chip.paint(window, cx);
+                            }
+                        },
+                    )
+                    .absolute()
+                    .inset_0(),
+                )
+                .into_any_element()
         };
         let inner = match (&style.on_file, files.is_empty()) {
             (Some(on_file), false) => {
@@ -1306,6 +1366,71 @@ fn highlights(
                 look.background_color = Some(style.selection);
             }
             Some((run, look))
+        })
+        .collect()
+}
+
+/// Where the text wrote each chip's words, outside code, longer words first where two would
+/// share letters.
+fn chips_in(rich: &Rich, chips: &[Chip]) -> Vec<(Range<usize>, Chip)> {
+    if chips.is_empty() {
+        return Vec::new();
+    }
+    let code: Vec<&Range<usize>> = rich
+        .marks
+        .iter()
+        .filter(|(_, marks)| marks.has(Marks::CODE))
+        .map(|(range, _)| range)
+        .collect();
+    let mut longest: Vec<&Chip> = chips.iter().collect();
+    longest.sort_by_key(|chip| std::cmp::Reverse(chip.written.len()));
+    let mut found: Vec<(Range<usize>, Chip)> = Vec::new();
+    for chip in longest {
+        for (at, _) in rich.text.match_indices(chip.written.as_ref()) {
+            let range = at..at + chip.written.len();
+            let before = rich.text[..at].chars().next_back();
+            let after = rich.text[range.end..].chars().next();
+            let apart = before.is_none_or(|letter| !letter.is_alphanumeric())
+                && after.is_none_or(|letter| !letter.is_alphanumeric());
+            let taken = code.iter().any(|code| overlap(code, &range))
+                || found.iter().any(|(held, _)| overlap(held, &range));
+            if apart && !taken {
+                found.push((range, chip.clone()));
+            }
+        }
+    }
+    found.sort_by_key(|(range, _)| range.start);
+    found
+}
+
+fn overlap(a: &Range<usize>, b: &Range<usize>) -> bool {
+    a.start < b.end && b.start < a.end
+}
+
+/// The text's looks with the words under each chip shrunk to nothing and unseen.
+fn hide_chip_words(looks: Looks, chips: &[(Range<usize>, Chip)]) -> Looks {
+    if chips.is_empty() {
+        return looks;
+    }
+    let under = chips
+        .iter()
+        .map(|(range, _)| (range.clone(), HighlightStyle::default()));
+    combine_highlights(looks, under)
+        .map(|(range, mut look)| {
+            if chips
+                .iter()
+                .any(|(chip, _)| chip.start <= range.start && range.end <= chip.end)
+            {
+                look = HighlightStyle {
+                    color: Some(gpui::transparent_black()),
+                    ..HighlightStyle::default()
+                };
+                #[cfg(feature = "fork")]
+                {
+                    look.font_scale = Some(gpui::FontScale(0.01));
+                }
+            }
+            (range, look)
         })
         .collect()
 }
