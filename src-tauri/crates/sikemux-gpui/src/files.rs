@@ -74,6 +74,9 @@ pub struct FileTree {
     scroll: UniformListScrollHandle,
     /// The file in front the tree last opened its folders to.
     revealed: Option<PathBuf>,
+    /// Folders shown that changed since the tree was last drawn, listed again once it is, so
+    /// a tree out of sight asks the core for nothing.
+    behind: HashSet<PathBuf>,
 }
 
 actions!(
@@ -130,7 +133,16 @@ impl FileTree {
         self.asked.clear();
         self.again.clear();
         self.incoming.clear();
-        self.changed(None, core);
+        let stale = self.stale(None);
+        self.relist(stale, core);
+    }
+
+    /// Lists again the folders that changed while the tree was out of sight, once it is drawn.
+    pub fn catch_up(&mut self, core: &Target) {
+        let behind: Vec<PathBuf> = self.behind.drain().collect();
+        if !behind.is_empty() {
+            self.relist(behind, core);
+        }
     }
 
     /// Asks the core to list `dirs`; one already being listed is listed once more when it is in.
@@ -193,18 +205,24 @@ impl FileTree {
         }
     }
 
-    /// Lists again the folders shown that `paths` (relative to the project) could have changed,
-    /// or every shown folder when the core did not say what moved.
-    pub fn changed(&mut self, paths: Option<&[String]>, core: &Target) {
+    /// Notes the folders shown that `paths` (relative to the project) could have changed, or
+    /// every shown folder when the core did not say what moved, to list again once the tree
+    /// is drawn; answers whether the tree has to be drawn for that.
+    pub fn changed(&mut self, paths: Option<&[String]>) -> bool {
+        let was_behind = !self.behind.is_empty();
+        let stale = self.stale(paths);
+        self.behind.extend(stale);
+        !was_behind && !self.behind.is_empty()
+    }
+
+    fn stale(&self, paths: Option<&[String]>) -> Vec<PathBuf> {
         let Some(root) = self.root.clone() else {
-            return;
+            return Vec::new();
         };
         let shown: Vec<PathBuf> = std::iter::once(root.clone())
             .chain(self.expanded.iter().cloned())
             .collect();
-        let stale: Vec<PathBuf> = match paths
-            .filter(|paths| !paths.is_empty() && !paths.iter().any(|path| path == ".git"))
-        {
+        match paths.filter(|paths| !paths.is_empty() && !paths.iter().any(|path| path == ".git")) {
             None => shown,
             Some(paths) => {
                 let moved: Vec<PathBuf> = paths.iter().map(|path| root.join(path)).collect();
@@ -220,9 +238,6 @@ impl FileTree {
                     })
                     .collect()
             }
-        };
-        if !stale.is_empty() {
-            self.relist(stale, core);
         }
     }
 
@@ -437,6 +452,15 @@ fn list_from(core: &Target, dir: &Path, from: usize) {
 
 /// The tab rail's Files page: the project's name and what can be made in it, then its tree.
 pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
+    if !bench.files.behind.is_empty() {
+        let bench = cx.entity();
+        cx.defer(move |cx| {
+            bench.update(cx, |bench, _| {
+                let core = bench.target();
+                bench.files.catch_up(&core);
+            })
+        });
+    }
     let t = Tokens::get(cx).clone();
     let name = bench
         .files

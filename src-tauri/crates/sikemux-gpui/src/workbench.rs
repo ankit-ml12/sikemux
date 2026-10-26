@@ -186,8 +186,8 @@ pub struct Workbench {
     resizers: [FocusHandle; 2],
     pub peeking: Option<Edge>,
     unpeek: Option<Task<()>>,
-    /// The repository changed while the Git pane was out of sight, so it reads it again once
-    /// it shows rather than on every change.
+    /// The repository changed while the Git pane was out of sight, so it reads it and its
+    /// review again once it shows rather than on every change.
     git_behind: bool,
     /// Lets go of the chats out of sight once they have been for a while, counted from when
     /// the chat now in front came there.
@@ -1860,14 +1860,18 @@ impl Workbench {
             .as_ref()
             .map(|root| root.to_string_lossy().into_owned());
         if topic == "git" {
-            if let Some(pane) = &self.git {
-                pane.update(cx, |pane, cx| {
+            match (&self.git, self.git_in_front()) {
+                (Some(pane), true) => pane.update(cx, |pane, cx| {
                     pane.git_moved(project.as_deref(), paths.as_deref(), cx)
-                });
+                }),
+                (Some(_), false) => self.git_behind = true,
+                (None, _) => {}
             }
         }
         if topic == "git" && (project.is_none() || project == root) {
-            self.files.changed(paths.as_deref(), &self.target());
+            if self.files.changed(paths.as_deref()) {
+                self.parts.redraw(&self.parts.tabs, cx);
+            }
             if self.finder.is_some() {
                 self.project_files.read(root.as_deref(), &self.target());
             }
@@ -3565,9 +3569,13 @@ impl Workbench {
             pane.repo == repo && pane.place() == target.place()
         }) {
             if std::mem::take(&mut self.git_behind) {
-                if let Some(overview) = self.reads.get("git-overview") {
-                    pane.update(cx, |pane, cx| pane.overview(overview, cx));
-                }
+                let overview = self.reads.get("git-overview");
+                pane.update(cx, |pane, cx| {
+                    if let Some(overview) = overview {
+                        pane.overview(overview, cx);
+                    }
+                    pane.git_moved(None, None, cx);
+                });
             }
             return;
         }
