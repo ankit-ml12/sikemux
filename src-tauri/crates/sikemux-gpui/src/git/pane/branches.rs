@@ -54,6 +54,8 @@ impl BranchEntry {
 #[derive(Default)]
 pub(super) struct Branches {
     pub(super) remotes: Vec<GitRemote>,
+    /// The remotes have been read once, so an empty list means the repository has none.
+    pub(super) remotes_read: bool,
     pub(super) open: Option<String>,
     pub(super) remote_branches: Vec<GitRemoteBranch>,
     pub(super) local_folded: bool,
@@ -154,6 +156,7 @@ impl GitPane {
                 .unwrap_or_default();
             pane.update(cx, |pane, cx| {
                 pane.branches.remotes = remotes;
+                pane.branches.remotes_read = true;
                 pane.list_branches();
                 cx.notify();
             })

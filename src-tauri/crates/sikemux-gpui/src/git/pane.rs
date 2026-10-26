@@ -496,13 +496,14 @@ impl GitPane {
 
     /// Takes what `git.overview` last answered for the repository.
     pub fn overview(&mut self, value: &Value, cx: &mut Context<Self>) {
+        let first = self.overview.is_none();
         self.overview = Some(GitOverview::deserialize(value).map_err(|error| error.to_string()));
         for path in self.moved.drain(..) {
             self.moving.remove(&path);
         }
         self.list_commits();
         self.list_branches();
-        if self.page == Page::Branches {
+        if first || self.page == Page::Branches {
             self.read_remotes(cx);
         }
         self.read_stashes(cx);
@@ -2606,6 +2607,13 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
     let upstream = status.is_some_and(|status| status.upstream.is_some());
     let failed = matches!(pane.overview, Some(Err(_)));
     let busy = pane.busy.clone();
+    let held = if busy.is_some() {
+        Some("Wait for the running git command")
+    } else if pane.branches.remotes_read && pane.branches.remotes.is_empty() {
+        Some("This repository has no remote yet")
+    } else {
+        None
+    };
     let count = |value: i32, colour: Hsla, arrow: &str| {
         (value > 0).then(|| {
             div()
@@ -2624,9 +2632,10 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                 primary: bool,
                 act: fn(&mut GitPane, &mut Context<GitPane>),
                 cx: &mut Context<GitPane>| {
+        let primary = primary && held.is_none();
         BaseButton::new(id)
             .accessibility_label(label)
-            .tooltip(ui::tooltip(tip))
+            .tooltip(ui::tooltip(held.map_or(tip, String::from)))
             .h(px(30.))
             .flex_1()
             .min_w_0()
@@ -2637,7 +2646,9 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             .text_size(crate::theme::ui_text(12.))
             .font_weight(FontWeight::MEDIUM)
             .map(|button| {
-                if primary {
+                if held.is_some() {
+                    button.text_color(t.text_disabled)
+                } else if primary {
                     button.bg(t.accent).text_color(t.on_accent)
                 } else {
                     button
@@ -2645,9 +2656,13 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                         .hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
                 }
             })
-            .on_click(cx.listener(move |pane, _, _, cx| act(pane, cx)))
+            .when(held.is_none(), |button| {
+                button.on_click(cx.listener(move |pane, _, _, cx| act(pane, cx)))
+            })
             .child(ui::icon(icon, 12.).text_color(if primary {
                 t.on_accent
+            } else if held.is_some() {
+                t.text_disabled
             } else {
                 t.text_tertiary
             }))
@@ -2698,12 +2713,11 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                     )
                 })
                 .children(busy.map(|busy| {
-                    let error = busy.starts_with('✗');
                     div()
                         .min_w_0()
                         .truncate()
                         .text_size(crate::theme::ui_text(11.))
-                        .text_color(if error { t.danger } else { t.warn })
+                        .text_color(t.warn)
                         .child(busy)
                 }))
                 .children(host_account(pane, cx))
