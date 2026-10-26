@@ -47,7 +47,7 @@ const PAIR_LIMIT: usize = 30;
 /// Two agents that have exchanged this many messages, both ways, with
 /// neither doing anything else in between, have their messages to each other
 /// held for the person.
-const LOOP_MESSAGES: usize = 8;
+const LOOP_MESSAGES: usize = 4;
 /// The messages held between one pair of agents.
 const MAX_HELD: usize = 10;
 /// The tools that only talk to other agents, so calling them is no other work.
@@ -493,7 +493,7 @@ fn wrapped(letter: &Letter) -> String {
     }
     let name = &letter.from_name;
     let note = letter.note.clone().unwrap_or_else(|| {
-        format!("Sent by {name}, another agent in Sikemux, not by the person. Reply with agent_send to {name} if it needs an answer.")
+        format!("Sent by {name}, another agent in Sikemux, not by the person. Reply with agent_send only with an answer, a decision or a blocker, never just to acknowledge.")
     });
     format!(
         "<agent-message from=\"{}\" agent-id=\"{}\" cli=\"{}\" note=\"{}\">\n{}\n</agent-message>",

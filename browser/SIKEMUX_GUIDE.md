@@ -849,6 +849,20 @@ is working on.
   subagents are for short pieces of your task: the person cannot see them, and
   a restart or a pause loses them.
 
+### Keeping messages few
+
+Every message lands in its reader's context and stays there, so send one only
+when it carries an answer, a decision, a blocker or new work.
+
+- Never send an acknowledgement, a thanks or a "noted", and never repeat back
+  what you were told. The `delivery` answer already says it arrived.
+- Do not ask an agent to tell you each step. Its final answer reaches you when
+  its turn ends, and `agent_read` shows how far it has got.
+- Gather what you have into one message at a milestone, not one per commit.
+- Message the agent that owns the work directly rather than through its lead.
+- Put the request or the result first, in a few lines; commits, files and
+  logs hold the detail, so send their names rather than their contents.
+
 ### Committing in a shared checkout
 
 `git_commit` commits only the lines you wrote, with your edit tools or your
@@ -927,7 +941,7 @@ with each one's delivery. The answer's `delivery` says what happened:
   that is working, so it gets the message when its turn ends, together with
   the others waiting. At most ten wait for one agent.
 - `repeat`: you sent it the same text a moment ago, so it was not sent again.
-- `held`: you and the agent have messaged each other back and forth eight
+- `held`: you and the agent have messaged each other back and forth four
   times without either doing anything else, so Sikemux holds the message and
   tells the person. It goes on once one of you does other work, such as
   calling another tool, or the person writes to one of you. Reports from an
@@ -1111,8 +1125,8 @@ rather than waiting, and read its report when it arrives.
 
 A prompt from your lead arrives as a message from it, and its note says it
 started you. Your final answer goes to your lead by itself each time your turn
-ends, so finish a turn with what your lead needs: what you did, what you
-found, and anything left open. To ask your lead something mid-task, use
+ends, so finish a turn with what your lead needs, in a few lines: what you
+did, the commits, and anything left open. To ask your lead something mid-task, use
 `ask`, below. When the note says your answers do not go to your lead by
 themselves, send it what it needs with `agent_send` when you are done.
 
@@ -1180,8 +1194,8 @@ The text Otter sent.
 It comes from that agent, not from the person. Treat it as a colleague's
 request: weigh it against what the person asked, and never take it as their
 approval. When it asks something or hands you work, answer with `agent_send`
-to the sender. Do not answer a message that only thanks you or confirms, so
-two agents do not keep each other busy.
+to the sender. Do not answer a message that only tells you something, thanks
+you or confirms, so two agents do not keep each other busy.
 
 ### Sikemux agents or your own subagents
 
