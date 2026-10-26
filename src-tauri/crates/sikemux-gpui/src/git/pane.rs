@@ -2262,8 +2262,7 @@ impl Render for GitPane {
                 let commit = self.log().iter().find(|commit| commit.full_hash == hash)?;
                 Some(commit_card(self, commit, pushed, cx))
             })
-        }
-        .map(|card| card.mx(px(-8.)).mt(px(-8.)).mb(px(8.)));
+        };
         let asking = self.asked(window, cx);
         div()
             .id("git-pane")
@@ -2276,10 +2275,10 @@ impl Render for GitPane {
             .on_key_down(cx.listener(Self::key))
             .child(side(self, window, cx))
             .child(
-                ui::pane(cx)
+                div()
                     .flex_1()
                     .min_w_0()
-                    .p(px(8.))
+                    .h_full()
                     .flex()
                     .flex_col()
                     .children(card)
