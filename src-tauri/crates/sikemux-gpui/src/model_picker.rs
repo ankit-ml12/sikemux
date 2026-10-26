@@ -349,7 +349,7 @@ fn chip(
         .text_size(crate::theme::ui_text(11.5))
         .map(|chip| match pressed {
             true => chip
-                .border_color(t.border_selected)
+                .border_color(gpui::transparent_black())
                 .bg(t.surface_chosen)
                 .text_color(t.text_primary),
             false => chip
@@ -489,7 +489,6 @@ impl Render for Menu {
                 .cursor_pointer()
                 .text_color(t.text_primary)
                 .when(at == self.chosen, |row| row.bg(t.surface_hover))
-                .when(option.value == current, |row| row.text_color(t.accent))
                 .on_hover({
                     let this = this.clone();
                     move |over: &bool, _, cx| {
@@ -516,7 +515,7 @@ impl Render for Menu {
                         .child(option.label.clone()),
                 )
                 .when(option.value == current, |row| {
-                    row.child(ui::icon(Icon::Check, 14.))
+                    row.child(ui::icon(Icon::Check, 14.).text_color(t.text_secondary))
                 })
         });
         let empty = options.is_empty();

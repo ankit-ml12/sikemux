@@ -655,7 +655,11 @@ fn picker_face<E: Styled + ParentElement + IntoElement>(
         .gap(px(6.))
         .rounded_full()
         .text_size(crate::theme::ui_text(11.))
-        .text_color(if first { t.accent } else { t.text_tertiary })
+        .text_color(if first {
+            t.text_secondary
+        } else {
+            t.text_tertiary
+        })
         .when(!enabled, |trigger| trigger.opacity(0.45))
         .children(provider.map(|provider| ui::mark(provider, 17.)))
         .child(

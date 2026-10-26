@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use sikemux_wire::protocol::{AgentFace, WorkspaceAgent};
 
 use crate::faces::{self, Pack};
+use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, dialog};
 use crate::workbench::Workbench;
@@ -118,7 +119,11 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .rounded(theme::RADIUS_2)
             .border_1()
             .cursor_pointer()
-            .border_color(if on { t.border_selected } else { t.border })
+            .border_color(if on {
+                gpui::transparent_black()
+            } else {
+                t.border
+            })
             .when(on, |tile| tile.bg(t.surface_chosen))
             .when(!on, |tile| tile.hover(|style| style.bg(t.surface_hover)))
     };
@@ -226,7 +231,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                             .child(candidate.name.clone()),
                     )
                     .when(candidate.id == face.pack, |row| {
-                        row.child(div().size(px(5.)).rounded_full().bg(t.accent))
+                        row.child(ui::icon(Icon::Check, 12.).text_color(t.text_secondary))
                     })
                     .on_click(cx.listener(move |bench, _, _, cx| {
                         if let Some(picking) = bench.buddy_picker.as_mut() {
