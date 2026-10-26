@@ -1235,7 +1235,7 @@ fn title_block(
                         .gap(px(8.))
                         .child(div().pt(px(2.)).child(pull_mark(found.state, 16., cx)))
                         .child(if wrap {
-                            title.flex_1()
+                            title.flex_1().whitespace_normal()
                         } else {
                             title.truncate()
                         })

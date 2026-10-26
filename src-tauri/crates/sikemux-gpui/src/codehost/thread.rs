@@ -428,7 +428,11 @@ fn mentioned_by(subject: String, source: &Mention, cx: &App) -> AnyElement {
                 .flex()
                 .flex_col()
                 .gap(px(2.))
-                .child(ui::text(subject, 13., FontWeight::SEMIBOLD).text_color(t.text_primary))
+                .child(
+                    ui::text(subject, 13., FontWeight::SEMIBOLD)
+                        .whitespace_normal()
+                        .text_color(t.text_primary),
+                )
                 .child(dim(place, cx)),
         )
         .child(
