@@ -791,6 +791,17 @@ pub fn render(
                 cx,
             )
         }
+        (false, _) if known => rows::section(
+            "Hosts",
+            None,
+            None,
+            lit("Hosts"),
+            rows::note(
+                "Sign in to link this host with your others. Every host on your account shows here, and agents here can start agents there.",
+                cx,
+            ),
+            cx,
+        ),
         _ => div().into_any_element(),
     };
     match page {
