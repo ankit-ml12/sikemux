@@ -508,6 +508,7 @@ impl Render for Menu {
                     let value = value.clone();
                     this.update(cx, |menu, cx| menu.pick(value, window, cx))
                 })
+                .child(ui::mark(&self.picked.provider, 14.))
                 .child(
                     div()
                         .flex_1()
