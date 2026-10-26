@@ -58,6 +58,9 @@ fn keyboard_back() {}
 /// went, such as when its closing failed.
 const CLOSE_SETTLES: Duration = Duration::from_secs(2);
 /// How long a peeking rail stays after the pointer leaves it.
+/// How long a chat stays attached once its tab leaves the front, so flicking between tabs
+/// keeps them live while a long-hidden one stops streaming every change to the app.
+const CHAT_RESTS_AFTER: Duration = Duration::from_secs(60);
 const PEEK_CLOSE: Duration = Duration::from_millis(180);
 /// How close to the window's edge the pointer brings out a closed rail.
 const PEEK_REACH: f32 = 28.;
@@ -183,6 +186,9 @@ pub struct Workbench {
     resizers: [FocusHandle; 2],
     pub peeking: Option<Edge>,
     unpeek: Option<Task<()>>,
+    /// Lets go of the chats out of sight once they have been for a while, counted from when
+    /// the chat now in front came there.
+    resting_chats: Option<(Option<String>, Task<()>)>,
     pub run_clock: Entity<crate::tabs::RunClock>,
     /// Which of its pages the tab rail shows.
     pub rail_page: RailPage,
@@ -708,6 +714,7 @@ impl Workbench {
             trust_host: None,
             peeking: None,
             unpeek: None,
+            resting_chats: None,
             run_clock: cx.new(|_| crate::tabs::RunClock::default()),
             rail_page: RailPage::Agents,
             files: FileTree::default(),
@@ -802,7 +809,7 @@ impl Workbench {
                 self.stopped = false;
                 self.stuck = None;
                 self.on_screen = None;
-                for (agent, chat) in &self.chats {
+                for (agent, chat) in self.chats.iter().filter(|(_, chat)| !chat.resting) {
                     self.ask_chat(ChatAsk::Attach {
                         agent: agent.clone(),
                         since: chat.mark.clone(),
@@ -824,6 +831,7 @@ impl Workbench {
                     self.watch_worktree();
                     self.close_chats(cx);
                     self.open_chat(cx);
+                    self.rest_chats_later(cx);
                     self.look_for_older(false, crate::recent::PAGE, cx);
                     self.front_moved(cx);
                     self.files.reveal(self.front_file(), &self.target());
@@ -895,6 +903,7 @@ impl Workbench {
                 self.watch_ci();
                 self.close_chats(cx);
                 self.open_chat(cx);
+                self.rest_chats_later(cx);
                 self.look_for_older(false, crate::recent::PAGE, cx);
                 self.front_moved(cx);
                 self.files.reveal(self.front_file(), &self.target());
@@ -1296,7 +1305,11 @@ impl Workbench {
         else {
             return;
         };
-        if self.chats.contains_key(&agent) {
+        if let Some(chat) = self.chats.get_mut(&agent) {
+            if std::mem::take(&mut chat.resting) {
+                let since = chat.mark.clone();
+                self.ask_chat(ChatAsk::Attach { agent, since });
+            }
             return;
         }
         let mut chat = Chat::new(
@@ -1309,6 +1322,53 @@ impl Workbench {
         chat.rescale(self.preferences().chat_text_scale as f32, cx);
         self.chats.insert(agent.clone(), chat);
         self.ask_chat(ChatAsk::Attach { agent, since: None });
+    }
+
+    /// Lets go of the chats out of sight once they have stayed so for `CHAT_RESTS_AFTER`.
+    fn rest_chats_later(&mut self, cx: &mut Context<Self>) {
+        let front = self.agent().map(|agent| agent.id);
+        let anyone = self
+            .chats
+            .iter()
+            .any(|(agent, chat)| !chat.resting && Some(agent) != front.as_ref());
+        if !anyone {
+            self.resting_chats = None;
+            return;
+        }
+        if self
+            .resting_chats
+            .as_ref()
+            .is_some_and(|(counted_from, _)| *counted_from == front)
+        {
+            return;
+        }
+        let task = cx.spawn(async move |bench, cx| {
+            cx.background_executor().timer(CHAT_RESTS_AFTER).await;
+            let _ = bench.update(cx, |bench, cx| {
+                bench.rest_chats();
+                bench.rest_chats_later(cx);
+            });
+        });
+        self.resting_chats = Some((front, task));
+    }
+
+    fn rest_chats(&mut self) {
+        self.resting_chats = None;
+        let front = self.agent().map(|agent| agent.id);
+        let resting: Vec<String> = self
+            .chats
+            .iter_mut()
+            .filter(|(agent, chat)| {
+                Some(*agent) != front.as_ref() && !chat.resting && chat.can_rest()
+            })
+            .map(|(agent, chat)| {
+                chat.resting = true;
+                agent.clone()
+            })
+            .collect();
+        for agent in resting {
+            self.ask_chat(ChatAsk::Detach { agent });
+        }
     }
 
     /// Makes the composer of the chat in front, which needs the window.

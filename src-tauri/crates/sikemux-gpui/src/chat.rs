@@ -501,6 +501,9 @@ pub struct Chat {
     pub awaits_agent: bool,
     /// The menu of a file a message names, while it is open.
     file_menu: Option<files::FileMenu>,
+    /// Out of sight long enough to stop following the core, which it attaches to again from
+    /// its mark once it shows.
+    pub resting: bool,
 }
 
 /// The draft, the masked field a secret answer is typed into, and what the draft last said while empty.
@@ -741,6 +744,7 @@ impl Chat {
             answering: HashSet::new(),
             awaits_agent: false,
             file_menu: None,
+            resting: false,
         }
     }
 
@@ -902,6 +906,20 @@ impl Chat {
             self.cursor = None;
         }
         self.failed(error);
+    }
+
+    /// Whether nothing the person did waits on the core's answer, so the chat can stop
+    /// following it while out of sight.
+    pub fn can_rest(&self) -> bool {
+        self.answering.is_empty()
+            && self.stopping.is_empty()
+            && self.replying.is_none()
+            && !self.awaits_agent
+            && self.composer.as_ref().is_none_or(|composing| {
+                composing.sent.is_none()
+                    && !composing.send_when_ready
+                    && composing.preparing.is_none()
+            })
     }
 
     /// Answers on their way to the core keep the questions from being answered again.
