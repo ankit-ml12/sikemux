@@ -40,6 +40,18 @@ pub enum Tab {
     Files,
 }
 
+/// What the view shows while too narrow for two columns, picked from one row of tabs.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Section {
+    Conversation,
+    Files,
+    Commits,
+    Checks,
+}
+
+/// Below this width the side column and the main column stack into one.
+const STACK_BELOW: f32 = 760.;
+
 fn method_label(method: &str) -> &str {
     match method {
         "squash" => "Squash",
@@ -67,6 +79,9 @@ pub struct Opened {
     opening: Option<(String, Post)>,
     pub page: Page,
     pub tab: Tab,
+    pub section: Section,
+    /// Too narrow for two columns, as last drawn.
+    stacked: bool,
     pub method: usize,
     pub busy: bool,
     /// The comment being written, made once the conversation first shows.
@@ -86,6 +101,8 @@ impl Opened {
             opening: None,
             page: Page::Files,
             tab: Tab::Conversation,
+            section: Section::Conversation,
+            stacked: false,
             method: 0,
             busy: false,
             draft: None,
@@ -134,6 +151,7 @@ impl Opened {
     /// Shows the diffs, scrolled to `path`'s.
     fn focus(&mut self, path: &str) {
         self.tab = Tab::Files;
+        self.section = Section::Files;
         if let Some(Ok(diffs)) = &self.files {
             diffs.reveal(path);
         }
@@ -327,13 +345,43 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
     let Some(opened) = &area.pull else {
         return div().into_any_element();
     };
-    let t = Tokens::get(cx).clone();
-    let left = side(area, cx);
-    if opened.tab == Tab::Files {
+    let stacked = opened.stacked;
+    let diffs_shown = opened.tab == Tab::Files && (!stacked || opened.section == Section::Files);
+    if diffs_shown {
         if let Some(Some(Ok(diffs))) = area.pull.as_mut().map(|opened| opened.files.as_mut()) {
             diffs.colour(cx, |area| area.pull.as_mut()?.files.as_mut()?.as_mut().ok());
         }
     }
+    let shown = if stacked {
+        stacked_view(area, window, cx)
+    } else {
+        wide_view(area, window, cx)
+    };
+    let entity = cx.entity().downgrade();
+    div()
+        .size_full()
+        .on_children_prepainted(move |bounds, _, cx| {
+            let Some(width) = bounds.first().map(|drawn| f32::from(drawn.size.width)) else {
+                return;
+            };
+            entity
+                .update(cx, |area, cx| {
+                    if let Some(opened) = &mut area.pull {
+                        if opened.stacked != (width < STACK_BELOW) {
+                            opened.stacked = !opened.stacked;
+                            cx.notify();
+                        }
+                    }
+                })
+                .ok();
+        })
+        .child(shown)
+        .into_any_element()
+}
+
+fn wide_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let left = side(area, cx);
     let right = main(area, window, cx);
     div()
         .size_full()
@@ -351,12 +399,152 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
         .into_any_element()
 }
 
-fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
+/// One column for a narrow pane, such as a desk: the pull request's title and actions,
+/// one row of tabs for everything the two columns show, then the tab's page.
+fn stacked_view(
+    area: &mut HostArea,
+    window: &mut Window,
+    cx: &mut Context<HostArea>,
+) -> AnyElement {
     let t = Tokens::get(cx).clone();
+    let opened = area.pull.as_ref().expect("a pull request is open");
+    let found = match &opened.view {
+        None => return super::notice("Loading pull request", None, cx),
+        Some(Err(error)) => return super::notice("Could not read it", Some(error.clone()), cx),
+        Some(Ok(found)) => found,
+    };
+    let pull = &found.pull;
+    let said = opened
+        .thread
+        .as_ref()
+        .and_then(|thread| thread.as_ref().ok())
+        .map(|blocks| (thread::said(blocks) + 1) as u64);
+    let sections = [
+        (Section::Conversation, "Conversation", said),
+        (Section::Files, "Files", pull.changed_files),
+        (Section::Commits, "Commits", pull.commits),
+        (Section::Checks, "Checks", None),
+    ];
+    let chosen = opened.section;
+    let top = div()
+        .px(px(12.))
+        .pt(px(12.))
+        .pb(px(10.))
+        .flex()
+        .flex_col()
+        .gap(px(10.))
+        .border_b_1()
+        .border_color(t.border)
+        .child(
+            div()
+                .flex()
+                .items_start()
+                .gap(px(8.))
+                .when(area.desk.is_none(), |row| row.child(back(cx)))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(title_block(area, found, 28., true, cx)),
+                ),
+        )
+        .child(actions(area, cx))
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(6.))
+                .children(sections.into_iter().map(|(section, label, count)| {
+                    chip(label, count, chosen == section, cx).on_click(cx.listener(
+                        move |area, _, _, cx| {
+                            if let Some(opened) = &mut area.pull {
+                                opened.section = section;
+                                if section == Section::Files {
+                                    opened.tab = Tab::Conversation;
+                                }
+                            }
+                            cx.notify();
+                        },
+                    ))
+                })),
+        );
+    let page = |body: AnyElement| {
+        div()
+            .id("pull-stacked-page")
+            .size_full()
+            .overflow_y_scroll()
+            .child(body)
+            .into_any_element()
+    };
+    let body = match chosen {
+        Section::Conversation => conversation(area, window, cx),
+        Section::Files if opened.tab == Tab::Files => {
+            let count = pull.changed_files.unwrap_or_default();
+            div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .id("pull-all-files")
+                        .h(px(30.))
+                        .px(px(10.))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .border_b_1()
+                        .border_color(t.border)
+                        .text_size(crate::theme::ui_text(11.5))
+                        .text_color(t.text_secondary)
+                        .cursor_pointer()
+                        .hover(move |row| row.text_color(t.text_primary))
+                        .on_click(cx.listener(|area, _, _, cx| {
+                            if let Some(opened) = &mut area.pull {
+                                opened.tab = Tab::Conversation;
+                            }
+                            cx.notify();
+                        }))
+                        .child(ui::icon(Icon::Chevron, 11.).with_transformation(
+                            gpui_kit::Transformation::rotate(gpui_kit::radians(
+                                std::f32::consts::PI,
+                            )),
+                        ))
+                        .child(format!("All files · {count}")),
+                )
+                .child(div().flex_1().min_h_0().child(diffs(area, window, cx)))
+                .into_any_element()
+        }
+        Section::Files => page(files_page(opened, cx)),
+        Section::Commits => page(commits_page(opened, cx)),
+        Section::Checks => page(merge_page(area, cx)),
+    };
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .child(top)
+        .child(div().flex_1().min_h_0().child(body))
+        .into_any_element()
+}
+
+fn back(cx: &mut Context<HostArea>) -> IconButton {
+    IconButton::new("pull-back", Icon::Chevron, "Back to the pull requests")
+        .turned(std::f32::consts::PI)
+        .small()
+        .on_click(cx.listener(|area, _, _, cx| {
+            area.pull = None;
+            area.elsewhere = None;
+            area.watch();
+            cx.notify();
+        }))
+}
+
+/// Check out, open on the host, and merge.
+fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
     let opened = area.pull.as_ref().expect("a pull request is open");
     let host = super::host_label(&area.host.host);
     let view = opened.view.as_ref().and_then(|view| view.as_ref().ok());
-    let state = view.map(|view| view.state);
     let merge_label = match view.map(|view| view.pull.state.as_str()) {
         Some("merged") => "Merged",
         Some("closed") => "Closed",
@@ -376,31 +564,7 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     } else {
         "Check out"
     };
-    let head = div()
-        .px(px(10.))
-        .pt(px(10.))
-        .pb(px(8.))
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .when(area.desk.is_none(), |head| {
-            head.child(
-                IconButton::new("pull-back", Icon::Chevron, "Back to the pull requests")
-                    .turned(std::f32::consts::PI)
-                    .small()
-                    .on_click(cx.listener(|area, _, _, cx| {
-                        area.pull = None;
-                        area.elsewhere = None;
-                        area.watch();
-                        cx.notify();
-                    })),
-            )
-        })
-        .children(state.map(|state| pull_mark(state, 14., cx)))
-        .child(ui::mono(format!("#{}", opened.number), 12., cx).text_color(t.text_primary));
-    let actions = div()
-        .px(px(10.))
-        .pb(px(10.))
+    div()
         .flex()
         .gap(px(6.))
         .flex_wrap()
@@ -426,10 +590,55 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 .on_click(cx.listener(|area, _, _, cx| {
                     if let Some(opened) = &mut area.pull {
                         opened.page = Page::Merge;
+                        opened.section = Section::Checks;
                     }
                     cx.notify();
                 })),
-        );
+        )
+}
+
+/// A tab of the main column or of the stacked view, with how many it holds.
+fn chip(label: &'static str, count: Option<u64>, on: bool, cx: &App) -> gpui_kit::Stateful<Div> {
+    let t = Tokens::get(cx).clone();
+    div()
+        .id(SharedString::from(format!("pull-tab-{label}")))
+        .h(px(24.))
+        .px(px(10.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .rounded_full()
+        .border_1()
+        .border_color(if on { t.border_strong } else { t.border })
+        .when(on, |chip| chip.bg(t.surface_active))
+        .text_size(crate::theme::ui_text(11.5))
+        .text_color(if on { t.text_primary } else { t.text_secondary })
+        .cursor_pointer()
+        .child(label)
+        .children(count.map(|count| {
+            div()
+                .font_features(theme::tabular())
+                .text_color(t.text_tertiary)
+                .child(count.to_string())
+        }))
+}
+
+fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let opened = area.pull.as_ref().expect("a pull request is open");
+    let state = (opened.view.as_ref())
+        .and_then(|view| view.as_ref().ok())
+        .map(|view| view.state);
+    let head = div()
+        .px(px(10.))
+        .pt(px(10.))
+        .pb(px(8.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .when(area.desk.is_none(), |head| head.child(back(cx)))
+        .children(state.map(|state| pull_mark(state, 14., cx)))
+        .child(ui::mono(format!("#{}", opened.number), 12., cx).text_color(t.text_primary));
     let pages = [
         (Icon::File, "Files", Page::Files),
         (Icon::Commit, "Commits", Page::Commits),
@@ -465,7 +674,7 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .flex()
         .flex_col()
         .child(head)
-        .child(actions)
+        .child(actions(area, cx).px(px(10.)).pb(px(10.)))
         .child(switch)
         .child(
             div()
@@ -938,8 +1147,6 @@ fn checks(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
 
 fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let host = super::host_label(&area.host.host);
-    let view = cx.entity();
     let opened = area.pull.as_ref().expect("a pull request is open");
     let found = match &opened.view {
         None => return super::notice("Loading pull request", None, cx),
@@ -947,200 +1154,42 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
         Some(Ok(found)) => found,
     };
     let pull = &found.pull;
-    let author = pull.author.clone().unwrap_or_else(|| "someone".into());
-    let url = pull.url.clone();
     let said = opened
         .thread
         .as_ref()
         .and_then(|thread| thread.as_ref().ok())
-        .map(|blocks| thread::said(blocks) + 1);
+        .map(|blocks| (thread::said(blocks) + 1) as u64);
     let tabs = [
-        (
-            Tab::Conversation,
-            "Conversation",
-            said.map(|said| said as u64),
-        ),
+        (Tab::Conversation, "Conversation", said),
         (Tab::Files, "Files changed", pull.changed_files),
     ];
-    let headline = div()
-        .px(px(16.))
-        .pt(px(14.))
-        .pb(px(10.))
-        .flex()
-        .flex_col()
-        .gap(px(10.))
-        .border_b_1()
-        .border_color(t.border)
-        .child(
-            div()
-                .flex()
-                .gap(px(12.))
-                .child(area.face(Some(&author), pull.avatar_url.as_deref(), 36., cx))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.))
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(8.))
-                                .child(pull_mark(found.state, 16., cx))
-                                .child(
-                                    ui::text(pull.title.clone(), 15., FontWeight::SEMIBOLD)
-                                        .text_color(t.text_primary)
-                                        .min_w_0()
-                                        .truncate(),
-                                )
-                                .child(
-                                    IconButton::new(
-                                        "pull-open-host",
-                                        Icon::Globe,
-                                        format!("Open on {host}"),
-                                    )
-                                    .small()
-                                    .on_click(move |_, _, cx| cx.open_url(&url)),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(6.))
-                                .text_size(crate::theme::ui_text(10.5))
-                                .text_color(t.text_tertiary)
-                                .child(format!(
-                                    "{author} · #{}, updated {}",
-                                    pull.number,
-                                    ago(&pull.updated_at)
-                                ))
-                                .children(
-                                    pull.head
-                                        .as_ref()
-                                        .map(|head| branch_chip(head, t.text_secondary, cx)),
-                                )
-                                .children(pull.base.as_ref().map(|base| {
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(6.))
-                                        .child("→")
-                                        .child(branch_chip(base, t.text_secondary, cx))
-                                }))
-                                .children(
-                                    pull.labels.iter().map(|label| super::label_chip(label, cx)),
-                                ),
-                        ),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .gap(px(6.))
-                .children(tabs.into_iter().map(|(tab, label, count)| {
-                    let on = opened.tab == tab;
-                    div()
-                        .id(SharedString::from(format!("pull-tab-{label}")))
-                        .h(px(24.))
-                        .px(px(10.))
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .rounded_full()
-                        .border_1()
-                        .border_color(if on { t.border_strong } else { t.border })
-                        .when(on, |chip| chip.bg(t.surface_active))
-                        .text_size(crate::theme::ui_text(11.5))
-                        .text_color(if on { t.text_primary } else { t.text_secondary })
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |area, _, _, cx| {
+    let chosen = opened.tab;
+    let headline =
+        div()
+            .px(px(16.))
+            .pt(px(14.))
+            .pb(px(10.))
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .border_b_1()
+            .border_color(t.border)
+            .child(title_block(area, found, 36., false, cx))
+            .child(div().flex().gap(px(6.)).children(tabs.into_iter().map(
+                |(tab, label, count)| {
+                    chip(label, count, chosen == tab, cx).on_click(cx.listener(
+                        move |area, _, _, cx| {
                             if let Some(opened) = &mut area.pull {
                                 opened.tab = tab;
                             }
                             cx.notify();
-                        }))
-                        .child(label)
-                        .children(count.map(|count| {
-                            div()
-                                .font_features(theme::tabular())
-                                .text_color(t.text_tertiary)
-                                .child(count.to_string())
-                        }))
-                })),
-        );
-    let body = match opened.tab {
-        Tab::Conversation => {
-            let base = pull.base.clone();
-            let pushers: Pushers = opened
-                .commits
-                .as_deref()
-                .map(thread::pushers)
-                .unwrap_or_default();
-            let opening = opened.opening.as_ref().map(|(_, post)| post);
-            let blocks = match &opened.thread {
-                Some(Ok(blocks)) => &blocks[..],
-                _ => &[],
-            };
-            let avatars = &pull.avatars;
-            let shown: &HostArea = area;
-            let faces = |login: Option<&str>, url: Option<&str>, size: f32, cx: &App| match url {
-                Some(_) => shown.face(login, url, size, cx),
-                None => {
-                    let known = login
-                        .and_then(|login| avatars.get(login))
-                        .map(String::as_str);
-                    shown.face(login, known, size, cx)
-                }
-            };
-            let mut column = div().id("pull-thread").size_full().overflow_y_scroll();
-            column = column.child(thread::thread(
-                opening,
-                blocks,
-                &pushers,
-                base.as_deref(),
-                &faces,
-                window,
-                cx,
-            ));
-            if let Some(Err(error)) = &opened.thread {
-                column = column.child(super::notice(
-                    "Could not read the conversation",
-                    Some(error.clone()),
-                    cx,
-                ));
-            }
-            let review = (pull.state == "open").then(|| {
-                let mine = area
-                    .login()
-                    .is_some_and(|login| pull.author.as_deref() == Some(login));
-                (mine, area.host.pulls.request_changes)
-            });
-            column
-                .child(composer(area, review, window, cx))
-                .into_any_element()
-        }
-        Tab::Files => match &opened.files {
-            None => super::notice("Loading files", None, cx),
-            Some(Err(error)) => super::notice("Could not read the files", Some(error.clone()), cx),
-            Some(Ok(diffs)) if diffs.files.is_empty() => {
-                super::notice("No files changed.", None, cx)
-            }
-            Some(Ok(diffs)) => diffs.list(
-                &view,
-                |area| area.pull.as_ref()?.files.as_ref()?.as_ref().ok(),
-                area.elsewhere.is_none().then_some(area.project.as_str()),
-                Some(super::diffs::PullOf {
-                    number: pull.number,
-                    title: pull.title.clone(),
-                    url: pull.url.clone(),
-                    bench: area.bench.clone(),
-                }),
-                window,
-            ),
-        },
+                        },
+                    ))
+                },
+            )));
+    let body = match chosen {
+        Tab::Conversation => conversation(area, window, cx),
+        Tab::Files => diffs(area, window, cx),
     };
     div()
         .size_full()
@@ -1149,6 +1198,174 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
         .child(headline)
         .child(div().flex_1().min_h_0().child(body))
         .into_any_element()
+}
+
+/// Who opened the pull request, its state, title and branches. `wrap` lets a long title
+/// run onto more lines, where a narrow view has no room to cut it short.
+fn title_block(
+    area: &HostArea,
+    found: &OpenPull,
+    face: f32,
+    wrap: bool,
+    cx: &mut Context<HostArea>,
+) -> Div {
+    let t = Tokens::get(cx).clone();
+    let host = super::host_label(&area.host.host);
+    let pull = &found.pull;
+    let author = pull.author.clone().unwrap_or_else(|| "someone".into());
+    let url = pull.url.clone();
+    let title = ui::text(pull.title.clone(), 15., FontWeight::SEMIBOLD)
+        .text_color(t.text_primary)
+        .min_w_0();
+    div()
+        .flex()
+        .gap(px(12.))
+        .child(area.face(Some(&author), pull.avatar_url.as_deref(), face, cx))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .child(
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap(px(8.))
+                        .child(div().pt(px(2.)).child(pull_mark(found.state, 16., cx)))
+                        .child(if wrap {
+                            title.flex_1()
+                        } else {
+                            title.truncate()
+                        })
+                        .child(
+                            IconButton::new(
+                                "pull-open-host",
+                                Icon::Globe,
+                                format!("Open on {host}"),
+                            )
+                            .small()
+                            .on_click(move |_, _, cx| cx.open_url(&url)),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_size(crate::theme::ui_text(10.5))
+                        .text_color(t.text_tertiary)
+                        .child(format!(
+                            "{author} · #{}, updated {}",
+                            pull.number,
+                            ago(&pull.updated_at)
+                        ))
+                        .children(
+                            pull.head
+                                .as_ref()
+                                .map(|head| branch_chip(head, t.text_secondary, cx)),
+                        )
+                        .children(pull.base.as_ref().map(|base| {
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.))
+                                .child("→")
+                                .child(branch_chip(base, t.text_secondary, cx))
+                        }))
+                        .children(pull.labels.iter().map(|label| super::label_chip(label, cx))),
+                ),
+        )
+}
+
+/// The description and everything said and done since, with the composer under them.
+fn conversation(
+    area: &mut HostArea,
+    window: &mut Window,
+    cx: &mut Context<HostArea>,
+) -> AnyElement {
+    let opened = area.pull.as_ref().expect("a pull request is open");
+    let Some(Ok(found)) = &opened.view else {
+        return div().into_any_element();
+    };
+    let pull = &found.pull;
+    let base = pull.base.clone();
+    let pushers: Pushers = opened
+        .commits
+        .as_deref()
+        .map(thread::pushers)
+        .unwrap_or_default();
+    let opening = opened.opening.as_ref().map(|(_, post)| post);
+    let blocks = match &opened.thread {
+        Some(Ok(blocks)) => &blocks[..],
+        _ => &[],
+    };
+    let avatars = &pull.avatars;
+    let shown: &HostArea = area;
+    let faces = |login: Option<&str>, url: Option<&str>, size: f32, cx: &App| match url {
+        Some(_) => shown.face(login, url, size, cx),
+        None => {
+            let known = login
+                .and_then(|login| avatars.get(login))
+                .map(String::as_str);
+            shown.face(login, known, size, cx)
+        }
+    };
+    let mut column = div().id("pull-thread").size_full().overflow_y_scroll();
+    column = column.child(thread::thread(
+        opening,
+        blocks,
+        &pushers,
+        base.as_deref(),
+        &faces,
+        window,
+        cx,
+    ));
+    if let Some(Err(error)) = &opened.thread {
+        column = column.child(super::notice(
+            "Could not read the conversation",
+            Some(error.clone()),
+            cx,
+        ));
+    }
+    let review = (pull.state == "open").then(|| {
+        let mine = area
+            .login()
+            .is_some_and(|login| pull.author.as_deref() == Some(login));
+        (mine, area.host.pulls.request_changes)
+    });
+    column
+        .child(composer(area, review, window, cx))
+        .into_any_element()
+}
+
+/// Every changed file's diff.
+fn diffs(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> AnyElement {
+    let view = cx.entity();
+    let opened = area.pull.as_ref().expect("a pull request is open");
+    let Some(Ok(found)) = &opened.view else {
+        return div().into_any_element();
+    };
+    let pull = &found.pull;
+    match &opened.files {
+        None => super::notice("Loading files", None, cx),
+        Some(Err(error)) => super::notice("Could not read the files", Some(error.clone()), cx),
+        Some(Ok(diffs)) if diffs.files.is_empty() => super::notice("No files changed.", None, cx),
+        Some(Ok(diffs)) => diffs.list(
+            &view,
+            |area| area.pull.as_ref()?.files.as_ref()?.as_ref().ok(),
+            area.elsewhere.is_none().then_some(area.project.as_str()),
+            Some(super::diffs::PullOf {
+                number: pull.number,
+                title: pull.title.clone(),
+                url: pull.url.clone(),
+                bench: area.bench.clone(),
+            }),
+            window,
+        ),
+    }
 }
 
 /// Where a comment or review is written, with what can be sent: `review` says whether
