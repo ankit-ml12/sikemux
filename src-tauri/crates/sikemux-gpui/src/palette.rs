@@ -904,7 +904,7 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                     .child(match mark {
                         Mark::Icon(glyph) => ui::picture(glyph, 14., t.text_tertiary),
                         Mark::Agent(provider) => ui::mark(&provider, 14.),
-                        Mark::Open(agent) => ui::row_mark(&agent, 14., cx),
+                        Mark::Open(agent) => ui::agent_mark(&agent, 14., cx),
                     }),
             )
         })

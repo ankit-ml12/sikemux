@@ -429,7 +429,7 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
         SharedString::from(format!("recent-{}", recent.id)),
         recent.title.clone(),
     )
-    .mark(22., ui::quiet_mark(&recent.provider, 20., cx))
+    .mark(22., ui::mark(&recent.provider, 20.))
     .compact(bench.rail_compact())
     .child(tail)
     .on_click(cx.listener({
@@ -857,7 +857,7 @@ fn agent_row(
             .child(
                 div()
                     .group_hover(ui::ROW, |mark| mark.opacity(0.))
-                    .child(ui::row_mark(agent, 20., cx)),
+                    .child(ui::agent_mark(agent, 20., cx)),
             )
             .child(
                 div()
@@ -884,7 +884,7 @@ fn agent_row(
                     )),
             )
             .into_any_element(),
-        None => ui::row_mark(agent, 20., cx),
+        None => ui::agent_mark(agent, 20., cx),
     };
     let status = ui::status_mark(&agent.id, agent.status, cx);
     let fades = status.is_none();

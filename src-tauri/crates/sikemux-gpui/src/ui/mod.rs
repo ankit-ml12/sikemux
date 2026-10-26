@@ -110,53 +110,12 @@ pub fn status_of_run(outcome: &str, size: f32, cx: &App) -> AnyElement {
 
 /// An agent's face, or its agent's mark while it wears none.
 pub fn agent_mark(agent: &AgentRow, size: f32, cx: &App) -> AnyElement {
-    face_or(agent, size, cx, || mark(&agent.provider, size))
-}
-
-/// An agent's face, or its agent's mark while it wears none, drawn for a list of many: the
-/// mark keeps its colour only while the agent starts, works or waits on you, so a list of idle
-/// agents leads with their titles rather than a row of logos.
-pub fn row_mark(agent: &AgentRow, size: f32, cx: &App) -> AnyElement {
-    use sikemux_wire::protocol::AgentStatus;
-    let busy = matches!(
-        agent.status,
-        AgentStatus::Starting | AgentStatus::Working | AgentStatus::Blocked
-    );
-    face_or(agent, size, cx, || match busy {
-        true => mark(&agent.provider, size),
-        false => quiet_mark(&agent.provider, size, cx),
-    })
-}
-
-/// An agent's mark in grey, for a row of an agent that is not doing anything.
-pub fn quiet_mark(provider: &str, size: f32, cx: &App) -> AnyElement {
-    use gpui::StyledImage as _;
-    let glyph = icons::agent(provider);
-    match glyph.is_picture() {
-        true => img(glyph.path())
-            .size(px(size))
-            .flex_none()
-            .grayscale(true)
-            .opacity(0.7)
-            .into_any_element(),
-        false => icon(glyph, size)
-            .text_color(Tokens::get(cx).text_tertiary)
-            .into_any_element(),
-    }
-}
-
-fn face_or(
-    agent: &AgentRow,
-    size: f32,
-    cx: &App,
-    no_face: impl FnOnce() -> AnyElement,
-) -> AnyElement {
     let Some((face, image)) = agent
         .face
         .as_ref()
         .and_then(|face| crate::faces::image(face, agent.group, cx).map(|image| (face, image)))
     else {
-        return no_face();
+        return mark(&agent.provider, size);
     };
     match moving_face::moves(agent.group, cx) {
         true => moving_face::face(&agent.id, face, agent.group, image, size),

@@ -169,7 +169,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .row:hover { background: rgba(255, 255, 255, 0.07); }
 .mark { width: 20px; height: 20px; flex: 0 0 auto; }
 .mark svg { width: 20px; height: 20px; display: block; }
-.mark.quiet svg { filter: grayscale(1); opacity: 0.6; }
 /* A buddy moves as a whole, as the app's do; its eyes and sparkles stay still, as the island's do. */
 .island svg { overflow: visible; }
 @media (prefers-reduced-motion: no-preference) {
@@ -452,7 +451,7 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
         <tr><td>Closed wings</td><td>Each wing is as wide as what it holds. The left holds the marks of the first three items in the inbox, then +N.
             The right fits a mark for each state some item is in: needs you, then working (the core's count of agents at work), then the subagents and the shells or monitors
             running across every agent, then done (to review or finished), each state with its count above one and the two totals always with theirs, 10 pt apart. The island moves aside by half the difference so the camera stays between them. Bare agent marks at 20 pt, as the project tree draws them, 3 pt apart from overlapping.</td></tr>
-        <tr><td>Open</td><td>680 wide, 560 on a display without a notch, where the header is 38 tall so its controls clear the screen edge; height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark at 20 pt as the rail draws it, in grey unless its agent works or waits on you, task, project, time, state. A label wherever the tier changes.</td></tr>
+        <tr><td>Open</td><td>680 wide, 560 on a display without a notch, where the header is 38 tall so its controls clear the screen edge; height follows content up to 400, then the list scrolls. Padding: top-radius horizontally, then 12. Rows are one line, 36 tall, radius 12: mark at 20 pt as the rail draws it, task, project, time, state. A label wherever the tier changes.</td></tr>
         <tr><td>Springs</td><td>Open <code>spring(response: 0.42, dampingFraction: 0.8)</code>. Close <code>spring(response: 0.45, dampingFraction: 1.0)</code>.
             Hover (shadow) <code>interactiveSpring(response: 0.38, dampingFraction: 0.8)</code>.</td></tr>
         <tr><td>Content</td><td>One shape: the band beside the camera swaps the wings for a header in place, out of and into a 20 pt blur; the body
@@ -881,7 +880,7 @@ class Island {
                             </div>`}
                         </div>` : `
                         <div class="row">
-                            <span class="mark${!buddiesOn && a.state !== "working" ? " quiet" : ""}">${face(a)}</span>
+                            <span class="mark">${face(a)}</span>
                             ${rowLine(a)}
                         </div>`}`).join("");
             }

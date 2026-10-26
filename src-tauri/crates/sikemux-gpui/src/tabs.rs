@@ -981,7 +981,7 @@ fn strip_tab(
         .find(|agent| &agent.id == target)
         {
             Some(agent) => base
-                .mark(ui::row_mark(&agent, 19., cx))
+                .mark(ui::agent_mark(&agent, 19., cx))
                 .note(
                     agent
                         .name

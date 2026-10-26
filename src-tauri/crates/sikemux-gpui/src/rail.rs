@@ -841,7 +841,7 @@ fn faces(agents: &[AgentRow], cx: &App) -> impl IntoElement {
                     20. + 14. * (shown - 1) as f32
                 }))
                 .children(agents.iter().take(shown).enumerate().map(|(index, agent)| {
-                    ui::mark_box(20., ui::row_mark(agent, 20., cx))
+                    ui::mark_box(20., ui::agent_mark(agent, 20., cx))
                         .absolute()
                         .left(px(14. * index as f32))
                 })),

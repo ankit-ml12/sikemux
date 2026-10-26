@@ -901,7 +901,7 @@ pub fn dock(
                 DockRow::new(format!("@{name}"), choose)
                     .mark(row.as_ref().map_or_else(
                         || ui::mark(provider, 13.),
-                        |agent| ui::row_mark(agent, 13., cx),
+                        |agent| ui::agent_mark(agent, 13., cx),
                     ))
                     .detail(title.clone())
                     .state(row.and_then(|agent| ui::status_mark(&agent.id, agent.status, cx)))
@@ -953,7 +953,7 @@ pub fn dock(
                     None => DockRow::new(title.clone(), choose)
                         .aside(active_at.map(|at| crate::agents::age(at).into())),
                 };
-                row.mark(ui::quiet_mark(cli, 13., cx)).group(group)
+                row.mark(ui::mark(cli, 13.)).group(group)
             }
             Choice::Tracked(item) => {
                 let (sign, icon) = match item.kind.as_str() {

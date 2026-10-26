@@ -41,8 +41,6 @@ struct IconDef {
 struct IconView: View {
     let icon: IconDef
     var size: CGFloat = 14
-    /// One colour every shape is painted in, in place of the icon's own.
-    var tint: Color?
 
     var body: some View {
         ZStack {
@@ -68,24 +66,20 @@ struct IconView: View {
     @ViewBuilder
     private func filled(_ path: SVGPathShape, paint: IconPaint, evenOdd: Bool) -> some View {
         let style = FillStyle(eoFill: evenOdd)
-        if let tint {
-            path.fill(tint, style: style)
-        } else {
-            switch paint {
-            case .current:
-                path.fill(style: style)
-            case .hex(let hex):
-                path.fill(Color(hex: hex), style: style)
-            case .gradient(let stops, let start, let end):
-                path.fill(
-                    LinearGradient(
-                        stops: stops.map { Gradient.Stop(color: Color(hex: $0.hex), location: $0.offset) },
-                        startPoint: UnitPoint(x: start.0, y: start.1),
-                        endPoint: UnitPoint(x: end.0, y: end.1)
-                    ),
-                    style: style
-                )
-            }
+        switch paint {
+        case .current:
+            path.fill(style: style)
+        case .hex(let hex):
+            path.fill(Color(hex: hex), style: style)
+        case .gradient(let stops, let start, let end):
+            path.fill(
+                LinearGradient(
+                    stops: stops.map { Gradient.Stop(color: Color(hex: $0.hex), location: $0.offset) },
+                    startPoint: UnitPoint(x: start.0, y: start.1),
+                    endPoint: UnitPoint(x: end.0, y: end.1)
+                ),
+                style: style
+            )
         }
     }
 }
@@ -94,11 +88,10 @@ struct IconView: View {
 struct AgentMark: View {
     let provider: String
     var size: CGFloat = 16
-    var tint: Color?
 
     var body: some View {
         if let mark = Icons.mark(provider) {
-            IconView(icon: mark, size: size, tint: tint)
+            IconView(icon: mark, size: size)
         } else {
             Circle().fill(Theme.inkDim).frame(width: size * 0.5, height: size * 0.5).frame(width: size, height: size)
         }
