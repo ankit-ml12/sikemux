@@ -1,4 +1,4 @@
-use std::f32::consts::{FRAC_PI_2, PI};
+use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
 use gpui_kit::base::Button as BaseButton;
@@ -10,6 +10,7 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
 };
 use serde_json::Value;
+use sikemux_core::agent_accounts::Profile;
 use sikemux_wire::protocol::{LauncherInfo, PaneKind, RecentInfo};
 
 use crate::agent_menu::AgentMenu;
@@ -1024,6 +1025,9 @@ const AGENT_ROW: &str = "agent-row";
 /// The hover group of a saved chat's rail row, whose unpin button shows on hover.
 const RECENT_ROW: &str = "recent-row";
 
+/// The hover group of a saved chat's rail row, whose unpin button shows on hover.
+const RECENT_ROW: &str = "recent-row";
+
 fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
     let t = Tokens::get(cx).clone();
     (agent.subagents > 0 || agent.tasks > 0).then(|| {
@@ -1065,8 +1069,8 @@ pub fn age(at: u64) -> String {
     }
 }
 
-/// The plan limits of one of the agent's accounts: the one new chats here start with, or another
-/// the person flipped to with the arrows, which only shows it until the pointer leaves.
+/// The account new chats here start with, and the person's other accounts with the agent, which
+/// open below it while the pointer rests on the panel.
 fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoElement> {
     let t = Tokens::get(cx).clone();
     if bench.all_harnesses {
@@ -1075,114 +1079,104 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
     let launcher = bench.launcher()?;
     let compact = bench.rail_compact();
     let provider = launcher.provider.clone();
-    let profiles = bench.accounts.of(&provider);
-    let current = bench.accounts.current(&provider);
-    let shown = bench
-        .accounts
-        .viewing
-        .as_ref()
-        .and_then(|id| profiles.iter().copied().find(|profile| &profile.id == id))
-        .or(current);
-    let place = shown.and_then(|shown| profiles.iter().position(|profile| profile.id == shown.id));
-    let status = shown
-        .and_then(|profile| crate::accounts::status(bench, profile))
-        .and_then(|status| status.as_ref().ok());
     let agent = bench
         .agent_label(&provider)
         .unwrap_or(&launcher.label)
         .to_owned();
-    let (name, account, signed_out) = match shown {
-        Some(profile) => (
-            crate::accounts::name(bench, profile, status),
-            crate::accounts::usage(bench, profile),
-            status.is_some_and(|status| !status.signed_in),
-        ),
-        None => (
-            agent.clone(),
-            bench.usage_of(&launcher.id),
-            launcher.status.as_deref() == Some("signedOut"),
-        ),
+    let current = bench.accounts.current(&provider);
+    let seen = |profile: &Profile| {
+        let status =
+            crate::accounts::status(bench, profile).and_then(|status| status.as_ref().ok());
+        Shown {
+            id: Some(profile.id.clone()),
+            profile: Some(profile.clone()),
+            name: crate::accounts::name(bench, profile, status),
+            usage: crate::accounts::usage(bench, profile)
+                .cloned()
+                .unwrap_or_default(),
+            signed_out: status.is_some_and(|status| !status.signed_in),
+        }
     };
-    let account = account.unwrap_or(&Value::Null);
-    let unread = account["usage"].is_null() && account["problem"].is_null();
-    let unreadable = !signed_out && !account["problem"].is_null();
-    let windows = account["usage"]["windows"]
-        .as_array()
-        .map_or(&[][..], Vec::as_slice);
-    let quiet = |text: String| {
-        ui::text(text, 10.5, FontWeight::NORMAL)
-            .italic()
-            .text_color(t.text_tertiary)
-            .px(px(8.))
+    let top = match current {
+        Some(profile) => seen(profile),
+        None => Shown {
+            id: None,
+            profile: None,
+            name: agent.clone(),
+            usage: bench.usage_of(&launcher.id).cloned().unwrap_or_default(),
+            signed_out: launcher.status.as_deref() == Some("signedOut"),
+        },
     };
-    let looking = shown.is_some_and(|shown| Some(&shown.id) != current.map(|profile| &profile.id));
-    let body = if signed_out {
-        let id = shown.map(|profile| profile.id.clone());
-        let (title, line) = match shown {
-            Some(_) => (format!("Sign in to {name}"), "This account is signed out"),
-            None => (
-                format!("Sign in to {agent}"),
-                "See your 5-hour and weekly limits",
-            ),
+    let others: Vec<Shown> = bench
+        .accounts
+        .of(&provider)
+        .into_iter()
+        .filter(|profile| Some(&profile.id) != current.map(|current| &current.id))
+        .map(seen)
+        .collect();
+    let open = bench.accounts.limits_open && !others.is_empty();
+    let top = if top.signed_out {
+        let title = match top.id {
+            Some(_) => format!("Sign in to {}", top.name),
+            None => format!("Sign in to {agent}"),
         };
-        let provider = provider.clone();
-        Some(
-            sign_in_card(&launcher.provider, title, line, cx)
-                .on_click(cx.listener(move |bench, _, window, cx| {
-                    crate::accounts::open_sign_in(bench, &provider, id.as_deref(), window, cx)
-                }))
-                .into_any_element(),
-        )
-    } else if unread {
-        Some(quiet("Refresh to read plan limits.".into()).into_any_element())
-    } else if unreadable {
-        None
-    } else if windows.is_empty() {
-        let reason = account["usage"]["unavailableReason"]
-            .as_str()
-            .unwrap_or("This account did not report plan limits.");
-        Some(quiet(reason.to_owned()).into_any_element())
+        let line = match top.id {
+            Some(_) => "This account is signed out",
+            None => "See your 5-hour and weekly limits",
+        };
+        let (provider, id) = (provider.clone(), top.id.clone());
+        sign_in_card(&launcher.provider, title, line, cx)
+            .on_click(cx.listener(move |bench, _, window, cx| {
+                crate::accounts::open_sign_in(bench, &provider, id.as_deref(), window, cx)
+            }))
+            .into_any_element()
     } else {
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(if compact { 4. } else { 6. }))
-                .children(windows.iter().map(|window| limit_row(window, cx)))
-                .into_any_element(),
-        )
+        account_block(&top, &provider, Some(open), cx)
     };
-    let count = profiles.len();
-    let name_label = (!(signed_out && shown.is_none())).then(|| {
-        ui::text(name.clone(), 11., FontWeight::MEDIUM)
-            .px(px(3.))
-            .truncate()
-            .text_color(if signed_out {
-                t.text_tertiary
-            } else {
-                t.text_primary
-            })
-    });
-    let step = |id: &'static str, back: bool, cx: &mut Context<Workbench>| {
-        let blocked = place.is_none_or(|place| if back { place == 0 } else { place + 1 >= count });
-        let provider = provider.clone();
-        IconButton::new(
-            id,
-            Icon::Chevron,
-            if back {
-                "Previous account"
-            } else {
-                "Next account"
+    let more = (!others.is_empty()).then(|| {
+        let tall: f32 = others.iter().map(|shown| shown.height() + BLOCK_GAP).sum();
+        let blocks: Vec<AnyElement> = others
+            .iter()
+            .map(|shown| account_block(shown, &provider, None, cx))
+            .collect();
+        let reveal = motion::animated(
+            "limits-others",
+            if open { 1. } else { 0. },
+            motion::UNFOLD,
+            move |share| {
+                div()
+                    .h(px(tall * share))
+                    .overflow_hidden()
+                    .opacity(share)
+                    .flex()
+                    .flex_col()
+                    .pt(px(BLOCK_GAP))
+                    .gap(px(BLOCK_GAP))
+                    .children(blocks)
+                    .into_any_element()
             },
+        );
+        let chevron = motion::turn(
+            "limits-more",
+            if open { -FRAC_PI_2 } else { FRAC_PI_2 },
+            motion::LIST_FOLD,
+            ui::icon(Icon::Chevron, 9.).text_color(t.text_tertiary),
+        );
+        (
+            reveal,
+            div()
+                .h(px(14.))
+                .mt(px(2.))
+                .flex()
+                .justify_center()
+                .items_center()
+                .child(chevron),
         )
-        .small()
-        .turned(if back { PI } else { 0. })
-        .disabled(blocked)
-        .on_click(cx.listener(move |bench, _, _, cx| step_account(bench, &provider, back, cx)))
-    };
+    });
+    let (reveal, chevron) = more.unzip();
     let header = div()
         .h(px(18.))
-        .mb(px(if compact { 8. } else { 9. }))
+        .mb(px(if compact { 6. } else { 7. }))
         .px(px(8.))
         .flex()
         .items_center()
@@ -1193,39 +1187,6 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
                 .text_color(t.text_tertiary),
         )
         .child(div().flex_1().h(px(1.)).bg(t.border))
-        .child(
-            div()
-                .min_w_0()
-                .flex()
-                .items_center()
-                .when(count > 1, |pager| {
-                    pager.child(step("limits-previous", true, cx))
-                })
-                .children(name_label)
-                .when(count > 1, |pager| {
-                    pager.child(step("limits-next", false, cx))
-                }),
-        )
-        .when(unreadable, |header| {
-            header.child(
-                div()
-                    .id("limits-unreadable")
-                    .flex_none()
-                    .h(px(18.))
-                    .px(px(6.))
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .rounded(theme::RADIUS_1)
-                    .bg(Hsla { a: 0.1, ..t.warn })
-                    .text_color(t.warn)
-                    .tooltip(ui::tooltip(format!(
-                        "Could not read {name}'s plan limits. Refresh to try again."
-                    )))
-                    .child(ui::icon(Icon::Warning, 10.))
-                    .child(ui::text("Couldn't read", 10.5, FontWeight::NORMAL)),
-            )
-        })
         .child({
             let provider = provider.clone();
             IconButton::new(
@@ -1247,82 +1208,297 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
                     crate::accounts::open_sign_in(bench, &provider, None, window, cx)
                 }))
         });
-    let foot = (count > 1).then(|| {
-        let use_it = shown.filter(|_| looking && !signed_out).cloned();
+    Some(
         div()
-            .mt(px(10.))
+            .flex_none()
+            .mt(px(if compact { 10. } else { 12. }))
+            .mx(px(10.))
+            .mb(px(if compact { 8. } else { 10. }))
+            .child(header)
+            .child(
+                div()
+                    .id("limits-content")
+                    .on_hover(cx.listener(|bench, inside: &bool, _, cx| {
+                        if bench.accounts.limits_open != *inside {
+                            bench.accounts.limits_open = *inside;
+                            cx.notify();
+                        }
+                    }))
+                    .child(top)
+                    .children(reveal)
+                    .children(chevron),
+            ),
+    )
+}
+
+const BLOCK_GAP: f32 = 2.;
+const BLOCK_PAD_TOP: f32 = 7.;
+const BLOCK_PAD_BOTTOM: f32 = 8.;
+const NAME_LINE: f32 = 16.;
+const NAME_GAP: f32 = 4.;
+const SLIM_ROW: f32 = 14.;
+const SIGNED_OUT_LINE: f32 = 30.;
+
+/// One account as the Limits panel shows it.
+struct Shown {
+    /// The account, or none for an agent the person never added an account to.
+    id: Option<String>,
+    profile: Option<Profile>,
+    name: String,
+    usage: Value,
+    signed_out: bool,
+}
+
+impl Shown {
+    fn windows(&self) -> &[Value] {
+        self.usage["usage"]["windows"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice)
+    }
+
+    /// How tall its block draws, so the panel can open onto every account at its full height.
+    fn height(&self) -> f32 {
+        if self.signed_out {
+            return SIGNED_OUT_LINE;
+        }
+        let rows = self.windows().len().max(1) as f32;
+        BLOCK_PAD_TOP + NAME_LINE + NAME_GAP + rows * SLIM_ROW + BLOCK_PAD_BOTTOM
+    }
+
+    /// When a used-up window is back, or else when the longest one starts again.
+    fn note(&self) -> Option<(String, bool)> {
+        let windows = self.windows();
+        let used = |window: &Value| window["usedPercent"].as_f64().unwrap_or(0.);
+        let label = |window: &Value| window["label"].as_str().unwrap_or_default().to_owned();
+        if let Some(full) = windows.iter().find(|window| used(window) >= 100.) {
+            let back = reset_at(&full["resetsAt"]).map(day_and_time)?;
+            return Some((format!("{} full · back {back}", label(full)), true));
+        }
+        let longest = windows
+            .iter()
+            .rev()
+            .max_by_key(|window| window["windowMinutes"].as_u64().unwrap_or(0))?;
+        let reset = reset_at(&longest["resetsAt"])?;
+        Some((
+            format!("{} resets {}", label(longest), countdown(Some(reset))),
+            false,
+        ))
+    }
+}
+
+/// An account's block: its name with when it is back or resets, then a slim bar for each window.
+/// `top` is whether the panel is open, for the account new chats start on; the others take a
+/// click to start new chats on them.
+fn account_block(
+    shown: &Shown,
+    provider: &str,
+    top: Option<bool>,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let key = shown.id.clone().unwrap_or_else(|| provider.to_owned());
+    let group = SharedString::from(format!("limits-account-{key}"));
+    let id = SharedString::from(format!("limits-block-{key}"));
+    if shown.signed_out {
+        let (provider, account) = (provider.to_owned(), shown.id.clone());
+        return div()
+            .id(id)
+            .h(px(SIGNED_OUT_LINE))
             .px(px(8.))
-            .h(px(16.))
             .flex()
             .items_center()
-            .child(div().flex().gap(px(4.)).children((0..count).map(|index| {
-                div()
-                    .size(px(4.))
-                    .rounded_full()
-                    .bg(if Some(index) == place {
-                        t.text_primary
-                    } else {
-                        Hsla {
-                            a: 0.16,
-                            ..t.text_primary
-                        }
-                    })
-            })))
-            .child(div().flex_1())
-            .children(use_it.map(|profile| {
-                ui::text("Use for new chats", 10.5, FontWeight::NORMAL)
-                    .id("limits-use")
+            .child(
+                ui::text(shown.name.clone(), 11.5, FontWeight::MEDIUM)
+                    .flex_1()
+                    .truncate()
+                    .text_color(t.text_tertiary),
+            )
+            .child(
+                ui::text("Sign in", 10.5, FontWeight::NORMAL)
+                    .id(SharedString::from(format!("limits-sign-in-{key}")))
                     .cursor_pointer()
                     .text_color(t.text_secondary)
                     .underline()
                     .hover(|link| link.text_color(t.text_primary))
-                    .on_click(cx.listener(move |bench, _, _, cx| {
-                        bench.accounts.viewing = None;
-                        crate::accounts::select(bench, &profile, cx);
-                    }))
-            }))
-    });
-    Some(
+                    .on_click(cx.listener(move |bench, _, window, cx| {
+                        crate::accounts::open_sign_in(
+                            bench,
+                            &provider,
+                            account.as_deref(),
+                            window,
+                            cx,
+                        )
+                    })),
+            )
+            .into_any_element();
+    }
+    let usage = &shown.usage;
+    let windows = shown.windows();
+    let quiet = |text: String| {
+        ui::text(text, 10.5, FontWeight::NORMAL)
+            .h(px(SLIM_ROW))
+            .truncate()
+            .italic()
+            .text_color(t.text_tertiary)
+    };
+    let body = if usage["usage"].is_null() && usage["problem"].is_null() {
+        quiet("Refresh to read plan limits.".into()).into_any_element()
+    } else if !usage["problem"].is_null() {
+        quiet("Could not read plan limits. Refresh to try again.".into()).into_any_element()
+    } else if windows.is_empty() {
+        let reason = usage["usage"]["unavailableReason"]
+            .as_str()
+            .unwrap_or("This account did not report plan limits.");
+        quiet(reason.to_owned()).into_any_element()
+    } else {
         div()
-            .id("limits")
-            .flex_none()
-            .mt(px(if compact { 10. } else { 12. }))
-            .mx(px(10.))
-            .mb(px(if compact { 12. } else { 16. }))
-            .on_hover(cx.listener(|bench, inside: &bool, _, cx| {
-                if !*inside && bench.accounts.viewing.take().is_some() {
-                    cx.notify();
-                }
-            }))
-            .child(header)
-            .children(body)
-            .children(foot),
+            .flex()
+            .flex_col()
+            .children(windows.iter().map(|window| slim_row(window, &key, cx)))
+            .into_any_element()
+    };
+    let note = shown.note().map(|(note, full)| {
+        ui::text(note, 10., FontWeight::NORMAL)
+            .font_features(theme::tabular())
+            .text_color(if full { t.danger } else { t.text_tertiary })
+    });
+    let other = top.is_none();
+    let line = div()
+        .h(px(NAME_LINE))
+        .mb(px(NAME_GAP))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .child(
+            ui::text(shown.name.clone(), 11.5, FontWeight::MEDIUM)
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_color(t.text_primary),
+        )
+        .child(
+            div()
+                .relative()
+                .flex_none()
+                .children(note.map(|note| {
+                    note.when(other, |note| {
+                        note.group_hover(group.clone(), |note| note.opacity(0.))
+                    })
+                }))
+                .when(other, |line| {
+                    line.child(
+                        ui::text("Use for new chats", 10., FontWeight::NORMAL)
+                            .absolute()
+                            .top_0()
+                            .right_0()
+                            .whitespace_nowrap()
+                            .opacity(0.)
+                            .text_color(t.text_primary)
+                            .group_hover(group.clone(), |text| text.opacity(1.)),
+                    )
+                }),
+        );
+    let profile = shown.profile.clone();
+    div()
+        .id(id)
+        .group(group.clone())
+        .h(px(shown.height()))
+        .overflow_hidden()
+        .pt(px(BLOCK_PAD_TOP))
+        .px(px(8.))
+        .rounded(theme::RADIUS_2)
+        .when(top == Some(true), |block| block.bg(t.surface_chosen))
+        .when(other, |block| {
+            block
+                .cursor_pointer()
+                .hover(|block| block.bg(t.surface_hover))
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    if let Some(profile) = profile.as_ref() {
+                        crate::accounts::select(bench, profile, cx);
+                    }
+                }))
+        })
+        .child(line)
+        .child(body)
+        .into_any_element()
+}
+
+/// One window of a plan as a slim tick bar, its use beside it and its reset when hovered.
+fn slim_row(window: &Value, key: &str, cx: &App) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let label = window["label"].as_str().unwrap_or_default().to_owned();
+    let percent = window["usedPercent"].as_f64().unwrap_or(0.).clamp(0., 100.);
+    let signal = signal(percent, &t);
+    let note = match reset_at(&window["resetsAt"]) {
+        Some(at) => format!("Resets {}", day_and_time(at)),
+        None => "Reset time unavailable".into(),
+    };
+    div()
+        .id(SharedString::from(format!("limit-{key}-{label}")))
+        .h(px(SLIM_ROW))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .tooltip(ui::tooltip(format!(
+            "{label}: {}% used. {note}",
+            percent.round()
+        )))
+        .child(
+            ui::text(label, 10., FontWeight::NORMAL)
+                .w(px(50.))
+                .flex_none()
+                .truncate()
+                .text_color(t.text_tertiary),
+        )
+        .child(ticks(percent, signal, &t).flex_1().h(px(6.)))
+        .child(
+            ui::text(format!("{}%", percent.round()), 10.5, FontWeight::NORMAL)
+                .w(px(30.))
+                .flex_none()
+                .text_right()
+                .font_features(theme::tabular())
+                .text_color(if percent < 70. {
+                    t.text_primary
+                } else {
+                    signal
+                }),
+        )
+}
+
+/// A bar of thin ticks, lit as far as `percent`.
+fn ticks(percent: f64, signal: Hsla, t: &Tokens) -> gpui_kit::Canvas<()> {
+    let unlit = Hsla {
+        a: 0.10,
+        ..t.text_primary
+    };
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let lit = bounds.size.width * (percent / 100.) as f32;
+            let mut x = px(0.);
+            while x < bounds.size.width {
+                let tick = Bounds::new(
+                    point(bounds.origin.x + x, bounds.origin.y),
+                    size(px(1.5), bounds.size.height),
+                );
+                window.paint_quad(fill(tick, if x < lit { signal } else { unlit }));
+                x += px(4.);
+            }
+        },
     )
 }
 
-/// Shows the account before or after the one showing, in the order Settings lists them.
-fn step_account(bench: &mut Workbench, provider: &str, back: bool, cx: &mut Context<Workbench>) {
-    let profiles = bench.accounts.of(provider);
-    let current = bench
-        .accounts
-        .current(provider)
-        .map(|profile| profile.id.clone());
-    let shown = bench.accounts.viewing.clone().or(current.clone());
-    let Some(place) = profiles
-        .iter()
-        .position(|profile| Some(&profile.id) == shown.as_ref())
-    else {
-        return;
-    };
-    let next = match back {
-        true => place.checked_sub(1),
-        false => Some(place + 1).filter(|next| *next < profiles.len()),
-    };
-    let Some(next) = next.map(|next| profiles[next].id.clone()) else {
-        return;
-    };
-    bench.accounts.viewing = Some(next).filter(|next| Some(next) != current.as_ref());
-    cx.notify();
+/// When a window resets, as a person would say it: today, tomorrow, a weekday or a date.
+fn day_and_time(at: chrono::DateTime<chrono::Utc>) -> String {
+    let at = at.with_timezone(&chrono::Local);
+    let days = (at.date_naive() - chrono::Local::now().date_naive()).num_days();
+    let time = at.format("%-I:%M %p");
+    match days {
+        ..=0 => format!("today {time}"),
+        1 => format!("tomorrow {time}"),
+        2..=6 => format!("{} {time}", at.format("%a")),
+        _ => format!("{}, {time}", at.format("%b %-d")),
+    }
 }
 
 /// The call to sign in, in the agent's own colours: its mark, what signing in shows, and a button.
@@ -1401,85 +1577,6 @@ fn sign_in_card(
                 } else {
                     gpui_kit::white()
                 }),
-        )
-}
-
-/// One of a plan's rolling windows: how much of it is used, and when it starts again.
-fn limit_row(window: &Value, cx: &App) -> impl IntoElement {
-    let t = Tokens::get(cx).clone();
-    let label = window["label"].as_str().unwrap_or_default().to_owned();
-    let percent = window["usedPercent"].as_f64().unwrap_or(0.).clamp(0., 100.);
-    let signal = signal(percent, &t);
-    let reset = reset_at(&window["resetsAt"]);
-    let note = match reset {
-        Some(at) => format!(
-            "Resets {}",
-            at.with_timezone(&chrono::Local)
-                .format("%-m/%-d/%Y, %-I:%M:%S %p")
-        ),
-        None => "Reset time unavailable".into(),
-    };
-    let unlit = Hsla {
-        a: 0.10,
-        ..t.text_primary
-    };
-    div()
-        .id(SharedString::from(format!("limit-{label}")))
-        .h(px(18.))
-        .px(px(8.))
-        .flex()
-        .items_center()
-        .gap(px(10.))
-        .tooltip(ui::tooltip(format!(
-            "{label}: {}% used. {note}",
-            percent.round()
-        )))
-        .child(
-            ui::meta(label, cx)
-                .w(px(58.))
-                .flex_none()
-                .overflow_hidden()
-                .text_ellipsis()
-                .whitespace_nowrap(),
-        )
-        .child(
-            canvas(
-                |_, _, _| {},
-                move |bounds, _, window, _| {
-                    let lit = bounds.size.width * (percent / 100.) as f32;
-                    let mut x = px(0.);
-                    while x < bounds.size.width {
-                        let tick = Bounds::new(
-                            point(bounds.origin.x + x, bounds.origin.y),
-                            size(px(1.5), bounds.size.height),
-                        );
-                        window.paint_quad(fill(tick, if x < lit { signal } else { unlit }));
-                        x += px(4.);
-                    }
-                },
-            )
-            .flex_1()
-            .h(px(10.)),
-        )
-        .child(
-            ui::text(format!("{}%", percent.round()), 11., FontWeight::NORMAL)
-                .w(px(28.))
-                .flex_none()
-                .text_right()
-                .font_features(theme::tabular())
-                .text_color(if percent < 70. {
-                    t.text_primary
-                } else {
-                    signal
-                }),
-        )
-        .child(
-            ui::text(countdown(reset), 10., FontWeight::NORMAL)
-                .w(px(42.))
-                .flex_none()
-                .text_right()
-                .font_features(theme::tabular())
-                .text_color(t.text_tertiary),
         )
 }
 
