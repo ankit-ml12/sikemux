@@ -62,13 +62,15 @@ pub type FileOf = Rc<dyn Fn(&str, &mut App) -> Option<FileKind>>;
 pub type OnFile = Rc<dyn Fn(&str, FileKind, FilePress, &mut Window, &mut App)>;
 /// The icon drawn inside the text before a file's name, by its name as written, `size` square.
 pub type FileIcon = Rc<dyn Fn(&str, FileKind, Pixels, &mut Window, &mut App) -> Option<AnyElement>>;
+/// Draws a chip in place of the words it stands for.
+pub type DrawChip = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 
 /// Words a message wrote for something it names, drawn in their place as a chip `width` wide.
 #[derive(Clone)]
 pub struct Chip {
     pub written: SharedString,
     pub width: Pixels,
-    pub draw: Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>,
+    pub draw: DrawChip,
 }
 
 /// The space kept on each side of a chip in the text.
