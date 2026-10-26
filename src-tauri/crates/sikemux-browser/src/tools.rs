@@ -495,19 +495,14 @@ async fn run(
                     .min(MAX_BLOCKING_MS),
             );
             let (_, view) = active(manager, agent_id)?;
-            let answer = match native::run_script(
-                &view,
-                &script_body(&format!("return ({script}\n);")),
-                limit,
-            )
-            .await
-            {
-                Err(error) if is_parse_error(&error) => {
-                    native::run_script(&view, &script_body(&script), limit).await
-                }
-                other => other,
-            }
-            .map_err(|error| script_failure(&error, limit))?;
+            let body = match run_helper(&view, &shape_check(&script)).await?.as_str() {
+                "expression" => script_body(&format!("return ({script}\n);")),
+                "statements" => script_body(&script),
+                error => return Err(error.to_owned()),
+            };
+            let answer = native::run_script(&view, &body, limit)
+                .await
+                .map_err(|error| script_failure(&error, limit))?;
             if answer.len() > MAX_SCRIPT_RESULT {
                 let cut = (0..=MAX_SCRIPT_RESULT)
                     .rev()
@@ -829,16 +824,19 @@ fn moved_on(before: &Value, now: &Value) -> bool {
 /// Whether a script failed to parse as an expression, as opposed to throwing
 /// a SyntaxError while it ran, which retrying as a function body would only
 /// run a second time.
-fn is_parse_error(error: &str) -> bool {
-    error.contains("SyntaxError")
-        && ![
-            "JSON Parse error",
-            "did not match the expected pattern",
-            "Invalid regular expression",
-            "is not a valid selector",
-        ]
-        .iter()
-        .any(|runtime| error.contains(runtime))
+/// Whether `script` reads as an expression or as statements, or the syntax error that
+/// stops both. It only parses, in the helper world, where the page's content policy
+/// can't forbid it, so the page never runs a script that fails to parse: WebKit
+/// crashed on macOS 26 while describing that error.
+fn shape_check(script: &str) -> String {
+    let source = serde_json::to_string(script).unwrap_or_else(|_| "\"\"".into());
+    format!(
+        r#"const AsyncFunction = (async () => {{}}).constructor;
+const source = {source};
+try {{ new AsyncFunction("return (" + source + "\n);"); return "expression"; }} catch {{}}
+try {{ new AsyncFunction(source); return "statements"; }}
+catch (error) {{ return String(error); }}"#
+    )
 }
 
 /// A script error in words an agent can act on.
@@ -1811,18 +1809,6 @@ mod tests {
             &json!({ "value": "\u{2022}\u{2022}", "valueLength": 6 })
         )
         .is_none());
-    }
-
-    #[test]
-    fn only_a_script_that_failed_to_parse_is_run_again_as_statements() {
-        assert!(is_parse_error("SyntaxError: Unexpected keyword 'const'"));
-        assert!(!is_parse_error(
-            "SyntaxError: JSON Parse error: Unexpected identifier"
-        ));
-        assert!(!is_parse_error(
-            "SyntaxError: The string did not match the expected pattern."
-        ));
-        assert!(!is_parse_error("TypeError: null is not an object"));
     }
 
     #[test]
