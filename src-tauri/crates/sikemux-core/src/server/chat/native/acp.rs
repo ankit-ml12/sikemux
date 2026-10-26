@@ -26,13 +26,21 @@ use super::super::Respond;
 use super::pending::{Answered, Purpose};
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
 use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
-use super::servers;
 use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
+use super::{devices, servers};
 
 /// The error code an agent turns a prompt down with when it needs a sign-in.
 const AUTH_REQUIRED: i64 = -32000;
 
 /// An agent's error in words, its details included.
+fn server_names(launch: &ChatLaunch) -> Arc<[String]> {
+    launch
+        .mcp_servers
+        .iter()
+        .filter_map(|server| server["name"].as_str().map(str::to_owned))
+        .collect()
+}
+
 fn describe(error: &Value) -> String {
     serde_json::from_value::<AcpError>(error.clone())
         .map_or_else(|_| error_text(error), |error| error.to_string())
@@ -57,6 +65,8 @@ struct Driver {
     rpc: Rpc,
     sink: Sink,
     turns: Arc<Mutex<Turns>>,
+    /// The names of the tool servers the chat handed its agent.
+    servers: Arc<[String]>,
 }
 
 impl Driver {
@@ -154,10 +164,11 @@ impl Reads for Driver {
             Some(Incoming::Notification { method, mut params })
                 if method == CLIENT_METHOD_NAMES.session_update =>
             {
-                let update = params
+                let mut update = params
                     .get_mut("update")
                     .map(Value::take)
                     .unwrap_or_default();
+                devices::as_tool_call(&mut update, &self.servers);
                 let session_id = params["sessionId"].as_str().unwrap_or_default();
                 self.sink.update(session_id, update);
             }
@@ -403,6 +414,7 @@ impl Backend for Acp {
             rpc: Rpc::new(writer, true),
             sink,
             turns: Arc::default(),
+            servers: server_names(launch),
         };
         let (reading, _) = Reading::start(driver.clone(), lines);
         let failed = |error: String| process.start_error(error);
@@ -614,6 +626,7 @@ impl Backend for Acp {
             rpc: Rpc::restored(writer, state.rpc),
             sink,
             turns: Arc::new(Mutex::new(state.turns)),
+            servers: server_names(launch),
         };
         let (reading, _) = Reading::start(driver.clone(), lines);
         Ok(Self {

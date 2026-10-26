@@ -6,6 +6,7 @@
 mod acp;
 mod claude;
 mod codex;
+mod devices;
 mod json;
 mod muse;
 mod parts;
