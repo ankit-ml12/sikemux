@@ -23,7 +23,7 @@ use crate::motion;
 use crate::theme::{Tokens, RADIUS_2};
 use crate::ui;
 
-const HEADER_HEIGHT: Pixels = px(28.);
+const HEADER_HEIGHT: Pixels = px(32.);
 const TITLE_HEIGHT: Pixels = px(22.);
 const CARD_GAP: Pixels = px(8.);
 /// Cards past the first one showing whose diffs are read ahead of being scrolled to.

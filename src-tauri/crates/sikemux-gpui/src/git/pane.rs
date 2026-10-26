@@ -50,7 +50,6 @@ use crate::workbench::{AgentRow, Workbench};
 pub struct FocusGit;
 
 const ROW_HEIGHT: f32 = 26.;
-const FILE_ROW_HEIGHT: f32 = 30.;
 /// The pane's keys, by page, as its cheatsheet lists them.
 const KEYS: [ui::Section; 4] = [
     (
@@ -3459,7 +3458,7 @@ fn entry_row(
                 .on_hover(hover(view, key.clone()))
                 .relative()
                 .w_full()
-                .h(px(FILE_ROW_HEIGHT))
+                .h(px(ROW_HEIGHT))
                 .pl(px(18.))
                 .pr(px(6.))
                 .flex()
