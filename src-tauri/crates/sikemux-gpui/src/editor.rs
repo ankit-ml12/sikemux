@@ -952,8 +952,7 @@ fn open(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
         let mut state = EditorState::new(window, cx)
             .language(language)
             .soft_wrap(false)
-            .line_number(true)
-            .scroll_bounce(false);
+            .line_number(true);
         state.set_highlighter_factory(factory, cx);
         state
     });
