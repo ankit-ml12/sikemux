@@ -912,6 +912,11 @@ impl Reader {
             }
             let update = tools::tool_result(&id, &name, &input, result, structured, &self.data.cwd);
             self.sink.update(&session, update);
+            // Only the call's name and session are read once it has its result, and its input
+            // can hold whole files, such as a Write's.
+            if let Some(tool) = self.data.tools.get_mut(&id) {
+                tool.input = Value::Null;
+            }
         }
     }
 
