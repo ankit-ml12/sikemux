@@ -12,7 +12,7 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use crate::launch::model_feed::Snapshot;
-use crate::launch::providers::{self, Helper, KeySpec, Kind, Provider, Providers, KEY_SERVICE};
+use crate::launch::providers::{self, Helper, Kind, Provider, Providers, KEY_SERVICE};
 use crate::protocol::ChatLaunch;
 
 use super::connection::blocking;
@@ -25,26 +25,24 @@ use checks::{api_model, Check};
 const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 const RUNNER_TIMEOUT: Duration = Duration::from_secs(2);
 
-fn keyed(id: &str) -> CoreResult<(&'static Provider, &'static KeySpec)> {
-    let provider = known(id)?;
-    let key = provider.key.as_ref().ok_or_else(|| {
-        CoreError::from(format!(
-            "{} runs on this host and needs no key",
-            provider.label
-        ))
-    })?;
-    Ok((provider, key))
+fn keyed(core: &Core, id: &str) -> CoreResult<Arc<Provider>> {
+    let provider = known(core, id)?;
+    if provider.key.is_none() {
+        return Err(format!("{} runs on this host and needs no key", provider.label).into());
+    }
+    Ok(provider)
 }
 
-fn known(id: &str) -> CoreResult<&'static Provider> {
-    providers::find(id)
+fn known(core: &Core, id: &str) -> CoreResult<Arc<Provider>> {
+    store(core)?
+        .find(id)
         .ok_or_else(|| CoreError::from(format!("Sikemux does not know a provider called {id}")))
 }
 
 #[derive(Serialize)]
 pub(crate) struct ModelProvider {
     #[serde(flatten)]
-    provider: &'static Provider,
+    provider: Arc<Provider>,
     /// A keyed provider has its key saved; a local runner is answering.
     connected: bool,
     /// What a running local runner has installed.
@@ -160,7 +158,7 @@ pub(crate) fn chat_begun(core: &Arc<Core>, launch: &ChatLaunch) {
     let routed = launch
         .env
         .get(providers::ROUTED_ENV)
-        .and_then(|id| providers::find(id));
+        .and_then(|id| store(core).ok()?.find(id));
     if let (Some(provider), Some(model)) = (routed, launch.model.as_deref()) {
         checks::first_use(core, provider, model);
     }
@@ -189,7 +187,11 @@ fn check_failure(label: &str, status: StatusCode) -> Option<String> {
     }
 }
 
-async fn check_key(provider: &Provider, spec: &KeySpec, key: &str) -> CoreResult<()> {
+async fn check_key(provider: &Provider, key: &str) -> CoreResult<()> {
+    let spec = provider
+        .key
+        .as_ref()
+        .ok_or_else(|| format!("{} needs no key", provider.label))?;
     let response = client()
         .get(&spec.check)
         .bearer_auth(key)
@@ -233,30 +235,32 @@ async fn listed_models(
 /// Every provider, and whether it is connected. Runners on this host are
 /// asked what they have on every call, so only when settings ask.
 pub(crate) async fn list(core: &Arc<Core>) -> CoreResult<Vec<ModelProvider>> {
-    let (saved, feed) = on_store(core, |store| (store.connected(), store.feed())).await?;
-    let asking: Vec<_> = providers::catalogue()
+    let (all, saved, feed) =
+        on_store(core, |store| (store.all(), store.connected(), store.feed())).await?;
+    let asking: Vec<_> = all
         .iter()
         .map(|provider| {
+            let provider = provider.clone();
             tokio::spawn(async move {
                 match provider.kind {
-                    Kind::Local => listed_models(provider, None, RUNNER_TIMEOUT).await,
+                    Kind::Local => listed_models(&provider, None, RUNNER_TIMEOUT).await,
                     Kind::Api | Kind::Plan => None,
                 }
             })
         })
         .collect();
     let mut listed = Vec::with_capacity(asking.len());
-    for (provider, asked) in providers::catalogue().iter().zip(asking) {
+    for (provider, asked) in all.into_iter().zip(asking) {
         let models = asked.await.ok().flatten();
         listed.push(ModelProvider {
-            provider,
-            connected: models.is_some() || saved.contains(&provider.id),
-            choices: choices(provider, &feed, models.as_deref()),
+            connected: models.is_some() || provider.custom || saved.contains(&provider.id),
+            choices: choices(&provider, &feed, models.as_deref()),
             models,
             agents: providers::routed_agents()
                 .filter(|agent| provider.routes(agent))
                 .collect(),
             checks: core.workspaces.model_checks.of(&provider.id),
+            provider,
         });
     }
     Ok(listed)
@@ -269,15 +273,15 @@ pub(crate) struct ProviderParams {
 
 /// The models a connected provider serves, read with its key.
 pub(crate) async fn models(core: &Arc<Core>, params: ProviderParams) -> CoreResult<ServedModels> {
-    let (provider, _) = keyed(&params.id)?;
+    let provider = keyed(core, &params.id)?;
     let id = params.id;
     let (key, feed) = on_store(core, move |store| (store.key(&id), store.feed())).await?;
     let key = key.ok_or_else(|| format!("Connect {} first", provider.label))?;
-    let models = listed_models(provider, Some(&key), CHECK_TIMEOUT)
+    let models = listed_models(&provider, Some(&key), CHECK_TIMEOUT)
         .await
         .ok_or_else(|| format!("{} did not list its models", provider.label))?;
     Ok(ServedModels {
-        choices: choices(provider, &feed, Some(&models)),
+        choices: choices(&provider, &feed, Some(&models)),
         models,
     })
 }
@@ -290,7 +294,7 @@ pub(crate) struct CheckParams {
 
 /// Asks the provider whether `model` calls tools the way agents need, now.
 pub(crate) async fn check(core: &Arc<Core>, params: CheckParams) -> CoreResult<Check> {
-    let provider = known(&params.id)?;
+    let provider = known(core, &params.id)?;
     let key = match provider.key {
         Some(_) => Some(
             key(core, &params.id)
@@ -302,7 +306,7 @@ pub(crate) async fn check(core: &Arc<Core>, params: CheckParams) -> CoreResult<C
     Ok(core
         .workspaces
         .model_checks
-        .run(provider, key.as_deref(), params.model.trim())
+        .run(&provider, key.as_deref(), params.model.trim())
         .await?)
 }
 
@@ -329,12 +333,15 @@ pub(crate) struct ConnectParams {
 /// Saves the key once the provider accepts it. Agents already running keep
 /// the environment they started with.
 pub(crate) async fn connect(core: &Arc<Core>, params: ConnectParams) -> CoreResult<()> {
-    let (provider, spec) = keyed(&params.id)?;
+    let provider = keyed(core, &params.id)?;
+    if provider.custom {
+        return Err(format!("{} keeps the key it was added with", provider.label).into());
+    }
     let key = params.key.trim().to_owned();
     if key.is_empty() {
         return Err("Paste the key first".into());
     }
-    check_key(provider, spec, &key).await?;
+    check_key(&provider, &key).await?;
     Ok(on_store(core, move |store| {
         sikemux_keychain::write(KEY_SERVICE, &provider.id, &key)
             .map_err(|error| error.to_string())?;
@@ -345,7 +352,10 @@ pub(crate) async fn connect(core: &Arc<Core>, params: ConnectParams) -> CoreResu
 }
 
 pub(crate) async fn disconnect(core: &Arc<Core>, params: ProviderParams) -> CoreResult<()> {
-    let (provider, _) = keyed(&params.id)?;
+    let provider = keyed(core, &params.id)?;
+    if provider.custom {
+        return Err(format!("Remove {} rather than disconnect it", provider.label).into());
+    }
     Ok(on_store(core, move |store| {
         sikemux_keychain::delete(KEY_SERVICE, &provider.id).map_err(|error| error.to_string())?;
         store.remember_key(&provider.id, None);

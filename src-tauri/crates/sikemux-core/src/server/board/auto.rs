@@ -13,7 +13,6 @@ use sikemux_process::sync::Locked;
 
 use super::review::Review;
 use super::{blind, finish, git, Board, Card, Status, Team};
-use crate::launch::providers;
 use crate::protocol::Event;
 use crate::server::connection::blocking;
 use crate::server::names::Starting;
@@ -78,16 +77,20 @@ impl Default for Settings {
     }
 }
 
-fn known_provider(provider: Option<String>) -> Result<Option<String>, String> {
+fn known_provider(
+    provider: Option<String>,
+    knows: &impl Fn(&str) -> bool,
+) -> Result<Option<String>, String> {
     match provider {
-        Some(id) if providers::find(&id).is_none() => {
-            Err(format!("Sikemux does not know a provider called {id}"))
-        }
+        Some(id) if !knows(&id) => Err(format!("Sikemux does not know a provider called {id}")),
         provider => Ok(provider),
     }
 }
 
-fn reviewer_choice(value: &Value) -> Result<Option<ReviewerChoice>, String> {
+fn reviewer_choice(
+    value: &Value,
+    knows: &impl Fn(&str) -> bool,
+) -> Result<Option<ReviewerChoice>, String> {
     if value.is_null() {
         return Ok(None);
     }
@@ -96,7 +99,10 @@ fn reviewer_choice(value: &Value) -> Result<Option<ReviewerChoice>, String> {
         .ok_or("reviewer.launcher must name the agent that reviews")?;
     Ok(Some(ReviewerChoice {
         launcher,
-        provider: known_provider(optional(value, "provider", MAX_LAUNCHER_CHARS)?.flatten())?,
+        provider: known_provider(
+            optional(value, "provider", MAX_LAUNCHER_CHARS)?.flatten(),
+            knows,
+        )?,
         model: optional(value, "model", MAX_MODEL_CHARS)?.flatten(),
     }))
 }
@@ -112,8 +118,12 @@ fn optional(value: &Value, key: &str, max: usize) -> Result<Option<Option<String
 }
 
 impl Settings {
-    /// These settings with what `params` changes.
-    pub(super) fn changed(&self, params: &Value) -> Result<Self, String> {
+    /// These settings with what `params` changes, naming only providers Sikemux `knows`.
+    pub(super) fn changed(
+        &self,
+        params: &Value,
+        knows: impl Fn(&str) -> bool,
+    ) -> Result<Self, String> {
         let mut settings = self.clone();
         if let Some(auto) = params.get("auto") {
             settings.auto = auto.as_bool().ok_or("auto must be true or false")?;
@@ -129,13 +139,13 @@ impl Settings {
             settings.launcher = launcher;
         }
         if let Some(provider) = optional(params, "provider", MAX_LAUNCHER_CHARS)? {
-            settings.provider = known_provider(provider)?;
+            settings.provider = known_provider(provider, &knows)?;
         }
         if let Some(model) = optional(params, "model", MAX_MODEL_CHARS)? {
             settings.model = model;
         }
         if let Some(reviewer) = params.get("reviewer") {
-            settings.reviewer = reviewer_choice(reviewer)?;
+            settings.reviewer = reviewer_choice(reviewer, &knows)?;
         }
         match params.get("finish").and_then(Value::as_str) {
             None => {}

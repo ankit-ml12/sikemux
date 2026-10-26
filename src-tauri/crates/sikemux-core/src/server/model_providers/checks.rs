@@ -135,7 +135,7 @@ impl Checks {
 }
 
 /// Checks a model the first time a chat runs on it, in the background.
-pub(crate) fn first_use(core: &Arc<Core>, provider: &'static Provider, model: &str) {
+pub(crate) fn first_use(core: &Arc<Core>, provider: Arc<Provider>, model: &str) {
     let model = api_model(model).to_owned();
     let checks = &core.workspaces.model_checks;
     if checks.of(&provider.id).contains_key(&model)
@@ -154,7 +154,7 @@ pub(crate) fn first_use(core: &Arc<Core>, provider: &'static Provider, model: &s
         };
         let checks = &core.workspaces.model_checks;
         if provider.key.is_none() || key.is_some() {
-            if let Err(error) = checks.run(provider, key.as_deref(), &model).await {
+            if let Err(error) = checks.run(&provider, key.as_deref(), &model).await {
                 eprintln!(
                     "sikemux core: could not check tool calls on {} {model}: {error}",
                     provider.label

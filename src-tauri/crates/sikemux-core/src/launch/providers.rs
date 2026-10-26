@@ -30,6 +30,9 @@ pub const KEY_SERVICE: &str = "sikemux-model-provider-test";
 /// Names the provider a chat runs on in place of its agent's own account.
 pub const ROUTED_ENV: &str = "SIKEMUX_MODEL_PROVIDER";
 
+/// Carries the key of a provider the person added, the only one a launch runs on.
+pub const CUSTOM_KEY_ENV: &str = "SIKEMUX_MODEL_PROVIDER_KEY";
+
 /// The agents Sikemux can point at a provider in place of their makers' accounts.
 pub fn routed_agents() -> impl Iterator<Item = &'static str> {
     AGENTS
@@ -71,6 +74,67 @@ pub struct Provider {
     /// The model an agent's own guide from the provider names, where it differs.
     #[serde(default, skip_serializing)]
     pub agent_models: BTreeMap<String, String>,
+    /// The person added it, rather than Sikemux's catalogue holding it.
+    #[serde(default, skip_deserializing)]
+    pub custom: bool,
+}
+
+/// A provider the person added, as Sikemux writes it down.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Custom {
+    pub id: String,
+    pub label: String,
+    pub base_url: String,
+    /// Wants a key, kept in the Keychain; a runner on this computer may not.
+    pub keyed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub responses: bool,
+    /// Base URL of its Anthropic-compatible API, when it serves one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anthropic: Option<String>,
+}
+
+impl Custom {
+    fn provider(self) -> Provider {
+        let sign_up_url = url::Url::parse(&self.base_url)
+            .map(|url| url.origin().ascii_serialization())
+            .unwrap_or_else(|_| self.base_url.clone());
+        Provider {
+            key: self.keyed.then(|| KeySpec {
+                env: vec![CUSTOM_KEY_ENV.to_owned()],
+                check: format!("{}/models", self.base_url),
+            }),
+            kind: if self.keyed { Kind::Api } else { Kind::Local },
+            id: self.id,
+            label: self.label,
+            sign_up_url,
+            openai: self.base_url,
+            responses: self.responses,
+            anthropic: self.anthropic.map(|url| AnthropicApi {
+                url,
+                auth: AnthropicAuth::Bearer,
+            }),
+            models_dev: None,
+            model: self.model,
+            agent_models: BTreeMap::new(),
+            custom: true,
+        }
+    }
+
+    fn of(provider: &Provider) -> Self {
+        Self {
+            id: provider.id.clone(),
+            label: provider.label.clone(),
+            base_url: provider.openai.clone(),
+            keyed: provider.key.is_some(),
+            model: provider.model.clone(),
+            responses: provider.responses,
+            anthropic: provider.anthropic.as_ref().map(|api| api.url.clone()),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -98,16 +162,19 @@ pub enum AnthropicAuth {
     XApiKey,
 }
 
-static CATALOGUE: LazyLock<Vec<Provider>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../model-providers.json"))
+static CATALOGUE: LazyLock<Vec<Arc<Provider>>> = LazyLock::new(|| {
+    serde_json::from_str::<Vec<Provider>>(include_str!("../../model-providers.json"))
         .expect("model-providers.json is a valid catalogue")
+        .into_iter()
+        .map(Arc::new)
+        .collect()
 });
 
-pub fn catalogue() -> &'static [Provider] {
+pub fn catalogue() -> &'static [Arc<Provider>] {
     &CATALOGUE
 }
 
-pub fn find(id: &str) -> Option<&'static Provider> {
+fn catalogued(id: &str) -> Option<&'static Arc<Provider>> {
     CATALOGUE.iter().find(|provider| provider.id == id)
 }
 
@@ -117,12 +184,18 @@ pub fn key_names() -> BTreeSet<&'static str> {
         .iter()
         .filter_map(|provider| provider.key.as_ref())
         .flat_map(|key| key.env.iter().map(String::as_str))
-        .chain(["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"])
+        .chain(["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", CUSTOM_KEY_ENV])
         .collect()
 }
 
 fn is_keyed(id: &str) -> bool {
-    find(id).is_some_and(|provider| provider.key.is_some())
+    catalogued(id).is_some_and(|provider| provider.key.is_some())
+}
+
+fn modified(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
 }
 
 /// What a launch adds to the agent's own: variables and arguments.
@@ -145,7 +218,7 @@ pub struct Helper {
 }
 
 impl Helper {
-    pub fn check(&self) -> Result<(), String> {
+    pub fn check(&self, providers: &Providers) -> Result<(), String> {
         if self.agent.is_empty() || self.agent.len() > 64 {
             return Err("Pick the agent helpers run as".into());
         }
@@ -156,7 +229,7 @@ impl Helper {
         {
             return Err("A helper's model is a name of at most 200 characters".into());
         }
-        match self.provider.as_deref().map(|id| (id, find(id))) {
+        match self.provider.as_deref().map(|id| (id, providers.find(id))) {
             None => Ok(()),
             Some((id, None)) => Err(format!("Sikemux does not know a provider called {id}")),
             Some((_, Some(provider))) if !provider.routes(&self.agent) => {
@@ -275,10 +348,11 @@ impl Provider {
 }
 
 /// Which providers have a key saved, kept in a file the app and the core both
-/// read, and the keys this process has read, so a launch does not start the
-/// Keychain tool for every provider every time.
+/// read, the providers the person added, and the keys this process has read,
+/// so a launch does not start the Keychain tool for every provider every time.
 pub struct Providers {
     path: PathBuf,
+    custom_path: PathBuf,
     helper_path: PathBuf,
     state: Mutex<State>,
     feed: Feed,
@@ -289,17 +363,97 @@ struct State {
     /// When the list was last written, so a change another process made is noticed.
     stamp: Option<SystemTime>,
     connected: BTreeSet<String>,
+    custom_stamp: Option<SystemTime>,
+    custom: Vec<Arc<Provider>>,
     keys: HashMap<String, String>,
+}
+
+impl State {
+    fn holds_key(&self, id: &str) -> bool {
+        self.connected.contains(id)
+            || self
+                .custom
+                .iter()
+                .any(|provider| provider.id == id && provider.key.is_some())
+    }
 }
 
 impl Providers {
     pub fn new(data_dir: &Path) -> Self {
         Self {
             path: data_dir.join("model-providers.json"),
+            custom_path: data_dir.join("custom-model-providers.json"),
             helper_path: data_dir.join("model-helper.json"),
             state: Mutex::default(),
             feed: Feed::new(data_dir),
         }
+    }
+
+    pub fn find(&self, id: &str) -> Option<Arc<Provider>> {
+        if let Some(provider) = catalogued(id) {
+            return Some(provider.clone());
+        }
+        let state = self.fresh();
+        state
+            .custom
+            .iter()
+            .find(|provider| provider.id == id)
+            .cloned()
+    }
+
+    /// The catalogue's providers, then those the person added.
+    pub fn all(&self) -> Vec<Arc<Provider>> {
+        let custom = self.fresh().custom.clone();
+        catalogue().iter().cloned().chain(custom).collect()
+    }
+
+    /// Keeps `custom` and its `key`, replacing a provider of the same id.
+    pub fn add_custom(&self, custom: Custom, key: Option<String>) -> Result<Arc<Provider>, String> {
+        if catalogued(&custom.id).is_some() {
+            return Err(format!("{} is already in Sikemux's list", custom.label));
+        }
+        if let Some(key) = &key {
+            sikemux_keychain::write(KEY_SERVICE, &custom.id, key)
+                .map_err(|error| error.to_string())?;
+        }
+        let provider = Arc::new(custom.provider());
+        let mut state = self.fresh();
+        state.custom.retain(|kept| kept.id != provider.id);
+        state.custom.push(provider.clone());
+        self.write_custom(&mut state)?;
+        match key {
+            Some(key) => state.keys.insert(provider.id.clone(), key),
+            None => state.keys.remove(&provider.id),
+        };
+        Ok(provider)
+    }
+
+    pub fn remove_custom(&self, id: &str) -> Result<(), String> {
+        let mut state = self.fresh();
+        let Some(at) = state.custom.iter().position(|provider| provider.id == id) else {
+            return Err(format!(
+                "Sikemux holds no provider called {id} that you added"
+            ));
+        };
+        if state.custom[at].key.is_some() {
+            sikemux_keychain::delete(KEY_SERVICE, id).map_err(|error| error.to_string())?;
+        }
+        state.custom.remove(at);
+        state.keys.remove(id);
+        self.write_custom(&mut state)
+    }
+
+    fn write_custom(&self, state: &mut State) -> Result<(), String> {
+        let records: Vec<_> = state
+            .custom
+            .iter()
+            .map(|provider| Custom::of(provider))
+            .collect();
+        let bytes = serde_json::to_vec(&records).map_err(|error| error.to_string())?;
+        sikemux_process::files::write_atomic(&self.custom_path, &bytes, false)
+            .map_err(|error| error.to_string())?;
+        state.custom_stamp = modified(&self.custom_path);
+        Ok(())
     }
 
     /// What models.dev says of every provider's models. Reads the disk, so it blocks.
@@ -310,14 +464,25 @@ impl Providers {
     /// The model a chat of `agent` starts on at the provider `id` when none
     /// is picked. Reads the disk, so it blocks.
     pub fn coding_model(&self, id: &str, agent: &str) -> Option<String> {
-        find(id)?.coding_model(agent, &self.feed(), None)
+        self.find(id)?.coding_model(agent, &self.feed(), None)
     }
 
     fn fresh(&self) -> MutexGuard<'_, State> {
         let mut state = self.state.locked();
-        let stamp = std::fs::metadata(&self.path)
-            .and_then(|metadata| metadata.modified())
-            .ok();
+        let custom_stamp = modified(&self.custom_path);
+        if custom_stamp != state.custom_stamp {
+            state.custom = std::fs::read(&self.custom_path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Vec<Custom>>(&bytes).ok())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|custom| catalogued(&custom.id).is_none())
+                .map(|custom| Arc::new(custom.provider()))
+                .collect();
+            state.keys.clear();
+            state.custom_stamp = custom_stamp;
+        }
+        let stamp = modified(&self.path);
         if stamp != state.stamp || stamp.is_none() {
             state.connected = std::fs::read(&self.path)
                 .ok()
@@ -347,9 +512,7 @@ impl Providers {
         let bytes = serde_json::to_vec(&state.connected).map_err(|error| error.to_string())?;
         sikemux_process::files::write_atomic(&self.path, &bytes, false)
             .map_err(|error| error.to_string())?;
-        state.stamp = std::fs::metadata(&self.path)
-            .and_then(|metadata| metadata.modified())
-            .ok();
+        state.stamp = modified(&self.path);
         Ok(())
     }
 
@@ -358,7 +521,7 @@ impl Providers {
         let bytes = std::fs::read(&self.helper_path).ok()?;
         serde_json::from_slice::<Helper>(&bytes)
             .ok()
-            .filter(|helper| helper.check().is_ok())
+            .filter(|helper| helper.check(self).is_ok())
     }
 
     pub fn set_helper(&self, helper: Option<&Helper>) -> Result<(), String> {
@@ -370,7 +533,7 @@ impl Providers {
                 _ => Ok(()),
             };
         };
-        helper.check()?;
+        helper.check(self)?;
         let bytes = serde_json::to_vec(helper).map_err(|error| error.to_string())?;
         sikemux_process::files::write_atomic(&self.helper_path, &bytes, false)
             .map_err(|error| error.to_string())
@@ -388,7 +551,7 @@ impl Providers {
     pub fn key(&self, id: &str) -> Option<String> {
         {
             let state = self.fresh();
-            if !state.connected.contains(id) {
+            if !state.holds_key(id) {
                 return None;
             }
             if let Some(key) = state.keys.get(id) {
@@ -416,7 +579,7 @@ impl Providers {
         }
         self.connected()
             .iter()
-            .filter_map(|id| Some((&find(id)?.key.as_ref()?.env, self.key(id)?)))
+            .filter_map(|id| Some((&catalogued(id)?.key.as_ref()?.env, self.key(id)?)))
             .flat_map(|(names, key)| names.iter().map(move |name| (name.clone(), key.clone())))
             .collect()
     }
@@ -446,8 +609,9 @@ impl Providers {
                 args: Vec::new(),
             });
         };
-        let provider =
-            find(id).ok_or_else(|| format!("Sikemux does not know a provider called {id}"))?;
+        let provider = self
+            .find(id)
+            .ok_or_else(|| format!("Sikemux does not know a provider called {id}"))?;
         let key = match provider.key {
             Some(_) => Some(self.key(id).ok_or_else(|| {
                 format!("Connect {} in Settings to run chats on it", provider.label)

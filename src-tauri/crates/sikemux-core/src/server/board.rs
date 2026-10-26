@@ -16,7 +16,7 @@ use sikemux_process::sync::Locked;
 
 use super::changed::Topic;
 use crate::cli::protocol::HarnessRequest;
-use crate::launch::providers::{self, ROUTED_ENV};
+use crate::launch::providers::ROUTED_ENV;
 use crate::text::clipped;
 
 use super::connection::blocking;
@@ -631,10 +631,13 @@ fn cli_of(core: &Core, agent_id: &str) -> Option<String> {
 }
 
 /// The provider paying for the agent's turns, by name, when not its own account.
-fn paid_by(core: &Core, agent_id: &str) -> Option<&'static str> {
+fn paid_by(core: &Core, agent_id: &str) -> Option<String> {
     let chat = core.chats.get(agent_id)?;
-    let provider = providers::find(chat.launch.env.get(ROUTED_ENV)?)?;
-    Some(&provider.label)
+    let provider = core
+        .workspaces
+        .providers()?
+        .find(chat.launch.env.get(ROUTED_ENV)?)?;
+    Some(provider.label.clone())
 }
 
 fn name_of(core: &Core, agent_id: &str) -> String {
@@ -738,7 +741,7 @@ struct CardView {
     owner_name: Option<String>,
     owner_cli: Option<String>,
     /// The model provider paying for the owner's turns, when not its own account.
-    paid_by: Option<&'static str>,
+    paid_by: Option<String>,
     team: Option<String>,
     team_name: Option<String>,
     parent: Option<u64>,
@@ -1839,7 +1842,11 @@ pub(crate) async fn person_settings(core: &Arc<Core>, params: Value) -> Result<B
                 .map(|board| board.settings.clone())
                 .unwrap_or_default()
         };
-        let settings = current.changed(&params)?;
+        let settings = current.changed(&params, |id| {
+            core.workspaces
+                .providers()
+                .is_some_and(|providers| providers.find(id).is_some())
+        })?;
         if let (Some(builder), Some(reviewer)) = (&settings.launcher, &settings.reviewer) {
             let cli = |id: &str| core.workspaces.launcher_cli(id);
             if cli(builder).is_some() && cli(builder) == cli(&reviewer.launcher) {
