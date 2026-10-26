@@ -7,6 +7,7 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled,
 };
 use serde_json::{json, Value};
+use sikemux_wire::protocol::AgentStatus;
 
 use crate::core::Watch;
 use crate::icons::Icon;
@@ -100,7 +101,8 @@ fn state(pull: &Value) -> &'static str {
 }
 
 /// The pull request's badge and the button that removes a merged worktree, for the agent in
-/// front, while its worktree has them.
+/// front, while its worktree has them. A teammate that lands as it goes reads as merged after
+/// each land, so the button waits until the agent is done.
 pub fn badges(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let (watched, _, _) = bench.watched_worktree.as_ref()?;
     if watched != agent {
@@ -118,7 +120,12 @@ pub fn badges(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
     let t = Tokens::get(cx).clone();
     let pull = pull(bench, &branch);
     let pull_merged = pull.is_some_and(merged);
-    let can_remove = pull_merged || bench.read(MERGED).and_then(Value::as_bool) == Some(true);
+    let at_rest = bench.agent_by_id(agent).is_none_or(|row| {
+        !matches!(row.status, AgentStatus::Working | AgentStatus::Blocked)
+            && row.tasks + row.subagents == 0
+    });
+    let can_remove =
+        at_rest && (pull_merged || bench.read(MERGED).and_then(Value::as_bool) == Some(true));
     let chip = |id: &'static str| {
         div()
             .id(id)
