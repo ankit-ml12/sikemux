@@ -448,7 +448,9 @@ impl Workbench {
             Heard::Shortcut(shortcut) => {
                 let shift = if shortcut.shift { "Shift+" } else { "" };
                 let keys = crate::keymap::keystroke(&format!("Meta+{shift}{}", shortcut.code));
-                if let Some(keystroke) = keys.and_then(|keys| Keystroke::parse(&keys).ok()) {
+                if let Some(keystroke) = keys
+                    .and_then(|keys| Keystroke::parse_with_os(&keys, cx.platform_info().os).ok())
+                {
                     if let Some(page) = self.desks.pages.get(&shortcut.agent_id) {
                         page.focus.focus(window, cx);
                     }

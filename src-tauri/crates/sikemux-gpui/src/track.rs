@@ -8,8 +8,7 @@ use std::time::Duration;
 
 use gpui_kit::{
     canvas, div, px, relative, AnimationExt, AnyElement, App, Context, DispatchPhase, Div,
-    ElementId, Hsla, IntoElement, ParentElement, ScrollWheelEvent, Styled, Task, TouchPhase,
-    Window,
+    ElementId, Hsla, IntoElement, ParentElement, ScrollEvent, Styled, Task, TouchPhase, Window,
 };
 use sikemux_wire::protocol::PaneKind;
 
@@ -112,12 +111,7 @@ impl<K: Clone + PartialEq> Slide<K> {
     }
 
     /// Follows a scroll over the row, where `front` is one of `order`.
-    pub(crate) fn scroll(
-        &mut self,
-        event: &ScrollWheelEvent,
-        order: &[K],
-        front: &K,
-    ) -> Scrolled<K> {
+    pub(crate) fn scroll(&mut self, event: &ScrollEvent, order: &[K], front: &K) -> Scrolled<K> {
         let slot = order.iter().position(|item| item == front).unwrap_or(0);
         let ends = Ends {
             previous: slot > 0,
@@ -194,7 +188,7 @@ impl<K: Clone + PartialEq> Slide<K> {
 
 impl Workbench {
     /// Follows a scroll over the stage; true when the stage took it as a swipe between tabs.
-    fn swipe_stage(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) -> bool {
+    fn swipe_stage(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) -> bool {
         let Some(strip) = self.strip() else {
             return false;
         };
@@ -224,7 +218,7 @@ impl Workbench {
     }
 
     /// Follows a scroll over the tab rail; true when it took it as a swipe between pages.
-    fn swipe_rail(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) -> bool {
+    fn swipe_rail(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) -> bool {
         let front = self.rail_page;
         match self.rail_slide.scroll(event, &RailPage::ALL, &front) {
             Scrolled::Ignored => return false,
@@ -386,7 +380,7 @@ pub(crate) fn row(
     start: f32,
     motion: Option<(usize, Option<f32>)>,
     seam: Option<Hsla>,
-    swiped: impl Fn(&ScrollWheelEvent, &mut App) -> bool + 'static,
+    swiped: impl Fn(&ScrollEvent, &mut App) -> bool + 'static,
 ) -> Div {
     div()
         .relative()
@@ -452,7 +446,7 @@ fn lane(
 /// swipe does not also scroll what it starts on.
 fn listener(
     width: &Rc<Cell<f32>>,
-    swiped: impl Fn(&ScrollWheelEvent, &mut App) -> bool + 'static,
+    swiped: impl Fn(&ScrollEvent, &mut App) -> bool + 'static,
 ) -> impl IntoElement {
     let (width, swiped) = (width.clone(), Rc::new(swiped));
     canvas(
@@ -466,7 +460,7 @@ fn listener(
             });
             let swiped = swiped.clone();
             let me = Rc::as_ptr(&width) as usize;
-            window.on_mouse_event(move |event: &ScrollWheelEvent, phase, _, cx| {
+            window.on_mouse_event(move |event: &ScrollEvent, phase, _, cx| {
                 if phase != DispatchPhase::Capture || !bounds.contains(&event.position) {
                     return;
                 }

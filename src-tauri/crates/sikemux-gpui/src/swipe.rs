@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-use gpui_kit::{Animation, ScrollDelta, ScrollWheelEvent, TouchPhase};
+use gpui_kit::{Animation, ScrollDelta, ScrollEvent, TouchPhase};
 
 /// Below this the gesture is diagonal enough to belong to whatever is under it.
 const HORIZONTAL_RATIO: f32 = 1.5;
@@ -71,7 +71,7 @@ impl Swipe {
     }
 
     /// Follows one scroll event over pages `stride` points wide.
-    pub fn scroll(&mut self, event: &ScrollWheelEvent, stride: f32, ends: Ends) -> Swiped {
+    pub fn scroll(&mut self, event: &ScrollEvent, stride: f32, ends: Ends) -> Swiped {
         let ScrollDelta::Pixels(delta) = event.delta else {
             return Swiped::Ignored;
         };

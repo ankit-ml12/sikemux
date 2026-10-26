@@ -22,7 +22,7 @@ use gpui::{
     div, point, px, relative, rgb, rgba, size, AnyElement, AnyWindowHandle, App, AppContext,
     Bounds, Context, Entity, HeadlessAppContext, IntoElement, KeyDownEvent, Keystroke, ListState,
     Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    PlatformInput, Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, Styled, Window,
+    PlatformInput, Point, Render, ScrollDelta, ScrollEvent, SharedString, Styled, Window,
     WindowBounds, WindowOptions,
 };
 use gpui_transcript::{Change, Markdown, Pen, Row, Style, Transcript};
@@ -410,7 +410,7 @@ impl Bench {
     }
 
     fn wheel(&mut self) {
-        self.input(PlatformInput::ScrollWheel(ScrollWheelEvent {
+        self.input(PlatformInput::Scroll(ScrollEvent {
             position: point(px(450.), px(500.)),
             delta: ScrollDelta::Pixels(point(px(0.), px(SCROLL_STEP))),
             ..Default::default()

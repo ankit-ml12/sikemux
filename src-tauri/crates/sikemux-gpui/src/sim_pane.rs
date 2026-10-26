@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use gpui::{Bounds, Pixels, Point, ScrollDelta, ScrollWheelEvent, TouchPhase};
+use gpui::{Bounds, Pixels, Point, ScrollDelta, ScrollEvent, TouchPhase};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
@@ -861,7 +861,7 @@ impl Workbench {
     }
 
     /// A trackpad scroll over the screen is a finger dragging it, lifted when the scroll stops.
-    fn scroll(&mut self, agent: &str, event: &ScrollWheelEvent) {
+    fn scroll(&mut self, agent: &str, event: &ScrollEvent) {
         if self.sims.acting(agent) {
             return;
         }
@@ -1268,7 +1268,7 @@ pub fn body(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyE
             MouseButton::Left,
             cx.listener(move |bench, _, _, _| bench.lift(&out, None)),
         )
-        .on_scroll_wheel(cx.listener(move |bench, event, _, _| bench.scroll(&wheel, event)))
+        .on_scroll(cx.listener(move |bench, event, _, _| bench.scroll(&wheel, event)))
         .on_key_down(cx.listener(move |bench, event, _, cx| bench.type_into(&keys, event, cx)))
         .child(
             canvas(move |bounds, _, _| drawn.set(bounds), |_, _, _, _| {})

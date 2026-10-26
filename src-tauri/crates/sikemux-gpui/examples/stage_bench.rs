@@ -548,7 +548,7 @@ fn main() -> anyhow::Result<()> {
     run.cx
         .update_window(run.window, |_, window, cx| {
             for key in ["cmd-a", "backspace"] {
-                if let Ok(key) = Keystroke::parse(key) {
+                if let Ok(key) = Keystroke::parse_with_os(key, cx.platform_info().os) {
                     window.dispatch_keystroke(key, cx);
                 }
             }
@@ -558,7 +558,7 @@ fn main() -> anyhow::Result<()> {
                 } else {
                     c.to_string()
                 };
-                if let Ok(key) = Keystroke::parse(&name) {
+                if let Ok(key) = Keystroke::parse_with_os(&name, cx.platform_info().os) {
                     window.dispatch_keystroke(key, cx);
                 }
             }
@@ -619,7 +619,7 @@ fn press(run: &mut Bench, keys: &[&str]) {
     run.cx
         .update_window(run.window, |_, window, cx| {
             for key in keys {
-                if let Ok(key) = Keystroke::parse(key) {
+                if let Ok(key) = Keystroke::parse_with_os(key, cx.platform_info().os) {
                     window.dispatch_keystroke(key, cx);
                 }
             }

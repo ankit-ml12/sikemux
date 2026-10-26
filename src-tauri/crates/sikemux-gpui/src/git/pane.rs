@@ -16,7 +16,7 @@ use gpui_kit::{
     div, img, list, px, radians, relative, Action, Anchor, AnyElement, App, AppContext,
     ClipboardItem, Context, Div, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement, IntoElement, KeyDownEvent, ListAlignment, ListState, ParentElement, Render,
-    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
+    ScrollEvent, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
     Transformation, WeakEntity, Window,
 };
 use serde::Deserialize;
@@ -795,7 +795,7 @@ impl GitPane {
     }
 
     /// Follows a scroll over the side column's pages; true when it took it as a swipe.
-    fn swipe(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) -> bool {
+    fn swipe(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) -> bool {
         let order = self.page_order();
         match self.slide.scroll(event, &order, &self.page) {
             Scrolled::Ignored => return false,

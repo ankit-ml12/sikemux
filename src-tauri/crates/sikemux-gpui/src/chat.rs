@@ -364,8 +364,12 @@ pub fn install(cx: &mut App) {
         KeyBinding::new("escape", StopTurn, Some("ChatComposer > Input")),
     ];
     for context in ["QuestionDock > Input", "QuestionDock"] {
-        bindings
-            .extend((1..=9).map(|n| KeyBinding::new(&n.to_string(), Choose(n - 1), Some(context))));
+        bindings.extend(
+            ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+                .into_iter()
+                .enumerate()
+                .map(|(choice, key)| KeyBinding::new(key, Choose(choice), Some(context))),
+        );
         bindings.extend([
             KeyBinding::new("up", PreviousChoice, Some(context)),
             KeyBinding::new("down", NextChoice, Some(context)),

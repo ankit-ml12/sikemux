@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, list, px, AnyElement, App, Context, Div, Entity, InteractiveElement, IntoElement,
-    ListAlignment, ListOffset, ListState, ParentElement, Pixels, ScrollWheelEvent, SharedString,
+    ListAlignment, ListOffset, ListState, ParentElement, Pixels, ScrollEvent, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::{json, Value};
@@ -566,7 +566,7 @@ fn draw(
                     .line_height(crate::theme::ui_text(19.))
                     .when(index == 0, |rows| rows.pt(px(8.)))
                     .when(index + 1 == diff.len(), |rows| rows.pb(px(8.)))
-                    .on_scroll_wheel(move |event: &ScrollWheelEvent, window, cx| {
+                    .on_scroll(move |event: &ScrollEvent, window, cx| {
                         let delta = event.delta.pixel_delta(window.line_height());
                         if delta.x.abs() <= delta.y.abs() {
                             return;

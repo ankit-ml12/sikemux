@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     point, px, size, AnyWindowHandle, AppContext, Entity, HeadlessAppContext, Modifiers,
-    PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase,
+    PlatformInput, ScrollDelta, ScrollEvent, ScrollSource, TouchPhase,
 };
 use gpui_transcript::Row;
 use serde_json::{json, Value};
@@ -444,15 +444,16 @@ impl Bench {
     }
 
     fn wheel(&mut self) {
-        let wheel = ScrollWheelEvent {
+        let wheel = ScrollEvent {
             position: point(px(900.), px(450.)),
             delta: ScrollDelta::Pixels(point(px(0.), px(SCROLL_STEP))),
             modifiers: Modifiers::default(),
             touch_phase: TouchPhase::Moved,
+            source: ScrollSource::Pointer,
         };
         self.cx
             .update_window(self.window, |_, window, cx| {
-                window.dispatch_event(PlatformInput::ScrollWheel(wheel), cx)
+                window.dispatch_event(PlatformInput::Scroll(wheel), cx)
             })
             .ok();
     }

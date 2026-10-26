@@ -298,7 +298,7 @@ pub fn pane(
                 move |bench, event: &gpui_kit::MouseDownEvent, _, cx| {
                     let held = event.modifiers;
                     let lsp_click = event.button == gpui_kit::MouseButton::Left
-                        && held.secondary()
+                        && held.secondary(cx)
                         && (held.shift || held.alt);
                     if lsp_click && lsp::navigate(bench, &key, held.shift, cx) {
                         cx.stop_propagation();

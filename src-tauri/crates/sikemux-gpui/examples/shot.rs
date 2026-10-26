@@ -39,7 +39,8 @@ use std::time::{Duration, Instant};
 use gpui::{
     point, px, size, AppContext, ClipboardEntry, ClipboardItem, ExternalPaths, FileDropEvent,
     HeadlessAppContext, Image, ImageFormat, Keystroke, Modifiers, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase,
+    MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollEvent, ScrollSource,
+    TouchPhase,
 };
 use gpui_kit::component::WindowExt;
 use serde_json::{json, Value};
@@ -150,13 +151,14 @@ fn main() -> anyhow::Result<()> {
     cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))?;
     if let Some(pixels) = scroll {
         cx.update_window(window.into(), |_, window, cx| {
-            let wheel = ScrollWheelEvent {
+            let wheel = ScrollEvent {
                 position: point(px(120.), px(400.)),
                 delta: ScrollDelta::Pixels(point(px(0.), px(-pixels))),
                 modifiers: Modifiers::default(),
                 touch_phase: TouchPhase::Moved,
+                source: ScrollSource::Pointer,
             };
-            window.dispatch_event(PlatformInput::ScrollWheel(wheel), cx);
+            window.dispatch_event(PlatformInput::Scroll(wheel), cx);
         })?;
         cx.run_until_parked();
         cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))?;
@@ -329,15 +331,24 @@ fn main() -> anyhow::Result<()> {
                         } else {
                             letter.to_string()
                         };
-                        window.dispatch_keystroke(Keystroke::parse(&key)?, cx);
+                        window.dispatch_keystroke(
+                            Keystroke::parse_with_os(&key, cx.platform_info().os)?,
+                            cx,
+                        );
                     }
                 }
                 "key" => {
-                    window.dispatch_keystroke(Keystroke::parse(rest)?, cx);
+                    window.dispatch_keystroke(
+                        Keystroke::parse_with_os(rest, cx.platform_info().os)?,
+                        cx,
+                    );
                 }
                 "keys" => {
                     for key in rest.split_whitespace() {
-                        window.dispatch_keystroke(Keystroke::parse(key)?, cx);
+                        window.dispatch_keystroke(
+                            Keystroke::parse_with_os(key, cx.platform_info().os)?,
+                            cx,
+                        );
                     }
                 }
                 "scroll" => {
@@ -347,13 +358,14 @@ fn main() -> anyhow::Result<()> {
                     let (x, y) = at
                         .split_once(',')
                         .ok_or_else(|| anyhow::anyhow!("scroll x,y pixels"))?;
-                    let wheel = ScrollWheelEvent {
+                    let wheel = ScrollEvent {
                         position: point(px(x.trim().parse()?), px(y.trim().parse()?)),
                         delta: ScrollDelta::Pixels(point(px(0.), px(pixels.trim().parse()?))),
                         modifiers: Modifiers::default(),
                         touch_phase: TouchPhase::Moved,
+                        source: ScrollSource::Pointer,
                     };
-                    window.dispatch_event(PlatformInput::ScrollWheel(wheel), cx);
+                    window.dispatch_event(PlatformInput::Scroll(wheel), cx);
                 }
                 "swipe" => {
                     let mut words = rest.split(' ');
@@ -367,26 +379,25 @@ fn main() -> anyhow::Result<()> {
                         .parse()?;
                     let hold = words.next() == Some("hold");
                     let position = point(px(x.trim().parse()?), px(y.trim().parse()?));
-                    let wheel = |dx: f32, touch_phase| ScrollWheelEvent {
+                    let wheel = |dx: f32, touch_phase| ScrollEvent {
                         position,
                         delta: ScrollDelta::Pixels(point(px(dx), px(0.))),
                         modifiers: Modifiers::default(),
                         touch_phase,
+                        source: ScrollSource::Pointer,
                     };
-                    window.dispatch_event(
-                        PlatformInput::ScrollWheel(wheel(0., TouchPhase::Started)),
-                        cx,
-                    );
+                    window
+                        .dispatch_event(PlatformInput::Scroll(wheel(0., TouchPhase::Started)), cx);
                     for _ in 0..10 {
                         window.dispatch_event(
-                            PlatformInput::ScrollWheel(wheel(pixels / 10., TouchPhase::Moved)),
+                            PlatformInput::Scroll(wheel(pixels / 10., TouchPhase::Moved)),
                             cx,
                         );
                         std::thread::sleep(Duration::from_millis(8));
                     }
                     if !hold {
                         window.dispatch_event(
-                            PlatformInput::ScrollWheel(wheel(0., TouchPhase::Ended)),
+                            PlatformInput::Scroll(wheel(0., TouchPhase::Ended)),
                             cx,
                         );
                     }

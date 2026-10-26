@@ -13,7 +13,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, font, list, px, Action, App, Context, Div, HighlightStyle, Hsla,
     InteractiveElement, IntoElement, ListAlignment, ListState, ParentElement, Pixels, Render,
-    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window,
+    ScrollEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window,
 };
 use serde_json::{json, Value};
 use sikemux_core::git::diff::{changes, DiffRow, ROW_ADDED, ROW_DELETED, ROW_HIDDEN};
@@ -562,7 +562,7 @@ impl DiffView {
         }
     }
 
-    fn wheel(&mut self, event: &ScrollWheelEvent, window: &Window, width: Pixels) -> bool {
+    fn wheel(&mut self, event: &ScrollEvent, window: &Window, width: Pixels) -> bool {
         let delta = event.delta.pixel_delta(window.line_height());
         if delta.x == px(0.) || delta.x.abs() < delta.y.abs() {
             return false;
@@ -637,13 +637,11 @@ impl Render for DiffView {
             .font_family(theme::MONO)
             .text_size(CODE_SIZE)
             .line_height(ROW_HEIGHT)
-            .on_scroll_wheel(
-                cx.listener(move |view, event: &ScrollWheelEvent, window, cx| {
-                    if view.wheel(event, window, width) {
-                        cx.notify();
-                    }
-                }),
-            )
+            .on_scroll(cx.listener(move |view, event: &ScrollEvent, window, cx| {
+                if view.wheel(event, window, width) {
+                    cx.notify();
+                }
+            }))
             .child(
                 canvas(
                     move |bounds, _, _| shown.set(bounds.size.width),

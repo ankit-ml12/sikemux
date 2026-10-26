@@ -212,11 +212,14 @@ pub fn bind_project_actions(actions: &[(String, String, String)], cx: &mut App) 
             id: id.clone(),
             label: label.clone(),
         };
-        bindings.push(KeyBinding::new(
-            &gpui_keys,
-            action,
-            Some(&context(id, keys)),
-        ));
+        let context = KeyBindingContextPredicate::parse(&context(id, keys))
+            .ok()
+            .map(Rc::new);
+        let Ok(binding) = KeyBinding::load(&gpui_keys, Box::new(action), context, false, None, cx)
+        else {
+            continue;
+        };
+        bindings.push(binding);
         bound.insert(id.clone(), keys.clone());
     }
     if bound == keymap.actions {
@@ -314,14 +317,7 @@ pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
         let context = KeyBindingContextPredicate::parse(&context(shortcut.id, &keys))
             .ok()
             .map(Rc::new);
-        if let Ok(binding) = KeyBinding::load(
-            &gpui_keys,
-            action,
-            context,
-            false,
-            None,
-            &gpui::DummyKeyboardMapper,
-        ) {
+        if let Ok(binding) = KeyBinding::load(&gpui_keys, action, context, false, None, cx) {
             bindings.push(binding);
             bound.insert(shortcut.id.to_owned(), keys);
         }

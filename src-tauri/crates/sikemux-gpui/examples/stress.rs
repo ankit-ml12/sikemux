@@ -30,7 +30,7 @@ use gpui::{
     point, px, size, AnyElement, AnyWindowHandle, App, AppContext, Bounds, Context, Element,
     ElementId, Entity, Focusable, GlobalElementId, HeadlessAppContext, InspectorElementId,
     IntoElement, Keystroke, LayoutId, ParentElement, Pixels, PlatformInput, Render, ScrollDelta,
-    ScrollWheelEvent, Styled, Window, WindowBounds, WindowOptions,
+    ScrollEvent, Styled, Window, WindowBounds, WindowOptions,
 };
 use gpui_transcript::Row as _;
 use serde_json::{json, Value};
@@ -423,7 +423,8 @@ impl Run {
 
     /// Presses `key`, typing its letter as the platform would when it types one.
     fn key(&mut self, key: &str) {
-        let mut keystroke = Keystroke::parse(key).expect("a keystroke");
+        let os = self.cx.update(|cx| cx.platform_info().os);
+        let mut keystroke = Keystroke::parse_with_os(key, os).expect("a keystroke");
         if keystroke.key_char.is_none() && !keystroke.modifiers.modified() {
             keystroke.key_char = match keystroke.key.as_str() {
                 "space" => Some(" ".into()),
@@ -439,14 +440,14 @@ impl Run {
     }
 
     fn wheel(&mut self, at: (f32, f32), lines: f32) {
-        let event = ScrollWheelEvent {
+        let event = ScrollEvent {
             position: point(px(at.0), px(at.1)),
             delta: ScrollDelta::Lines(point(0., lines)),
             ..Default::default()
         };
         self.cx
             .update_window(self.window, |_, window, cx| {
-                window.dispatch_event(PlatformInput::ScrollWheel(event), cx)
+                window.dispatch_event(PlatformInput::Scroll(event), cx)
             })
             .ok();
     }

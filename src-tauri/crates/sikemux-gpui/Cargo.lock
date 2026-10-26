@@ -1226,25 +1226,9 @@ checksum = "f6140449f97a6e97f9511815c5632d84c8aacf8ac271ad77c559218161a1373c"
 dependencies = [
  "bitflags 1.3.2",
  "block",
- "cocoa-foundation 0.1.2",
+ "cocoa-foundation",
  "core-foundation 0.9.4",
  "core-graphics 0.23.2",
- "foreign-types",
- "libc",
- "objc",
-]
-
-[[package]]
-name = "cocoa"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f79398230a6e2c08f5c9760610eb6924b52aa9e7950a619602baba59dcbbdbb2"
-dependencies = [
- "bitflags 2.13.2",
- "block",
- "cocoa-foundation 0.2.1",
- "core-foundation 0.10.1",
- "core-graphics 0.24.0",
  "foreign-types",
  "libc",
  "objc",
@@ -1261,19 +1245,6 @@ dependencies = [
  "core-foundation 0.9.4",
  "core-graphics-types 0.1.3",
  "libc",
- "objc",
-]
-
-[[package]]
-name = "cocoa-foundation"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81411967c50ee9a1fc11365f8c585f863a22a9697c89239c452292c40ba79b0d"
-dependencies = [
- "bitflags 2.13.2",
- "block",
- "core-foundation 0.10.1",
- "core-graphics-types 0.2.0",
  "objc",
 ]
 
@@ -1841,7 +1812,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 3.0.9",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -1980,7 +1951,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2291,7 +2262,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3101,14 +3072,14 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.21",
- "windows 0.62.2",
+ "windows 0.58.0",
 ]
 
 [[package]]
 name = "gpui-base"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5cd7de73d5b2d3d18b94a928abf343922091fa77bc472f77b7d2e7e8b1823a7"
+checksum = "d862bc8f2e27710039013d075ac4995892e9687ff207fa530f880cbcd513936f"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -3148,9 +3119,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-component"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4097e161cc81e86323b439664be0cdd4f7c56148e867ed6f67fd72b966b6c2d1"
+checksum = "46ce53430332e30f303364eaabfa10ed2aa23dfaf2a147e04370e0e9c423578b"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3196,9 +3167,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-component-macros"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b98496748463b60ad69eab80cd91fc9b3807fed9a0e01ab4d5c159c949fd814"
+checksum = "a512c830553e7dddc43c3f8faffc2d2d7bd24db21fe3dc1326dde9c470013768"
 dependencies = [
  "proc-macro-crate 3.5.0",
  "proc-macro2",
@@ -3208,9 +3179,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-fast"
-version = "0.1.10"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f539554aee0e994d84014d99e85f3923db613a62a94f248a6559e628bbb0b0be"
+checksum = "87b6d2f355531132e8f1ec357cb23901aba1d1b3e522260822ae199f02ec32da"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -3250,7 +3221,7 @@ dependencies = [
  "pollster 0.4.0",
  "postage",
  "profiling",
- "proptest 1.12.0",
+ "proptest",
  "rand 0.9.5",
  "raw-window-handle",
  "regex",
@@ -3263,7 +3234,7 @@ dependencies = [
  "smallvec",
  "spin 0.10.1",
  "strum",
- "taffy 0.14.0",
+ "taffy",
  "thiserror 2.0.21",
  "ttf-parser",
  "url",
@@ -3277,9 +3248,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-fast-macros"
-version = "0.1.10"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ce9b7a528e074c62bf71f05d886d6c8db88d567de2ccd8ab3d228ea2a6f6711"
+checksum = "e07e9e22196a84bb8cb06c19fc6e5d2218fa11d6b573f914f423970a1b38c97e"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -3289,9 +3260,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-kit"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cdcb78553bef8785669e572e79759b0eab47fdd9d318fe0cce1def798189432"
+checksum = "25210f6e59ea9ffac3a033dbce9edafe5ff0dd2900f894fd1316f54da2fe2b89"
 dependencies = [
  "gpui-base",
  "gpui-component",
@@ -3303,9 +3274,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-kit-assets"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b037e2fa43d53a567a8aa5be6b1a8931f416cbd010ceee8d4a3727a71e9b1d05"
+checksum = "c214017b45e5654665f18faa551f58a2c2c8d25efe6632b1a443ba8edf365e96"
 dependencies = [
  "anyhow",
  "gpui-pre",
@@ -3333,8 +3304,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -3377,7 +3348,7 @@ dependencies = [
  "pollster 0.4.0",
  "postage",
  "profiling",
- "proptest 1.10.0",
+ "proptest",
  "rand 0.9.5",
  "raw-window-handle",
  "regex",
@@ -3390,7 +3361,7 @@ dependencies = [
  "smallvec",
  "spin 0.10.1",
  "strum",
- "taffy 0.13.0",
+ "taffy",
  "thiserror 2.0.21",
  "ttf-parser",
  "url",
@@ -3404,8 +3375,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-apple"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "anyhow",
  "async-task",
@@ -3445,8 +3416,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-bench-metrics"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3456,8 +3427,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-collections"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "gpui-pre-util",
  "indexmap 2.14.2",
@@ -3466,8 +3437,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-derive-refineable"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3476,8 +3447,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-http-client"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3494,8 +3465,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-linux"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -3538,14 +3509,13 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-macos"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "accesskit",
  "accesskit_macos",
  "anyhow",
  "block2 0.6.2",
- "cocoa 0.26.0",
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "core-graphics 0.24.0",
@@ -3561,9 +3531,9 @@ dependencies = [
  "image",
  "itertools 0.14.0",
  "log",
- "objc",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
+ "objc2-core-graphics",
  "objc2-core-video",
  "objc2-foundation 0.3.2",
  "objc2-user-notifications",
@@ -3577,8 +3547,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-macros"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -3588,8 +3558,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-platform"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "anyhow",
  "gpui-pre",
@@ -3601,8 +3571,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-refineable"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "gpui-pre-derive-refineable",
 ]
@@ -3659,8 +3629,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-scheduler"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "async-task",
  "backtrace",
@@ -3675,8 +3645,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-shared-string"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "schemars 1.2.3",
  "serde",
@@ -3685,8 +3655,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-sum-tree"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "gpui-pre-ztracing",
  "heapless",
@@ -3696,8 +3666,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-util"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "anyhow",
  "log",
@@ -3706,9 +3676,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-web"
-version = "0.3.9"
+version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aedd55b99dc77e28df8202b0ea868aa5c90fda4aefff539ea21087d7c2ff4bfb"
+checksum = "1acd86af2347f0dd8b63c441a5dbd43b3fcd7dac69b340827c3497da5a13d6fb"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -3736,8 +3706,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-wgpu"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3764,8 +3734,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-windows"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -3784,6 +3754,7 @@ dependencies = [
  "rand 0.9.5",
  "raw-window-handle",
  "smallvec",
+ "unicode-bidi",
  "uuid",
  "windows 0.62.2",
  "windows-core 0.62.2",
@@ -3793,8 +3764,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-ztracing"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 dependencies = [
  "gpui-pre-ztracing-macro",
  "tracing",
@@ -3802,8 +3773,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pre-ztracing-macro"
-version = "0.3.9"
-source = "git+https://github.com/sikemux/gpui?rev=4fd0d80164e52dc8302ed8c4384ed2d7166a83fe#4fd0d80164e52dc8302ed8c4384ed2d7166a83fe"
+version = "0.3.10"
+source = "git+https://github.com/sikemux/gpui?rev=cf53095c37f9729addb058a5dc313ee812b39398#cf53095c37f9729addb058a5dc313ee812b39398"
 
 [[package]]
 name = "gpui-terminal-grid"
@@ -4334,7 +4305,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.58.0",
 ]
 
 [[package]]
@@ -5583,7 +5554,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "536bfad37a309d62069485248eeaba1e8d9853aaf951caaeaed0585a95346f08"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6096,7 +6067,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6233,7 +6204,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 3.5.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -6739,8 +6710,7 @@ dependencies = [
 [[package]]
 name = "oo7"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78f2bfed90f1618b4b48dcad9307f25e14ae894e2949642c87c351601d62cebd"
+source = "git+https://github.com/zed-industries/oo7?rev=731c1215edb6905876c6137ab300428c7b8d7c13#731c1215edb6905876c6137ab300428c7b8d7c13"
 dependencies = [
  "aes",
  "ashpd",
@@ -7480,25 +7450,6 @@ dependencies = [
 
 [[package]]
 name = "proptest"
-version = "1.10.0"
-source = "git+https://github.com/proptest-rs/proptest?rev=3dca198a8fef1b32e3a66f1e1897c955b4dc5b5b#3dca198a8fef1b32e3a66f1e1897c955b4dc5b5b"
-dependencies = [
- "bit-set 0.8.0",
- "bit-vec 0.8.0",
- "bitflags 2.13.2",
- "num-traits",
- "proptest-macro 0.5.0",
- "rand 0.9.5",
- "rand_chacha 0.9.0",
- "rand_xorshift 0.4.0",
- "regex-syntax",
- "rusty-fork",
- "tempfile",
- "unarray",
-]
-
-[[package]]
-name = "proptest"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8530004ccb15eae51c7e40009fbe317f341f804db54dc033eec1c50be28cfa0"
@@ -7509,24 +7460,13 @@ dependencies = [
  "chacha20",
  "core_detect",
  "num-traits",
- "proptest-macro 0.6.0",
+ "proptest-macro",
  "rand 0.10.3",
- "rand_xorshift 0.5.0",
+ "rand_xorshift",
  "regex-syntax",
  "rusty-fork",
  "tempfile",
  "unarray",
-]
-
-[[package]]
-name = "proptest-macro"
-version = "0.5.0"
-source = "git+https://github.com/proptest-rs/proptest?rev=3dca198a8fef1b32e3a66f1e1897c955b4dc5b5b#3dca198a8fef1b32e3a66f1e1897c955b4dc5b5b"
-dependencies = [
- "convert_case 0.11.0",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -7689,7 +7629,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7796,15 +7736,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
 dependencies = [
  "rand_core 0.10.1",
-]
-
-[[package]]
-name = "rand_xorshift"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
-dependencies = [
- "rand_core 0.9.5",
 ]
 
 [[package]]
@@ -8298,7 +8229,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8376,7 +8307,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9360,7 +9291,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -9608,6 +9539,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
 dependencies = [
  "proc-macro2",
+ "quote",
  "unicode-ident",
 ]
 
@@ -9723,23 +9655,10 @@ dependencies = [
 
 [[package]]
 name = "taffy"
-version = "0.13.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c034e05f6ee85a12daa63863c2245797715075c70649947aa0da54f3f2ab1d0f"
+checksum = "3c8480887e8803986d96a7173729565520d4bbb721ad6b7ad6941a22897207aa"
 dependencies = [
- "arrayvec",
- "serde",
- "slotmap",
- "smallvec",
-]
-
-[[package]]
-name = "taffy"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "639627c87f43b9181c811f40a6296409e093a17bc761214cba3c15df74f86b99"
-dependencies = [
- "arrayvec",
  "serde",
  "slotmap",
  "smallvec",
@@ -9795,7 +9714,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -10375,7 +10294,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -11262,7 +11181,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11914,7 +11833,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
 dependencies = [
  "cfg-if",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -12388,7 +12307,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6b338d705ae33a43ca00287c11129303a7a0aa57b101b72a1c08c863f698ac8"
 dependencies = [
  "anyhow",
- "cocoa 0.25.0",
+ "cocoa",
  "core-graphics-helmer-fork",
  "log",
  "objc",
@@ -12409,7 +12328,7 @@ version = "0.0.8-zed"
 source = "git+https://github.com/zed-industries/scap?rev=4afea48c3b002197176fb19cd0f9b180dd36eaac#4afea48c3b002197176fb19cd0f9b180dd36eaac"
 dependencies = [
  "anyhow",
- "cocoa 0.25.0",
+ "cocoa",
  "core-graphics-helmer-fork",
  "log",
  "objc",

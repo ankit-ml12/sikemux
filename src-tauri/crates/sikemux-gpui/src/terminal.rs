@@ -16,7 +16,7 @@ use gpui_kit::{
     ClipboardEntry, ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle,
     FontFallbacks, Hsla, Image, InputHandler, InteractiveElement, IntoElement, KeyBinding,
     KeyDownEvent, Keystroke, Modifiers, MouseButton as Button, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, Pixels, Point, Render, Rgba, ScrollWheelEvent, SharedString,
+    MouseUpEvent, ParentElement, Pixels, Point, Render, Rgba, ScrollEvent, SharedString,
     StyleRefinement, Styled, Subscription, Task, UTF16Selection, WeakEntity, Window,
 };
 use gpui_terminal_grid::{
@@ -711,14 +711,13 @@ fn draw(
                 bench.terminals.redraw(id, cx);
             }),
         )
-        .on_scroll_wheel(window.listener_for(
-            &this,
-            move |bench, event: &ScrollWheelEvent, _, cx| {
+        .on_scroll(
+            window.listener_for(&this, move |bench, event: &ScrollEvent, _, cx| {
                 if wheel(bench, id, event) {
                     bench.terminals.redraw(id, cx);
                 }
-            },
-        ))
+            }),
+        )
         .on_drop(window.listener_for(
             &this,
             move |bench, dropped: &crate::drag::DraggedPath, _, _| {
@@ -1588,7 +1587,7 @@ fn mouse_up(bench: &mut Workbench, id: TermKey, event: &MouseUpEvent, cx: &mut A
     }
 }
 
-fn wheel(bench: &mut Workbench, id: TermKey, event: &ScrollWheelEvent) -> bool {
+fn wheel(bench: &mut Workbench, id: TermKey, event: &ScrollEvent) -> bool {
     let Some(metrics) = bench.terminals.metrics.clone() else {
         return false;
     };

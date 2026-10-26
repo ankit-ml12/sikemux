@@ -43,8 +43,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 flate2 = "1"
 libc = "0.2"
 # The same GPUI as GPUI Kit's, named `gpui` for the macros that expand to it.
-gpui = { package = "gpui-pre", version = "=0.3.9" }
-gpui-kit = { version = "=0.8.0", default-features = false, features = ["component"] }
+gpui = { package = "gpui-pre", version = "=0.3.10" }
+gpui-kit = { version = "=0.8.1", default-features = false, features = ["component"] }
 gpui-native-view = { path = "crates/gpui-native-view" }
 gpui-terminal-grid = { path = "crates/gpui-terminal-grid" }
 gpui-transcript = { path = "crates/gpui-transcript", features = ["fork"] }
@@ -90,11 +90,11 @@ naga = { git = "https://github.com/gfx-rs/wgpu", rev = "3b3506ea31154edc04de64de
 
 [dev-dependencies]
 sikemux-fold = { path = "../sikemux-fold" }
-gpui = { package = "gpui-pre", version = "=0.3.9", features = ["test-support"] }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", features = ["test-support", "bench-support"] }
+gpui = { package = "gpui-pre", version = "=0.3.10", features = ["test-support"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.10", features = ["test-support", "bench-support"] }
 # So the shot can read what the window drew, such as an open menu's items.
-gpui-base = { version = "=0.8.0", features = ["test-support"] }
-gpui-component = { version = "=0.8.0", default-features = false, features = ["test-support"] }
+gpui-base = { version = "=0.8.1", features = ["test-support"] }
+gpui-component = { version = "=0.8.1", default-features = false, features = ["test-support"] }
 
 [profile.dev]
 debug = "line-tables-only"
@@ -194,23 +194,23 @@ opt-level = 3
 
 # GPUI from our fork of sonorahq/gpui, published under the gpui-pre names GPUI Kit pins.
 [patch.crates-io]
-gpui-pre = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-apple = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-collections = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-derive-refineable = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-http-client = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-linux = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-macos = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-macros = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-platform = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-refineable = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-scheduler = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-shared-string = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-sum-tree = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-util = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-wgpu = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-windows = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-ztracing = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
-gpui-pre-ztracing-macro = { git = "https://github.com/sikemux/gpui", rev = "4fd0d80164e52dc8302ed8c4384ed2d7166a83fe" }
+gpui-pre = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-apple = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-collections = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-derive-refineable = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-http-client = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-linux = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-macos = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-macros = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-platform = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-refineable = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-scheduler = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-shared-string = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-sum-tree = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-util = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-wgpu = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-windows = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-ztracing = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
+gpui-pre-ztracing-macro = { git = "https://github.com/sikemux/gpui", rev = "cf53095c37f9729addb058a5dc313ee812b39398" }
 # irosashi with C Oniguruma and Shiki's injection rules, until frostybee/irosashi takes them.
 irosashi = { git = "https://github.com/sikemux/irosashi", rev = "8ddf7a2ddbae78ec13c1db43e4c6bdaf09e7269a" }

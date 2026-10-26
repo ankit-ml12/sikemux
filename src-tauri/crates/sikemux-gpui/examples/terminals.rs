@@ -19,7 +19,7 @@ use gpui::{
     div, point, px, relative, size, AnyElement, AnyWindowHandle, App, AppContext, Bounds, Context,
     Element, ElementId, Entity, GlobalElementId, HeadlessAppContext, InspectorElementId,
     IntoElement, Keystroke, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, PlatformInput, Render, ScrollDelta, ScrollWheelEvent, Styled, Window,
+    ParentElement, Pixels, PlatformInput, Render, ScrollDelta, ScrollEvent, Styled, Window,
     WindowBounds, WindowOptions,
 };
 use sikemux_client::client::CoreClient;
@@ -225,7 +225,8 @@ impl Run {
     }
 
     fn key(&mut self, key: &str) {
-        let keystroke = Keystroke::parse(key).expect("a keystroke");
+        let os = self.cx.update(|cx| cx.platform_info().os);
+        let keystroke = Keystroke::parse_with_os(key, os).expect("a keystroke");
         self.cx
             .update_window(self.window, |_, window, cx| {
                 window.dispatch_keystroke(keystroke, cx)
@@ -267,14 +268,14 @@ impl Run {
     }
 
     fn wheel(&mut self, lines: f32) {
-        let event = ScrollWheelEvent {
+        let event = ScrollEvent {
             position: point(px(300.), px(300.)),
             delta: ScrollDelta::Lines(point(0., lines)),
             ..Default::default()
         };
         self.cx
             .update_window(self.window, |_, window, cx| {
-                window.dispatch_event(PlatformInput::ScrollWheel(event), cx)
+                window.dispatch_event(PlatformInput::Scroll(event), cx)
             })
             .ok();
     }

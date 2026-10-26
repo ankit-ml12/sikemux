@@ -19,7 +19,7 @@ use std::time::Duration;
 use gpui_kit::{
     point, px, AnyWindowHandle, App, AsyncApp, Entity, Keystroke, Modifiers, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, PlatformInput, Point, ScrollDelta,
-    ScrollWheelEvent, TouchPhase,
+    ScrollEvent, ScrollSource, TouchPhase,
 };
 use tokio::sync::mpsc;
 
@@ -157,7 +157,8 @@ async fn acted(line: &str, window: AnyWindowHandle, cx: &mut AsyncApp) -> Result
             input(window, cx, up(to, MouseButton::Left, 1))
         }
         "key" => {
-            let keystroke = keystroke(rest).ok_or("bad step")?;
+            let os = cx.update(|cx| cx.platform_info().os);
+            let keystroke = keystroke(rest, os).ok_or("bad step")?;
             send(window, cx, |window, cx| {
                 window.dispatch_keystroke(keystroke, cx);
             })
@@ -209,7 +210,7 @@ async fn acted(line: &str, window: AnyWindowHandle, cx: &mut AsyncApp) -> Result
 }
 
 /// `cmd+shift+p` as the keystroke GPUI parses, with the step files' key names.
-fn keystroke(combo: &str) -> Option<Keystroke> {
+fn keystroke(combo: &str, os: gpui_kit::OperatingSystem) -> Option<Keystroke> {
     let parts: Vec<&str> = combo.trim().split('+').collect();
     let (key, held) = parts.split_last()?;
     let key = match *key {
@@ -226,7 +227,7 @@ fn keystroke(combo: &str) -> Option<Keystroke> {
         .chain([key])
         .collect::<Vec<_>>()
         .join("-");
-    Keystroke::parse(&spelled).ok()
+    Keystroke::parse_with_os(&spelled, os).ok()
 }
 
 fn moved(position: Point<Pixels>, pressed_button: Option<MouseButton>) -> PlatformInput {
@@ -257,11 +258,12 @@ fn up(position: Point<Pixels>, button: MouseButton, click_count: usize) -> Platf
 }
 
 fn wheel(position: Point<Pixels>, delta: Point<Pixels>, touch_phase: TouchPhase) -> PlatformInput {
-    PlatformInput::ScrollWheel(ScrollWheelEvent {
+    PlatformInput::Scroll(ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(delta),
         modifiers: Modifiers::default(),
         touch_phase,
+        source: ScrollSource::Pointer,
     })
 }
 
