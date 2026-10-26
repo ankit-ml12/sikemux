@@ -18,10 +18,9 @@ an agent started should not depend on the window staying open.
 - A long-lived background process, the core, owns terminals, terminal agents, tasks,
   chat agents, the harness state and the agents' tool endpoint. The app is a client of
   it over a Unix socket.
-- The core is the existing `sikemux-editor` sidecar run as `sikemux core`. It needs no
-  new executable in the bundle and never loads WebKit.
-- The app keeps its Tauri commands and page events unchanged and forwards them, so the
-  frontend did not have to be rewritten.
+- The core is `sikemux-host`, the same executable as the `sikemux` command line tool,
+  shipped in the bundle as the Sikemux Core helper. It never loads WebKit.
+- The app reaches the core through `sikemux-client`, as the phone and the notch do.
 - How an agent launches (finding its program, its arguments, environment, account folder
   and hosted providers' keys) is built in one place in the core crate, which the app and
   the core both call. The core keeps the app's projects and the person's agent accounts
@@ -57,7 +56,7 @@ an agent started should not depend on the window staying open.
 - Quitting no longer stops processes. The first launch that takes sessions back says so
   once and points at ⌥⌘Q.
 - Terminal output crosses one more hop. A 100 MB `cat` measured 45–72 MB/s through the
-  core; xterm in the page remains the slower stage.
+  core when this was decided.
 - The sidecar grew from about 0.8 MB to about 5.3 MB, mostly the terminal engine, the
   async runtime and the ACP crate.
 - The core is Unix-only. The app no longer builds for Windows.

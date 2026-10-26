@@ -22,19 +22,21 @@ product goal (the README promises a download of about 10 MB):
 - There is no marketplace and no third-party plugin loading. Every plugin is
   written in this repository and compiled into the app.
 - Each plugin is a Rust crate in `src-tauri/plugins/<name>` behind its own Cargo
-  feature, and a frontend folder in `src/plugins/<name>` registered in
-  `src/plugins/builtin.ts`. Users turn plugins on and off in the app.
-- A plugin crate depends only on `sikemux-plugin-api` and `sikemux-process`. Its
-  frontend imports only `src/plugin-api` (plus React and Zustand);
-  `scripts/check-plugin-boundaries.mjs` enforces this in `pnpm lint`.
+  feature of the core (`sikemux-host`), and its pane in the app is drawn by
+  `src-tauri/crates/sikemux-gpui/src/plugin_pane/<name>`. Users turn plugins on and
+  off in the app.
+- A plugin crate depends on `sikemux-plugin-api` and, where it needs them, the small
+  `sikemux-process`, `sikemux-keychain` and `sikemux-loopback` crates, never on the
+  core.
 - Surface kinds are named `<plugin id>:<surface>`, for example
   `sikemux.rundeck:deploy`.
 - The release build keeps `panic = "abort"`.
 
 Crash containment comes from cheaper measures instead:
 
-- Plugins run on their own Tokio runtime (`src-tauri/src/plugins/mod.rs`), so a
-  stuck plugin cannot starve the app's own async work.
+- Plugins run in the core's process on their own Tokio runtime
+  (`src-tauri/crates/sikemux-host/src/plugins/host.rs`), so a stuck plugin cannot
+  starve the terminals and agents.
 - Every plugin call has a timeout: 60 seconds by default, which a plugin's
   manifest can set between 1 second and 10 minutes.
 - Plugin crates deny `unwrap`, `expect`, `panic!`, unchecked indexing and string
@@ -44,7 +46,6 @@ Crash containment comes from cheaper measures instead:
 ## Consequences
 
 - Adding a plugin means a pull request to this repository, not an install.
-- A panic in a plugin still aborts the app. The lints are the defence, so they
+- A panic in a plugin still aborts the core. The lints are the defence, so they
   must not be loosened for plugin crates.
 - Plugins built mostly for size use `opt-level = "z"` in the release profile.
-- Any new plugin pane kind must survive `workbenchRuntime.start()` on boot.

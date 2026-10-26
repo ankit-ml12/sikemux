@@ -1,6 +1,6 @@
 # ADR 0004: The terminal renders with WebGL
 
-- Status: Accepted
+- Status: Superseded by [ADR 0020](./0020-gpui-desktop-and-web.md)
 - Decision date: 2026-09-21
 
 ## Context

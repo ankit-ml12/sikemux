@@ -5,7 +5,7 @@
 
 ## Context
 
-The desktop app is React in Tauri's WebKit. It grew one feature at a time into many thin
+The desktop app was React in Tauri's WebKit. It grew one feature at a time into many thin
 components, state copied between them and logic repeated beside the phone's. WebKit's memory
 and main thread are what limit how many agents, panes and projects it keeps up with
 (GitHub #115 holds the measurements and the choices behind this ADR). The same app is wanted
@@ -14,8 +14,8 @@ as the web client at app.sikemux.com.
 ## Decision
 
 - **GPUI, on the `sonorahq/gpui` fork with GPUI Kit**, draws the Mac and the web (wasm) from
-  one Rust UI. It is written fresh on the `gpui` branch and switched to once everything
-  matches, through a pull request.
+  one Rust UI. It was written fresh on the `gpui` branch and replaced the React app on
+  `main` on 2026-10-25 (#158).
 - **The core owns what the data means** ([ADR 0010](./0010-phone-links-only-the-wire-and-client.md)).
   The app draws the core's views: chats as rows and their changes, agents, questions, the
   catalog, and terminals as cell grids the core emulates.
@@ -57,7 +57,7 @@ as the web client at app.sikemux.com.
 
 - The behaviour and the look of the Tauri app are what is ported, not its components, its
   state or the way it is built.
-- The React app keeps working on the branch until GPUI replaces it, drawing the same core
-  views through `src/chat/rows.ts` and the generated wire types.
+- Until the switch, the React app drew the same core views through `src/chat/rows.ts` and
+  the generated wire types. Both the React app and the Tauri shell were removed then.
 - Pieces nobody has built for GPUI yet become crates others can use, free of Sikemux types
   and `workspace-hack`, as #115 lists.

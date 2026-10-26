@@ -13,22 +13,22 @@ focus, captchas failing. It was also slow to open and heavy to run.
 
 ## Decision
 
-- Each browser tab is a Tauri child webview (WKWebView on macOS) placed over the
-  React pane. The React side only reports where the tab should sit.
+- Each browser tab is a native WebKit view (WKWebView on macOS, WebKitGTK on
+  Linux) that `sikemux-browser` adds to the app's window. The app only says where
+  the tab should sit.
 - Agents drive tabs through the harness methods (`browser.*`, declared in
   `browser/tools.json`), which act through a script injected into the page.
 - Chromium, Electron and CEF are not options for the app or its browser. The
-  app stays on Tauri and the system WebKit.
+  browser stays on the system WebKit.
 
 ## Consequences
 
 - WebKit quirks are worked around, never treated as a reason to switch engines.
   Known ones include hover needing an active page, a window blur that closes
   menus, and a 14,400 pt limit on PDF export.
-- Pages that change their URL without a full load (`pushState`, hash changes)
-  are not seen by the page-load hook.
-- A child webview sits above the React layer, so anything drawn over a tab
-  (menus, dialogs) has to hide the tab first, through `occludeNativeViews` in
-  `src/state/nativeViews.ts`.
-- Once a child webview exists, `get_webview_window("main")` returns nothing;
-  use `get_window`.
+- On Linux, pages that change their URL without a full load (`pushState`, hash
+  changes) are not seen by the page-load hook. On macOS the tab watches the
+  page's URL itself.
+- Tabs sit beneath the window's overlay plane, which the app's GPUI fork adds, so
+  menus and dialogs draw over a page without hiding it. A window that cannot
+  make the plane shows pages over its menus.

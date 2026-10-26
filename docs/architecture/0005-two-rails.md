@@ -5,8 +5,9 @@
 
 ## Context
 
-The window has two side columns: the side rail (`src/rail/SideRail.tsx`) lists
-sessions, and the tab rail (`src/rail/TabRail.tsx`) lists agent chats.
+The window has two side columns: the side rail
+(`src-tauri/crates/sikemux-gpui/src/rail.rs`) lists sessions, and the tab rail
+(`src-tauri/crates/sikemux-gpui/src/agents.rs`) lists agent chats.
 Together they take about 546 px, which prompted attempts to merge them.
 
 About fifteen single-rail layouts were mocked up on 2026-09-20 and all were
@@ -30,6 +31,7 @@ An icon-only dock drops the group headers and is the worst of the options.
 
 ## Consequences
 
-- To win back width, use the existing `toggleTabRail` and the `RailPeek`
-  hover reveal, or narrow the rails. Do not restructure them.
+- To win back width, use focus mode (`view.focusMode`), which hides both rails,
+  the peek that shows a hidden rail while the pointer is at the window's edge, or
+  narrow the rails. Do not restructure them.
 - Treat this as settled. It held through a full implementation and a release.
