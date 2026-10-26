@@ -1,6 +1,7 @@
 //! A run of tool calls in a chat: each call's row as the core worked it out,
 //! and what the call changed or printed once the reader opens it.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,7 +10,7 @@ use gpui::{Context, Render};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, relative, Action, AnyElement, App, ClipboardItem, Div, ElementId, HighlightStyle,
-    Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, SharedString,
+    Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, ScrollHandle, SharedString,
     StatefulInteractiveElement, Styled, StyledText, Window,
 };
 use gpui_transcript::{FileKind, FilePress};
@@ -48,6 +49,8 @@ pub struct Opened {
     whole: HashSet<String>,
     /// Diffs the reader folded under their file's head, by call.
     folded: HashSet<String>,
+    /// Where each diff that scrolls inside its card is scrolled to, by call.
+    scrolls: RefCell<HashMap<String, ScrollHandle>>,
     details: HashMap<String, Asked>,
 }
 
@@ -965,11 +968,27 @@ fn diff_body(
         body.push(diff_gap(id, gap, looks));
     }
     let t = Tokens::get(cx);
+    let scroll = looks
+        .reading
+        .tools
+        .scrolls
+        .borrow_mut()
+        .entry(id.to_owned())
+        .or_default()
+        .clone();
+    let held = scroll.clone();
     div().child(head).child(
         div()
             .id(SharedString::from(format!("diff-body:{id}")))
             .max_h(px(DIFF_MOST_HEIGHT))
             .overflow_y_scroll()
+            .track_scroll(&scroll)
+            .on_scroll(move |_, _, cx| {
+                let (at, most) = (held.offset().y, held.max_offset().y);
+                if most > px(0.) && at <= px(0.) && at >= -most {
+                    cx.stop_propagation();
+                }
+            })
             .py(px(3.))
             .flex()
             .flex_col()
