@@ -356,12 +356,7 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
         return new_issue(area, cx);
     }
     if area.issues.open.is_none() {
-        return div()
-            .id("host-issues")
-            .size_full()
-            .overflow_y_scroll()
-            .child(list(area, cx))
-            .into_any_element();
+        return list(area, cx);
     }
     let t = Tokens::get(cx).clone();
     let left = side(area, cx);
@@ -451,9 +446,7 @@ fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
             };
             notice(format!("No {which}issues."), None, cx)
         }
-        Some(Ok(list)) => div()
-            .flex()
-            .flex_col()
+        Some(Ok(list)) => super::carded(div().flex().flex_col(), cx)
             .children(
                 list.issues
                     .iter()
@@ -485,13 +478,8 @@ fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                     .on_click(cx.listener(|area, _, _, cx| turn_page(area, 1, cx))),
             )
     });
-    div()
-        .flex()
-        .flex_col()
-        .child(head)
-        .child(body)
-        .children(pager)
-        .into_any_element()
+    let shown = div().flex().flex_col().child(body).children(pager);
+    super::list_page("host-issues", head, shown, cx)
 }
 
 /// One issue: who opened it, its state and title, then its number, who and when, with

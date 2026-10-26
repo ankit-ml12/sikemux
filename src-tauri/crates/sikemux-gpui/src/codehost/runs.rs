@@ -390,9 +390,7 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                             })),
                     )
             });
-            div()
-                .flex()
-                .flex_col()
+            super::carded(div().flex().flex_col(), cx)
                 .children(list.runs.iter().enumerate().map(|(index, listed)| {
                     let run = &listed.run;
                     let workflow = names
@@ -516,12 +514,7 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 .into_any_element()
         }
     };
-    div()
-        .flex()
-        .flex_col()
-        .child(head)
-        .child(body)
-        .into_any_element()
+    super::list_page("host-runs", head, body, cx)
 }
 
 pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> AnyElement {

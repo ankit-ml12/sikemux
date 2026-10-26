@@ -685,21 +685,11 @@ impl Render for HostArea {
             _ if shell::needs_sign_in(self) => shell::sign_in(self, window, cx),
             Area::Pulls if self.composing.is_some() => compose::view(self, window, cx),
             Area::Pulls if self.pull.is_some() => pull::view(self, window, cx),
-            Area::Pulls => div()
-                .id("host-list")
-                .size_full()
-                .overflow_y_scroll()
-                .child(pulls::list(self, cx))
-                .into_any_element(),
+            Area::Pulls => pulls::list(self, cx),
             Area::Releases => releases::view(self, window, cx),
             Area::Issues => issues::view(self, window, cx),
             Area::Actions if self.runs.open.is_some() => runs::view(self, window, cx),
-            Area::Actions => div()
-                .id("host-runs")
-                .size_full()
-                .overflow_y_scroll()
-                .child(runs::list(self, cx))
-                .into_any_element(),
+            Area::Actions => runs::list(self, cx),
             area => notice(
                 format!("{} is not here yet", area.label(&self.host)),
                 None,
@@ -863,6 +853,59 @@ fn notice(title: impl Into<SharedString>, detail: Option<SharedString>, cx: &App
         .child(ui::text(title, 12.5, FontWeight::MEDIUM).text_color(t.text_secondary))
         .children(detail.map(|detail| ui::meta(detail, cx).text_center()))
         .into_any_element()
+}
+
+/// The widest a list grows, centred in a wider pane.
+const LIST: f32 = 960.;
+
+/// `inner` in a column at most `width` wide, centred in what is wider.
+fn centred(width: f32, inner: impl IntoElement) -> Div {
+    div()
+        .w_full()
+        .flex()
+        .justify_center()
+        .child(div().w_full().max_w(px(width)).child(inner))
+}
+
+/// A solid band across the pane holding `inner` centred at `width`, so a page's head reads
+/// over a picture behind it.
+fn band(width: f32, inner: impl IntoElement, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    div()
+        .flex_none()
+        .bg(t.surface_composer)
+        .border_b_1()
+        .border_color(t.border)
+        .child(centred(width, inner))
+}
+
+/// A list's page: its head on a band, then what it lists under it, scrolling.
+fn list_page(id: &'static str, head: Div, body: impl IntoElement, cx: &App) -> AnyElement {
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .child(band(LIST, head, cx))
+        .child(
+            div()
+                .id(id)
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .child(centred(LIST, div().py(px(12.)).child(body))),
+        )
+        .into_any_element()
+}
+
+/// A list's rows in one card, filled so they read over a picture.
+fn carded(rows: Div, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    rows.mx(px(12.))
+        .rounded(crate::theme::RADIUS_2)
+        .border_1()
+        .border_color(t.border)
+        .bg(t.surface_composer)
+        .overflow_hidden()
 }
 
 /// A list's head: its area's name with its icon, then what it holds.

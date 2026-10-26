@@ -36,9 +36,8 @@ pub enum Section {
 
 /// Below this width the Files tab has no room for the file list beside the diffs.
 const NARROW_BELOW: f32 = 760.;
-/// The widest the view grows, centred in a wider pane.
-const PAGE: f32 = 1120.;
-/// The widest the conversation, commits and checks grow, for lines that stay readable.
+/// The widest the head, the conversation, the commits and the checks grow, centred in a
+/// wider pane so their lines stay readable.
 const READABLE: f32 = 860.;
 /// How wide the file list is beside the diffs.
 const FILE_LIST: f32 = 260.;
@@ -441,7 +440,7 @@ fn page_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea
     ];
     let chosen = opened.section;
     let top = div()
-        .px(px(14.))
+        .px(px(16.))
         .pt(px(14.))
         .pb(px(12.))
         .child(header(area, found, cx));
@@ -460,14 +459,13 @@ fn page_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea
             ))
         }),
         folding,
-        cx,
     );
     let page = |body: AnyElement| {
         div()
             .id("pull-page")
             .size_full()
             .overflow_y_scroll()
-            .child(div().max_w(px(READABLE)).child(body))
+            .child(centred(body))
             .into_any_element()
     };
     let body = match chosen {
@@ -502,18 +500,14 @@ fn page_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea
     div()
         .size_full()
         .flex()
-        .justify_center()
-        .child(
-            div()
-                .size_full()
-                .max_w(px(PAGE))
-                .flex()
-                .flex_col()
-                .child(top)
-                .child(tabs)
-                .child(div().flex_1().min_h_0().child(body)),
-        )
+        .flex_col()
+        .child(super::band(READABLE, div().child(top).child(tabs), cx))
+        .child(div().flex_1().min_h_0().child(body))
         .into_any_element()
+}
+
+fn centred(inner: impl IntoElement) -> Div {
+    super::centred(READABLE, inner)
 }
 
 fn back(cx: &mut Context<HostArea>) -> IconButton {
@@ -680,20 +674,13 @@ fn state_pill(state: PullState, cx: &App) -> Div {
 
 /// A row of tabs over a page, the chosen one underlined in ink, with what acts on the page
 /// at its end.
-fn strip(
-    tabs: impl IntoIterator<Item = gpui_kit::Stateful<Div>>,
-    end: Option<AnyElement>,
-    cx: &App,
-) -> Div {
-    let t = Tokens::get(cx);
+fn strip(tabs: impl IntoIterator<Item = gpui_kit::Stateful<Div>>, end: Option<AnyElement>) -> Div {
     div()
         .flex_none()
-        .px(px(14.))
+        .px(px(16.))
         .flex()
         .items_center()
         .gap(px(18.))
-        .border_b_1()
-        .border_color(t.border)
         .children(tabs)
         .children(end.map(|end| div().ml_auto().child(end)))
 }
@@ -1285,7 +1272,7 @@ fn conversation(
             shown.face(login, known, size, cx)
         }
     };
-    let mut column = div().max_w(px(READABLE));
+    let mut column = div();
     column = column.child(thread::thread(
         opening,
         blocks,
@@ -1312,7 +1299,7 @@ fn conversation(
         .id("pull-thread")
         .size_full()
         .overflow_y_scroll()
-        .child(column.child(composer(area, review, window, cx)))
+        .child(centred(column.child(composer(area, review, window, cx))))
         .into_any_element()
 }
 

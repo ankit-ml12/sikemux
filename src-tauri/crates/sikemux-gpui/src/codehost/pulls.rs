@@ -143,9 +143,7 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
             };
             notice(format!("No {which}pull requests."), None, cx)
         }
-        Some(Ok(list)) => div()
-            .flex()
-            .flex_col()
+        Some(Ok(list)) => super::carded(div().flex().flex_col(), cx)
             .children(
                 list.pulls
                     .iter()
@@ -154,13 +152,8 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
             )
             .into_any_element(),
     };
-    div()
-        .flex()
-        .flex_col()
-        .child(head)
-        .children(offer)
-        .child(body)
-        .into_any_element()
+    let shown = div().flex().flex_col().children(offer).child(body);
+    super::list_page("host-list", head, shown, cx)
 }
 
 /// One pull request: who opened it, its state and title, then its number, age,
