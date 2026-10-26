@@ -136,19 +136,79 @@ pub fn thread(
         13.,
         Tokens::get(cx),
     )));
-    let mut thread = div().flex().flex_col().gap(px(14.)).px(px(16.)).py(px(16.));
+    let mut items: Vec<Item> = Vec::new();
     if let Some(opening) = opening {
-        thread = thread.child(post(&pen, "post-opening", opening, faces, window, cx));
+        let opened = post(&pen, "post-opening", opening, faces, window, cx);
+        items.push(Item::new(opened, GAP, 0., AVATAR));
     }
     for (index, block) in blocks.iter().enumerate() {
-        thread = thread.child(match block {
-            Block::Post(said) => post(&pen, ("post", index), said, faces, window, cx),
-            Block::Commits(commits) => pushed(index, commits, pushers, faces, cx),
-            Block::Event(item) => event(item, base, faces, cx),
-        });
+        match block {
+            Block::Post(said) => {
+                let said = post(&pen, ("post", index), said, faces, window, cx);
+                items.push(Item::new(said, GAP, 0., AVATAR));
+            }
+            Block::Commits(commits) => items.extend(pushed(index, commits, pushers, faces, cx)),
+            Block::Event(item) => items
+                .extend(event(item, base, faces, cx).map(|line| Item::new(line, GAP, 0., BADGE))),
+        }
     }
-    thread
+    let last = items.len().saturating_sub(1);
+    let ink = Tokens::get(cx).border;
+    let spine = |top: f32, bottom: Option<f32>| {
+        let line = div()
+            .absolute()
+            .left(px(AVATAR / 2. - 0.5))
+            .w(px(1.))
+            .top(px(top))
+            .bg(ink);
+        match bottom {
+            Some(height) => line.h(px(height)),
+            None => line.bottom_0(),
+        }
+    };
+    div()
+        .flex()
+        .flex_col()
+        .px(px(16.))
+        .py(px(16.))
+        .children(items.into_iter().enumerate().map(|(at, item)| {
+            let space = if at == 0 { 0. } else { item.space };
+            div()
+                .relative()
+                .mt(px(space))
+                .when(at > 0, |row| {
+                    row.child(spine(-space, Some(space + item.mark.0)))
+                })
+                .when(at < last, |row| row.child(spine(item.mark.1, None)))
+                .child(item.shown)
+        }))
 }
+
+/// One thing in the thread: the space above it, and where its face, badge or commit sits
+/// down its height, which the line through the thread joins to the next.
+struct Item {
+    shown: AnyElement,
+    space: f32,
+    mark: (f32, f32),
+}
+
+impl Item {
+    fn new(shown: AnyElement, space: f32, top: f32, bottom: f32) -> Self {
+        Self {
+            shown,
+            space,
+            mark: (top, bottom),
+        }
+    }
+}
+
+/// The posts' faces, the events' badges and the commits sit in one column, centred on the
+/// line through the thread.
+const AVATAR: f32 = 28.;
+const BADGE: f32 = 22.;
+const GAP: f32 = 14.;
+const COMMIT_ROW: f32 = 22.;
+const COMMIT_GLYPH: f32 = 13.;
 
 fn role(association: &str) -> Option<&'static str> {
     Some(match association {
@@ -208,7 +268,7 @@ fn post(
     div()
         .flex()
         .gap(px(12.))
-        .child(faces(Some(author), post.avatar.as_deref(), 28., cx))
+        .child(faces(Some(author), post.avatar.as_deref(), AVATAR, cx))
         .child(
             div()
                 .flex_1()
@@ -259,15 +319,15 @@ fn line(glyph: Icon, ink: Option<Hsla>, words: Vec<AnyElement>, cx: &App) -> Any
     let t = Tokens::get(cx);
     div()
         .flex()
-        .items_center()
+        .items_start()
         .gap(px(8.))
-        .pl(px(6.))
+        .pl(px((AVATAR - BADGE) / 2.))
         .min_w_0()
         .text_size(crate::theme::ui_text(12.))
         .text_color(t.text_secondary)
         .child(
             div()
-                .size(px(22.))
+                .size(px(BADGE))
                 .flex_none()
                 .flex()
                 .items_center()
@@ -278,6 +338,7 @@ fn line(glyph: Icon, ink: Option<Hsla>, words: Vec<AnyElement>, cx: &App) -> Any
         )
         .child(
             div()
+                .min_h(px(BADGE))
                 .flex()
                 .flex_wrap()
                 .items_center()
@@ -318,7 +379,7 @@ fn chip(words: impl Into<SharedString>, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-fn event(item: &TimelineItem, base: Option<&str>, faces: Faces, cx: &App) -> AnyElement {
+fn event(item: &TimelineItem, base: Option<&str>, faces: Faces, cx: &App) -> Option<AnyElement> {
     let t = Tokens::get(cx).clone();
     let actor = who(item.actor.as_deref(), item.avatar_url.as_deref(), faces, cx);
     let when = dim(item.at.as_deref().map(ago).unwrap_or_default(), cx);
@@ -457,20 +518,21 @@ fn event(item: &TimelineItem, base: Option<&str>, faces: Faces, cx: &App) -> Any
             None,
             vec![actor, dim("mentioned this in", cx), chip(subject, cx)],
         ),
-        _ => return div().into_any_element(),
+        _ => return None,
     };
     words.push(when);
-    line(glyph, ink, words, cx)
+    Some(line(glyph, ink, words, cx))
 }
 
-/// Commits pushed together: who pushed them and when, then each by its message.
+/// Commits pushed together: who pushed them and when, then each by its message on the
+/// thread's line, as GitHub lists them.
 fn pushed(
     index: usize,
     commits: &[TimelineItem],
     pushers: &Pushers,
     faces: Faces,
     cx: &App,
-) -> AnyElement {
+) -> Vec<Item> {
     let t = Tokens::get(cx).clone();
     let pusher = |commit: &TimelineItem| {
         commit
@@ -498,25 +560,30 @@ fn pushed(
         .map(ago)
         .unwrap_or_default();
     words.push(dim(format!("added {count} commit{plural} {when}"), cx));
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(6.))
-        .child(line(Icon::Push, None, words, cx))
-        .children(commits.iter().enumerate().map(|(at, commit)| {
+    let glyph_top = (COMMIT_ROW - COMMIT_GLYPH) / 2.;
+    let head = Item::new(line(Icon::Push, None, words, cx), GAP, 0., BADGE);
+    std::iter::once(head)
+        .chain(commits.iter().enumerate().map(|(at, commit)| {
             let message = commit.message.as_deref().unwrap_or_default();
             let first = message.lines().next().unwrap_or_default().to_owned();
             let sha = commit.sha.clone().unwrap_or_default();
             let short: String = sha.chars().take(7).collect();
             let author = pusher(commit).unwrap_or_default();
-            div()
+            let row = div()
+                .h(px(COMMIT_ROW))
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .pl(px(36.))
                 .min_w_0()
                 .text_size(crate::theme::ui_text(12.))
-                .child(ui::icon(Icon::Commit, 13.).text_color(t.text_tertiary))
+                .child(
+                    div()
+                        .w(px(AVATAR))
+                        .flex_none()
+                        .flex()
+                        .justify_center()
+                        .child(ui::icon(Icon::Commit, COMMIT_GLYPH).text_color(t.text_tertiary)),
+                )
                 .child(faces(Some(&author), None, 16., cx))
                 .child(
                     div()
@@ -549,7 +616,14 @@ fn pushed(
                             })
                             .child(short),
                     )
-                })
+                });
+            let space = if at == 0 { 8. } else { 4. };
+            Item::new(
+                row.into_any_element(),
+                space,
+                glyph_top,
+                glyph_top + COMMIT_GLYPH,
+            )
         }))
-        .into_any_element()
+        .collect()
 }
