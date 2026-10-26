@@ -995,7 +995,6 @@ fn composer(
     div()
         .px(px(16.))
         .pb(px(16.))
-        .pl(px(56.))
         .child(
             div()
                 .rounded(RADIUS_2)
