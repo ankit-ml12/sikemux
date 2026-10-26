@@ -12,7 +12,7 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::protocol::PaneStyle;
+use sikemux_wire::protocol::{PaneAscii, PaneStyle};
 use sikemux_wire::theme::{ThemeSource, ThemeSummary};
 
 use crate::core::{Ask, Watch};
@@ -22,7 +22,7 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Theme", "Interface", "Buddies", "Window"];
+pub const SECTIONS: &[&str] = &["Theme", "Interface", "Pane background", "Buddies", "Window"];
 const THEME_SEARCH: &str = "ThemeSearch";
 
 actions!(appearance, [PreviousTheme, NextTheme]);
@@ -553,6 +553,27 @@ pub fn render(
             })
         })
     };
+    let pane_ascii = {
+        let this = this.clone();
+        let chosen = match preferences.pane_ascii {
+            PaneAscii::Jellyfish => 0,
+            PaneAscii::Image => 1,
+        };
+        ui::Segmented::new(
+            "pane-ascii",
+            vec![
+                (Icon::Sparkle, SharedString::from("Jellyfish")),
+                (Icon::Image, SharedString::from("Image")),
+            ],
+            chosen,
+        )
+        .on_select(move |chosen, _, cx| {
+            let subject = if *chosen == 0 { "jellyfish" } else { "image" };
+            this.update(cx, |bench, _| {
+                crate::settings::set(bench, "paneAscii", subject)
+            })
+        })
+    };
     let image = {
         let (choose, remove) = (this.clone(), this.clone());
         div()
@@ -618,40 +639,56 @@ pub fn render(
                     .child(shown),
             )
     };
-    let interface = div()
+    let interface = div().child(rows::row(
+        "Text size",
+        Some("Scales labels and controls without loosening the layout."),
+        text_size,
+        cx,
+    ));
+    let ascii = preferences.pane_style == PaneStyle::Ascii;
+    let image_about = if !ascii {
+        "A picture every pane dithers in place of the grain."
+    } else if preferences.pane_image.is_some() {
+        "The picture drawn in characters."
+    } else {
+        "Choose a picture to draw in characters. Until then, jellyfish swim."
+    };
+    let background = div()
         .child(rows::row(
-            "Text size",
-            Some("Scales labels and controls without loosening the layout."),
-            text_size,
-            cx,
-        ))
-        .child(rows::row(
-            "Pane texture",
-            Some("The moving grain behind each pane."),
+            "Background",
+            Some("A moving texture or a picture behind every pane."),
             rows::switch("pane-texture", "paneShader", preferences.pane_shader, this),
             cx,
         ))
-        .child(rows::row(
-            "Pane style",
-            Some("Draws the texture and picture as dots, or as characters."),
-            pane_style,
-            cx,
-        ))
-        .child(rows::row(
-            "Pane image",
-            Some("A picture shared by every pane, dithered in place of the grain."),
-            image,
-            cx,
-        ))
-        .child(rows::row(
-            "Pane strength",
-            Some("How strongly the texture or picture shows. 1.00 is the default."),
-            knob(
-                &fields.strength,
-                format!("{:.2}", preferences.pane_strength),
-            ),
-            cx,
-        ));
+        .when(preferences.pane_shader, |rows| {
+            rows.child(rows::row(
+                "Style",
+                Some("Drawn in dots, or in characters."),
+                pane_style,
+                cx,
+            ))
+            .when(ascii, |rows| {
+                rows.child(rows::row(
+                    "Shows",
+                    Some("Jellyfish swimming, or a picture of yours."),
+                    pane_ascii,
+                    cx,
+                ))
+            })
+            .when(
+                !ascii || preferences.pane_ascii == PaneAscii::Image,
+                |rows| rows.child(rows::row("Image", Some(image_about), image, cx)),
+            )
+            .child(rows::row(
+                "Strength",
+                Some("How strongly it shows. 1.00 is the default."),
+                knob(
+                    &fields.strength,
+                    format!("{:.2}", preferences.pane_strength),
+                ),
+                cx,
+            ))
+        });
 
     let style = bench
         .view
@@ -878,6 +915,14 @@ pub fn render(
             cx,
         ),
         rows::section("Interface", None, None, lit("Interface"), interface, cx),
+        rows::section(
+            "Pane background",
+            None,
+            None,
+            lit("Pane background"),
+            background,
+            cx,
+        ),
         rows::section("Buddies", None, None, lit("Buddies"), buddies, cx),
     ];
     if crate::settings::index::here(crate::settings::Page::Appearance, "Window") {

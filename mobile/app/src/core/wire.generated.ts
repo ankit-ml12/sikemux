@@ -1490,6 +1490,8 @@ export interface Preferences {
   paneShader: boolean;
   /** How the texture and picture behind panes are drawn. */
   paneStyle: PaneStyle;
+  /** What the ASCII style draws. */
+  paneAscii: PaneAscii;
   /** A picture every pane dithers in place of the texture. */
   paneImage?: string;
   /** How strongly the texture or picture shows, from 0 to 2. */
@@ -1649,6 +1651,9 @@ export type NotchPeeks = 'all' | 'needsYou' | 'never';
 
 /** How the texture and picture behind panes are drawn: as dots, or as characters. */
 export type PaneStyle = 'dither' | 'ascii';
+
+/** What the ASCII style draws: jellyfish swimming, or the pane image in characters. */
+export type PaneAscii = 'jellyfish' | 'image';
 
 export type RailDensity = 'comfortable' | 'compact';
 

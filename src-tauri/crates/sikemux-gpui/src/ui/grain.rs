@@ -9,14 +9,14 @@
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use gpui::{
     canvas, relative, App, AppContext, Context, Global, Hsla, IntoElement, RenderImage,
     ShaderProgram, Styled, Task, Window,
 };
-use sikemux_wire::protocol::{PaneStyle, Preferences};
+use sikemux_wire::protocol::{PaneAscii, PaneStyle, Preferences};
 
 use crate::theme::{self, Tokens, RADIUS_3};
 use crate::workbench::Workbench;
@@ -41,6 +41,8 @@ const FRAMES_PER_SECOND: u64 = 30;
 /// Slower on battery, where every frame is paid for out of the charge.
 const BATTERY_FRAMES_PER_SECOND: u64 = 20;
 const FIELD_SPEED: f32 = 0.5;
+/// The ASCII jellyfish keep time in seconds.
+const ASCII_SPEED: f32 = 1.;
 const SKY_SPEED: f32 = 0.35;
 /// Where the clock stands for a person who asked for less motion, so everything holds still.
 const STILL: f32 = 2.5;
@@ -51,6 +53,18 @@ const PICTURE_OPACITY: f32 = 0.38;
 const PICTURE_BAND: f32 = 0.6;
 /// The picture is drawn in two-pixel dots, so no more of it than one texel per dot is kept.
 const PICTURE_LONGEST: u32 = 2560;
+/// How many rows of the ASCII atlas its glyph strip takes, the rows an ASCII picture is put
+/// beneath.
+const GLYPH_STRIP: u32 = 28;
+
+/// The glyphs and the jellyfish the ASCII style draws with, from scripts/generate-ascii-atlas.swift.
+static ASCII_ATLAS: LazyLock<image::RgbaImage> = LazyLock::new(|| {
+    image::load_from_memory(include_bytes!("../../assets/ascii-atlas.png"))
+        .expect("the ASCII atlas is a PNG")
+        .into_rgba8()
+});
+static ASCII_IMAGE: LazyLock<Arc<RenderImage>> =
+    LazyLock::new(|| render_image(ASCII_ATLAS.clone()));
 
 /// What panes show behind them, as the person's preferences say, and whether a sky is up.
 /// Until the preferences are read, panes show nothing.
@@ -69,7 +83,15 @@ pub struct Grain {
 enum Picture {
     None,
     Loading,
-    Loaded(Arc<RenderImage>),
+    Loaded(LoadedPicture),
+}
+
+/// A picture as its style draws it: alone, or under the ASCII glyph strip.
+#[derive(Clone)]
+struct LoadedPicture {
+    image: Arc<RenderImage>,
+    width: u32,
+    height: u32,
 }
 
 impl Global for Grain {}
@@ -98,9 +120,13 @@ impl Grain {
 
 /// Takes the preferences for what panes show, loading a newly chosen picture.
 pub fn set(preferences: &Preferences, cx: &mut App) {
-    let path = preferences.pane_image.clone();
+    let drawn =
+        preferences.pane_style == PaneStyle::Dither || preferences.pane_ascii == PaneAscii::Image;
+    let path = preferences.pane_image.clone().filter(|_| drawn);
+    let style = preferences.pane_style;
     let known = cx.try_global::<Grain>().map(|grain| {
-        let kept = (grain.picture_path == path).then(|| grain.picture.clone());
+        let kept =
+            (grain.picture_path == path && grain.style == style).then(|| grain.picture.clone());
         (kept, grain.skies)
     });
     let skies = known.as_ref().map_or(0, |(_, skies)| *skies);
@@ -108,7 +134,7 @@ pub fn set(preferences: &Preferences, cx: &mut App) {
         Some(kept) => kept,
         None => {
             if let Some(path) = &path {
-                load(path.clone(), cx);
+                load(path.clone(), style, cx);
             }
             path.as_ref().map_or(Picture::None, |_| Picture::Loading)
         }
@@ -133,15 +159,15 @@ pub fn set(preferences: &Preferences, cx: &mut App) {
     cx.refresh_windows();
 }
 
-fn load(path: String, cx: &mut App) {
+fn load(path: String, style: PaneStyle, cx: &mut App) {
     cx.spawn(async move |cx| {
         let read = path.clone();
         let picture = cx
-            .background_spawn(async move { read_picture(Path::new(&read)) })
+            .background_spawn(async move { read_picture(Path::new(&read), style) })
             .await;
         cx.update(|cx| {
             if let Some(grain) = cx.try_global::<Grain>() {
-                if grain.picture_path.as_deref() == Some(path.as_str()) {
+                if grain.picture_path.as_deref() == Some(path.as_str()) && grain.style == style {
                     let mut grain = grain.clone();
                     grain.picture = match picture {
                         Some(picture) => Picture::Loaded(picture),
@@ -156,8 +182,9 @@ fn load(path: String, cx: &mut App) {
     .detach();
 }
 
-/// The picture at `path` as the atlas takes it, no larger than its dots can show.
-fn read_picture(path: &Path) -> Option<Arc<RenderImage>> {
+/// The picture at `path` as the atlas takes it, no larger than its dots can show, and for
+/// the ASCII style beneath the glyph strip so the one image holds both.
+fn read_picture(path: &Path, style: PaneStyle) -> Option<LoadedPicture> {
     let decoded = image::open(path)
         .inspect_err(|error| eprintln!("sikemux: the pane picture does not open: {error}"))
         .ok()?;
@@ -165,11 +192,42 @@ fn read_picture(path: &Path) -> Option<Arc<RenderImage>> {
         true => decoded.thumbnail(PICTURE_LONGEST, PICTURE_LONGEST),
         false => decoded,
     };
-    let mut pixels = fitted.into_rgba8();
+    let picture = fitted.into_rgba8();
+    let (width, height) = picture.dimensions();
+    let pixels = match style {
+        PaneStyle::Dither => picture,
+        PaneStyle::Ascii => {
+            let atlas = &*ASCII_ATLAS;
+            let mut both = image::RgbaImage::new(width.max(atlas.width()), GLYPH_STRIP + height);
+            let strip = image::imageops::crop_imm(atlas, 0, 0, atlas.width(), GLYPH_STRIP);
+            image::imageops::replace(&mut both, &*strip, 0, 0);
+            image::imageops::replace(&mut both, &picture, 0, i64::from(GLYPH_STRIP));
+            both
+        }
+    };
+    Some(LoadedPicture {
+        image: render_image(pixels),
+        width,
+        height,
+    })
+}
+
+/// Pixels as the renderer's atlas takes them, blue first.
+fn render_image(mut pixels: image::RgbaImage) -> Arc<RenderImage> {
     for pixel in pixels.pixels_mut() {
         pixel.0.swap(0, 2);
     }
-    Some(Arc::new(RenderImage::new([image::Frame::new(pixels)])))
+    Arc::new(RenderImage::new([image::Frame::new(pixels)]))
+}
+
+/// A colour as one number, 0xRRGGBB, which a shader parameter holds exactly.
+fn packed([r, g, b]: [u8; 3]) -> f32 {
+    (u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)) as f32
+}
+
+fn bytes_of(colour: Hsla) -> [u8; 3] {
+    let rgb = colour.to_rgb();
+    [rgb.r, rgb.g, rgb.b].map(|channel| (channel.clamp(0., 1.) * 255.).round() as u8)
 }
 
 /// What fills a pane's frame behind everything the pane shows.
@@ -179,30 +237,34 @@ pub fn field(cx: &App) -> Option<impl IntoElement> {
         .filter(|grain| grain.shown && grain.strength > 0.)?;
     let inner_radius = f32::from(RADIUS_3) - 1.;
     let t = Tokens::get(cx);
-    let ink = t.text_primary.to_rgb();
-    let (field_program, picture_program) = match grain.style {
-        PaneStyle::Dither => (&FIELD, &PICTURE),
-        PaneStyle::Ascii => (&ASCII_FIELD, &ASCII_PICTURE),
-    };
     if let Picture::Loaded(picture) = &grain.picture {
-        let picture = picture.clone();
+        let LoadedPicture {
+            image,
+            width,
+            height,
+        } = picture.clone();
         let strength = (PICTURE_OPACITY * grain.strength).min(1.);
+        let (program, inks) = match grain.style {
+            PaneStyle::Dither => (&PICTURE, [0.; 4]),
+            PaneStyle::Ascii => (
+                &ASCII_PICTURE,
+                [
+                    packed(bytes_of(t.text_primary)),
+                    packed(bytes_of(t.surface)),
+                    width as f32,
+                    height as f32,
+                ],
+            ),
+        };
         return Some(
             canvas(
                 |_, _, _| {},
                 move |bounds, (), window, _| {
                     let mut params = [0.; gpui::SHADER_PARAMS];
-                    params[..7].copy_from_slice(&[
-                        window.ground_scale(),
-                        inner_radius,
-                        strength,
-                        0.,
-                        ink.r,
-                        ink.g,
-                        ink.b,
-                    ]);
+                    params[..3].copy_from_slice(&[window.ground_scale(), inner_radius, strength]);
+                    params[4..8].copy_from_slice(&inks);
                     if let Err(error) =
-                        window.paint_ground_shader(bounds, picture_program, params, Some(&picture))
+                        window.paint_ground_shader(bounds, program, params, Some(&image))
                     {
                         eprintln!("sikemux: the pane picture does not draw: {error}");
                     }
@@ -219,40 +281,42 @@ pub fn field(cx: &App) -> Option<impl IntoElement> {
     if matches!(grain.picture, Picture::Loading) {
         return None;
     }
-    let (start, speed) = clock(FIELD_SPEED, cx);
-    let opacity = FIELD_OPACITY * grain.strength;
-    let colours: [f32; 12] = match grain.style {
+    let opacity = (FIELD_OPACITY * grain.strength).min(1.);
+    let ansi = t.terminal.ansi;
+    let (program, speed, colours, atlas) = match grain.style {
         PaneStyle::Dither => {
             let dot = t.shader_dot.to_rgb();
-            let alpha = (dot.a * opacity).min(1.);
-            [dot.r, dot.g, dot.b, alpha, 0., 0., 0., 0., 0., 0., 0., 0.]
+            let colours = [dot.r, dot.g, dot.b, dot.a * opacity];
+            (&FIELD, FIELD_SPEED, colours, None)
         }
         PaneStyle::Ascii => {
-            let [first, second] = [t.accent, theme::color(&t.highlight.string)].map(Hsla::to_rgb);
-            [
-                first.r,
-                first.g,
-                first.b,
-                opacity.min(1.),
-                second.r,
-                second.g,
-                second.b,
-                1.,
-                ink.r,
-                ink.g,
-                ink.b,
-                1.,
+            let colours = [
+                ansi[14],
+                bytes_of(t.accent),
+                bytes_of(t.text_primary),
+                bytes_of(t.surface),
             ]
+            .map(packed);
+            (
+                &ASCII_FIELD,
+                ASCII_SPEED,
+                colours,
+                Some(ASCII_IMAGE.clone()),
+            )
         }
     };
+    let accents = [ansi[13], ansi[11], ansi[10], bytes_of(t.accent)].map(packed);
+    let (start, speed) = clock(speed, cx);
     Some(
         canvas(
             |_, _, _| {},
             move |bounds, (), window, _| {
                 let mut params = [0.; gpui::SHADER_PARAMS];
                 params[..4].copy_from_slice(&[start, speed, window.ground_scale(), inner_radius]);
-                params[4..16].copy_from_slice(&colours);
-                let _ = window.paint_ground_shader(bounds, field_program, params, None);
+                params[4..8].copy_from_slice(&colours);
+                params[8..12].copy_from_slice(&accents);
+                params[12] = opacity;
+                let _ = window.paint_ground_shader(bounds, program, params, atlas.as_ref());
             },
         )
         .absolute()
