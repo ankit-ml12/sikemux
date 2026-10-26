@@ -1209,6 +1209,14 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
                 bench.read_usage();
                 crate::accounts::ask_again(bench, &provider, cx);
             }))
+        })
+        .child({
+            let provider = provider.clone();
+            IconButton::new("add-account", Icon::Plus, format!("Add a {agent} account"))
+                .small()
+                .on_click(cx.listener(move |bench, _, window, cx| {
+                    crate::accounts::open_sign_in(bench, &provider, None, window, cx)
+                }))
         });
     let foot = (count > 1).then(|| {
         let use_it = shown.filter(|_| looking && !signed_out).cloned();
