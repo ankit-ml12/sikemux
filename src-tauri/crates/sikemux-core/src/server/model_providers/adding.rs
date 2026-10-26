@@ -1,4 +1,4 @@
-//! Adding a provider from what the person pastes. A provider in the catalogue
+//! Adding a provider from its base URL and key. A provider in the catalogue
 //! is found by its URL and connected; any other is checked against its model
 //! list, asked which other APIs it serves, and kept as one the person added.
 
@@ -12,39 +12,42 @@ use url::Url;
 
 use crate::launch::providers::{self, Custom, Kind, Provider, Providers};
 
-use super::paste::{self, Pasted};
 use super::{
     check_key, client, entry, listed_models, model_list, on_store, ModelProvider, ProviderParams,
     Unlisted, CHECK_TIMEOUT, RUNNER_TIMEOUT,
 };
 use crate::server::{Core, CoreResult};
 
-const MAX_PASTE_BYTES: usize = 64 * 1024;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_URL_BYTES: usize = 2048;
+const MAX_KEY_BYTES: usize = 4096;
+const MAX_LABEL_CHARS: usize = 60;
 
-#[derive(Deserialize)]
-pub(crate) struct ReadParams {
-    text: String,
-}
+/// The paths an OpenAI- or Anthropic-compatible API serves under its base URL.
+const ENDPOINTS: [&str; 4] = ["/chat/completions", "/responses", "/messages", "/models"];
 
+/// What the person entered for a provider.
 #[derive(Deserialize)]
-pub(crate) struct AddParams {
-    text: String,
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Entered {
+    base_url: String,
+    #[serde(default)]
+    key: Option<String>,
     /// The name the person gave it, in place of the one read from its URL.
     #[serde(default)]
     label: Option<String>,
 }
 
-/// What a paste holds, checked against the provider it names. Never the key.
+/// The provider at a base URL, checked with the key entered or saved. Never the key.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Reading {
+    /// Its name: the catalogue's, the one entered, or one from its domain.
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
+    /// The base URL as Sikemux keeps it, without a trailing slash or endpoint.
     #[serde(skip_serializing_if = "Option::is_none")]
     base_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    model: Option<String>,
     has_key: bool,
     /// The catalogue's provider at that URL.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -59,29 +62,25 @@ pub(crate) struct Reading {
     failure: Option<String>,
 }
 
-/// The provider a paste names, the key it came with or was saved with, and
-/// what the provider listed with it.
+/// The provider entered, the key it came with or was saved with, and what it
+/// listed with that key.
 struct Examined {
-    pasted: Pasted,
+    base_url: Option<String>,
     provider: Option<Arc<Provider>>,
     known: bool,
+    entered_key: Option<String>,
     key: Option<String>,
     served: Result<Vec<String>, String>,
 }
 
-pub(crate) async fn read(core: &Arc<Core>, params: ReadParams) -> CoreResult<Reading> {
-    let examined = examine(core, params.text, None).await?;
+pub(crate) async fn read(core: &Arc<Core>, entered: Entered) -> CoreResult<Reading> {
+    let examined = examine(core, entered).await?;
     let provider = examined.provider.as_deref();
     Ok(Reading {
         label: provider.map(|provider| provider.label.clone()),
         base_url: provider
             .map(|provider| provider.openai.clone())
-            .or_else(|| examined.pasted.base_url.clone()),
-        model: examined
-            .pasted
-            .model
-            .clone()
-            .or_else(|| provider?.model.clone()),
+            .or(examined.base_url),
         has_key: examined.key.is_some(),
         known_id: provider
             .filter(|_| examined.known)
@@ -93,20 +92,16 @@ pub(crate) async fn read(core: &Arc<Core>, params: ReadParams) -> CoreResult<Rea
     })
 }
 
-/// Connects the catalogue's provider the paste names, or keeps a new one with its key.
-pub(crate) async fn add(core: &Arc<Core>, params: AddParams) -> CoreResult<ModelProvider> {
-    let label = params
-        .label
-        .map(|label| label.trim().chars().take(60).collect::<String>())
-        .filter(|label| !label.is_empty());
-    let examined = examine(core, params.text, label).await?;
+/// Connects the catalogue's provider at the URL entered, or keeps a new one with its key.
+pub(crate) async fn add(core: &Arc<Core>, entered: Entered) -> CoreResult<ModelProvider> {
+    let examined = examine(core, entered).await?;
     let served = examined.served?;
     let provider = examined
         .provider
-        .ok_or("Paste an API key with its base URL, or the provider's quickstart")?;
-    let (known, pasted_key, key) = (examined.known, examined.pasted.key, examined.key);
+        .ok_or("Enter the provider's base URL, such as https://api.example.com/v1")?;
+    let (known, entered_key, key) = (examined.known, examined.entered_key, examined.key);
     let (provider, feed) = on_store(core, move |store| {
-        let provider = match (known, pasted_key) {
+        let provider = match (known, entered_key) {
             (true, Some(key)) if provider.key.is_some() => {
                 store.save_key(&provider.id, key)?;
                 provider
@@ -131,36 +126,53 @@ pub(crate) async fn remove(core: &Arc<Core>, params: ProviderParams) -> CoreResu
     Ok(())
 }
 
-async fn examine(core: &Arc<Core>, text: String, label: Option<String>) -> CoreResult<Examined> {
-    if text.len() > MAX_PASTE_BYTES {
-        return Err("That is too long to be a key or a quickstart".into());
+async fn examine(core: &Arc<Core>, entered: Entered) -> CoreResult<Examined> {
+    if entered.base_url.len() > MAX_URL_BYTES {
+        return Err("That base URL is too long".into());
     }
-    let pasted = paste::read(&text);
-    let Some(base_url) = pasted.base_url.clone() else {
-        let failure = match pasted.key {
-            Some(_) => "Paste the provider's base URL too, such as https://api.example.com/v1",
-            None => "Paste an API key with its base URL, or the provider's quickstart",
-        };
+    let entered_key = entered
+        .key
+        .map(|key| key.trim().to_owned())
+        .filter(|key| !key.is_empty());
+    if entered_key
+        .as_ref()
+        .is_some_and(|key| key.len() > MAX_KEY_BYTES)
+    {
+        return Err("That key is too long".into());
+    }
+    let label = entered
+        .label
+        .map(|label| {
+            label
+                .trim()
+                .chars()
+                .take(MAX_LABEL_CHARS)
+                .collect::<String>()
+        })
+        .filter(|label| !label.is_empty());
+    let Some(base_url) = base_of(&entered.base_url) else {
         return Ok(Examined {
-            pasted,
+            base_url: None,
             provider: None,
             known: false,
+            entered_key,
             key: None,
-            served: Err(failure.into()),
+            served: Err("Enter the provider's base URL, such as https://api.example.com/v1".into()),
         });
     };
-    let pasted_key = pasted.key.is_some();
+    let searching = base_url.clone();
+    let entered = entered_key.is_some();
     let (found, saved_key) = on_store(core, move |store| {
-        let found = find(store, &base_url, label);
+        let found = find(store, &searching, label);
         let saved_key = match &found {
-            Found::Known(provider) if !pasted_key => store.key(&provider.id),
-            Found::New(custom) if !pasted_key => store.key(&custom.id),
+            Found::Known(provider) if !entered => store.key(&provider.id),
+            Found::New(custom) if !entered => store.key(&custom.id),
             _ => None,
         };
         (found, saved_key)
     })
     .await?;
-    let key = pasted.key.clone().or(saved_key);
+    let key = entered_key.clone().or(saved_key);
     let (provider, known, served) = match found {
         Found::Known(provider) => {
             let served = serving(&provider, key.as_deref()).await;
@@ -175,17 +187,80 @@ async fn examine(core: &Arc<Core>, text: String, label: Option<String>) -> CoreR
                     other_apis(&custom.base_url, key.as_deref()).await;
             }
             custom.keyed = key.is_some();
-            custom.model = pasted.model.clone();
             (Arc::new(custom.provider()), false, served)
         }
     };
     Ok(Examined {
-        pasted,
+        base_url: Some(base_url),
         provider: Some(provider),
         known,
+        entered_key,
         key,
         served,
     })
+}
+
+/// The API's base URL from what was entered: trimmed, without a query, a
+/// trailing slash, or an endpoint pasted after it.
+fn base_of(entered: &str) -> Option<String> {
+    let mut url = Url::parse(entered.trim()).ok()?;
+    if !matches!(url.scheme(), "https" | "http") || url.host_str().is_none() {
+        return None;
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    let path = url.path().trim_end_matches('/');
+    let path = ENDPOINTS
+        .into_iter()
+        .find_map(|endpoint| path.strip_suffix(endpoint))
+        .unwrap_or(path)
+        .to_owned();
+    url.set_path(&path);
+    Some(url.as_str().trim_end_matches('/').to_owned())
+}
+
+/// A name for the provider at `base_url`, from its domain: `api.lithosai.cloud` is LithosAI.
+fn label_of(base_url: &str) -> String {
+    let Ok(url) = Url::parse(base_url) else {
+        return base_url.to_owned();
+    };
+    let host = url.host_str().unwrap_or_default();
+    if matches!(host, "localhost" | "127.0.0.1" | "[::1]") {
+        return match url.port() {
+            Some(port) => format!("Local {port}"),
+            None => "Local".to_owned(),
+        };
+    }
+    let parts: Vec<_> = host.split('.').collect();
+    let name = match parts.as_slice() {
+        [.., name, _] | [name] => name,
+        [] => host,
+    };
+    let mut label: String = name
+        .chars()
+        .enumerate()
+        .map(|(at, c)| if at == 0 { c.to_ascii_uppercase() } else { c })
+        .collect();
+    if label.len() > 4 && label.ends_with("ai") {
+        label.replace_range(label.len() - 2.., "AI");
+    }
+    label
+}
+
+/// A provider id made from `label`, such as `lithosai`.
+fn id_of(label: &str) -> String {
+    let mut id = String::new();
+    for c in label.chars() {
+        if c.is_ascii_alphanumeric() {
+            id.push(c.to_ascii_lowercase());
+        } else if !id.is_empty() && !id.ends_with('-') {
+            id.push('-');
+        }
+    }
+    match id.trim_end_matches('-') {
+        "" => "provider".to_owned(),
+        id => id.chars().take(40).collect(),
+    }
 }
 
 enum Found {
@@ -213,9 +288,9 @@ fn find(store: &Providers, base_url: &str, label: Option<String>) -> Found {
             label.unwrap_or_else(|| provider.label.clone()),
         ),
         None => {
-            let label = label.unwrap_or_else(|| paste::label(base_url));
+            let label = label.unwrap_or_else(|| label_of(base_url));
             let taken: HashSet<_> = all.iter().map(|provider| provider.id.as_str()).collect();
-            let wanted = paste::id(&label);
+            let wanted = id_of(&label);
             let id = std::iter::once(wanted.clone())
                 .chain((2..).map(|n| format!("{wanted}-{n}")))
                 .find(|id| !taken.contains(id.as_str()))
@@ -228,23 +303,22 @@ fn find(store: &Providers, base_url: &str, label: Option<String>) -> Found {
         label,
         base_url: base_url.to_owned(),
         keyed: false,
-        model: None,
         responses: false,
         anthropic: None,
     })
 }
 
 /// Whether two base URLs are one API: the same host, one path within the other.
-fn same_api(pasted: &str, url: &str) -> bool {
-    let (Ok(pasted), Ok(url)) = (Url::parse(pasted), Url::parse(url)) else {
+fn same_api(entered: &str, url: &str) -> bool {
+    let (Ok(entered), Ok(url)) = (Url::parse(entered), Url::parse(url)) else {
         return false;
     };
     let (a, b) = (
-        pasted.path().trim_end_matches('/'),
+        entered.path().trim_end_matches('/'),
         url.path().trim_end_matches('/'),
     );
-    pasted.host_str() == url.host_str()
-        && pasted.port_or_known_default() == url.port_or_known_default()
+    entered.host_str() == url.host_str()
+        && entered.port_or_known_default() == url.port_or_known_default()
         && (a.starts_with(b) || b.starts_with(a))
 }
 
@@ -254,7 +328,7 @@ async fn serving(provider: &Provider, key: Option<&str>) -> Result<Vec<String>, 
         (Kind::Local, _) => listed_models(provider, None, RUNNER_TIMEOUT)
             .await
             .ok_or_else(|| format!("{} is not running on this host", provider.label)),
-        (Kind::Api | Kind::Plan, None) => Err(format!("Paste your {} key too", provider.label)),
+        (Kind::Api | Kind::Plan, None) => Err(format!("Enter your {} key", provider.label)),
         (Kind::Api | Kind::Plan, Some(key)) => {
             check_key(provider, key)
                 .await
@@ -270,7 +344,7 @@ fn unlisted_failure(custom: &Custom, keyed: bool, unlisted: Unlisted) -> String 
     let (label, base_url) = (&custom.label, &custom.base_url);
     match unlisted {
         Unlisted::Refused if keyed => format!("{label} did not accept that key"),
-        Unlisted::Refused => format!("Paste your {label} key too"),
+        Unlisted::Refused => format!("Enter your {label} key"),
         Unlisted::Unreachable => format!("Could not reach {label} at {base_url}"),
         Unlisted::Answered(status) => format!("{label} answered {status} at {base_url}/models"),
         Unlisted::NotAList => {

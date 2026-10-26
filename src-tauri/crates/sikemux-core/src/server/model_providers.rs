@@ -20,7 +20,6 @@ use super::{Core, CoreError, CoreResult};
 
 mod adding;
 pub(crate) mod checks;
-mod paste;
 
 pub(crate) use adding::{add, read, remove};
 

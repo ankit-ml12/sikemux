@@ -102,8 +102,6 @@ pub struct Custom {
     pub base_url: String,
     /// Wants a key, kept in the Keychain; a runner on this computer may not.
     pub keyed: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
     #[serde(default)]
     pub responses: bool,
     /// Base URL of its Anthropic-compatible API, when it serves one.
@@ -132,7 +130,7 @@ impl Custom {
                 auth: AnthropicAuth::Bearer,
             }),
             models_dev: None,
-            model: self.model,
+            model: None,
             agent_models: BTreeMap::new(),
             custom: true,
         }
@@ -144,7 +142,6 @@ impl Custom {
             label: provider.label.clone(),
             base_url: provider.openai.clone(),
             keyed: provider.key.is_some(),
-            model: provider.model.clone(),
             responses: provider.responses,
             anthropic: provider.anthropic.as_ref().map(|api| api.url.clone()),
         }
@@ -280,11 +277,7 @@ impl Provider {
             .get(agent)
             .or(self.model.as_ref())
             .filter(|model| {
-                let known = match (&self.models_dev, listed) {
-                    (None, _) => true,
-                    (Some(_), listed) => listed.is_some_and(|listed| listed.contains_key(*model)),
-                };
-                known && serves(model)
+                listed.is_some_and(|listed| listed.contains_key(*model)) && serves(model)
             });
         let newest = || {
             listed?
