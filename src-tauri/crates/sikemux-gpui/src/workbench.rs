@@ -1637,21 +1637,6 @@ impl Workbench {
             }
             return cx.notify();
         }
-        let unknown = self
-            .chats
-            .get(agent)
-            .and_then(|chat| chat.unknown_command(&text))
-            .map(|name| format!("/{name} is not available in this session"));
-        if let Some(refused) = unknown {
-            if let Some(composing) = self
-                .chats
-                .get_mut(agent)
-                .and_then(|chat| chat.composer.as_mut())
-            {
-                composing.refusal = Some(refused.into());
-            }
-            return cx.notify();
-        }
         let sent = Sent {
             content: draft.read(cx).content(),
             attachments: composing.attachments.clone(),
