@@ -3720,7 +3720,7 @@ impl Looks {
         };
         let thought = Style {
             text_size: px(12.5),
-            ink: t.text_disabled,
+            ink: t.text_tertiary,
             italic: true,
             ..text.clone()
         };
