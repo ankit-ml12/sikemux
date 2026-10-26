@@ -42,8 +42,6 @@ pub enum Tab {
 pub struct Runs {
     pub filter: usize,
     pub workflow: Option<String>,
-    /// Shows only the runs on the project's branch.
-    pub follow_branch: bool,
     pub page: u32,
     pub list: Read<RunList>,
     pub workflows: Option<Vec<Workflow>>,
@@ -79,7 +77,6 @@ impl Runs {
         Self {
             filter: 0,
             workflow: None,
-            follow_branch: true,
             page: 1,
             list: None,
             workflows: None,
@@ -107,14 +104,6 @@ impl HostArea {
                 }
                 if let Some(workflow) = &self.runs.workflow {
                     params["workflowId"] = json!(workflow);
-                }
-                if let Some((branch, _)) = self
-                    .pulls
-                    .branch
-                    .as_ref()
-                    .filter(|_| self.runs.follow_branch)
-                {
-                    params["branch"] = json!(branch);
                 }
                 self.ask_watch(LIST, "codeHostRuns", params);
             }
@@ -288,7 +277,6 @@ pub fn workflow_choices(area: &HostArea, cx: &mut Context<HostArea>) -> Vec<Choi
 pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let runs = &area.runs;
-    let branch = area.pulls.branch.as_ref().map(|(branch, _)| branch.clone());
     let workflow_name = |id: &str| {
         runs.workflows
             .iter()
@@ -331,22 +319,6 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 cx.notify();
             })),
         )
-        .when_some(branch.clone(), |head, branch| {
-            head.child(
-                ui::Toggle::new("run-follow", "This branch", runs.follow_branch)
-                    .on_click(cx.listener(|area, _, _, cx| {
-                        area.runs.follow_branch = !area.runs.follow_branch;
-                        area.runs.page = 1;
-                        area.runs.list = None;
-                        area.watch();
-                        cx.notify();
-                    }))
-                    .into_any_element(),
-            )
-            .when(runs.follow_branch, |head| {
-                head.child(ui::meta(format!("on {branch}"), cx))
-            })
-        })
         .child(div().flex_1())
         .children(total.map(|total| {
             ui::meta(
@@ -381,15 +353,7 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         None => notice("Loading runs", None, cx),
         Some(Err(error)) => notice("Could not read runs", Some(error.clone()), cx),
         Some(Ok(list)) if list.runs.is_empty() => {
-            let on = branch
-                .filter(|_| runs.follow_branch)
-                .map(|branch| format!(" on {branch}"))
-                .unwrap_or_default();
-            notice(
-                "No runs",
-                Some(format!("Nothing matches this filter{on}.").into()),
-                cx,
-            )
+            notice("No runs", Some("Nothing matches this filter.".into()), cx)
         }
         Some(Ok(list)) => {
             let names: HashMap<&str, &str> = runs
