@@ -300,7 +300,8 @@ impl Colours {
 pub struct RowLook {
     /// Said after the row's code, such as the agent that wrote it.
     pub note: Option<SharedString>,
-    pub tinted: bool,
+    /// How strongly an added or deleted row's colour washes its code.
+    pub wash: f32,
     pub added: Hsla,
     pub deleted: Hsla,
     pub number: Hsla,
@@ -315,13 +316,13 @@ impl RowLook {
     pub fn new(t: &Tokens, advance: Pixels, scrolled: Pixels) -> Self {
         Self {
             note: None,
-            tinted: t.dark,
+            wash: if t.dark { 0.08 } else { 0.14 },
             added: t.live,
             deleted: t.danger,
             number: t.ink_faint,
             gutter: t.surface_sunken.opacity(0.3),
             ink: t.text_primary,
-            hover: t.text_primary.opacity(0.07),
+            hover: t.surface_hover,
             advance,
             scrolled,
         }
@@ -381,7 +382,7 @@ pub fn row(
                 .whitespace_nowrap()
                 .bg(look.gutter)
                 .text_right()
-                .text_color(tint.filter(|_| look.tinted).unwrap_or(look.number))
+                .text_color(tint.unwrap_or(look.number))
                 .when_some(open, |gutter, open| {
                     gutter
                         .cursor_pointer()
@@ -397,9 +398,7 @@ pub fn row(
                 .flex_1()
                 .min_w_0()
                 .overflow_hidden()
-                .when_some(tint.filter(|_| look.tinted), |code, tint| {
-                    code.bg(tint.opacity(0.08))
-                })
+                .when_some(tint, |code, tint| code.bg(tint.opacity(look.wash)))
                 .child(
                     div()
                         .ml(-look.scrolled)

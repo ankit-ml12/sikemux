@@ -816,9 +816,9 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
                 )
                 .child(mark(
                     ui::icon(Icon::Search, 11.)
-                        .text_color(t.accent)
+                        .text_color(t.text_tertiary)
                         .into_any_element(),
-                    t.accent,
+                    t.text_tertiary,
                 ))
                 .child(
                     div()
@@ -1084,7 +1084,7 @@ fn file_header(
         .gap(px(6.))
         .text_size(crate::theme::ui_text(11.))
         .cursor_pointer()
-        .hover(|row| row.bg(gpui_kit::hsla(0., 0., 1., 0.03)))
+        .hover(move |row| row.bg(t.surface_hover))
         .tooltip(ui::tooltip(if collapsed {
             "Expand file"
         } else {
@@ -1165,8 +1165,8 @@ fn hit_row(
                 (
                     start..end,
                     gpui_kit::HighlightStyle {
-                        color: Some(gpui_kit::rgb(0xffe27a).into()),
-                        background_color: Some(gpui_kit::hsla(48. / 360., 1., 0.68, 0.2)),
+                        color: Some(t.text_primary),
+                        background_color: Some(Hsla { a: 0.25, ..t.warn }),
                         ..Default::default()
                     },
                 )
@@ -1195,10 +1195,7 @@ fn hit_row(
             if chosen {
                 row.bg(t.surface_chosen)
             } else {
-                row.hover(move |row| {
-                    row.bg(gpui_kit::hsla(0., 0., 1., 0.03))
-                        .text_color(t.text_primary)
-                })
+                row.hover(move |row| row.bg(t.surface_hover).text_color(t.text_primary))
             }
         })
         .on_click(move |event, window, cx| {
@@ -1357,7 +1354,7 @@ fn window_lines(shown: &Shown, hit: &SearchHit, t: &Tokens) -> AnyElement {
     let lines: Vec<&str> = shown.window.doc.split('\n').collect();
     let hit_at = hit.line.saturating_sub(start) as usize;
     let mark = gpui_kit::HighlightStyle {
-        background_color: Some(gpui_kit::hsla(48. / 360., 1., 0.68, 0.25)),
+        background_color: Some(Hsla { a: 0.25, ..t.warn }),
         ..Default::default()
     };
     let rows = lines.iter().enumerate().map(|(index, line)| {

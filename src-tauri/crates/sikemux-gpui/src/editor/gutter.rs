@@ -6,12 +6,13 @@ use std::time::Duration;
 
 use gpui_kit::component::input::{EditorState, Position, RopeExt};
 use gpui_kit::{
-    canvas, div, fill, point, px, relative, rgb, Bounds, Context, Entity, Hsla, InteractiveElement,
+    canvas, div, fill, point, px, relative, Bounds, Context, Entity, Hsla, InteractiveElement,
     IntoElement, ParentElement, Pixels, SharedString, StatefulInteractiveElement, Styled, Task,
 };
 
 use super::{lsp, place_cursor, FileKey, OpenAt};
 use crate::git::{self, DiffKind, Hunk};
+use crate::theme::Tokens;
 use crate::workbench::Workbench;
 
 /// How long typing pauses before the marks are worked out again.
@@ -27,11 +28,11 @@ pub(super) struct Gutter {
     refresh: Option<Task<()>>,
 }
 
-fn colour(kind: DiffKind) -> Hsla {
+fn colour(kind: DiffKind, t: &Tokens) -> Hsla {
     match kind {
-        DiffKind::Add => rgb(0x4ade80).into(),
-        DiffKind::Mod => rgb(0x60a5fa).into(),
-        DiffKind::Del => rgb(0xef4444).into(),
+        DiffKind::Add => t.git_added,
+        DiffKind::Mod => t.git_modified,
+        DiffKind::Del => t.git_deleted,
     }
 }
 
@@ -107,8 +108,10 @@ pub(super) fn overlay(
     state: &Entity<EditorState>,
     gutter: &Gutter,
     lines: usize,
+    t: &Tokens,
 ) -> impl IntoElement {
     let strip = {
+        let t = t.clone();
         let (state, hunks) = (state.clone(), gutter.hunks.clone());
         canvas(
             |_, _, _| (),
@@ -135,7 +138,7 @@ pub(super) fn overlay(
                     let left = first.left() - px(6.);
                     let bounds =
                         Bounds::from_corners(point(left, first.top()), point(left + width, bottom));
-                    window.paint_quad(fill(bounds, colour(hunk.kind)));
+                    window.paint_quad(fill(bounds, colour(hunk.kind, &t)));
                 }
             },
         )
@@ -162,7 +165,7 @@ pub(super) fn overlay(
             .h(relative((length / total).max(0.004)))
             .min_h(px(2.))
             .w(px(if hunk.kind == DiffKind::Del { 4. } else { 6. }))
-            .bg(colour(hunk.kind))
+            .bg(colour(hunk.kind, t))
             .cursor_pointer()
             .hover(|style| style.w(px(8.)))
             .on_click(move |_, window, cx| {

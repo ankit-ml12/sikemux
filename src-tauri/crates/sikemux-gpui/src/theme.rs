@@ -344,6 +344,11 @@ pub fn apply(palette: &Palette, cx: &mut App) {
         a: 0.42,
         ..tokens.text_tertiary
     };
+    let mut highlight = (*kit.highlight_theme).clone();
+    highlight.style.editor_active_line = Some(color(&tokens.editor.active_line));
+    highlight.style.editor_line_number = Some(color(&tokens.editor.gutter));
+    highlight.style.editor_active_line_number = Some(color(&tokens.editor.gutter_active));
+    kit.highlight_theme = std::sync::Arc::new(highlight);
     kit.tokens = ThemeTokens::from(&kit.colors);
     cx.set_global(tokens);
 }

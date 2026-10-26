@@ -706,7 +706,7 @@ impl Draw<'_> {
         let style = &*self.on.style;
         match &node.kind {
             Kind::Heading(level) => {
-                let scale = [2., 1.5, 1.17, 1., 0.83, 0.67][usize::from(level.clamp(&1, &6) - 1)];
+                let scale = [1.4, 1.2, 1.07, 1., 1., 1.][usize::from(level.clamp(&1, &6) - 1)];
                 let blocks = &self.on.blocks;
                 let top_level = blocks
                     .get(ix)
@@ -725,6 +725,7 @@ impl Draw<'_> {
                     .text_size(style.text_size * scale)
                     .line_height(relative(1.3))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .when(*level >= 5, |heading| heading.text_color(style.ink_dim))
                     .when_some(number, |heading, number| {
                         heading.flex().items_baseline().gap(px(10.)).child(
                             div()

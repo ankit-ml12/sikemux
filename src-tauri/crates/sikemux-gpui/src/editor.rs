@@ -422,6 +422,7 @@ pub fn pane(
                         gpui_kit::component::input::RopeExt::lines_len(
                             document.state.read(cx).text(),
                         ),
+                        &t,
                     ))
                     .child(blame::overlay(
                         &document.state,
