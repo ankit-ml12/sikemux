@@ -54,8 +54,12 @@ impl Kind {
     }
 }
 
+/// Toasts saying the same words share one place, so a repeated one replaces the last.
+struct Said;
+
 fn toast(kind: Kind, text: SharedString) -> Notification {
-    Notification::new().content(move |note, window, cx| {
+    let one_per_text = Notification::new().id1::<Said>(text.clone());
+    one_per_text.content(move |note, window, cx| {
         let t = Tokens::get(cx);
         *note.style() = island(t);
         let size = theme::ui_text(TEXT).to_pixels(window.rem_size());

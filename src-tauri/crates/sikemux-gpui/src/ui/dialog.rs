@@ -5,14 +5,13 @@ use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, px, AnimationExt, AnyElement, App, Div, Entity, FocusHandle, FontWeight, Hsla,
-    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, RenderOnce, Role,
-    SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, AnyElement, App, Div, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement,
+    IntoElement, KeyDownEvent, ParentElement, Pixels, RenderOnce, Role, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 
 use super::{icon, text};
 use crate::icons::Icon;
-use crate::motion;
 use crate::theme::{self, Tokens, RADIUS_2, RADIUS_4};
 
 pub(crate) type Answer = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -220,21 +219,12 @@ pub(crate) fn floating(
     AlertDialog::new(cx)
         .open(true)
         .close_on_escape(true)
-        .backdrop(
-            div()
-                .size_full()
-                .bg(Hsla {
-                    h: 0.,
-                    s: 0.,
-                    l: 0.,
-                    a: 0.55,
-                })
-                .with_animation(
-                    "dialog-scrim",
-                    motion::entrance(motion::SCRIM_IN),
-                    |scrim, shown| scrim.opacity(shown),
-                ),
-        )
+        .backdrop(div().size_full().bg(Hsla {
+            h: 0.,
+            s: 0.,
+            l: 0.,
+            a: 0.55,
+        }))
         .on_cancel(move |_, window, cx| {
             no(window, cx);
             true
@@ -255,12 +245,7 @@ pub(crate) fn floating(
                 .border_color(t.border)
                 .rounded(RADIUS_4)
                 .shadow(t.shadow_float())
-                .child(content)
-                .with_animation(
-                    "dialog-in",
-                    motion::entrance(motion::DIALOG_IN),
-                    |dialog, risen| dialog.opacity(risen).relative().top(px(8. * (1. - risen))),
-                ),
+                .child(content),
         )
 }
 
