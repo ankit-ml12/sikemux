@@ -21,7 +21,7 @@ pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
 pub use dialog::{Cheatsheet, Choice, Choices, Confirm, Prompt, Section};
 pub use dock::{DockMenu, DockRow, DockScope};
 pub use find_bar::FindBar;
-pub use floats::{float, menu, menu_button, tooltip, MenuRow};
+pub use floats::{card_tooltip, float, menu, menu_button, tooltip, MenuRow};
 pub use lists::{close_button, Group, Row, Tab, ROW};
 pub use pane::{pane, PaneHeader, AGENT_INSET};
 pub use select::{select, Pick};

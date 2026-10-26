@@ -750,20 +750,11 @@ fn context_meter(usage: ContextUsage, provider: &str, cx: &App) -> impl IntoElem
         _ if matches!(provider, "claude" | "codex") => theme::brand(provider),
         _ => t.accent,
     };
-    let mut about = vec![
-        "Context window".to_owned(),
-        format!(
-            "{}% used · {} of {} tokens",
-            percent.round(),
-            crate::home::compact(usage.used),
-            crate::home::compact(usage.size)
-        ),
-    ];
-    about.extend(
-        usage
-            .cost
-            .map(|cost| format!("Session cost {}", crate::home::money(cost.amount))),
-    );
+    let percent_ink = if percent >= 70. {
+        signal
+    } else {
+        t.text_primary
+    };
     div()
         .id("context-meter")
         .size(px(31.))
@@ -778,8 +769,101 @@ fn context_meter(usage: ContextUsage, provider: &str, cx: &App) -> impl IntoElem
                 ..t.text_primary
             })
         })
-        .tooltip(ui::tooltip(about.join("\n")))
+        .tooltip(ui::card_tooltip(236., move |cx| {
+            context_card(usage.clone(), percent, signal, percent_ink, cx)
+        }))
         .child(ui::ring(Some((percent, signal)), 14., 1.9, t.line))
+}
+
+const CONTEXT_SEGMENTS: usize = 24;
+
+/// The context meter's tooltip: the share used as a row of segments, then tokens and cost.
+fn context_card(
+    usage: ContextUsage,
+    percent: f64,
+    signal: Hsla,
+    percent_ink: Hsla,
+    cx: &App,
+) -> AnyElement {
+    let t = Tokens::get(cx);
+    let lit = (percent / 100. * CONTEXT_SEGMENTS as f64).round() as usize;
+    let unlit = Hsla {
+        a: 0.07,
+        ..t.text_primary
+    };
+    let row = |label: &str, value: AnyElement| {
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(ui::text(label.to_owned(), 11.5, FontWeight::NORMAL).text_color(t.text_tertiary))
+            .child(value)
+    };
+    let tokens = div()
+        .flex()
+        .gap(px(3.))
+        .font_features(theme::tabular())
+        .child(
+            ui::text(crate::home::compact(usage.used), 11.5, FontWeight::NORMAL)
+                .text_color(t.text_primary),
+        )
+        .child(
+            ui::text(
+                format!("/ {}", crate::home::compact(usage.size)),
+                11.5,
+                FontWeight::NORMAL,
+            )
+            .text_color(t.text_tertiary),
+        );
+    div()
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    ui::text("Context window", 12., FontWeight::NORMAL)
+                        .text_color(t.text_secondary),
+                )
+                .child(
+                    ui::text(format!("{}%", percent.round()), 12., FontWeight::SEMIBOLD)
+                        .font_features(theme::tabular())
+                        .text_color(percent_ink),
+                ),
+        )
+        .child(
+            div()
+                .mt(px(9.))
+                .mb(px(8.))
+                .flex()
+                .gap(px(2.))
+                .children((0..CONTEXT_SEGMENTS).map(|segment| {
+                    div()
+                        .flex_1()
+                        .h(px(10.))
+                        .rounded(px(1.5))
+                        .bg(if segment < lit { signal } else { unlit })
+                })),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(3.))
+                .child(row("Tokens", tokens.into_any_element()))
+                .children(usage.cost.map(|cost| {
+                    row(
+                        "Session cost",
+                        ui::text(crate::home::money(cost.amount), 11.5, FontWeight::NORMAL)
+                            .font_features(theme::tabular())
+                            .text_color(t.text_primary)
+                            .into_any_element(),
+                    )
+                })),
+        )
+        .into_any_element()
 }
 
 /// How the composer's edge changes colour as it takes and loses the keys.

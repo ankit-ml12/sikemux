@@ -15,7 +15,7 @@ use gpui_kit::{
 use super::text;
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{Tokens, RADIUS_2, RADIUS_4};
+use crate::theme::{Tokens, RADIUS_2, RADIUS_3, RADIUS_4};
 
 /// What floats over everything else: menus, pickers, palettes.
 pub fn float(cx: &App) -> Div {
@@ -220,4 +220,48 @@ impl Render for TooltipView {
 pub fn tooltip(text: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> AnyView {
     let text = text.into();
     move |_, cx| cx.new(|_| TooltipView { text: text.clone() }).into()
+}
+
+/// A tooltip laid out as a small card rather than a line of text.
+pub struct CardTooltipView {
+    width: f32,
+    body: Rc<dyn Fn(&App) -> AnyElement>,
+}
+
+impl Render for CardTooltipView {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Tokens::get(cx);
+        div()
+            .w(px(self.width))
+            .px(px(12.))
+            .pt(px(10.))
+            .pb(px(11.))
+            .rounded(RADIUS_3)
+            .bg(t.surface_tooltip)
+            .border_1()
+            .border_color(Hsla {
+                a: 0.72,
+                ..t.border_strong
+            })
+            .shadow(t.shadow_float())
+            .text_color(t.text_primary)
+            .child((self.body)(cx))
+            .with_animation(
+                "tooltip-in",
+                motion::entrance(motion::TOOLTIP_IN),
+                |tip, shown| tip.opacity(shown),
+            )
+    }
+}
+
+/// What `.tooltip()` takes, for a card `width` wide that `body` fills.
+pub fn card_tooltip(
+    width: f32,
+    body: impl Fn(&App) -> AnyElement + 'static,
+) -> impl Fn(&mut Window, &mut App) -> AnyView {
+    let body: Rc<dyn Fn(&App) -> AnyElement> = Rc::new(body);
+    move |_, cx| {
+        let body = body.clone();
+        cx.new(|_| CardTooltipView { width, body }).into()
+    }
 }
