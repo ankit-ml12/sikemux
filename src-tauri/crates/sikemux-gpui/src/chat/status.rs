@@ -105,7 +105,7 @@ fn elapsed(seconds: u64) -> String {
 impl Chat {
     /// What the line under the last row says: nothing while a permission card already says
     /// what the turn waits on, else the running call's words, a retry, or that it thinks;
-    /// and while no turn runs, that the agent is still on its way.
+    /// and while no turn runs, that the agent is still on its way to a message sent to it.
     pub(super) fn activity(&self, cx: &App) -> Option<SharedString> {
         let head = self.state.as_ref()?;
         if !head.permissions.is_empty() {
@@ -133,12 +133,11 @@ impl Chat {
             });
             return Some(running.unwrap_or_else(|| "Thinking…".into()));
         }
-        if self.is_empty(cx) {
+        if self.is_empty(cx) || !self.awaits_agent {
             return None;
         }
         match head.connection {
             ChatConnection::Starting => Some("Starting agent…".into()),
-            // Before any status a chat with history is one taken up again whose agent waits for the person.
             ChatConnection::Initializing => Some("Connecting to agent session…".into()),
             _ => None,
         }
@@ -353,8 +352,9 @@ pub(super) fn trouble(
 }
 
 /// What an empty chat says while its session is not ready, in the welcome's place: that it
-/// is starting or connecting, or that it stopped or failed with a way back. None while the
-/// welcome belongs there: the session is ready, or a new chat is on its way to being.
+/// stopped or failed with a way back, or that a message waits for its agent to start. A
+/// chat taken up again stays blank while its agent warms up unseen; None while the welcome
+/// belongs there.
 pub(super) fn connection_note(
     agent: &AgentRow,
     chat: &Chat,
@@ -366,17 +366,17 @@ pub(super) fn connection_note(
         .as_ref()
         .map_or(ChatConnection::Connecting, |head| head.connection);
     let dropped = matches!(connection, ChatConnection::Error | ChatConnection::Stopped);
-    if connection == ChatConnection::Ready || (!resumes && !dropped) {
+    if connection == ChatConnection::Ready || (!resumes && !dropped && !chat.awaits_agent) {
         return None;
+    }
+    if !dropped && !chat.awaits_agent {
+        return Some(div().into_any_element());
     }
     let t = Tokens::get(cx).clone();
     let (icon, said) = match connection {
         ChatConnection::Starting => (Icon::Hourglass, "Starting agent…"),
         ChatConnection::Error => (Icon::Plug, "Structured session unavailable."),
         ChatConnection::Stopped => (Icon::Plug, "Agent session stopped."),
-        // Before any status a chat taken up again waits for the person, and its agent tells
-        // the history once it starts.
-        ChatConnection::Connecting => (Icon::Clock, "History appears when you write"),
         _ => (Icon::Hourglass, "Connecting to agent session…"),
     };
     let this = cx.weak_entity();

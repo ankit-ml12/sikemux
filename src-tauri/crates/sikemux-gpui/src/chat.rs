@@ -496,6 +496,9 @@ pub struct Chat {
     stopping: HashSet<String>,
     /// The questions whose answers went to the core, until it took them.
     answering: HashSet<String>,
+    /// A message went while the agent was not ready, so the chat says it is on its way; until
+    /// then it warms up unseen.
+    pub awaits_agent: bool,
     /// The menu of a file a message names, while it is open.
     file_menu: Option<files::FileMenu>,
 }
@@ -736,6 +739,7 @@ impl Chat {
             replying: None,
             stopping: HashSet::new(),
             answering: HashSet::new(),
+            awaits_agent: false,
             file_menu: None,
         }
     }
@@ -834,7 +838,10 @@ impl Chat {
     }
 
     /// Keeps what the rows draw of how the chat stands in step with its head.
-    fn follow_head(&self, cx: &mut App) {
+    fn follow_head(&mut self, cx: &mut App) {
+        if self.ready() {
+            self.awaits_agent = false;
+        }
         let running = self.running();
         let editable = self.state.as_ref().is_some_and(|head| {
             head.capabilities["editing"] == true
@@ -1369,7 +1376,7 @@ impl Chat {
     }
 
     /// What the empty draft says, as the chat stands: what typing answers, or where words go.
-    pub fn hint(&self, agent: &str, questions: &[Question], resumes: bool) -> String {
+    pub fn hint(&self, agent: &str, questions: &[Question]) -> String {
         let open: Vec<&Question> = questions
             .iter()
             .filter(|question| question.of(agent, "open"))
@@ -1404,7 +1411,6 @@ impl Chat {
             ChatConnection::Ready if head.running => "Send to queue behind the running turn".into(),
             ChatConnection::Ready if head.commands.is_empty() => "Ask about this project".into(),
             ChatConnection::Ready => "Ask about this project, or type / for commands".into(),
-            _ if resumes => "Resuming — this message sends as soon as the session is back".into(),
             _ => "Ask about this project, or type / for commands".into(),
         }
     }
@@ -1616,6 +1622,7 @@ impl Chat {
             let message = json!({ "text": text, "paths": paths, "context": context });
             return Some(self.steer_queued(agent, Some(message)));
         }
+        self.awaits_agent = !self.ready();
         Some(Ask::Chat(ChatAsk::Prompt {
             agent: agent.to_owned(),
             text,

@@ -1494,12 +1494,6 @@ impl Workbench {
             return;
         };
         self.send_after_worktree(&agent, window, cx);
-        let resumes = self.view.as_ref().is_some_and(|view| {
-            view.workspace
-                .agents
-                .iter()
-                .any(|saved| saved.id == agent && saved.resume_id.is_some())
-        });
         let Some(chat) = self.chats.get_mut(&agent) else {
             return;
         };
@@ -1524,7 +1518,7 @@ impl Workbench {
         let Some(chat) = self.chats.get_mut(&agent) else {
             return;
         };
-        let hint = SharedString::from(chat.hint(&agent, &self.questions, resumes));
+        let hint = SharedString::from(chat.hint(&agent, &self.questions));
         let Some(composing) = chat
             .composer
             .as_mut()
@@ -1627,6 +1621,21 @@ impl Workbench {
                 cx.notify();
             }
             return;
+        }
+        let unknown = self
+            .chats
+            .get(agent)
+            .and_then(|chat| chat.unknown_command(&text))
+            .map(|name| format!("/{name} is not available in this session"));
+        if let Some(refused) = unknown {
+            if let Some(composing) = self
+                .chats
+                .get_mut(agent)
+                .and_then(|chat| chat.composer.as_mut())
+            {
+                composing.refusal = Some(refused.into());
+            }
+            return cx.notify();
         }
         let unknown = self
             .chats
