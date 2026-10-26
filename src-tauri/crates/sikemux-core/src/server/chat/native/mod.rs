@@ -6,8 +6,8 @@
 mod acp;
 mod claude;
 mod codex;
-mod devices;
 mod json;
+mod mcp_calls;
 mod muse;
 mod parts;
 mod patch;

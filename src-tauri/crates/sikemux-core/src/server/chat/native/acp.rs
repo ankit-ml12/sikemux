@@ -27,7 +27,7 @@ use super::pending::{Answered, Purpose};
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
 use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
 use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
-use super::{devices, servers};
+use super::{mcp_calls, servers};
 
 /// The error code an agent turns a prompt down with when it needs a sign-in.
 const AUTH_REQUIRED: i64 = -32000;
@@ -40,7 +40,7 @@ pub(super) fn replay_saved(launch: &ChatLaunch, session: &str, sink: &Sink) -> R
         .ok_or_else(|| format!("{} keeps no sessions Sikemux reads", launch.provider))?;
     let servers = server_names(launch);
     for mut update in crate::sessions::history(agent, session, &launch.cwd)? {
-        devices::as_tool_call(&mut update, &servers);
+        mcp_calls::as_mcp_call(&mut update, &servers);
         sink.update(session, update);
     }
     sink.update(session, json!({ "sessionUpdate": "history_loaded" }));
@@ -182,7 +182,7 @@ impl Reads for Driver {
                     .get_mut("update")
                     .map(Value::take)
                     .unwrap_or_default();
-                devices::as_tool_call(&mut update, &self.servers);
+                mcp_calls::as_mcp_call(&mut update, &self.servers);
                 let session_id = params["sessionId"].as_str().unwrap_or_default();
                 self.sink.update(session_id, update);
             }
