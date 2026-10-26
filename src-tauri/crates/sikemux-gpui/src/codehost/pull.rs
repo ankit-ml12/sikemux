@@ -536,6 +536,10 @@ fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
     let view = opened.view.as_ref().and_then(|view| view.as_ref().ok());
     let open = view.is_some_and(|view| view.pull.state == "open");
     let can_merge = open && view.is_some_and(mergeable);
+    let why_not = view
+        .filter(|_| open && !can_merge)
+        .and_then(|view| readiness(view, area))
+        .map(|(_, title, _)| title);
     let (merge_label, merge_look) = match view.map(|view| view.pull.state.as_str()) {
         Some("merged") => ("Merged", Variant::Outline),
         Some("closed") => ("Closed", Variant::Outline),
@@ -568,6 +572,7 @@ fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
             Button::new("pull-merge-page", merge_label, merge_look)
                 .icon(Icon::Merge)
                 .disabled(open && !can_merge)
+                .when_some(why_not, |button, why| button.tooltip(why))
                 .on_click(cx.listener(|area, _, _, cx| {
                     if let Some(opened) = &mut area.pull {
                         opened.section = Section::Checks;
@@ -679,6 +684,115 @@ fn merge_button(
         .into_any_element()
 }
 
+/// What the reviews come to so far.
+fn reviews(view: &OpenPull) -> (Outcome, &'static str) {
+    match view.verdict {
+        Some(ReviewVerdict::Approved) => (Outcome::Success, "Approved"),
+        Some(ReviewVerdict::ChangesRequested) => (Outcome::Failure, "Changes requested"),
+        None if view.reviewed => (Outcome::Queued, "No approving review yet"),
+        None => (Outcome::Queued, "No reviews yet"),
+    }
+}
+
+/// Whether it can merge as the host says, and what to do about it when not; none from a
+/// host that does not say.
+fn readiness(view: &OpenPull, area: &HostArea) -> Option<(Outcome, String, Option<String>)> {
+    let host = super::host_label(&area.host.host);
+    let base = view.pull.base.as_deref().unwrap_or("the base branch");
+    if view.pull.draft {
+        return Some((
+            Outcome::Queued,
+            "This is a draft".to_owned(),
+            Some(format!(
+                "Mark it ready for review on {host} before merging."
+            )),
+        ));
+    }
+    if !area.host.pulls.mergeability {
+        return None;
+    }
+    Some(match view.merge {
+        MergeReadiness::Conflicts => (
+            Outcome::Failure,
+            format!("Conflicts with {base}"),
+            Some("Resolve the conflicts before merging.".to_owned()),
+        ),
+        MergeReadiness::Blocked => (
+            Outcome::Blocked,
+            "Merging is blocked".to_owned(),
+            Some(format!(
+                "{host} is waiting on the required reviews and checks."
+            )),
+        ),
+        MergeReadiness::Behind => (
+            Outcome::Blocked,
+            format!("Behind {base}"),
+            Some("Bring the branch up to date before merging.".to_owned()),
+        ),
+        MergeReadiness::Ready => (Outcome::Success, "Ready to merge".to_owned(), None),
+        MergeReadiness::Checking => (
+            Outcome::Queued,
+            "Checking whether it can merge".to_owned(),
+            None,
+        ),
+    })
+}
+
+/// What stands between an open pull request and its merge, one chip each: its reviews, its
+/// checks and whether it can merge, a chip that stops the merge in the danger colour.
+fn standing(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
+    if view.pull.state != "open" {
+        return None;
+    }
+    let (outcome, said) = reviews(view);
+    let mut chips = vec![(outcome, said.to_owned())];
+    if let Some(tally) = &view.checks {
+        chips.push((
+            tally.outcome,
+            format!("{}/{} checks passed", tally.passed, tally.total),
+        ));
+    }
+    chips.extend(readiness(view, area).map(|(outcome, title, _)| (outcome, title)));
+    let t = Tokens::get(cx).clone();
+    Some(
+        div()
+            .flex()
+            .flex_wrap()
+            .gap(px(6.))
+            .children(chips.into_iter().enumerate().map(|(at, (outcome, said))| {
+                let stops = matches!(outcome, Outcome::Failure | Outcome::Blocked);
+                div()
+                    .id(("pull-standing", at))
+                    .h(px(24.))
+                    .pl(px(7.))
+                    .pr(px(9.))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .rounded(RADIUS_2)
+                    .border_1()
+                    .border_color(if stops {
+                        t.danger.opacity(0.45)
+                    } else {
+                        t.border
+                    })
+                    .when(stops, |chip| chip.bg(t.danger.opacity(0.08)))
+                    .text_size(crate::theme::ui_text(12.))
+                    .text_color(t.text_primary)
+                    .cursor_pointer()
+                    .hover(move |chip| chip.bg(t.surface_hover))
+                    .on_click(cx.listener(|area, _, _, cx| {
+                        if let Some(opened) = &mut area.pull {
+                            opened.section = Section::Checks;
+                        }
+                        cx.notify();
+                    }))
+                    .child(ui::status_of_run(outcome_word(outcome), 13., cx))
+                    .child(said)
+            })),
+    )
+}
+
 /// Whether the host would take a merge now: not while it conflicts, its rules block it or
 /// it is still working that out.
 fn mergeable(view: &OpenPull) -> bool {
@@ -755,6 +869,7 @@ fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div 
                 .child(word(format!("· {}", ago(&pull.updated_at))))
                 .children(pull.labels.iter().map(|label| super::label_chip(label, cx))),
         )
+        .children(standing(area, found, cx))
 }
 
 /// How the pull request stands, as a pill in its colour.
@@ -1089,7 +1204,6 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         Some(Ok(view)) => view,
     };
     let pull = &view.pull;
-    let host = super::host_label(&area.host.host);
     let base = pull
         .base
         .clone()
@@ -1186,53 +1300,10 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
             .children(checks)
             .into_any_element();
     }
-    let verdict = match view.verdict {
-        Some(ReviewVerdict::Approved) => part(Outcome::Success, "Approved", None, cx),
-        Some(ReviewVerdict::ChangesRequested) => {
-            part(Outcome::Failure, "Changes requested", None, cx)
-        }
-        None if view.reviewed => part(Outcome::Queued, "No approving review yet", None, cx),
-        None => part(Outcome::Queued, "No reviews yet", None, cx),
-    };
-    let readiness = if pull.draft {
-        Some(part(
-            Outcome::Queued,
-            "This is a draft",
-            Some(format!(
-                "Mark it ready for review on {host} before merging."
-            )),
-            cx,
-        ))
-    } else if area.host.pulls.mergeability {
-        let (outcome, title, detail) = match view.merge {
-            MergeReadiness::Conflicts => (
-                Outcome::Failure,
-                format!("Conflicts with {base}"),
-                Some("Resolve the conflicts before merging.".to_owned()),
-            ),
-            MergeReadiness::Blocked => (
-                Outcome::Blocked,
-                "Merging is blocked".to_owned(),
-                Some(format!(
-                    "{host} is waiting on the required reviews and checks."
-                )),
-            ),
-            MergeReadiness::Behind => (
-                Outcome::Blocked,
-                format!("Behind {base}"),
-                Some("Bring the branch up to date before merging.".to_owned()),
-            ),
-            MergeReadiness::Ready => (Outcome::Success, "Ready to merge".to_owned(), None),
-            MergeReadiness::Checking => (
-                Outcome::Queued,
-                "Checking whether it can merge".to_owned(),
-                None,
-            ),
-        };
-        Some(part(outcome, title, detail, cx))
-    } else {
-        None
-    };
+    let (outcome, said) = reviews(view);
+    let verdict = part(outcome, said, None, cx);
+    let readiness =
+        readiness(view, area).map(|(outcome, title, detail)| part(outcome, title, detail, cx));
     let blocked = !mergeable(view);
     let number = pull.number;
     let title = pull.title.clone();
