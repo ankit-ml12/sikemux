@@ -223,7 +223,10 @@ jobs:
         run: |
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/nextest.tar.gz" https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.149/cargo-nextest-0.9.149-universal-apple-darwin.tar.gz
           echo "47b9941765a9ff94e304a3fe5444ac1c7593da655525b8b69f8f2b31a9217507  $RUNNER_TEMP/nextest.tar.gz" | shasum -a 256 -c -
-          tar -xzf "$RUNNER_TEMP/nextest.tar.gz" -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+          bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          mkdir -p "$bin"
+          tar -xzf "$RUNNER_TEMP/nextest.tar.gz" -C "$bin"
+          echo "$bin" >>"$GITHUB_PATH"
 
       - name: Run Rust tests
         run: cargo nextest run --workspace --all-targets --all-features
