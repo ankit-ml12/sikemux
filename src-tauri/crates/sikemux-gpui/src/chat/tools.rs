@@ -12,6 +12,7 @@ use gpui_kit::{
     Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, StyledText, Window,
 };
+use gpui_transcript::{FileKind, FilePress};
 use sikemux_wire::chat::{
     ChatPart, DiffLine, DiffSummary, OutputSummary, ToolAction, ToolCall, ToolDetail, ToolRow,
 };
@@ -387,7 +388,7 @@ pub fn run(
         let rows = calls
             .iter()
             .enumerate()
-            .map(|(ix, call)| row(call, ix + 1 == count, kind, looks));
+            .map(|(ix, call)| row(call, ix + 1 == count, kind, looks, cx));
         let rows = div().ml(px(6.)).py(px(2.)).flex().flex_col().children(rows);
         motion::folded(
             ElementId::Name(format!("run-body:{key}").into()),
@@ -408,14 +409,14 @@ pub fn run(
 
 /// One call: a tick off the run's spine, its icon and word in the colour of what
 /// it did, what it was about, and how long it took, opening onto its detail.
-fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
+fn row(call: &Call, last: bool, kind: usize, looks: &Drawn, cx: &App) -> AnyElement {
     let id = call.tool.tool_call_id.clone();
     let row = &call.tool.row;
     let running = call.running();
     let opens = call.opens();
     let open = opens && looks.reading.tools.calls.contains(&id);
     let tint = tint(call, looks);
-    let target = (!row.target.is_empty()).then(|| target(row, running, &id, looks));
+    let target = (!row.target.is_empty()).then(|| target(row, running, &id, looks, cx));
     let elapsed = if call.status() == "cancelled" {
         Some("stopped".into_any_element())
     } else if running {
@@ -533,9 +534,9 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
     node.into_any_element()
 }
 
-/// Where the call reached, in its row: a file it names opens in the editor and a page it
-/// names opens as a link does, without opening or closing the row.
-fn target(row: &ToolRow, running: bool, id: &str, looks: &Drawn) -> Div {
+/// Where the call reached, in its row: a file it names opens as a file the chat names does,
+/// and a page it names as a link does, without opening or closing the row.
+fn target(row: &ToolRow, running: bool, id: &str, looks: &Drawn, cx: &App) -> Div {
     let ink = if running { looks.quiet } else { looks.ink };
     let text = row.target.as_str();
     if running && !text.is_empty() {
@@ -547,24 +548,44 @@ fn target(row: &ToolRow, running: bool, id: &str, looks: &Drawn) -> Div {
     let (bench, agent) = (looks.bench.clone(), looks.agent.clone());
     let opens: Option<(std::ops::Range<usize>, Opens)> = match &row.path {
         Some(path) => {
-            let path = PathBuf::from(path);
+            let (path, files) = (path.clone(), looks.files.clone());
             Some((
                 0..text.len(),
-                Box::new(move |_, cx| {
-                    bench
-                        .update(cx, |bench, cx| bench.open_file(&path, cx))
-                        .ok();
+                std::rc::Rc::new(move |press, window, cx| {
+                    let file = (path.as_str(), FileKind::File, press);
+                    super::files::pressed(&agent, &files, &bench, file, window, cx);
                 }),
             ))
         }
         None => web_link(text).map(|range| {
             let url = text[range.clone()].to_owned();
-            let open: Opens =
-                Box::new(move |window, cx| super::link::open(&url, &agent, &bench, window, cx));
+            let open: Opens = std::rc::Rc::new(move |press, window, cx| {
+                if !matches!(press, FilePress::Menu(_)) {
+                    super::link::open(&url, &agent, &bench, window, cx)
+                }
+            });
             (range, open)
         }),
     };
-    let line = div().min_w_0().truncate().flex().text_color(ink);
+    let named = row
+        .path
+        .as_deref()
+        .and_then(|path| looks.files.borrow().resolve(path));
+    let line = div()
+        .min_w_0()
+        .truncate()
+        .flex()
+        .items_center()
+        .text_color(ink)
+        .children(named.map(|named| {
+            let name = std::path::Path::new(&named.path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            div()
+                .mr(px(5.))
+                .child(crate::file_icons::glyph(&name, 12., cx))
+        }));
     let line = match opens {
         Some((range, open)) => line
             .child(text[..range.start].to_owned())
@@ -575,9 +596,21 @@ fn target(row: &ToolRow, running: bool, id: &str, looks: &Drawn) -> Div {
                     .text_color(looks.accent)
                     .cursor_pointer()
                     .hover(|link| link.underline())
-                    .on_click(move |_, window, cx| {
+                    .on_click({
+                        let open = open.clone();
+                        move |event, window, cx| {
+                            cx.stop_propagation();
+                            let press = if event.click_count() > 1 {
+                                FilePress::OpenTwice
+                            } else {
+                                FilePress::Open
+                            };
+                            open(press, window, cx);
+                        }
+                    })
+                    .on_mouse_down(MouseButton::Right, move |event, window, cx| {
                         cx.stop_propagation();
-                        open(window, cx);
+                        open(FilePress::Menu(event.position), window, cx);
                     })
                     .child(text[range.clone()].to_owned()),
             )
@@ -592,7 +625,7 @@ fn target(row: &ToolRow, running: bool, id: &str, looks: &Drawn) -> Div {
     }))
 }
 
-type Opens = Box<dyn Fn(&mut gpui_kit::Window, &mut App)>;
+type Opens = std::rc::Rc<dyn Fn(FilePress, &mut gpui_kit::Window, &mut App)>;
 
 /// Where a web address starts and ends in a row's target, its closing punctuation left out.
 fn web_link(text: &str) -> Option<std::ops::Range<usize>> {
