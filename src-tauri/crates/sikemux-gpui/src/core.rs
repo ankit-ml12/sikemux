@@ -1801,7 +1801,12 @@ fn report(what: &str, done: Result<(), ClientError>) {
 enum Settled {
     Attached(SessionId, Attached),
     Detached(StreamId),
+    Resized(SessionId),
 }
+
+/// The least time between two resizes of one terminal, each of which has the core wrap its
+/// whole scrollback again, so dragging a divider sends the sizes it settles on, not every one.
+const RESIZE_GAP: Duration = Duration::from_millis(50);
 
 /// The terminals attached on one connection: their streams, and frames that
 /// arrived before the attach that started them was answered.
@@ -1814,6 +1819,8 @@ struct Streams {
     streams: HashMap<SessionId, StreamId>,
     early: HashMap<StreamId, Vec<Vec<u8>>>,
     settle_tx: mpsc::UnboundedSender<(Option<String>, Settled)>,
+    /// The terminals with a resize on its way, and the size asked for since, sent after it.
+    resizing: HashMap<SessionId, Option<(u16, u16)>>,
 }
 
 impl Streams {
@@ -1831,6 +1838,7 @@ impl Streams {
             streams: HashMap::new(),
             early: HashMap::new(),
             settle_tx: settle_tx.clone(),
+            resizing: HashMap::new(),
         }
     }
 
@@ -1868,7 +1876,30 @@ impl Streams {
                 self.sessions.remove(&stream);
                 self.early.remove(&stream);
             }
+            Settled::Resized(session) => {
+                if let Some((cols, rows)) = self.resizing.remove(&session).flatten() {
+                    self.resize(session, cols, rows);
+                }
+            }
         }
+    }
+
+    fn resize(&mut self, session: SessionId, cols: u16, rows: u16) {
+        if let Some(pending) = self.resizing.get_mut(&session) {
+            *pending = Some((cols, rows));
+            return;
+        }
+        self.resizing.insert(session, None);
+        let (client, settle, host) = (
+            self.client.clone(),
+            self.settle_tx.clone(),
+            self.host.clone(),
+        );
+        tokio::spawn(async move {
+            let _ = client.resize(session, cols, rows).await;
+            tokio::time::sleep(RESIZE_GAP).await;
+            let _ = settle.send((host, Settled::Resized(session)));
+        });
     }
 
     fn ask(&mut self, session: SessionId, ask: TerminalAsk) {
@@ -1908,9 +1939,7 @@ impl Streams {
                     async move { client.input(session, input).await },
                 ))
             }
-            TerminalAsk::Resize(cols, rows) => drop(tokio::spawn(async move {
-                client.resize(session, cols, rows).await
-            })),
+            TerminalAsk::Resize(cols, rows) => self.resize(session, cols, rows),
             TerminalAsk::Lines { start, count } => {
                 let (updates, host) = (self.updates.clone(), self.host.clone());
                 tokio::spawn(async move {
