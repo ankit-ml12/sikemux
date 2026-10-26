@@ -1,16 +1,16 @@
 use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
-use gpui_kit::base::Button as BaseButton;
 use gpui_kit::base::input::InlineTokenContext;
+use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
 use gpui_kit::component::input::{Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    Anchor, AnyElement, AnyView, App, ClipboardItem, ElementId, Entity, Focusable, FontWeight,
-    Hsla, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
-    StatefulInteractiveElement, Styled, Transformation, Window, div, px, radians, size,
+    div, px, radians, size, Anchor, AnyElement, AnyView, App, ClipboardItem, ElementId, Entity,
+    Focusable, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
 };
 use sikemux_wire::chat::ContextUsage;
 use sikemux_wire::protocol::ConfigPicker;
