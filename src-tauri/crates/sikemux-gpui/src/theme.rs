@@ -489,6 +489,10 @@ pub fn page_rule(t: &Tokens, ground: Option<Hsla>) -> String {
             rgba.a
         )
     };
+    let ansi = |index: usize| {
+        let [r, g, b] = t.terminal.ansi[index];
+        format!("rgb({r},{g},{b})")
+    };
     let variables = BTreeMap::from([
         (
             "--background".to_owned(),
@@ -496,8 +500,25 @@ pub fn page_rule(t: &Tokens, ground: Option<Hsla>) -> String {
         ),
         ("--foreground".to_owned(), css(t.text_primary)),
         ("--muted-foreground".to_owned(), css(t.text_secondary)),
-        ("--accent".to_owned(), css(t.accent)),
+        ("--faint-foreground".to_owned(), css(t.text_tertiary)),
+        ("--card".to_owned(), css(t.surface_raised)),
         ("--border".to_owned(), css(t.border)),
+        ("--accent".to_owned(), css(t.accent)),
+        ("--accent-foreground".to_owned(), css(t.on_accent)),
+        ("--accent-surface".to_owned(), css(t.surface_selected)),
+        ("--destructive".to_owned(), css(t.danger)),
+        ("--success".to_owned(), ansi(2)),
+        ("--warning".to_owned(), ansi(3)),
+        ("--info".to_owned(), ansi(4)),
+        ("--code-background".to_owned(), t.editor.bg.clone()),
+        ("--code-foreground".to_owned(), t.editor.fg.clone()),
+        ("--chart-1".to_owned(), css(t.accent)),
+        ("--chart-2".to_owned(), ansi(4)),
+        ("--chart-3".to_owned(), ansi(2)),
+        ("--chart-4".to_owned(), ansi(3)),
+        ("--chart-5".to_owned(), ansi(5)),
+        ("--chart-6".to_owned(), ansi(6)),
+        ("--radius".to_owned(), "8px".to_owned()),
         ("--font-sans".to_owned(), format!("{UI}, system-ui")),
         ("--font-mono".to_owned(), format!("{MONO}, ui-monospace")),
     ]);
