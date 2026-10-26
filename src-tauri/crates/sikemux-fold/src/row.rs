@@ -75,16 +75,34 @@ fn theirs(tool: &ToolCall, args: &Map<String, Value>) -> ToolRow {
         (None, None) => ToolAction::Other,
     };
     let command = action == ToolAction::Execute;
+    let touches_file = matches!(
+        action,
+        ToolAction::Read | ToolAction::Edit | ToolAction::Delete | ToolAction::Move
+    );
     let file = tool
         .path
         .as_deref()
         .map(without_line)
-        .filter(|path| !command && names_file(line, path));
-    let target = match (server, file) {
-        (Some(_), _) => line.replace('_', " "),
-        (None, Some(path)) => basename(path).to_owned(),
-        (None, None) if !command && is_path(line) => basename(line).to_owned(),
-        (None, None) => line.to_owned(),
+        .filter(|path| !command && (touches_file || names_file(line, path)));
+    let ran = args
+        .get("command")
+        .and_then(Value::as_str)
+        .map(|ran| ran.split('\n').next().unwrap_or_default().trim())
+        .filter(|ran| command && !ran.is_empty());
+    let aside = match (file, ran) {
+        (Some(path), _) => (!line.is_empty() && !names_file(line, path)).then_some(line),
+        (None, Some(ran)) => {
+            (!line.is_empty() && line.trim_start_matches("$ ") != ran).then_some(line)
+        }
+        (None, None) => None,
+    }
+    .map(str::to_owned);
+    let target = match (server, file, ran) {
+        (Some(_), _, _) => line.replace('_', " "),
+        (None, Some(path), _) => basename(path).to_owned(),
+        (None, None, Some(ran)) => ran.to_owned(),
+        (None, None, None) if !command && is_path(line) => basename(line).to_owned(),
+        (None, None, None) => line.to_owned(),
     };
     let verb = (action == ToolAction::Other).then(|| {
         let word = name
@@ -99,7 +117,7 @@ fn theirs(tool: &ToolCall, args: &Map<String, Value>) -> ToolRow {
     let says = matches!(action, ToolAction::Mcp | ToolAction::Other);
     ToolRow {
         action,
-        detail: server.and_then(|_| first_short_argument(args)),
+        detail: server.and_then(|_| first_short_argument(args)).or(aside),
         server: server.map(str::to_owned),
         path: (!command)
             .then(|| {
@@ -141,11 +159,14 @@ fn label(title: &str) -> (Option<&str>, &str) {
     }
 }
 
-/// `path` without the `:line` a call's location adds.
+/// `path` without the `:line` or `:first-last` lines a call's location adds.
 fn without_line(path: &str) -> &str {
     match path.rsplit_once(':') {
-        Some((file, line))
-            if !line.is_empty() && line.bytes().all(|byte| byte.is_ascii_digit()) =>
+        Some((file, lines))
+            if lines.starts_with(|c: char| c.is_ascii_digit())
+                && lines
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || byte == b'-') =>
         {
             file
         }

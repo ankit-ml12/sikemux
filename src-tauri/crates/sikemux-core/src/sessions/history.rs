@@ -125,18 +125,31 @@ fn omp_assistant(message: &Value, id: &str, cwd: &Path, updates: &mut Vec<Value>
     }
 }
 
-/// A tool call titled as OMP titles it live: `$ command`, `read: path`, or the tool's name.
+/// A tool call titled as OMP titles it live: by what the model said it was doing, else
+/// `$ command`, `read: path` or the tool's name.
 fn omp_call(block: &Value, cwd: &Path) -> Value {
     let name = block["name"].as_str().unwrap_or_default();
     let input = &block["arguments"];
     let path = input["path"].as_str();
     let to_device = path.is_some_and(|path| path.starts_with("xd://"));
+    let intent = block["intent"]
+        .as_str()
+        .or(input["i"].as_str())
+        .filter(|intent| !intent.trim().is_empty());
     let (title, kind) = match (name, path) {
+        (_, Some(path)) if to_device => (path.to_owned(), "execute"),
+        (_, _) if intent.is_some() => (
+            intent.unwrap_or_default().to_owned(),
+            if name == "bash" {
+                "execute"
+            } else {
+                tool_kind(name)
+            },
+        ),
         ("bash", _) => (
             format!("$ {}", input["command"].as_str().unwrap_or_default()),
             "execute",
         ),
-        (_, Some(path)) if to_device => (path.to_owned(), "execute"),
         (_, Some(path)) => (format!("{name}: {path}"), tool_kind(name)),
         _ => (name.to_owned(), tool_kind(name)),
     };
