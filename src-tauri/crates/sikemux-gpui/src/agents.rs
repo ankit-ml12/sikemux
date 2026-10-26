@@ -200,15 +200,14 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 )
                 .child(div().mt(px(8.)).child(scope_switch(bench, cx))),
         )
-        .child(
+        .child(faded(
             div()
                 .id("tab-rail-scroll")
                 .track_scroll(&bench.rail_scroll)
-                .flex_1()
-                .min_h_0()
-                .pt(px(8.))
+                .size_full()
+                .pt(px(EDGE_FADE))
                 .px(px(10.))
-                .pb(px(16.))
+                .pb(px(EDGE_FADE))
                 .overflow_y_scroll()
                 .children(empty)
                 .child({
@@ -231,7 +230,8 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 .when(!recent.is_empty(), |scroll| {
                     scroll.child(Group::new("Recent", "").children(recent))
                 }),
-        )
+            cx,
+        ))
         .children(limits(bench, cx))
         .into_any_element()
 }
@@ -1804,18 +1804,18 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
                 )
                 .child(div().mt(px(8.)).child(scope_switch(bench, cx))),
         )
-        .child(
+        .child(faded(
             div()
                 .id("terminals-scroll")
-                .flex_1()
-                .min_h_0()
-                .pt(px(8.))
+                .size_full()
+                .pt(px(EDGE_FADE))
                 .px(px(10.))
-                .pb(px(16.))
+                .pb(px(EDGE_FADE))
                 .overflow_y_scroll()
                 .children(empty)
                 .child(div().flex().flex_col().gap(px(2.)).children(rows)),
-        )
+            cx,
+        ))
         .into_any_element()
 }
 
@@ -1907,19 +1907,44 @@ fn ssh_page(bench: &Workbench, alias: String, cx: &mut Context<Workbench>) -> An
                     .on_click(cx.listener(move |bench, _, _, _| bench.open_install_pane(&alias))),
                 ),
         )
-        .child(
+        .child(faded(
             div()
                 .id("ssh-terminals-scroll")
-                .flex_1()
-                .min_h_0()
-                .pt(px(8.))
+                .size_full()
+                .pt(px(EDGE_FADE))
                 .px(px(10.))
-                .pb(px(16.))
+                .pb(px(EDGE_FADE))
                 .overflow_y_scroll()
                 .children(empty)
                 .child(div().flex().flex_col().gap(px(2.)).children(rows)),
-        )
+            cx,
+        ))
         .into_any_element()
+}
+
+/// How deep a rail list's ends fade; the list is padded as deep, so rows at rest sit clear of it.
+const EDGE_FADE: f32 = 14.;
+
+/// A rail list whose top and bottom fade into the panel as rows scroll under them.
+fn faded(list: impl IntoElement, cx: &App) -> gpui_kit::Div {
+    let wrap = div().relative().flex_1().min_h_0().child(list);
+    if crate::see_through::clear(cx) {
+        return wrap;
+    }
+    let surface = Tokens::get(cx).surface;
+    let edge = |angle: f32| {
+        div()
+            .absolute()
+            .left_0()
+            .right_0()
+            .h(px(EDGE_FADE))
+            .bg(gpui_kit::linear_gradient(
+                angle,
+                gpui_kit::linear_color_stop(surface, 0.),
+                gpui_kit::linear_color_stop(Hsla { a: 0., ..surface }, 1.),
+            ))
+    };
+    wrap.child(edge(180.).top_0()).child(edge(0.).bottom_0())
 }
 
 /// This project's things, or every project's.
