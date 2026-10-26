@@ -502,10 +502,12 @@ fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
     let opened = area.pull.as_ref().expect("a pull request is open");
     let view = opened.view.as_ref().and_then(|view| view.as_ref().ok());
     let open = view.is_some_and(|view| view.pull.state == "open");
+    let can_merge = open && view.is_some_and(mergeable);
     let (merge_label, merge_look) = match view.map(|view| view.pull.state.as_str()) {
         Some("merged") => ("Merged", Variant::Outline),
         Some("closed") => ("Closed", Variant::Outline),
-        _ => ("Merge", Variant::Primary),
+        _ if can_merge => ("Merge", Variant::Primary),
+        _ => ("Merge", Variant::Outline),
     };
     let checkout = view
         .and_then(|view| view.checkout.clone())
@@ -532,6 +534,7 @@ fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
         .child(
             Button::new("pull-merge-page", merge_label, merge_look)
                 .icon(Icon::Merge)
+                .disabled(open && !can_merge)
                 .on_click(cx.listener(|area, _, _, cx| {
                     if let Some(opened) = &mut area.pull {
                         opened.page = Page::Merge;
@@ -540,6 +543,12 @@ fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
                     cx.notify();
                 })),
         )
+}
+
+/// Whether the host would take a merge now: not while it conflicts, its rules block it or
+/// it is still working that out.
+fn mergeable(view: &OpenPull) -> bool {
+    matches!(view.merge, MergeReadiness::Ready | MergeReadiness::Behind)
 }
 
 /// The pull request's head: how it stands and its number, with its actions when `acting`
@@ -1153,7 +1162,7 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     } else {
         None
     };
-    let dirty = pull.merge_state.as_deref() == Some("dirty");
+    let blocked = !mergeable(view);
     let number = pull.number;
     let title = pull.title.clone();
     let base_name = base.clone();
@@ -1188,7 +1197,7 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 .child(
                     Button::new("pull-merge", "Merge pull request", Variant::Primary)
                         .icon(Icon::Merge)
-                        .disabled(opened.busy || dirty)
+                        .disabled(opened.busy || blocked)
                         .on_click(cx.listener(move |area, _, _, cx| {
                             area.ask(
                                 super::Asking::new(
