@@ -2431,13 +2431,21 @@ pub(crate) async fn set_config(
 }
 
 /// The options a chat that waits for the person offers: those its launcher's last session
-/// offered, on the model and effort it will start with.
+/// offered, on the model and effort it will start with. The model it starts with is
+/// always among them, as one a provider serves is not among its agent's own.
 fn waiting_options(core: &Core, chat: &Chat) -> Option<Value> {
+    let launch = chat.current_launch();
     let mut options = core
         .workspaces
         .launcher_options(chat.origin.launcher.as_deref()?)
-        .filter(|options| options.as_array().is_some_and(|rows| !rows.is_empty()))?;
-    let launch = chat.current_launch();
+        .filter(Value::is_array)
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+    if let Some(model) = &launch.model {
+        offer_model(core, &launch, &mut options, model);
+    }
+    if options.as_array().is_none_or(Vec::is_empty) {
+        return None;
+    }
     for row in options.as_array_mut().into_iter().flatten() {
         let chosen = if row["id"] == "model" {
             launch.model.clone()
@@ -2453,6 +2461,49 @@ fn waiting_options(core: &Core, chat: &Chat) -> Option<Value> {
     Some(options)
 }
 
+/// Puts `model` among the models `options` offer, named as its provider's API names it.
+fn offer_model(core: &Core, launch: &ChatLaunch, options: &mut Value, model: &str) {
+    let Some(rows) = options.as_array_mut() else {
+        return;
+    };
+    let name = launch
+        .env
+        .get(ROUTED_ENV)
+        .and_then(|id| core.workspaces.providers()?.find(id))
+        .map_or(model, |provider| {
+            provider.api_model(&launch.provider, model)
+        })
+        .to_owned();
+    let choice = serde_json::json!({ "value": model, "name": name });
+    let Some(row) = rows.iter_mut().find(|row| row["id"] == "model") else {
+        rows.push(serde_json::json!({
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": model,
+            "options": [choice],
+        }));
+        return;
+    };
+    let offered = |choices: &Value| -> bool {
+        choices.as_array().into_iter().flatten().any(|choice| {
+            choice["value"] == model
+                || choice["options"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|choice| choice["value"] == model)
+        })
+    };
+    if !offered(&row["options"]) {
+        match row["options"].as_array_mut() {
+            Some(choices) => choices.insert(0, choice),
+            None => row["options"] = Value::Array(vec![choice]),
+        }
+    }
+}
+
 /// Tells a chat that waits for the person what it offers to pick: what the launcher offered
 /// last, while its agent's CLI is asked again, with no session, once each time the core starts,
 /// so a newer CLI's models and this core's reading of them show before a session starts.
@@ -2461,10 +2512,8 @@ fn offer_options(core: &Arc<Core>, chat: &Arc<Chat>) {
         return;
     };
     let offered = core.workspaces.launcher_options(&launcher).is_some();
-    if offered {
-        if let Some(options) = waiting_options(core, chat) {
-            tell_options(chat, options);
-        }
+    if let Some(options) = waiting_options(core, chat) {
+        tell_options(chat, options);
     }
     if !core.workspaces.first_offer_read(&launcher) {
         return;
