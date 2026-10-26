@@ -93,6 +93,40 @@ pub(crate) fn spot_at(shown: &[Shown], point: Point<Pixels>) -> Option<Spot> {
     })
 }
 
+/// The bytes of the word, run of spaces or run of punctuation under byte `at` of `text`.
+pub(crate) fn word_at(text: &str, at: usize) -> Range<usize> {
+    let kind = |c: char| {
+        if c.is_alphanumeric() || c == '_' {
+            0
+        } else if c.is_whitespace() {
+            1
+        } else {
+            2
+        }
+    };
+    let at = at.min(text.len());
+    let (before, after) = (text[..at].chars().next_back(), text[at..].chars().next());
+    let Some(under) = (match (before, after) {
+        (Some(b), Some(a)) if kind(a) != 0 && kind(b) == 0 => Some(b),
+        (_, Some(a)) => Some(a),
+        (b, None) => b,
+    }) else {
+        return at..at;
+    };
+    let class = kind(under);
+    let start = text[..at]
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| kind(*c) == class)
+        .last()
+        .map_or(at, |(i, _)| i);
+    let end = text[at..]
+        .char_indices()
+        .find(|(_, c)| kind(*c) != class)
+        .map_or(text.len(), |(i, _)| at + i);
+    start..end
+}
+
 /// What a row's drawing needs from the transcript to show and record a selection.
 pub(crate) struct Selecting {
     pub row: SharedString,

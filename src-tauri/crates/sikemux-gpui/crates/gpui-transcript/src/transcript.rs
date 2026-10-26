@@ -14,7 +14,7 @@ use gpui::{
 use crate::draw::{LayoutBudget, Pen, Style};
 use crate::find::{ranges_in, FoundChanged, Hit, Query};
 use crate::markdown::Markdown;
-use crate::select::{spot_at, Place, RowHit, Selecting, Shown, Span, Spot};
+use crate::select::{spot_at, word_at, Key, Place, RowHit, Selecting, Shown, Span, Spot};
 
 actions!(transcript, [Copy]);
 
@@ -677,12 +677,40 @@ impl<R: Row> Transcript<R> {
         let Some(spot) = spot_at(&self.shown.borrow(), event.position) else {
             return;
         };
+        if event.click_count > 1 {
+            if let Some(text) = self.text_of(&spot.key) {
+                let range = match event.click_count {
+                    2 => word_at(&text, spot.at),
+                    _ => 0..text.len(),
+                };
+                let end = Spot {
+                    key: spot.key.clone(),
+                    at: range.end,
+                };
+                self.ends = Some((
+                    Spot {
+                        at: range.start,
+                        ..spot
+                    },
+                    end,
+                ));
+                self.dragging = false;
+                cx.notify();
+                return;
+            }
+        }
         self.ends = match self.ends.take() {
             Some((anchor, _)) if event.modifiers.shift => Some((anchor, spot)),
             _ => Some((spot.clone(), spot)),
         };
         self.dragging = true;
         cx.notify();
+    }
+
+    fn text_of(&self, (row, doc, block, n): &Key) -> Option<SharedString> {
+        let row = &self.rows[self.position(row)?];
+        let texts = row.docs().get(*doc)?.texts(*block);
+        texts.get((*n as usize).checked_sub(1)?).cloned()
     }
 
     /// Moves the selection's free end, scrolling when the pointer is past the top or bottom.
