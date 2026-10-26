@@ -1181,6 +1181,12 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
         )
     });
     let (reveal, chevron) = more.unzip();
+    let bottom = match (chevron.is_some(), compact) {
+        (true, true) => 4.,
+        (true, false) => 6.,
+        (false, true) => 12.,
+        (false, false) => 16.,
+    };
     let header = div()
         .h(px(18.))
         .mb(px(if compact { 8. } else { 9. }))
@@ -1221,7 +1227,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
             .flex_none()
             .mt(px(if compact { 10. } else { 12. }))
             .mx(px(10.))
-            .mb(px(if compact { 12. } else { 16. }))
+            .mb(px(bottom))
             .child(header)
             .child(
                 div()
