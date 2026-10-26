@@ -47,14 +47,25 @@ fn choices(options: &Value, group: Option<&str>) -> Vec<ConfigChoice> {
                 return Vec::new();
             };
             let description = row["description"].as_str().or(group);
+            let label = match provided_model(value) {
+                Some(model) => model.to_owned(),
+                None => versioned(name, description),
+            };
             vec![ConfigChoice {
                 value: value.to_owned(),
-                label: versioned(name, description),
+                label,
                 description: description.map(str::to_owned),
                 is_default: row["isDefault"] == true,
             }]
         })
         .collect()
+}
+
+/// The model a provider Sikemux handed the agent serves, by the name its API gives it:
+/// the agent's own name for it leads with the provider's, as `LithosAI/model`.
+fn provided_model(value: &str) -> Option<&str> {
+    let (provider, model) = value.split_once('/')?;
+    (provider.starts_with("sikemux-") && !model.is_empty()).then_some(model)
 }
 
 /// The agent names a model without its release number ("Opus") and leaves
