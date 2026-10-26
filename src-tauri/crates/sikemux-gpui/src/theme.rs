@@ -13,7 +13,8 @@ use sikemux_wire::theme::{Palette, ThemeEditor, ThemeHighlight};
 pub const UI: &str = "Figtree";
 
 /// How much lighter-than-mid-grey text is thinned, as the power its glyphs' coverage is raised to
-/// for white text: the person's pick, nearer WebKit's weight on a dark ground.
+/// for white text: the person's pick, nearer WebKit's weight on a dark ground. Retina screens
+/// only; 1x screens keep macOS's own smoothing.
 const LIGHT_TEXT_CURVE: f32 = 1.5;
 
 /// GPUI Kit's own text size at the default text size. The Kit sets each window's rem to its
