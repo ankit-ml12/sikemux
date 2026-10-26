@@ -284,9 +284,15 @@ fn only_keys(object: &serde_json::Map<String, Value>, allowed: &[&str]) -> bool 
 /// The most of a chat's title that is kept.
 const MAX_TITLE_CHARS: usize = 256;
 
-/// A title as the chat shows it: one line of bounded length, or none when
-/// blank.
+/// A title as the chat shows it: one line of bounded length without markdown's marks, or
+/// none when blank. Text that is only a code block keeps its characters.
 pub(crate) fn title(text: &str) -> Option<String> {
+    let words = sikemux_markdown::words(text);
+    let text = if words.trim().is_empty() {
+        text
+    } else {
+        &words
+    };
     let title: String = text
         .split_whitespace()
         .collect::<Vec<_>>()

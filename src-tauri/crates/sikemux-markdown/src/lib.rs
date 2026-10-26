@@ -154,6 +154,31 @@ pub fn parse_blocks(text: &str, options: Options) -> (Vec<Element>, Vec<usize>) 
     read(text, options, 0)
 }
 
+/// The words `text` says with its markdown taken off, each block on a line of its own and
+/// code blocks left out, such as a first message read as a chat's title.
+pub fn words(text: &str) -> String {
+    let flags = ParserOptions::ENABLE_TABLES | ParserOptions::ENABLE_STRIKETHROUGH;
+    let mut out = String::with_capacity(text.len());
+    let mut in_code_block = false;
+    for event in Parser::new_ext(text, flags) {
+        match event {
+            Event::Start(Tag::CodeBlock(_)) => in_code_block = true,
+            Event::End(TagEnd::CodeBlock) => in_code_block = false,
+            Event::Text(said) | Event::Code(said) | Event::InlineHtml(said) | Event::Html(said)
+                if !in_code_block =>
+            {
+                out.push_str(&said)
+            }
+            Event::SoftBreak | Event::HardBreak => out.push(' '),
+            Event::End(
+                TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::Item | TagEnd::TableCell,
+            ) => out.push('\n'),
+            _ => {}
+        }
+    }
+    out
+}
+
 fn read(text: &str, options: Options, skip: usize) -> (Vec<Element>, Vec<usize>) {
     let mut flags = ParserOptions::empty();
     if options.gfm {
