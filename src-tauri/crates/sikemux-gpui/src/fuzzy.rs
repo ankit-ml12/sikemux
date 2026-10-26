@@ -3,6 +3,7 @@
 
 use std::borrow::Cow;
 use std::collections::BinaryHeap;
+use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use memchr::memmem::Finder;
@@ -133,4 +134,44 @@ pub fn rank<'a>(query: &str, texts: impl IntoIterator<Item = &'a str>, limit: us
         .into_iter()
         .map(|(_, place)| place)
         .collect()
+}
+
+/// Where `query` falls in `text` as `rank` finds it, as byte ranges of `text`: the first
+/// place it appears whole, else its letters in order, else nowhere.
+pub fn matched(query: &str, text: &str) -> Vec<Range<usize>> {
+    let query: Vec<char> = query.trim().chars().flat_map(char::to_lowercase).collect();
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let letters: Vec<(usize, char)> = text
+        .char_indices()
+        .map(|(at, letter)| (at, letter.to_lowercase().next().unwrap_or(letter)))
+        .collect();
+    let end = |place: usize| letters.get(place + 1).map_or(text.len(), |(at, _)| *at);
+    if let Some(start) = letters.windows(query.len()).position(|run| {
+        run.iter()
+            .zip(&query)
+            .all(|((_, letter), wanted)| letter == wanted)
+    }) {
+        return std::iter::once(letters[start].0..end(start + query.len() - 1)).collect();
+    }
+    let mut wanted = query.iter().peekable();
+    let mut ranges: Vec<Range<usize>> = Vec::new();
+    for (place, (at, letter)) in letters.iter().enumerate() {
+        let Some(next) = wanted.peek() else {
+            break;
+        };
+        if letter != *next {
+            continue;
+        }
+        wanted.next();
+        match ranges.last_mut() {
+            Some(last) if last.end == *at => last.end = end(place),
+            _ => ranges.push(*at..end(place)),
+        }
+    }
+    match wanted.peek() {
+        Some(_) => Vec::new(),
+        None => ranges,
+    }
 }

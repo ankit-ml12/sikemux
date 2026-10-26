@@ -908,14 +908,11 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                     }),
             )
         })
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .font_weight(FontWeight::MEDIUM)
-                .child(row.title.clone()),
-        )
+        .child(div().flex_1().min_w_0().truncate().child(ui::found(
+            row.title.clone(),
+            &palette.input.read(cx).value(),
+            cx,
+        )))
         .when_some(row.handle.clone(), |element, handle| {
             element.child(ui::meta(handle, cx).flex_none())
         })

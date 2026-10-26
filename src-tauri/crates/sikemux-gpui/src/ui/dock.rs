@@ -89,6 +89,8 @@ pub struct DockMenu {
     /// What it lists, as the kinds it can switch between or a title, and what taking a row
     /// does, over its rows.
     heading: Option<(Lead, SharedString)>,
+    /// What was typed to narrow it, whose letters its rows mark.
+    query: SharedString,
 }
 
 enum Lead {
@@ -107,7 +109,14 @@ impl DockMenu {
             empty: None,
             loading: false,
             heading: None,
+            query: SharedString::default(),
         }
+    }
+
+    /// Marks in each row the letters `query` found there.
+    pub fn found(mut self, query: impl Into<SharedString>) -> Self {
+        self.query = query.into();
+        self
     }
 
     /// A menu whose rows are on their way.
@@ -145,6 +154,7 @@ impl DockMenu {
 impl RenderOnce for DockMenu {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
+        let (query, mark) = (self.query.clone(), super::found_mark(cx));
         let rows = self.rows.into_iter().enumerate().flat_map(|(index, row)| {
             let heading = row.group.map(|group| {
                 div()
@@ -188,7 +198,7 @@ impl RenderOnce for DockMenu {
                         .font_family(theme::MONO)
                         .text_size(crate::theme::ui_text(10.5))
                         .text_color(t.text_primary)
-                        .child(row.name),
+                        .child(super::found_with(row.name, &query, mark)),
                 )
                 .child(
                     div()
@@ -199,7 +209,10 @@ impl RenderOnce for DockMenu {
                         .whitespace_nowrap()
                         .text_size(crate::theme::ui_text(10.5))
                         .text_color(t.text_tertiary)
-                        .children(row.detail),
+                        .children(
+                            row.detail
+                                .map(|detail| super::found_with(detail, &query, mark)),
+                        ),
                 )
                 .children(row.state)
                 .children(row.aside.map(|aside| {

@@ -219,7 +219,8 @@ impl Render for Switcher {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         let choices = self.choices(cx);
-        let grouped = self.query.read(cx).value().trim().is_empty();
+        let typed = self.query.read(cx).value().trim().to_owned();
+        let grouped = typed.is_empty();
         let this = cx.entity();
         let rows = choices.iter().enumerate().map(|(at, choice)| {
             let heading = (grouped
@@ -275,15 +276,14 @@ impl Render for Switcher {
                             } else {
                                 t.text_secondary
                             })
-                            .child(name(&choice.path)),
+                            .child(ui::found(name(&choice.path), &typed, cx)),
                     )
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .font_family(crate::theme::MONO)
-                            .text_size(crate::theme::ui_text(11.))
+                            .text_size(crate::theme::ui_text(11.5))
                             .text_color(t.text_tertiary)
                             .child(pretty(parent(&choice.path))),
                     )

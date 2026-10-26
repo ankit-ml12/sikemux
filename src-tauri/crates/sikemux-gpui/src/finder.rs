@@ -8,9 +8,8 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, div, px, uniform_list, AnyElement, App, AppContext, Context, Entity, FocusHandle,
-    FontWeight, Hsla, InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement,
-    ScrollStrategy, StatefulInteractiveElement, Styled, Subscription, Task,
-    UniformListScrollHandle, Window,
+    Hsla, InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, ScrollStrategy,
+    StatefulInteractiveElement, Styled, Subscription, Task, UniformListScrollHandle, Window,
 };
 use serde_json::{json, Value};
 
@@ -381,6 +380,8 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
     let path = finder.chosen(place).unwrap_or_default();
     let (dir, name) = path.rsplit_once('/').unwrap_or((".", path));
     let selected = place == finder.selected;
+    let query = finder.query.as_str();
+    let found_in_name = !crate::fuzzy::matched(query, name).is_empty();
     div()
         .id(("finder-row", place))
         .w_full()
@@ -423,8 +424,7 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .font_weight(FontWeight::MEDIUM)
-                .child(name.to_owned()),
+                .child(ui::found(name.to_owned(), query, cx)),
         )
         .child(
             div()
@@ -432,7 +432,11 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
                 .pl(px(12.))
                 .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
-                .child(dir.to_owned()),
+                .child(ui::found(
+                    dir.to_owned(),
+                    if found_in_name { "" } else { query },
+                    cx,
+                )),
         )
         .into_any_element()
 }

@@ -31,8 +31,9 @@ use std::f32::consts::TAU;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, img, point, px, svg, AnyElement, App, Div, FontFallbacks, FontWeight, Hsla,
-    IntoElement, ParentElement, PathBuilder, SharedString, Styled, Svg,
+    canvas, div, img, point, px, svg, AnyElement, App, Div, FontFallbacks, FontWeight,
+    HighlightStyle, Hsla, IntoElement, ParentElement, PathBuilder, SharedString, Styled,
+    StyledText, Svg,
 };
 
 use crate::icons::{self, Icon};
@@ -213,6 +214,31 @@ pub fn label(value: &str, cx: &App) -> Div {
     text(value.to_owned(), 12., FontWeight::MEDIUM)
         .line_height(crate::theme::ui_text(16.))
         .text_color(Tokens::get(cx).text_tertiary)
+}
+
+/// `value` with the letters a search for `query` found in it in the primary ink at semibold,
+/// as every list that narrows to what is typed shows why a row is there.
+pub fn found(value: impl Into<SharedString>, query: &str, cx: &App) -> StyledText {
+    found_with(value, query, found_mark(cx))
+}
+
+/// How [`found`] marks the letters a search found.
+pub fn found_mark(cx: &App) -> HighlightStyle {
+    HighlightStyle {
+        color: Some(Tokens::get(cx).text_primary),
+        font_weight: Some(FontWeight::SEMIBOLD),
+        ..HighlightStyle::default()
+    }
+}
+
+/// As [`found`], with the mark already looked up.
+pub fn found_with(value: impl Into<SharedString>, query: &str, mark: HighlightStyle) -> StyledText {
+    let value = value.into();
+    let marks: Vec<_> = crate::fuzzy::matched(query, &value)
+        .into_iter()
+        .map(|range| (range, mark))
+        .collect();
+    StyledText::new(value).with_highlights(marks)
 }
 
 /// A shortcut as the system draws key names.

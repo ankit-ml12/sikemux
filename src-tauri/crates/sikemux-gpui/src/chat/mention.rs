@@ -967,5 +967,7 @@ pub fn dock(
         }
     });
     let rows: Vec<DockRow> = rows.collect();
-    Some(headed(DockMenu::new(rows, menu.selected)))
+    Some(headed(
+        DockMenu::new(rows, menu.selected).found(menu.typed.needle.clone()),
+    ))
 }
