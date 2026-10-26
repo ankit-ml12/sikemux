@@ -857,7 +857,9 @@ when it carries an answer, a decision, a blocker or new work.
 - Never send an acknowledgement, a thanks or a "noted", and never repeat back
   what you were told. The `delivery` answer already says it arrived.
 - Do not ask an agent to tell you each step. Its final answer reaches you when
-  its turn ends, and `agent_read` shows how far it has got.
+  its turn ends, and `agent_read` shows how far it has got. When you must act
+  on one step yourself, such as tagging once CI is green, ask to hear about
+  that step only.
 - Gather what you have into one message at a milestone, not one per commit.
 - Message the agent that owns the work directly rather than through its lead.
 - Put the request or the result first, in a few lines; commits, files and
