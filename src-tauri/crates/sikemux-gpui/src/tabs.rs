@@ -996,15 +996,23 @@ fn strip_tab(
                 && bench
                     .editors
                     .is_dirty(&crate::editor::FileKey::new(bench.place(), target));
-            base.mark(ui::picture(
-                view_icon(kind, target),
-                13.,
-                if kind == PaneKind::Terminal {
-                    t.live
-                } else {
-                    t.text_tertiary
-                },
-            ))
+            let file_icon = (kind == PaneKind::Files)
+                .then(|| Path::new(target).file_name())
+                .flatten()
+                .and_then(|name| crate::file_icons::icon(&name.to_string_lossy(), cx));
+            base.mark(match file_icon {
+                Some(icon) => gpui_kit::img(icon).size(px(14.)).into_any_element(),
+                None => ui::picture(
+                    view_icon(kind, target),
+                    13.,
+                    if kind == PaneKind::Terminal {
+                        t.live
+                    } else {
+                        t.text_tertiary
+                    },
+                )
+                .into_any_element(),
+            })
             .tail(match ssh_link(bench, kind, target) {
                 Some(link) => Some(ui::dot(link, cx)),
                 None => unsaved.then(|| div().size(px(6.)).rounded_full().bg(t.warn)),
