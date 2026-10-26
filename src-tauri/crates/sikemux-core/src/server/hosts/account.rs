@@ -2,8 +2,9 @@
 //! the account which hosts it has, links with each it is not linked with,
 //! with a ticket it asks for itself, and calls each what the account calls it.
 
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use reqwest::{Client, Method};
@@ -12,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sikemux_process::clock::{epoch_ms, epoch_secs};
+use sikemux_process::sync::Locked;
 
 use crate::accounts::host::ApprovedHost;
 use crate::accounts::protocol::{
@@ -27,6 +29,8 @@ use super::join::{link_with, LinkParams};
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 /// How soon a pass that found one already running looks again.
 const AGAIN: Duration = Duration::from_secs(5);
+/// How long the accounts server remembers a signature, refusing it if it comes again.
+const SIGNATURE_MEMORY_SECS: u64 = 60;
 
 pub(crate) fn client() -> CoreResult<&'static Client> {
     static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
@@ -167,6 +171,19 @@ pub(crate) async fn as_host<T: DeserializeOwned>(
         .map_err(|error| CoreError::from(error.to_string()))
 }
 
+/// The second to sign a request with. The same request signed twice in one second would carry
+/// the same signature, which the accounts server refuses as a replay, so a repeat takes the
+/// next second instead.
+fn unused_second(request: String) -> u64 {
+    static SIGNED: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    let now = epoch_secs();
+    let mut signed = SIGNED.get_or_init(Default::default).locked();
+    signed.retain(|_, second| *second + SIGNATURE_MEMORY_SECS > now);
+    let second = signed.get(&request).map_or(now, |last| now.max(last + 1));
+    signed.insert(request, second);
+    second
+}
+
 /// Calls the accounts API as this host, signed with its key, for an answer
 /// with nothing to read.
 async fn host_request(
@@ -180,11 +197,13 @@ async fn host_request(
         .signed_in_api()
         .ok_or_else(|| CoreError::from("this host is not signed in"))?;
     let body = body.map(|body| serde_json::to_vec(&body)).transpose()?;
+    let body_sha256 = hex::encode(Sha256::digest(body.as_deref().unwrap_or_default()));
+    let time = unused_second(format!("{method} {path} {body_sha256}"));
     let request = HostRequest {
         method: method.as_str().to_owned(),
         path: path.to_owned(),
-        time: epoch_secs(),
-        body_sha256: hex::encode(Sha256::digest(body.as_deref().unwrap_or_default())),
+        time,
+        body_sha256,
     };
     let (key, signature) = core.remote.sign_host_request(&request)?;
     let mut sent = client()?
