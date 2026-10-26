@@ -257,6 +257,10 @@ impl RenderOnce for Composer {
         if let Some((on, held, toggle)) = self.yolo {
             bar = bar.child(yolo(on, settable && !held, &self.agent_label, toggle, cx));
         }
+        let waiting = self
+            .model_menu
+            .as_ref()
+            .is_some_and(|(picked, _)| !picked.locked);
         let model_menu = self.model_menu.map(|(picked, bench)| {
             let enabled = settable || !picked.locked;
             let label = picked.model.as_ref().map_or_else(
@@ -280,9 +284,16 @@ impl RenderOnce for Composer {
                     cx,
                 )
             }));
-            bar = bar.children(
-                effort.map(|effort| picker(effort, "Reasoning effort", None, settable, pick, cx)),
-            );
+            bar = bar.children(effort.map(|effort| {
+                picker(
+                    effort,
+                    "Reasoning effort",
+                    None,
+                    settable || waiting,
+                    pick,
+                    cx,
+                )
+            }));
         }
         let bar = bar
             .children(
