@@ -269,7 +269,7 @@ pub const ENTRIES: &[Entry] = &[
     section(Helpers, "Helpers", "cheap model workers scouts reviewers subagents spawn paid by provider"),
     row(Helpers, "Helpers", "Agent", "helper worker scout reviewer subagent cheap model provider"),
     section(Accounts, "Accounts", "sign in login logout email subscription max pro plus chatgpt switch rotate limit add second work personal claude codex"),
-    row(Accounts, "Accounts", "Profiles", "provider profiles claude codex executable path profile directory config home"),
+    row(Accounts, "Accounts", "Profiles", "agent profiles claude codex executable path profile directory config home"),
     section(Plans, "Coding plans", "zai glm minimax kimi code opencode go synthetic ollama subscription plan key claude codex"),
     section(Providers, "API providers", "openrouter baseten together fireworks groq cerebras deepseek moonshot kimi mistral vercel api key hosted open models opencode pi omp claude codex"),
     section(LocalModels, "Local models", "ollama lm studio lmstudio local offline runner claude codex"),

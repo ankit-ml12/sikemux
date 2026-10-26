@@ -298,7 +298,7 @@ pub fn render(
         .min_w_0()
         .child(stacked("Name", None, field(&fields.name)))
         .child(stacked(
-            "Provider",
+            "Agent",
             None,
             div()
                 .when(built_in, |row| row.opacity(0.5))
@@ -351,10 +351,10 @@ pub fn render(
                 ),
         );
     rows::section(
-        "Provider profiles",
+        "Agent profiles",
         Some(format!("{} configured", profiles.len()).into()),
         Some("Which local executable a launch uses. Profiles never hold credentials.".into()),
-        lit("Provider profiles"),
+        lit("Agent profiles"),
         div()
             .flex()
             .child(list)

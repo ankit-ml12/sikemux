@@ -1,5 +1,5 @@
 //! The models agents may run on besides their makers' accounts: coding plans,
-//! providers paid by the token, models served on this computer, and what
+//! providers paid by the token, models served on this host, and what
 //! helpers run on.
 
 use gpui_kit::component::input::{InputEvent, InputState};
@@ -176,11 +176,12 @@ fn chats_on(bench: &Workbench, provider: &Value) -> String {
         .filter_map(Value::as_str)
         .map(|agent| super::label(bench, agent))
         .collect();
-    match agents.is_empty() {
-        true => String::new(),
-        false => format!(
-            "{} chats can run on it from the model picker.",
-            agents.join(" and ")
+    match agents.split_last() {
+        None => String::new(),
+        Some((last, [])) => format!("{last} chats can run on it from the model picker."),
+        Some((last, rest)) => format!(
+            "{} and {last} chats can run on it from the model picker.",
+            rest.join(", ")
         ),
     }
 }
@@ -323,8 +324,20 @@ fn keyed_row(
                 "Connected. Agents started from now on can use it. {}",
                 chats_on(bench, provider)
             );
+            let added = (provider["custom"] == true)
+                .then(|| provider["openai"].as_str())
+                .flatten()
+                .map(|url| {
+                    let url = url.split_once("://").map_or(url, |(_, rest)| rest);
+                    format!("Added by you, at {url}")
+                });
             Some(lines(
-                [vec![first.trim().to_owned()], model_lines(provider)].concat(),
+                [
+                    added.into_iter().collect(),
+                    vec![first.trim().to_owned()],
+                    model_lines(provider),
+                ]
+                .concat(),
                 false,
                 cx,
             ))
@@ -335,6 +348,10 @@ fn keyed_row(
         .as_str()
         .unwrap_or_default()
         .to_owned();
+    let (method, word) = match provider["custom"] == true {
+        true => ("modelProviderRemove", "Remove"),
+        false => ("modelProviderDisconnect", "Disconnect"),
+    };
     let controls = div()
         .flex()
         .items_center()
@@ -345,7 +362,7 @@ fn keyed_row(
                 .children(check_button(provider, busy, this))
                 .child(button(
                     format!("provider-disconnect-{id}"),
-                    "Disconnect",
+                    word,
                     ui::Variant::Outline,
                     busy,
                     this,
@@ -353,7 +370,7 @@ fn keyed_row(
                         change(
                             bench,
                             disconnect.clone(),
-                            "modelProviderDisconnect",
+                            method,
                             json!({ "id": disconnect }),
                             cx,
                         )
@@ -492,11 +509,12 @@ fn local_row(
         .unwrap_or_default()
         .to_owned();
     let checking = fields.checking;
+    let custom = provider["custom"] == true;
     let controls = div()
         .flex()
         .items_center()
         .gap(px(8.))
-        .when(!connected, |controls| {
+        .when(!connected && !custom, |controls| {
             controls.child(button(
                 format!("runner-download-{id}"),
                 "Download",
@@ -509,23 +527,44 @@ fn local_row(
         .when(connected, |controls| {
             controls.children(check_button(provider, busy, this))
         })
-        .child(button(
-            format!("runner-again-{id}"),
-            if checking {
-                "Checking…"
-            } else {
-                "Check again"
-            },
-            ui::Variant::Outline,
-            checking,
-            this,
-            |bench, _, cx| {
-                if let Some(fields) = fields_of(bench) {
-                    fields.checking = true;
-                }
-                read(bench, cx);
-            },
-        ));
+        .when(!custom, |controls| {
+            controls.child(button(
+                format!("runner-again-{id}"),
+                if checking {
+                    "Checking…"
+                } else {
+                    "Check again"
+                },
+                ui::Variant::Outline,
+                checking,
+                this,
+                |bench, _, cx| {
+                    if let Some(fields) = fields_of(bench) {
+                        fields.checking = true;
+                    }
+                    read(bench, cx);
+                },
+            ))
+        })
+        .when(custom, |controls| {
+            let removing = id.clone();
+            controls.child(button(
+                format!("runner-remove-{id}"),
+                "Remove",
+                ui::Variant::Outline,
+                busy,
+                this,
+                move |bench, _, cx| {
+                    change(
+                        bench,
+                        removing.clone(),
+                        "modelProviderRemove",
+                        json!({ "id": removing }),
+                        cx,
+                    )
+                },
+            ))
+        });
     row(label, Some(about), controls, &t)
 }
 
@@ -722,11 +761,13 @@ pub fn render(
         cx.defer_in(window, rebuild_choices);
     }
     let of_kind = |kind: &str| -> Vec<&Value> {
-        fields
+        let mut providers: Vec<&Value> = fields
             .providers
             .iter()
             .filter(|provider| provider["kind"] == kind)
-            .collect()
+            .collect();
+        providers.sort_by_key(|provider| provider["custom"] != true);
+        providers
     };
     let connected = |providers: &[&Value]| {
         providers
@@ -738,11 +779,26 @@ pub fn render(
         |kind: &str, title: &'static str, sub: &'static str, cx: &mut Context<Workbench>| {
             let providers = of_kind(kind);
             let count = connected(&providers);
-            let body = div().children(
-                providers
-                    .iter()
-                    .map(|provider| keyed_row(bench, fields, provider, this, cx)),
-            );
+            let adds = (kind == "api").then(|| {
+                let this = this.clone();
+                div().flex().px(px(16.)).py(px(10.)).child(
+                    ui::Button::new("provider-add-own", "Add provider", ui::Variant::Outline)
+                        .icon(crate::icons::Icon::Plus)
+                        .on_click(move |_, window, cx| {
+                            this.update(cx, |bench, cx| {
+                                let here = core::Target::here(&bench.asks);
+                                bench.add_provider_to(here, window, cx)
+                            })
+                        }),
+                )
+            });
+            let body = div()
+                .children(
+                    providers
+                        .iter()
+                        .map(|provider| keyed_row(bench, fields, provider, this, cx)),
+                )
+                .children(adds);
             rows::section(
                 title,
                 (count > 0).then(|| format!("{count} connected").into()),
@@ -756,13 +812,13 @@ pub fn render(
         Page::Plans => keyed(
         "plan",
         "Coding plans",
-        "Monthly subscriptions made for coding agents. OpenCode, Pi and OMP list a plan's models once its key is saved here, and a chat's model picker can move Claude Code or Codex onto it. Keys stay in your Keychain.",
+        "Monthly subscriptions made for coding agents. Once its key is saved here, a plan's models show in every chat's model picker, run by an agent that can use them. Keys stay in your Keychain.",
         cx,
     ),
         Page::Providers => keyed(
         "api",
         "API providers",
-        "Hosted models you pay the provider for by the token. OpenCode, Pi and OMP list a provider's models once its key is saved here, and a chat's model picker can move Claude Code or Codex onto it. Keys stay in your Keychain.",
+        "Hosted models you pay the provider for by the token. Once its key is saved here, a provider's models show in every chat's model picker, run by an agent that can use them. Keys stay in your Keychain.",
         cx,
     ),
         Page::LocalModels => {
@@ -771,7 +827,7 @@ pub fn render(
     rows::section(
         "Local models",
         (running > 0).then(|| format!("{running} running").into()),
-        Some("Models served on this computer by Ollama or LM Studio. They need no key, and nothing leaves this computer.".into()),
+        Some("Models served on this host by Ollama or LM Studio. They need no key, and nothing leaves this host.".into()),
         lit("Local models"),
         div().children(local.iter().map(|provider| local_row(bench, fields, provider, this, cx))),
         cx,

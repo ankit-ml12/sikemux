@@ -101,7 +101,7 @@ const MODES: [(&str, &str, &str); 2] = [
     (
         "workspace-write",
         "Normal",
-        "Use the provider's normal approval and sandbox behavior.",
+        "Use the agent's normal approval and sandbox behavior.",
     ),
     ("bypass", "YOLO", "Bypass approvals and sandboxing."),
 ];

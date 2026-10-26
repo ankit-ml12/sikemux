@@ -91,6 +91,17 @@ pub fn render(
     sections
 }
 
+/// Lists the model providers again while a page shows them, as after one is added.
+pub fn providers_changed(bench: &Workbench, cx: &mut Context<Workbench>) {
+    let shown = bench
+        .settings
+        .as_ref()
+        .is_some_and(|settings| settings.pages.agents.is_some());
+    if shown {
+        agents::read_providers(bench, cx);
+    }
+}
+
 /// Lists the account's other hosts again while the Devices page shows them,
 /// since a change to remote access may have linked or dropped one.
 pub fn remote_moved(bench: &Workbench, cx: &mut Context<Workbench>) {

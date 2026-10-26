@@ -44,6 +44,10 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
     bench.parts.redraw(&bench.parts.stage, cx);
 }
 
+pub fn read_providers(bench: &Workbench, cx: &mut Context<Workbench>) {
+    providers::read(bench, cx);
+}
+
 fn fields_of(bench: &mut Workbench) -> Option<&mut Fields> {
     bench.settings.as_mut()?.pages.agents.as_mut()
 }

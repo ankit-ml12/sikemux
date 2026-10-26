@@ -167,6 +167,7 @@ fn add(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) 
                         cx,
                     );
                     bench.adding_provider = None;
+                    crate::settings::providers_changed(bench, cx);
                 }
                 Err(failure) => {
                     if let Some(adding) = bench.adding_provider.as_mut() {
