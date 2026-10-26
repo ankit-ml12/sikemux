@@ -184,12 +184,13 @@ impl CiCard {
         let Some(bench) = self.bench.upgrade() else {
             return;
         };
-        bench.update(cx, |bench, cx| {
+        let host = bench.update(cx, |bench, cx| {
             bench.open_area(Area::Actions, cx);
-            if let Some(host) = bench.host.clone() {
-                host.update(cx, |host, cx| host.open_run(id, None, cx));
-            }
+            bench.host.clone()
         });
+        if let Some(host) = host {
+            host.update(cx, |host, cx| host.open_run(id, None, cx));
+        }
     }
 
     fn open_actions(&mut self, cx: &mut Context<Self>) {
@@ -478,7 +479,10 @@ impl Render for CiCard {
                     .rounded(crate::theme::RADIUS_2)
                     .cursor_pointer()
                     .hover(|row| row.bg(t.surface_hover))
-                    .on_click(cx.listener(move |card, _, _, cx| card.open_run(id.clone(), cx)))
+                    .on_click(cx.listener(move |card, _, _, cx| {
+                        cx.stop_propagation();
+                        card.open_run(id.clone(), cx)
+                    }))
                     .child(ui::run_mark(
                         format!("ci-card-mark-{}", run.id),
                         outcome_key(run.outcome),
@@ -549,6 +553,7 @@ impl Render for CiCard {
                     .on_click({
                         let card = cx.weak_entity();
                         move |_, _, cx| {
+                            cx.stop_propagation();
                             let failed = failed.clone();
                             card.update(cx, |card, cx| card.rerun_failed(failed, cx))
                                 .ok();
@@ -567,7 +572,10 @@ impl Render for CiCard {
                     .text_size(crate::theme::ui_text(11.))
                     .text_color(t.text_tertiary)
                     .hover(|link| link.text_color(t.text_primary))
-                    .on_click(cx.listener(|card, _, _, cx| card.open_actions(cx)))
+                    .on_click(cx.listener(|card, _, _, cx| {
+                        cx.stop_propagation();
+                        card.open_actions(cx)
+                    }))
                     .child("Open in Actions ↗"),
             );
         let card = div()
