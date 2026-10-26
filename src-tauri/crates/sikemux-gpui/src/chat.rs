@@ -1398,7 +1398,8 @@ impl Chat {
     }
 
     /// What the empty draft says, as the chat stands: what typing answers, or where words go.
-    pub fn hint(&self, agent: &str, questions: &[Question]) -> String {
+    /// `steer_first` is the person's choice that sending mid-turn steers rather than queues.
+    pub fn hint(&self, agent: &str, questions: &[Question], steer_first: bool) -> String {
         let open: Vec<&Question> = questions
             .iter()
             .filter(|question| question.of(agent, "open"))
@@ -1429,6 +1430,9 @@ impl Chat {
         match head.connection {
             ChatConnection::Error | ChatConnection::Stopped => {
                 "Reconnect to continue this conversation".into()
+            }
+            ChatConnection::Ready if head.running && steer_first && self.steers() => {
+                "Send to steer this turn".into()
             }
             ChatConnection::Ready if head.running => "Send to queue behind the running turn".into(),
             ChatConnection::Ready if head.commands.is_empty() => "Ask about this project".into(),
@@ -2721,7 +2725,9 @@ fn answer_row(
         } else {
             t.text_secondary
         })
-        .hover(move |style| style.bg(hover))
+        .when(!chosen && !cursor, |row| {
+            row.hover(move |style| style.bg(hover))
+        })
         .child(
             div()
                 .w(px(22.))
@@ -3634,6 +3640,13 @@ impl Looks {
             line_soft: t.line_soft,
             selection: Hsla { a: 0.3, ..t.accent },
             mark_ground: Hsla { a: 0.1, ..t.accent },
+            code_ink: t.accent,
+            found: Hsla {
+                a: 0.28,
+                ..t.accent
+            },
+            found_current: t.accent,
+            table_head: t.surface_hover,
             table_ground: Hsla {
                 a: 0.72,
                 ..t.line_soft

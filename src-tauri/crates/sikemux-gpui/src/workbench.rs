@@ -1580,10 +1580,11 @@ impl Workbench {
             self.keep_draft(&agent, cx);
         }
         self.focus_draft(&agent, window, cx);
+        let steer_first = self.preferences().mid_turn_send == MidTurnSend::Steer;
         let Some(chat) = self.chats.get_mut(&agent) else {
             return;
         };
-        let hint = SharedString::from(chat.hint(&agent, &self.questions));
+        let hint = SharedString::from(chat.hint(&agent, &self.questions, steer_first));
         let Some(composing) = chat
             .composer
             .as_mut()
