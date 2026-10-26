@@ -990,7 +990,6 @@ pub fn snapshot_jpeg(
     };
 }
 
-
 /// Where a script runs. The page world is the page's own, where scripts see
 /// and can change each other's globals. The helper world shares the page's DOM
 /// but none of its JavaScript, so the page cannot tamper with what runs there.
