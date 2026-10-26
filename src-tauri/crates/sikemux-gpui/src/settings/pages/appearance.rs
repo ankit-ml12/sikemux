@@ -1005,24 +1005,29 @@ pub fn render(
             ));
             sections
         }
-        Page::Interface => vec![
-            rows::section("Text", None, None, lit("Text"), text, cx),
-            rows::section("Panes", None, None, lit("Panes"), interface, cx),
-        ],
-        Page::Buddies => vec![rows::section(
+        Page::Interface => {
+            let mut sections = vec![
+                rows::section("Text", None, None, lit("Text"), text, cx),
+                rows::section("Panes", None, None, lit("Panes"), interface, cx),
+            ];
+            if crate::settings::index::here(Page::Interface, "Window") {
+                sections.push(rows::section(
+                    "Window",
+                    None,
+                    None,
+                    lit("Window"),
+                    window_section,
+                    cx,
+                ));
+            }
+            sections
+        }
+        _ => vec![rows::section(
             "Buddies",
             None,
             None,
             lit("Buddies"),
             buddies,
-            cx,
-        )],
-        _ => vec![rows::section(
-            "Window",
-            None,
-            None,
-            lit("Window"),
-            window_section,
             cx,
         )],
     }

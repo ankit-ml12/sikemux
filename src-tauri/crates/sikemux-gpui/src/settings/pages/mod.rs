@@ -64,7 +64,7 @@ pub fn render(
         }
         Page::General => general::render(bench, pages, &lit, this, window, cx),
         Page::Keyboard => keybindings::render(bench, pages, &lit, this, window, cx),
-        Page::Theme | Page::Interface | Page::Buddies | Page::Window => {
+        Page::Theme | Page::Interface | Page::Buddies => {
             appearance::render(bench, pages, page, &lit, this, window, cx)
         }
         Page::Notifications

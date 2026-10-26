@@ -15,7 +15,6 @@ pub enum Page {
     Theme,
     Interface,
     Buddies,
-    Window,
     Installed,
     Permissions,
     Chats,
@@ -44,7 +43,7 @@ use Page::*;
 /// close it, outside any group.
 pub const GROUPS: [(&str, &[Page]); 6] = [
     ("General", &[General, Keyboard, Notifications]),
-    ("Appearance", &[Theme, Interface, Buddies, Window]),
+    ("Appearance", &[Theme, Interface, Buddies]),
     ("Agents", &[Installed, Permissions, Chats, Skills, Helpers]),
     ("Models", &[Accounts, Plans, Providers, LocalModels]),
     ("This Mac", &[Notch, Voice, Simulator]),
@@ -57,9 +56,12 @@ pub const GROUPS: [(&str, &[Page]); 6] = [
 /// The pages below the groups, at the foot of the list.
 pub const FOOT: [Page; 2] = [Usage, About];
 
-/// Pages only the Mac has: its window effects, the notch, dictation and the iOS Simulator.
-/// Other systems neither show them nor find them.
-const MAC_ONLY: &[Page] = &[Window, Notch, Voice, Simulator];
+/// Pages only the Mac has: the notch, dictation and the iOS Simulator. Other systems
+/// neither show them nor find them.
+const MAC_ONLY: &[Page] = &[Notch, Voice, Simulator];
+
+/// Sections only the Mac has, on pages every system has: its window effects.
+const MAC_ONLY_SECTIONS: &[(Page, &str)] = &[(Interface, "Window")];
 
 impl Page {
     pub fn name(self) -> &'static str {
@@ -71,7 +73,6 @@ impl Page {
             Theme => "Theme",
             Interface => "Interface",
             Buddies => "Buddies",
-            Window => "Window",
             Installed => "Installed",
             Permissions => "Permissions",
             Chats => "Chats",
@@ -103,9 +104,8 @@ impl Page {
             Keyboard => "Every shortcut, and the keys you gave it",
             Notifications => "How Sikemux tells you an agent needs you",
             Theme => "One palette for the chrome, the editor and the terminal",
-            Interface => "Text size, and what shows behind each pane",
+            Interface => "Text size, what shows behind each pane, and the window",
             Buddies => "Characters that stand in for agents' logos",
-            Window => "How much of the desktop shows through",
             Installed => "The agent CLIs on this host",
             Permissions => "What agents may do before they ask",
             Chats => "How chats behave while agents work",
@@ -138,7 +138,6 @@ impl Page {
             Theme => Icon::Contrast,
             Interface => Icon::Text,
             Buddies => Icon::Heart,
-            Window => Icon::Window,
             Installed => Icon::Agent,
             Permissions => Icon::Shield,
             Chats => Icon::Message,
@@ -255,9 +254,9 @@ pub const ENTRIES: &[Entry] = &[
     row(Buddies, "Buddies", "Pack", "agent icon character avatar mascot style"),
     row(Buddies, "Buddies", "Shape", "agent icon character avatar mixed"),
     row(Buddies, "Buddies", "Animate faces", "motion blink animation"),
-    section(Window, "Window", ""),
-    row(Window, "Window", "Opacity", "transparency translucent see-through"),
-    row(Window, "Window", "Background blur", "vibrancy frosted glass"),
+    section(Interface, "Window", ""),
+    row(Interface, "Window", "Opacity", "transparency translucent see-through"),
+    row(Interface, "Window", "Background blur", "vibrancy frosted glass"),
     section(Installed, "Agents on this host", "install reinstall missing claude codex opencode hermes pi omp grok cli"),
     section(Permissions, "Launch boundary", "permissions yolo sandbox safety bypass approval"),
     section(Chats, "Chats", "sessions"),
@@ -323,10 +322,18 @@ pub const ENTRIES: &[Entry] = &[
     section(About, "Help", "what's new changelog diagnostics welcome onboarding"),
 ];
 
+/// Whether `section` of `page` is on this system.
+pub fn here(page: Page, section: &str) -> bool {
+    page.here() && (cfg!(target_os = "macos") || !MAC_ONLY_SECTIONS.contains(&(page, section)))
+}
+
 /// The sections of `page` in the order it shows them, as searches name them.
 pub fn sections(page: Page) -> Vec<&'static str> {
     let mut sections: Vec<&'static str> = Vec::new();
-    for entry in ENTRIES.iter().filter(|entry| entry.page == page) {
+    for entry in ENTRIES
+        .iter()
+        .filter(|entry| entry.page == page && here(page, entry.section))
+    {
         if !sections.contains(&entry.section) {
             sections.push(entry.section);
         }
@@ -356,7 +363,7 @@ pub fn search(query: &str, cx: &App) -> Vec<Entry> {
     });
     let mut found: Vec<(usize, usize, Entry)> = ENTRIES
         .iter()
-        .filter(|entry| entry.page.here())
+        .filter(|entry| here(entry.page, entry.section))
         .map(|entry| (*entry, String::new()))
         .chain(shortcuts)
         .enumerate()
