@@ -4,6 +4,7 @@
 //! bytes on every column whether it holds anything or not.
 
 use std::collections::VecDeque;
+use std::ops::Range;
 
 use sikemux_wire::grid::{Color, SpanStyle};
 
@@ -150,10 +151,11 @@ pub(super) fn walk(line: &[u8], mut each: impl FnMut(&SpanStyle<'_>, bool, bool,
     wrapped(line)
 }
 
-/// One cell of a line being rewrapped.
+/// One cell of a line being rewrapped, its text a range of the line's text, so a run of
+/// cells is one slice of it.
 struct Cell {
     style: usize,
-    text: String,
+    text: Range<usize>,
     wide: bool,
     cluster: bool,
 }
@@ -300,6 +302,7 @@ impl History {
         let old = std::mem::replace(self, History::new(self.limit));
         let mut styles: Vec<OwnedStyle> = Vec::new();
         let mut cells: Vec<Cell> = Vec::new();
+        let mut texts = String::new();
         for line in (0..old.len()).filter_map(|index| old.line(index)) {
             let wrapped = walk(line, |style, wide, cluster, text| {
                 let index = match styles.iter().rposition(|known| known.same(style)) {
@@ -309,17 +312,19 @@ impl History {
                         styles.len() - 1
                     }
                 };
+                let base = texts.len();
+                texts.push_str(text);
                 if cluster {
                     cells.push(Cell {
                         style: index,
-                        text: text.to_owned(),
+                        text: base..texts.len(),
                         wide,
                         cluster,
                     });
                 } else {
-                    cells.extend(text.chars().map(|character| Cell {
+                    cells.extend(text.char_indices().map(|(at, character)| Cell {
                         style: index,
-                        text: character.to_string(),
+                        text: base + at..base + at + character.len_utf8(),
                         wide,
                         cluster,
                     }));
@@ -328,17 +333,18 @@ impl History {
             if wrapped {
                 continue;
             }
-            self.wrap_cells(&cells, &styles, cols);
+            self.wrap_cells(&cells, &texts, &styles, cols);
             cells.clear();
+            texts.clear();
             styles.clear();
         }
         if !cells.is_empty() {
-            self.wrap_cells(&cells, &styles, cols);
+            self.wrap_cells(&cells, &texts, &styles, cols);
         }
         self.lines.len()
     }
 
-    fn wrap_cells(&mut self, cells: &[Cell], styles: &[OwnedStyle], cols: usize) {
+    fn wrap_cells(&mut self, cells: &[Cell], texts: &str, styles: &[OwnedStyle], cols: usize) {
         let mut scratch = Vec::new();
         let mut start = 0;
         loop {
@@ -359,7 +365,6 @@ impl History {
             let mut run = start;
             while run < end {
                 let first = &cells[run];
-                let mut text = first.text.clone();
                 let mut next = run + 1;
                 if !first.cluster {
                     while next < end
@@ -367,7 +372,6 @@ impl History {
                         && cells[next].wide == first.wide
                         && !cells[next].cluster
                     {
-                        text.push_str(&cells[next].text);
                         next += 1;
                     }
                 }
@@ -375,7 +379,7 @@ impl History {
                     &styles[first.style].borrowed(),
                     first.wide,
                     first.cluster,
-                    &text,
+                    &texts[first.text.start..cells[next - 1].text.end],
                 );
                 run = next;
             }
