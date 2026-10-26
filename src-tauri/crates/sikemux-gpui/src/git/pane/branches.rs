@@ -716,6 +716,10 @@ fn branch_row(
     let key = SharedString::from(format!("branch:{index}"));
     let hovered = pane.hovered.as_ref() == Some(&key);
     let choosing = view.clone();
+    let folds = matches!(
+        entry,
+        BranchEntry::Local { .. } | BranchEntry::Remote { .. }
+    );
     let base = div()
         .id(key.clone())
         .relative()
@@ -738,6 +742,9 @@ fn branch_row(
             choosing.update(cx, |pane, cx| {
                 window.focus(&pane.focus, cx);
                 pane.choose_branch(index, cx);
+                if folds {
+                    pane.activate_branch(cx);
+                }
             })
         });
     let group = |base: gpui_kit::Stateful<Div>,
