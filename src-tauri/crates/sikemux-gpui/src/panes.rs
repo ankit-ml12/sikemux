@@ -387,7 +387,7 @@ fn pane(
                     .absolute()
                     .size_full()
                 })
-                .children(aimed.map(|side| preview(side, cx)))
+                .children(aimed.map(|side| gpui_kit::deferred(preview(side, cx))))
                 .into_any_element()
         }
         Pane::Split {

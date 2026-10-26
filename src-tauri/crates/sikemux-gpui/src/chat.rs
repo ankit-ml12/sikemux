@@ -1908,7 +1908,9 @@ pub fn pane(
             });
             composing.view.clone().into_element().isolated()
         }))
-        .when(composing, |pane| pane.child(attach::drop_hint(cx)));
+        .when(composing && cx.has_active_drag(), |pane| {
+            pane.child(gpui_kit::deferred(attach::drop_hint(cx)))
+        });
     let this = cx.weak_entity();
     let agent = id.to_owned();
     div()

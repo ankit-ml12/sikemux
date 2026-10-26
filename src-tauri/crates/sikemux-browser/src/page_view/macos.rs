@@ -1,7 +1,9 @@
+use std::cell::Cell;
+
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
-use objc2_app_kit::NSView;
+use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventPhase, NSView};
 use objc2_foundation::{
     NSNumber, NSObject, NSObjectNSKeyValueCoding, NSObjectProtocol, NSPoint, NSRect, NSSize,
     NSString,
@@ -80,9 +82,47 @@ define_class!(
     }
 );
 
+define_class!(
+    /// A page drawn at its full height, so it never scrolls up or down itself: those
+    /// scrolls go straight on to the app, and only sideways ones and pinches stay with WebKit.
+    // SAFETY: WKWebView subclassed with one plain ivar and no dealloc, used on the main thread.
+    #[unsafe(super(WKWebView))]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = Cell<bool>]
+    struct PageWebView;
+
+    impl PageWebView {
+        // SAFETY: matches NSResponder's `scrollWheel:`: an event in, nothing out.
+        #[unsafe(method(scrollWheel:))]
+        fn scroll_wheel(&self, event: &NSEvent) {
+            let (phase, momentum) = (event.phase(), event.momentumPhase());
+            if phase.contains(NSEventPhase::Began) || (phase.is_empty() && momentum.is_empty()) {
+                self.ivars().set(is_vertical(event));
+            }
+            // SAFETY: main thread, where AppKit delivers scrolls; the next responder holds the page.
+            let next = (self.ivars().get())
+                .then(|| unsafe { self.nextResponder() })
+                .flatten();
+            match next {
+                Some(next) => next.scrollWheel(event),
+                // SAFETY: hands the event on to WKWebView's own handler, on the main thread.
+                None => unsafe { msg_send![super(self), scrollWheel: event] },
+            }
+        }
+    }
+);
+
+/// Whether a scroll that starts with `event` goes up or down rather than sideways or to zoom.
+fn is_vertical(event: &NSEvent) -> bool {
+    !event
+        .modifierFlags()
+        .contains(NSEventModifierFlags::Control)
+        && event.scrollingDeltaY().abs() >= event.scrollingDeltaX().abs()
+}
+
 /// The page's view, which the app places, and the handler its events go through.
 pub struct PageView {
-    view: Retained<WKWebView>,
+    view: Retained<PageWebView>,
     _messages: Retained<PageMessages>,
 }
 
@@ -113,11 +153,12 @@ impl PageView {
                 &NSString::from_str("sikemux"),
             );
             let frame = NSRect::new(NSPoint::ZERO, NSSize::new(1.0, 1.0));
-            let view = WKWebView::initWithFrame_configuration(
-                WKWebView::alloc(mtm),
-                frame,
-                &configuration,
-            );
+            let view: Retained<PageWebView> = msg_send![
+                super(PageWebView::alloc(mtm).set_ivars(Cell::new(false))),
+                initWithFrame: frame,
+                configuration: &*configuration
+            ];
+            view.unregisterDraggedTypes();
             view.setNavigationDelegate(Some(ProtocolObject::from_ref(&*messages)));
             let no = NSNumber::numberWithBool(false);
             view.setValue_forKey(Some(&no), &NSString::from_str("drawsBackground"));
@@ -131,7 +172,7 @@ impl PageView {
     }
 
     pub fn view(&self) -> Retained<NSView> {
-        Retained::into_super(self.view.clone())
+        Retained::into_super(Retained::into_super(self.view.clone()))
     }
 
     /// Runs `script` in the page, as when the window's theme changes under it.
