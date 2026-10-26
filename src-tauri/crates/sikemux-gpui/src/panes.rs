@@ -54,6 +54,8 @@ pub struct Panes {
     desk_slides: RefCell<HashMap<String, DeskSlide>>,
     /// The desks each tab held when last drawn, so a desk new to its tab slides open.
     desks_seen: RefCell<HashMap<String, Vec<String>>>,
+    /// The tab drawn last, so only a desk opening on the tab already in sight slides open.
+    last_drawn: RefCell<Option<String>>,
 }
 
 /// A desk coming out from the window's edge or going back, as a docked rail does.
@@ -202,8 +204,11 @@ impl Panes {
         slide.at(now)
     }
 
-    /// Slides open each desk new to `tab` since it was last drawn.
+    /// Slides open each desk new to `tab` since it was last drawn, while it stays in sight.
+    /// A desk that opened while its tab was away is simply there when the tab comes back.
     fn note_desks(&self, tab: &Tab, still: bool) {
+        let in_sight = self.last_drawn.replace(Some(tab.id.clone())).as_ref() == Some(&tab.id);
+        let still = still || !in_sight;
         let mut desks = Vec::new();
         desk_views(&tab.pane, &mut desks);
         let before = self
