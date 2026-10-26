@@ -3575,6 +3575,7 @@ struct Tints {
     tick: Hsla,
     line_soft: Hsla,
     well: Hsla,
+    composer: Hsla,
 }
 
 impl Tints {
@@ -3612,6 +3613,7 @@ impl Tints {
                 a: 0.62,
                 ..t.surface_sunken
             },
+            composer: t.surface_composer,
         }
     }
 }
@@ -4219,7 +4221,7 @@ fn notice_box(looks: &Drawn) -> Div {
         .border_1()
         .border_color(looks.tints.line_soft)
         .rounded(theme::RADIUS_2)
-        .bg(looks.tints.well)
+        .bg(looks.tints.composer)
         .text_size(crate::theme::ui_text(10.5))
         .text_color(looks.quiet)
 }
