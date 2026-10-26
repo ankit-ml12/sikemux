@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sikemux_core::git::diff::DiffRow;
 use sikemux_wire::codehost::{
-    ChangedFile, MergeReadiness, OpenPull, Outcome, PullCommit, ReviewVerdict,
+    ChangedFile, MergeReadiness, OpenPull, Outcome, PullCommit, PullState, ReviewVerdict,
 };
 
 use super::diffs::{Changed, Diffs};
@@ -419,55 +419,37 @@ fn stacked_view(
         .as_ref()
         .and_then(|thread| thread.as_ref().ok())
         .map(|blocks| (thread::said(blocks) + 1) as u64);
+    let count = |count: Option<u64>| count.map(|count| tally(count, cx));
+    let checks_mark = found
+        .checks
+        .as_ref()
+        .map(|tally| ui::status_of_run(outcome_word(tally.outcome), 12., cx));
     let sections = [
-        (Section::Conversation, "Conversation", said),
-        (Section::Files, "Files", pull.changed_files),
-        (Section::Commits, "Commits", pull.commits),
-        (Section::Checks, "Checks", None),
+        (Section::Conversation, "Conversation", count(said)),
+        (Section::Files, "Files", count(pull.changed_files)),
+        (Section::Commits, "Commits", count(pull.commits)),
+        (Section::Checks, "Checks", checks_mark),
     ];
     let chosen = opened.section;
     let top = div()
-        .px(px(12.))
-        .pt(px(12.))
-        .pb(px(10.))
-        .flex()
-        .flex_col()
-        .gap(px(10.))
-        .border_b_1()
-        .border_color(t.border)
-        .child(
-            div()
-                .flex()
-                .items_start()
-                .gap(px(8.))
-                .when(area.desk.is_none(), |row| row.child(back(cx)))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .child(title_block(area, found, 28., true, cx)),
-                ),
-        )
-        .child(actions(area, cx))
-        .child(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(px(6.))
-                .children(sections.into_iter().map(|(section, label, count)| {
-                    chip(label, count, chosen == section, cx).on_click(cx.listener(
-                        move |area, _, _, cx| {
-                            if let Some(opened) = &mut area.pull {
-                                opened.section = section;
-                                if section == Section::Files {
-                                    opened.tab = Tab::Conversation;
-                                }
-                            }
-                            cx.notify();
-                        },
-                    ))
-                })),
-        );
+        .px(px(14.))
+        .pt(px(14.))
+        .pb(px(12.))
+        .child(header(area, found, true, cx));
+    let tabs = strip(
+        sections.into_iter().map(|(section, label, mark)| {
+            tab(label, mark, chosen == section, cx).on_click(cx.listener(move |area, _, _, cx| {
+                if let Some(opened) = &mut area.pull {
+                    opened.section = section;
+                    if section == Section::Files {
+                        opened.tab = Tab::Conversation;
+                    }
+                }
+                cx.notify();
+            }))
+        }),
+        cx,
+    );
     let page = |body: AnyElement| {
         div()
             .id("pull-stacked-page")
@@ -524,6 +506,7 @@ fn stacked_view(
         .flex()
         .flex_col()
         .child(top)
+        .child(tabs)
         .child(div().flex_1().min_h_0().child(body))
         .into_any_element()
 }
@@ -540,23 +523,21 @@ fn back(cx: &mut Context<HostArea>) -> IconButton {
         }))
 }
 
-/// Check out, open on the host, and merge.
+/// Check out and merge, merge being what an open pull request asks for.
 fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
     let opened = area.pull.as_ref().expect("a pull request is open");
-    let host = super::host_label(&area.host.host);
     let view = opened.view.as_ref().and_then(|view| view.as_ref().ok());
-    let merge_label = match view.map(|view| view.pull.state.as_str()) {
-        Some("merged") => "Merged",
-        Some("closed") => "Closed",
-        _ => "Merge",
+    let open = view.is_some_and(|view| view.pull.state == "open");
+    let (merge_label, merge_look) = match view.map(|view| view.pull.state.as_str()) {
+        Some("merged") => ("Merged", Variant::Outline),
+        Some("closed") => ("Closed", Variant::Outline),
+        _ => ("Merge", Variant::Primary),
     };
-    let url = view.map(|view| view.pull.url.clone());
     let checkout = view
         .and_then(|view| view.checkout.clone())
         .filter(|_| area.elsewhere.is_none());
     let current = area.pulls.branch.as_ref().map(|(branch, _)| branch.clone());
     let here = checkout.is_some() && checkout == current;
-    let open = view.is_some_and(|view| view.pull.state == "open");
     let checkout_label = if here {
         "Checked out"
     } else if opened.busy {
@@ -575,17 +556,7 @@ fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
                 .on_click(cx.listener(|area, _, _, cx| area.checkout(cx))),
         )
         .child(
-            Button::new("pull-on-host", host.to_owned(), Variant::Outline)
-                .icon(Icon::Globe)
-                .disabled(url.is_none())
-                .on_click(move |_, _, cx| {
-                    if let Some(url) = &url {
-                        cx.open_url(url);
-                    }
-                }),
-        )
-        .child(
-            Button::new("pull-merge-page", merge_label, Variant::Outline)
+            Button::new("pull-merge-page", merge_label, merge_look)
                 .icon(Icon::Merge)
                 .on_click(cx.listener(|area, _, _, cx| {
                     if let Some(opened) = &mut area.pull {
@@ -597,30 +568,155 @@ fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
         )
 }
 
-/// A tab of the main column or of the stacked view, with how many it holds.
-fn chip(label: &'static str, count: Option<u64>, on: bool, cx: &App) -> gpui_kit::Stateful<Div> {
+/// The pull request's head: how it stands and its number, with its actions when `acting`
+/// and the way to it on the host, then its title, then who wants to merge what into what.
+fn header(area: &HostArea, found: &OpenPull, acting: bool, cx: &mut Context<HostArea>) -> Div {
+    let t = Tokens::get(cx).clone();
+    let host = super::host_label(&area.host.host);
+    let pull = &found.pull;
+    let author = pull.author.clone().unwrap_or_else(|| "someone".into());
+    let url = pull.url.clone();
+    let commits = match pull.commits {
+        Some(1) => "1 commit".to_owned(),
+        Some(count) => format!("{count} commits"),
+        None => "its commits".to_owned(),
+    };
+    let doing = match found.state {
+        PullState::Merged => format!("merged {commits} into"),
+        _ => format!("wants to merge {commits} into"),
+    };
+    let word = |words: String| div().child(words);
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .when(acting && area.desk.is_none(), |row| row.child(back(cx)))
+                .child(state_pill(found.state, cx))
+                .child(ui::mono(format!("#{}", pull.number), 12., cx).text_color(t.text_tertiary))
+                .child(div().flex_1())
+                .when(acting, |row| row.child(actions(area, cx)))
+                .child(
+                    IconButton::new("pull-open-host", Icon::Globe, format!("Open on {host}"))
+                        .small()
+                        .on_click(move |_, _, cx| cx.open_url(&url)),
+                ),
+        )
+        .child(
+            ui::text(pull.title.clone(), 16., FontWeight::SEMIBOLD)
+                .whitespace_normal()
+                .text_color(t.text_primary),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap(px(5.))
+                .text_size(crate::theme::ui_text(11.5))
+                .text_color(t.text_tertiary)
+                .child(area.face(Some(&author), pull.avatar_url.as_deref(), 16., cx))
+                .child(div().text_color(t.text_primary).child(author.clone()))
+                .child(word(doing))
+                .children(
+                    pull.base
+                        .as_ref()
+                        .map(|base| branch_chip(base, t.text_primary, cx)),
+                )
+                .children(pull.head.as_ref().map(|head| {
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(5.))
+                        .child("from")
+                        .child(branch_chip(head, t.text_primary, cx))
+                }))
+                .child(word(format!("· {}", ago(&pull.updated_at))))
+                .children(pull.labels.iter().map(|label| super::label_chip(label, cx))),
+        )
+}
+
+/// How the pull request stands, as a pill in its colour.
+fn state_pill(state: PullState, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    let (glyph, ink, word) = match state {
+        PullState::Open => (Icon::PullRequest, t.live, "Open"),
+        PullState::Draft => (Icon::PullRequest, t.text_tertiary, "Draft"),
+        PullState::Closed => (Icon::PullRequest, t.danger, "Closed"),
+        PullState::Merged => (Icon::Merge, t.accent, "Merged"),
+    };
+    div()
+        .flex_none()
+        .h(px(22.))
+        .px(px(9.))
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .rounded_full()
+        .bg(ink.opacity(0.16))
+        .text_size(crate::theme::ui_text(11.5))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(ink)
+        .child(ui::icon(glyph, 12.).text_color(ink))
+        .child(word)
+}
+
+/// A row of tabs over a page, the chosen one underlined in ink.
+fn strip(tabs: impl IntoIterator<Item = gpui_kit::Stateful<Div>>, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    div()
+        .flex_none()
+        .px(px(14.))
+        .flex()
+        .gap(px(18.))
+        .border_b_1()
+        .border_color(t.border)
+        .children(tabs)
+}
+
+/// One tab of a strip: its name, then how many it holds or how it stands.
+fn tab(
+    label: &'static str,
+    mark: Option<AnyElement>,
+    on: bool,
+    cx: &App,
+) -> gpui_kit::Stateful<Div> {
     let t = Tokens::get(cx).clone();
     div()
         .id(SharedString::from(format!("pull-tab-{label}")))
-        .h(px(24.))
-        .px(px(10.))
+        .h(px(34.))
         .flex()
         .items_center()
         .gap(px(6.))
-        .rounded_full()
-        .border_1()
-        .border_color(if on { t.border_strong } else { t.border })
-        .when(on, |chip| chip.bg(t.surface_active))
-        .text_size(crate::theme::ui_text(11.5))
+        .border_b_2()
+        .border_color(if on {
+            t.text_primary
+        } else {
+            gpui_kit::transparent_black()
+        })
+        .text_size(crate::theme::ui_text(12.5))
         .text_color(if on { t.text_primary } else { t.text_secondary })
         .cursor_pointer()
+        .when(!on, |tab| {
+            tab.hover(move |tab| tab.text_color(t.text_primary))
+        })
         .child(label)
-        .children(count.map(|count| {
-            div()
-                .font_features(theme::tabular())
-                .text_color(t.text_tertiary)
-                .child(count.to_string())
-        }))
+        .children(mark)
+}
+
+/// A tab's count, quieter than its name.
+fn tally(count: u64, cx: &App) -> AnyElement {
+    let t = Tokens::get(cx);
+    div()
+        .text_size(crate::theme::ui_text(11.5))
+        .font_features(theme::tabular())
+        .text_color(t.text_tertiary)
+        .child(count.to_string())
+        .into_any_element()
 }
 
 fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
@@ -1146,7 +1242,6 @@ fn checks(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
 }
 
 fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> AnyElement {
-    let t = Tokens::get(cx).clone();
     let opened = area.pull.as_ref().expect("a pull request is open");
     let found = match &opened.view {
         None => return super::notice("Loading pull request", None, cx),
@@ -1164,29 +1259,28 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
         (Tab::Files, "Files changed", pull.changed_files),
     ];
     let chosen = opened.tab;
-    let headline =
-        div()
-            .px(px(16.))
-            .pt(px(14.))
-            .pb(px(10.))
-            .flex()
-            .flex_col()
-            .gap(px(10.))
-            .border_b_1()
-            .border_color(t.border)
-            .child(title_block(area, found, 36., false, cx))
-            .child(div().flex().gap(px(6.)).children(tabs.into_iter().map(
-                |(tab, label, count)| {
-                    chip(label, count, chosen == tab, cx).on_click(cx.listener(
-                        move |area, _, _, cx| {
-                            if let Some(opened) = &mut area.pull {
-                                opened.tab = tab;
-                            }
-                            cx.notify();
-                        },
-                    ))
-                },
-            )));
+    let headline = div()
+        .px(px(16.))
+        .pt(px(14.))
+        .pb(px(12.))
+        .child(header(area, found, false, cx));
+    let tabs = strip(
+        tabs.into_iter().map(|(shown, label, count)| {
+            tab(
+                label,
+                count.map(|count| tally(count, cx)),
+                chosen == shown,
+                cx,
+            )
+            .on_click(cx.listener(move |area, _, _, cx| {
+                if let Some(opened) = &mut area.pull {
+                    opened.tab = shown;
+                }
+                cx.notify();
+            }))
+        }),
+        cx,
+    );
     let body = match chosen {
         Tab::Conversation => conversation(area, window, cx),
         Tab::Files => diffs(area, window, cx),
@@ -1196,88 +1290,9 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
         .flex()
         .flex_col()
         .child(headline)
+        .child(tabs)
         .child(div().flex_1().min_h_0().child(body))
         .into_any_element()
-}
-
-/// Who opened the pull request, its state, title and branches. `wrap` lets a long title
-/// run onto more lines, where a narrow view has no room to cut it short.
-fn title_block(
-    area: &HostArea,
-    found: &OpenPull,
-    face: f32,
-    wrap: bool,
-    cx: &mut Context<HostArea>,
-) -> Div {
-    let t = Tokens::get(cx).clone();
-    let host = super::host_label(&area.host.host);
-    let pull = &found.pull;
-    let author = pull.author.clone().unwrap_or_else(|| "someone".into());
-    let url = pull.url.clone();
-    let title = ui::text(pull.title.clone(), 15., FontWeight::SEMIBOLD)
-        .text_color(t.text_primary)
-        .min_w_0();
-    div()
-        .flex()
-        .gap(px(12.))
-        .child(area.face(Some(&author), pull.avatar_url.as_deref(), face, cx))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(4.))
-                .child(
-                    div()
-                        .flex()
-                        .items_start()
-                        .gap(px(8.))
-                        .child(div().pt(px(2.)).child(pull_mark(found.state, 16., cx)))
-                        .child(if wrap {
-                            title.flex_1().whitespace_normal()
-                        } else {
-                            title.truncate()
-                        })
-                        .child(
-                            IconButton::new(
-                                "pull-open-host",
-                                Icon::Globe,
-                                format!("Open on {host}"),
-                            )
-                            .small()
-                            .on_click(move |_, _, cx| cx.open_url(&url)),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .items_center()
-                        .gap(px(6.))
-                        .text_size(crate::theme::ui_text(10.5))
-                        .text_color(t.text_tertiary)
-                        .child(format!(
-                            "{author} · #{}, updated {}",
-                            pull.number,
-                            ago(&pull.updated_at)
-                        ))
-                        .children(
-                            pull.head
-                                .as_ref()
-                                .map(|head| branch_chip(head, t.text_secondary, cx)),
-                        )
-                        .children(pull.base.as_ref().map(|base| {
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(6.))
-                                .child("→")
-                                .child(branch_chip(base, t.text_secondary, cx))
-                        }))
-                        .children(pull.labels.iter().map(|label| super::label_chip(label, cx))),
-                ),
-        )
 }
 
 /// The description and everything said and done since, with the composer under them.
