@@ -33,17 +33,6 @@ export function relativePath(path: string, root: string): string | null {
     return normalizedPath.slice(normalizedRoot.length + 1);
 }
 
-export function isPathWithin(path: string, root: string): boolean {
-    return relativePath(path, root) !== null;
-}
-
-export function prettyPath(path: string, home: string | null | undefined): string {
-    if (!home) return path;
-    const rest = relativePath(path, home);
-    if (rest === null) return path;
-    return rest ? `~${path.slice(path.length - rest.length - 1)}` : "~";
-}
-
 export function expandHome(path: string, home: string | null | undefined): string {
     if (!home) return path;
     if (path === "~") return home;

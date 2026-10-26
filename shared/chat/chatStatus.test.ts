@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { effectiveMode as permissionModeOf } from "../agents/agentLaunch";
-import { activityText, lostConnectionText } from "./chatStatus";
+import { activityText } from "./chatStatus";
 import type { PermissionAsk, ChatMessage, ChatRows } from "./types";
 
-const agent = (overrides: Parameters<typeof permissionModeOf>[0]) => ({ id: "a1", type: "claude", ...overrides });
 const request: PermissionAsk = {
     requestId: "r",
     sessionId: "s",
@@ -11,13 +9,6 @@ const request: PermissionAsk = {
     options: [],
 };
 const message: ChatMessage = { id: "m1", role: "user", parts: [] };
-
-describe("permissionModeOf", () => {
-    it("keeps the mode the agent chose", () => {
-        expect(permissionModeOf(agent({ permissionMode: "bypass" }))).toBe("bypass");
-        expect(permissionModeOf(agent({}))).toBe("workspace-write");
-    });
-});
 
 describe("activityText", () => {
     const state = (overrides: Partial<ChatRows>) =>
@@ -45,13 +36,5 @@ describe("activityText", () => {
 
     it("leaves an empty transcript to the connection card", () => {
         expect(activityText(state({ connection: "starting" }), null)).toBeNull();
-    });
-});
-
-describe("lostConnectionText", () => {
-    it("names whose servers the chat lost, or says so generally", () => {
-        expect(lostConnectionText("claude")).toMatch(/^Lost connection to Anthropic\./);
-        expect(lostConnectionText("codex")).toMatch(/^Lost connection to OpenAI\./);
-        expect(lostConnectionText("opencode")).toMatch(/^Lost connection to the model provider\./);
     });
 });

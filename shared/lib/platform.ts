@@ -9,5 +9,4 @@ export function hasPrimaryModifier(event: Pick<KeyboardEvent, "metaKey" | "ctrlK
 }
 
 export const PRIMARY_SHORTCUT = IS_MACOS ? "⌘" : "Ctrl+";
-export const SHIFT_SHORTCUT = IS_MACOS ? "⇧" : "Shift+";
 export const FILE_MANAGER_NAME = IS_MACOS ? "Finder" : IS_WINDOWS ? "File Explorer" : "file manager";

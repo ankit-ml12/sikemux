@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contextAsText, contextChip } from "./promptContext";
+import { contextChip } from "./promptContext";
 
 const issue = { uri: "https://github.com/o/r/issues/12", title: "Login crashes", text: "Issue #12: Login crashes\n\nIt crashes." };
 
@@ -15,15 +15,5 @@ describe("contextChip", () => {
 
     it("names anything else by its title", () => {
         expect(contextChip({ uri: "https://example.com/doc", title: "Notes" })).toEqual({ kind: null, number: null, title: "Notes" });
-    });
-});
-
-describe("contextAsText", () => {
-    it("writes a titled, fenced section", () => {
-        expect(contextAsText(issue)).toBe("### Login crashes\nhttps://github.com/o/r/issues/12\n\n```\nIssue #12: Login crashes\n\nIt crashes.\n```");
-    });
-
-    it("fences past any backticks in the text", () => {
-        expect(contextAsText({ ...issue, text: "```js\nx\n```" })).toContain("\n````\n```js");
     });
 });

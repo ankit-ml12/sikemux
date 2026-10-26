@@ -1,23 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { formatAgo, formatBytes, formatDuration } from "./format";
+import { formatAgo, formatBytes } from "./format";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
-
-describe("formatDuration", () => {
-    it("writes a span in the units a build log uses", () => {
-        expect(formatDuration(4_000)).toBe("4s");
-        expect(formatDuration(72_000)).toBe("1m 12s");
-        expect(formatDuration(3_780_000)).toBe("1h 3m");
-        expect(formatDuration(null)).toBe("—");
-    });
-
-    it("keeps the precision a latency needs under a second", () => {
-        expect(formatDuration(0.25)).toBe("250µs");
-        expect(formatDuration(12.34)).toBe("12.3ms");
-        expect(formatDuration(1_530)).toBe("1.5s");
-        expect(formatDuration(42_000)).toBe("42s");
-    });
-});
 
 describe("formatAgo", () => {
     it("picks the one unit that fits", () => {
