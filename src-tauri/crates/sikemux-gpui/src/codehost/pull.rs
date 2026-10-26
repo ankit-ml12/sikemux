@@ -624,7 +624,7 @@ fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div 
                 .flex_wrap()
                 .items_center()
                 .gap(px(5.))
-                .text_size(crate::theme::ui_text(11.5))
+                .text_size(crate::theme::ui_text(12.))
                 .text_color(t.text_tertiary)
                 .child(area.face(Some(&author), pull.avatar_url.as_deref(), 16., cx))
                 .child(div().text_color(t.text_primary).child(author.clone()))
@@ -731,7 +731,7 @@ fn tab(
         } else {
             gpui_kit::transparent_black()
         })
-        .text_size(crate::theme::ui_text(12.5))
+        .text_size(crate::theme::ui_text(13.))
         .text_color(if on { t.text_primary } else { t.text_secondary })
         .cursor_pointer()
         .when(!on, |tab| {

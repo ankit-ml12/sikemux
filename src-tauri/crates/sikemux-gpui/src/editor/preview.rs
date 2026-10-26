@@ -111,7 +111,6 @@ pub(super) struct Body {
 
 impl RenderOnce for Body {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Tokens::get(cx).clone();
         let folder = self
             .path
             .parent()
@@ -123,7 +122,7 @@ impl RenderOnce for Body {
                     follow(&folder, link, window, cx)
                 },
             )),
-            ..reading_style(15., &t)
+            ..reading_style(15., cx)
         };
         let pen = Pen::new(Rc::new(style));
         let id = SharedString::from(format!("markdown-{}", self.path.display()));
@@ -138,8 +137,10 @@ impl RenderOnce for Body {
     }
 }
 
-/// How the app reads markdown at `text_size`: its type, inks and grounds.
-pub(crate) fn reading_style(text_size: f32, t: &Tokens) -> Style {
+/// How the app reads markdown at `text_size` points at the default text size, growing and
+/// shrinking with the person's choice as the rest of the interface's text does.
+pub(crate) fn reading_style(text_size: f32, cx: &App) -> Style {
+    let t = Tokens::get(cx);
     let mut mono = gpui_kit::font(theme::MONO);
     mono.fallbacks = Some(gpui_kit::FontFallbacks::from_fonts(vec![
         theme::MONO_ICONS.into()
@@ -147,7 +148,7 @@ pub(crate) fn reading_style(text_size: f32, t: &Tokens) -> Style {
     Style {
         font: theme::UI.into(),
         mono,
-        text_size: px(text_size),
+        text_size: px(text_size * theme::text_scale(cx)),
         line_height: 1.72,
         ink: t.text_primary,
         ink_dim: t.text_tertiary,

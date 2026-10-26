@@ -302,10 +302,15 @@ pub fn install(cx: &mut App) {
     toasts.margins.bottom = px(16.);
 }
 
+/// The person's text size, as a share of the default.
+pub fn text_scale(cx: &App) -> f32 {
+    cx.try_global::<TextScale>().map_or(1., |scale| scale.0)
+}
+
 /// Draws with `palette` from the next frame, GPUI Kit's widgets too.
 pub fn apply(palette: &Palette, cx: &mut App) {
     let tokens = Tokens::new(palette);
-    let scale = cx.try_global::<TextScale>().map_or(1., |scale| scale.0);
+    let scale = text_scale(cx);
     let kit = KitTheme::global_mut(cx);
     kit.font_family = SharedString::new_static(UI);
     kit.mono_font_family = SharedString::new_static(MONO);

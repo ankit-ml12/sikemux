@@ -423,7 +423,7 @@ impl Jira {
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
-                if self.form.is_none() {
+        if self.form.is_none() {
             let mut made = Vec::new();
             for (placeholder, masked) in [
                 ("your-team.atlassian.net", false),
@@ -1469,7 +1469,7 @@ impl Jira {
                     .whitespace_normal(),
             )
             .context_menu(ui::menu(issue_menu(issue, host.bench().clone())));
-        let mut style = crate::editor::preview::reading_style(13., &t);
+        let mut style = crate::editor::preview::reading_style(13., cx);
         let pane = cx.weak_entity();
         let (task_key, task_site) = (issue.key.clone(), site.to_owned());
         style.on_task = Some(Rc::new(move |index, text, done, _, cx| {

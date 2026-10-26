@@ -145,10 +145,7 @@ pub fn thread(
     window: &mut Window,
     cx: &mut App,
 ) -> Div {
-    let pen = Pen::new(Rc::new(crate::editor::preview::reading_style(
-        13.,
-        Tokens::get(cx),
-    )));
+    let pen = Pen::new(Rc::new(crate::editor::preview::reading_style(TEXT, cx)));
     let mut items: Vec<Item> = Vec::new();
     if let Some(opening) = opening {
         let opened = post(&pen, "post-opening", opening, faces, window, cx);
@@ -222,6 +219,9 @@ impl Item {
 /// A post's face leads its box's header; the line runs into the box straight above it, and
 /// through the events' badges and the commits.
 const AVATAR: f32 = 28.;
+/// Everything the thread says is one size, so a post's words, a commit's message and an
+/// event's line read as one conversation.
+const TEXT: f32 = 13.;
 const HEADER_INSET: f32 = 12.;
 const SPINE: f32 = BORDER + HEADER_INSET + AVATAR / 2.;
 const BORDER: f32 = 1.;
@@ -277,7 +277,7 @@ fn post(
     };
     let body = if post.empty {
         div()
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT))
             .italic()
             .text_color(t.text_tertiary)
             .child("No description provided.")
@@ -305,7 +305,7 @@ fn post(
                         .border_b_1()
                         .border_color(t.border)
                         .bg(t.surface_sunken.opacity(0.4))
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT))
                         .child(div().mr(px(2.)).child(faces(
                             Some(author),
                             post.avatar.as_deref(),
@@ -313,7 +313,7 @@ fn post(
                             cx,
                         )))
                         .child(
-                            ui::text(author.to_owned(), 12., FontWeight::SEMIBOLD)
+                            ui::text(author.to_owned(), TEXT, FontWeight::SEMIBOLD)
                                 .text_color(t.text_primary),
                         )
                         .child(saying)
@@ -359,7 +359,7 @@ fn line_over(
         .gap(px(8.))
         .pl(px(SPINE - BADGE / 2.))
         .min_w_0()
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT))
         .text_color(t.text_secondary)
         .child(
             div()
@@ -430,7 +430,7 @@ fn mentioned_by(subject: String, source: &Mention, cx: &App) -> AnyElement {
                 .flex_col()
                 .gap(px(2.))
                 .child(
-                    ui::text(subject, 13., FontWeight::SEMIBOLD)
+                    ui::text(subject, TEXT, FontWeight::SEMIBOLD)
                         .whitespace_normal()
                         .text_color(t.text_primary),
                 )
@@ -462,7 +462,7 @@ fn who(login: Option<&str>, url: Option<&str>, faces: Faces, cx: &App) -> AnyEle
         .items_center()
         .gap(px(5.))
         .child(faces(Some(login), url, 16., cx))
-        .child(ui::text(login.to_owned(), 12., FontWeight::SEMIBOLD).text_color(t.text_primary))
+        .child(ui::text(login.to_owned(), TEXT, FontWeight::SEMIBOLD).text_color(t.text_primary))
         .into_any_element()
 }
 
@@ -694,7 +694,7 @@ fn pushed(
                 .items_center()
                 .gap(px(8.))
                 .min_w_0()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT))
                 .pl(px(SPINE - COMMIT_GLYPH / 2.))
                 .child(
                     ui::icon(Icon::Commit, COMMIT_GLYPH)
@@ -720,7 +720,7 @@ fn pushed(
                         div()
                             .id(("pushed-sha", index * 1000 + at))
                             .font_family(theme::MONO)
-                            .text_size(crate::theme::ui_text(11.))
+                            .text_size(crate::theme::ui_text(TEXT - 1.))
                             .text_color(t.text_tertiary)
                             .cursor_pointer()
                             .hover(move |style| style.text_color(t.text_primary))

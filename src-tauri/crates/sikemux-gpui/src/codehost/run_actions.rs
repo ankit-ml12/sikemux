@@ -874,7 +874,7 @@ pub fn below_graph(area: &HostArea, window: &mut Window, cx: &mut Context<HostAr
             )
             .into_any_element(),
     });
-    let pen = Pen::new(Rc::new(crate::editor::preview::reading_style(13., &t)));
+    let pen = Pen::new(Rc::new(crate::editor::preview::reading_style(13., cx)));
     let summaries = extras
         .summaries
         .iter()

@@ -760,7 +760,7 @@ impl Slack {
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
         let body = self.markdown(&message.text);
-        let pen = Pen::new(Rc::new(crate::editor::preview::reading_style(13., &t)));
+        let pen = Pen::new(Rc::new(crate::editor::preview::reading_style(13., cx)));
         let initial: String = message
             .name
             .chars()
