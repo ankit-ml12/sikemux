@@ -206,11 +206,12 @@ impl Item {
     }
 }
 
-/// A post's face hangs left of its box; the line runs a little inside the box's left edge,
-/// through the events' badges and the commits, as GitHub draws it.
+/// A post's face leads its box's header; the line runs into the box straight above it, and
+/// through the events' badges and the commits.
 const AVATAR: f32 = 28.;
-const AVATAR_GAP: f32 = 8.;
-const SPINE: f32 = AVATAR + AVATAR_GAP + 16.;
+const HEADER_INSET: f32 = 12.;
+const SPINE: f32 = BORDER + HEADER_INSET + AVATAR / 2.;
+const BORDER: f32 = 1.;
 const BADGE: f32 = 22.;
 const GAP: f32 = 14.;
 const COMMIT_ROW: f32 = 22.;
@@ -273,8 +274,6 @@ fn post(
     };
     div()
         .flex()
-        .gap(px(AVATAR_GAP))
-        .child(faces(Some(author), post.avatar.as_deref(), AVATAR, cx))
         .child(
             div()
                 .flex_1()
@@ -284,7 +283,7 @@ fn post(
                 .border_color(t.border)
                 .child(
                     div()
-                        .px(px(12.))
+                        .px(px(HEADER_INSET))
                         .py(px(7.))
                         .flex()
                         .items_center()
@@ -293,6 +292,12 @@ fn post(
                         .border_color(t.border)
                         .bg(t.surface_sunken.opacity(0.4))
                         .text_size(crate::theme::ui_text(12.))
+                        .child(div().mr(px(2.)).child(faces(
+                            Some(author),
+                            post.avatar.as_deref(),
+                            AVATAR,
+                            cx,
+                        )))
                         .child(
                             ui::text(author.to_owned(), 12., FontWeight::SEMIBOLD)
                                 .text_color(t.text_primary),
