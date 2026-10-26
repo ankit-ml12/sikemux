@@ -105,13 +105,26 @@ pub fn blocks(items: Vec<TimelineItem>) -> Vec<Block> {
     blocks
 }
 
-/// Who pushed each commit, by its hash, as the host matched them to an account.
-pub type Pushers = HashMap<String, String>;
+/// Who pushed each commit, by its hash, as the host matched them to an account, with
+/// their picture.
+pub type Pushers = HashMap<String, Pusher>;
+
+#[derive(Clone, PartialEq)]
+pub struct Pusher {
+    login: String,
+    picture: Option<String>,
+}
 
 pub fn pushers(commits: &[PullCommit]) -> Pushers {
     commits
         .iter()
-        .filter_map(|commit| Some((commit.sha.clone(), commit.author.clone()?)))
+        .filter_map(|commit| {
+            let pusher = Pusher {
+                login: commit.author.clone()?,
+                picture: commit.avatar_url.clone(),
+            };
+            Some((commit.sha.clone(), pusher))
+        })
         .collect()
 }
 
@@ -625,21 +638,32 @@ fn pushed(
 ) -> Vec<Item> {
     let t = Tokens::get(cx).clone();
     let pusher = |commit: &TimelineItem| {
-        commit
+        let named = commit
             .sha
             .as_ref()
             .and_then(|sha| pushers.get(sha))
-            .cloned()
-            .or_else(|| commit.actor.clone())
+            .cloned();
+        named.or_else(|| {
+            Some(Pusher {
+                login: commit.actor.clone()?,
+                picture: commit.avatar_url.clone(),
+            })
+        })
     };
-    let mut authors: Vec<String> = Vec::new();
+    let mut authors: Vec<Pusher> = Vec::new();
     for author in commits.iter().filter_map(pusher) {
-        if !authors.contains(&author) {
+        if !authors.iter().any(|known| known.login == author.login) {
             authors.push(author);
         }
     }
     let count = commits.len();
-    let mut words = vec![who(authors.first().map(String::as_str), None, faces, cx)];
+    let first = authors.first();
+    let mut words = vec![who(
+        first.map(|author| author.login.as_str()),
+        first.and_then(|author| author.picture.as_deref()),
+        faces,
+        cx,
+    )];
     if authors.len() > 1 {
         words.push(dim("and others", cx));
     }
@@ -658,7 +682,7 @@ fn pushed(
             let first = message.lines().next().unwrap_or_default().to_owned();
             let sha = commit.sha.clone().unwrap_or_default();
             let short: String = sha.chars().take(7).collect();
-            let author = pusher(commit).unwrap_or_default();
+            let author = pusher(commit);
             let row = div()
                 .h(px(COMMIT_ROW))
                 .flex()
@@ -672,7 +696,12 @@ fn pushed(
                         .flex_none()
                         .text_color(t.text_tertiary),
                 )
-                .child(faces(Some(&author), None, 16., cx))
+                .child(faces(
+                    author.as_ref().map(|author| author.login.as_str()),
+                    author.as_ref().and_then(|author| author.picture.as_deref()),
+                    16.,
+                    cx,
+                ))
                 .child(
                     div()
                         .flex_1()
