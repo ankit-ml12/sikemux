@@ -12,6 +12,7 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
+use sikemux_wire::protocol::PaneStyle;
 use sikemux_wire::theme::{ThemeSource, ThemeSummary};
 
 use crate::core::{Ask, Watch};
@@ -531,6 +532,27 @@ pub fn render(
             })
         })
     };
+    let pane_style = {
+        let this = this.clone();
+        let chosen = match preferences.pane_style {
+            PaneStyle::Dither => 0,
+            PaneStyle::Ascii => 1,
+        };
+        ui::Segmented::new(
+            "pane-style",
+            vec![
+                (Icon::Sparkle, SharedString::from("Dither")),
+                (Icon::Text, SharedString::from("ASCII")),
+            ],
+            chosen,
+        )
+        .on_select(move |chosen, _, cx| {
+            let style = if *chosen == 0 { "dither" } else { "ascii" };
+            this.update(cx, |bench, _| {
+                crate::settings::set(bench, "paneStyle", style)
+            })
+        })
+    };
     let image = {
         let (choose, remove) = (this.clone(), this.clone());
         div()
@@ -605,8 +627,14 @@ pub fn render(
         ))
         .child(rows::row(
             "Pane texture",
-            Some("The dithered grain behind each pane."),
+            Some("The moving grain behind each pane."),
             rows::switch("pane-texture", "paneShader", preferences.pane_shader, this),
+            cx,
+        ))
+        .child(rows::row(
+            "Pane style",
+            Some("Draws the texture and picture as dots, or as characters."),
+            pane_style,
             cx,
         ))
         .child(rows::row(

@@ -34,7 +34,8 @@ fn faces() {
     .expect("write faces.rs");
 }
 
-/// Puts the shared dithering code in front of each shader in `assets/shaders`, and
+/// Puts the shared dithering code in front of each shader in `assets/shaders`, and the
+/// shared glyphs in front of the ASCII ones, and
 /// translates the whole to Metal Shading Language for the Mac's renderer, with the
 /// bindings GPUI hands an app shader at the buffers it sets.
 fn shaders() {
@@ -106,14 +107,23 @@ fn shaders() {
         ..Default::default()
     };
     let shared = std::fs::read_to_string("assets/shaders/dither.wgsl").expect("dither.wgsl");
+    let glyphs = std::fs::read_to_string("assets/shaders/ascii.wgsl").expect("ascii.wgsl");
     for entry in std::fs::read_dir("assets/shaders").expect("assets/shaders") {
         let path = entry.expect("a shader file").path();
         if path.extension().is_none_or(|extension| extension != "wgsl")
-            || path.file_stem().is_some_and(|stem| stem == "dither")
+            || path
+                .file_stem()
+                .is_some_and(|stem| stem == "dither" || stem == "ascii")
         {
             continue;
         }
-        let source = shared.clone() + &std::fs::read_to_string(&path).expect("read a shader");
+        let ascii = path
+            .file_stem()
+            .is_some_and(|stem| stem.to_string_lossy().starts_with("ascii_"));
+        let source = match ascii {
+            true => shared.clone() + &glyphs,
+            false => shared.clone(),
+        } + &std::fs::read_to_string(&path).expect("read a shader");
         let shown = path.display().to_string();
         let module = naga::front::wgsl::parse_str(&source)
             .unwrap_or_else(|error| panic!("{}", error.emit_to_string_with_path(&source, &shown)));

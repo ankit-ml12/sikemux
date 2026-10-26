@@ -1,6 +1,7 @@
 //! What the window's renderer paints behind panes and overlays with the shaders in
 //! `assets/shaders`: the moving grain, the person's own picture dithered in its place,
-//! and the sky over the welcome screen and the release notes. The grain and the picture
+//! and the sky over the welcome screen and the release notes. The grain and the picture are
+//! drawn as dots or, as the person picks, as characters. The grain and the picture
 //! are on the window's ground, which macOS keeps in a layer of its own at one pixel per
 //! point, so the grain moves without anything over it drawn again. The sky is over the
 //! shell, so it moves by showing the whole last frame again with the clock moved on.
@@ -15,7 +16,7 @@ use gpui::{
     canvas, relative, App, AppContext, Context, Global, Hsla, IntoElement, RenderImage,
     ShaderProgram, Styled, Task, Window,
 };
-use sikemux_wire::protocol::Preferences;
+use sikemux_wire::protocol::{PaneStyle, Preferences};
 
 use crate::theme::{self, Tokens, RADIUS_3};
 use crate::workbench::Workbench;
@@ -33,6 +34,8 @@ macro_rules! program {
 static FIELD: ShaderProgram = program!("field");
 static PICTURE: ShaderProgram = program!("picture");
 static SKY: ShaderProgram = program!("sky");
+static ASCII_FIELD: ShaderProgram = program!("ascii_field");
+static ASCII_PICTURE: ShaderProgram = program!("ascii_picture");
 
 const FRAMES_PER_SECOND: u64 = 30;
 /// Slower on battery, where every frame is paid for out of the charge.
@@ -54,6 +57,7 @@ const PICTURE_LONGEST: u32 = 2560;
 #[derive(Clone)]
 pub struct Grain {
     shown: bool,
+    style: PaneStyle,
     /// From 0 to 2.
     strength: f32,
     picture_path: Option<String>,
@@ -74,6 +78,7 @@ impl Default for Grain {
     fn default() -> Self {
         Self {
             shown: false,
+            style: PaneStyle::Dither,
             strength: 0.,
             picture_path: None,
             picture: Picture::None,
@@ -110,6 +115,7 @@ pub fn set(preferences: &Preferences, cx: &mut App) {
     };
     let changed = cx.try_global::<Grain>().is_none_or(|grain| {
         grain.shown != preferences.pane_shader
+            || grain.style != preferences.pane_style
             || grain.strength != preferences.pane_strength as f32
             || grain.picture_path != path
     });
@@ -118,6 +124,7 @@ pub fn set(preferences: &Preferences, cx: &mut App) {
     }
     cx.set_global(Grain {
         shown: preferences.pane_shader,
+        style: preferences.pane_style,
         strength: preferences.pane_strength as f32,
         picture_path: path,
         picture,
@@ -171,6 +178,12 @@ pub fn field(cx: &App) -> Option<impl IntoElement> {
         .try_global::<Grain>()
         .filter(|grain| grain.shown && grain.strength > 0.)?;
     let inner_radius = f32::from(RADIUS_3) - 1.;
+    let t = Tokens::get(cx);
+    let ink = t.text_primary.to_rgb();
+    let (field_program, picture_program) = match grain.style {
+        PaneStyle::Dither => (&FIELD, &PICTURE),
+        PaneStyle::Ascii => (&ASCII_FIELD, &ASCII_PICTURE),
+    };
     if let Picture::Loaded(picture) = &grain.picture {
         let picture = picture.clone();
         let strength = (PICTURE_OPACITY * grain.strength).min(1.);
@@ -179,9 +192,17 @@ pub fn field(cx: &App) -> Option<impl IntoElement> {
                 |_, _, _| {},
                 move |bounds, (), window, _| {
                     let mut params = [0.; gpui::SHADER_PARAMS];
-                    params[..3].copy_from_slice(&[window.ground_scale(), inner_radius, strength]);
+                    params[..7].copy_from_slice(&[
+                        window.ground_scale(),
+                        inner_radius,
+                        strength,
+                        0.,
+                        ink.r,
+                        ink.g,
+                        ink.b,
+                    ]);
                     if let Err(error) =
-                        window.paint_ground_shader(bounds, &PICTURE, params, Some(&picture))
+                        window.paint_ground_shader(bounds, picture_program, params, Some(&picture))
                     {
                         eprintln!("sikemux: the pane picture does not draw: {error}");
                     }
@@ -198,25 +219,40 @@ pub fn field(cx: &App) -> Option<impl IntoElement> {
     if matches!(grain.picture, Picture::Loading) {
         return None;
     }
-    let dot = Tokens::get(cx).shader_dot.to_rgb();
     let (start, speed) = clock(FIELD_SPEED, cx);
-    let alpha = (dot.a * FIELD_OPACITY * grain.strength).min(1.);
+    let opacity = FIELD_OPACITY * grain.strength;
+    let colours: [f32; 12] = match grain.style {
+        PaneStyle::Dither => {
+            let dot = t.shader_dot.to_rgb();
+            let alpha = (dot.a * opacity).min(1.);
+            [dot.r, dot.g, dot.b, alpha, 0., 0., 0., 0., 0., 0., 0., 0.]
+        }
+        PaneStyle::Ascii => {
+            let [first, second] = [t.accent, theme::color(&t.highlight.string)].map(Hsla::to_rgb);
+            [
+                first.r,
+                first.g,
+                first.b,
+                opacity.min(1.),
+                second.r,
+                second.g,
+                second.b,
+                1.,
+                ink.r,
+                ink.g,
+                ink.b,
+                1.,
+            ]
+        }
+    };
     Some(
         canvas(
             |_, _, _| {},
             move |bounds, (), window, _| {
                 let mut params = [0.; gpui::SHADER_PARAMS];
-                params[..8].copy_from_slice(&[
-                    start,
-                    speed,
-                    window.ground_scale(),
-                    inner_radius,
-                    dot.r,
-                    dot.g,
-                    dot.b,
-                    alpha,
-                ]);
-                let _ = window.paint_ground_shader(bounds, &FIELD, params, None);
+                params[..4].copy_from_slice(&[start, speed, window.ground_scale(), inner_radius]);
+                params[4..16].copy_from_slice(&colours);
+                let _ = window.paint_ground_shader(bounds, field_program, params, None);
             },
         )
         .absolute()

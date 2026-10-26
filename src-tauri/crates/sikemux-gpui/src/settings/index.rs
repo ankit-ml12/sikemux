@@ -155,6 +155,7 @@ pub const ENTRIES: &[Entry] = &[
     section(Appearance, "Interface", ""),
     row(Appearance, "Interface", "Text size", "font zoom scale larger smaller accessibility"),
     row(Appearance, "Interface", "Pane texture", "dither dithering shader grain noise background effect"),
+    row(Appearance, "Interface", "Pane style", "ascii art characters text letters glyphs dither dots matrix jellyfish"),
     row(Appearance, "Interface", "Pane image", "picture photo wallpaper background dither dithered custom"),
     row(Appearance, "Interface", "Pane strength", "dither grain picture opacity intensity texture image"),
     section(Appearance, "Buddies", "agent icon character avatar mascot face"),

@@ -1488,6 +1488,8 @@ export interface Preferences {
   keptRunningNoticeShown: boolean;
   /** Panes show a dithered texture behind them. */
   paneShader: boolean;
+  /** How the texture and picture behind panes are drawn. */
+  paneStyle: PaneStyle;
   /** A picture every pane dithers in place of the texture. */
   paneImage?: string;
   /** How strongly the texture or picture shows, from 0 to 2. */
@@ -1644,6 +1646,9 @@ export type NotchOpenWith = 'hover' | 'click';
 export type NotchFullScreen = 'needsYou' | 'always' | 'never';
 
 export type NotchPeeks = 'all' | 'needsYou' | 'never';
+
+/** How the texture and picture behind panes are drawn: as dots, or as characters. */
+export type PaneStyle = 'dither' | 'ascii';
 
 export type RailDensity = 'comfortable' | 'compact';
 
