@@ -99,7 +99,7 @@ pub use remote::trust_remote_file;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::{DirBuilder, File, OpenOptions};
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock, Weak};
@@ -187,6 +187,8 @@ impl ServerConfig {
 pub enum ServerError {
     #[error("a Sikemux core is already running at {}{}", path.display(), pid.map(|pid| format!(" (pid {pid})")).unwrap_or_default())]
     AlreadyRunning { path: PathBuf, pid: Option<u32> },
+    #[error("the Sikemux core at {}{} holds its lock but does not answer", path.display(), pid.map(|pid| format!(" (pid {pid})")).unwrap_or_default())]
+    Unanswering { path: PathBuf, pid: Option<u32> },
     #[error("{} is in use by a process that is not a Sikemux core", .0.display())]
     SocketInUse(PathBuf),
     #[error("the bundled agent detection rules do not load: {0}")]
@@ -1256,9 +1258,16 @@ fn claim_socket(socket: &Path) -> Result<(std::os::unix::net::UnixListener, File
         .open(lock_path(socket))?;
     // SAFETY: flock only reads the integer fd, which `lock` keeps open.
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(ServerError::AlreadyRunning {
-            path: socket.to_path_buf(),
-            pid: probe(socket, PROBE_TIMEOUT).ok().map(|hello| hello.pid),
+        let path = socket.to_path_buf();
+        return Err(match probe(socket, PROBE_TIMEOUT) {
+            Ok(hello) => ServerError::AlreadyRunning {
+                path,
+                pid: Some(hello.pid),
+            },
+            Err(_) => ServerError::Unanswering {
+                path,
+                pid: lock_holder(socket),
+            },
         });
     }
     match probe(socket, PROBE_TIMEOUT) {
@@ -1286,7 +1295,22 @@ fn claim_socket(socket: &Path) -> Result<(std::os::unix::net::UnixListener, File
     }
     let listener = std::os::unix::net::UnixListener::bind(socket)?;
     std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o600))?;
+    lock.set_len(0)?;
+    lock.write_all_at(std::process::id().to_string().as_bytes(), 0)?;
     Ok((listener, lock))
+}
+
+/// The process holding the core's single-instance lock at `socket`, so a core that stopped
+/// answering can still be found and stopped. None while nothing holds it.
+pub fn lock_holder(socket: &Path) -> Option<u32> {
+    let mut lock = File::open(lock_path(socket)).ok()?;
+    // SAFETY: flock only reads the integer fd, which `lock` keeps open.
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } == 0 {
+        return None;
+    }
+    let mut pid = String::new();
+    std::io::Read::read_to_string(&mut lock, &mut pid).ok()?;
+    pid.trim().parse().ok().filter(|pid| *pid > 1)
 }
 
 /// Flushes shell metadata a quiet prompt left coalesced, and reads settled

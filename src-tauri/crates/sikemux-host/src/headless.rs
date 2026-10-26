@@ -14,11 +14,15 @@ use sikemux_core::client::{
 use sikemux_core::protocol::{AccountLinkState, Event, RemoteStatus, Request, Response};
 use sikemux_core::waiting;
 
+use crate::core_start;
 use crate::login_item::{self, CoreLaunch, IDENTIFIER};
 use crate::style;
 
 pub(crate) const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long `stop` waits for the core to stop its terminals and agents and answer, before it
+/// counts the core as stuck and ends it by signal.
+const SHUT_DOWN_ANSWER: Duration = Duration::from_secs(20);
 /// What `status` exits with while the core is not running, as `systemctl status` does.
 const NOT_RUNNING: i32 = 3;
 
@@ -117,18 +121,26 @@ pub(crate) fn running() -> Result<PathBuf, String> {
 fn stop() -> Result<(), String> {
     let socket = launch()?.socket;
     let pid = match probe(&socket, PROBE_TIMEOUT) {
-        Err(ProbeError::NotRunning(_)) => {
-            style::note("The core is not running.");
-            return Ok(());
-        }
         Err(ProbeError::Rejected { pid, .. }) => return terminate(pid, &socket),
-        Err(ProbeError::Unanswered(error)) => return Err(error),
+        Err(probed @ (ProbeError::NotRunning(_) | ProbeError::Unanswered(_))) => {
+            return match (core_start::stuck(&socket), probed) {
+                (Some(pid), _) => end_stuck(pid, &socket),
+                (None, ProbeError::Unanswered(error)) => Err(error),
+                (None, _) => {
+                    style::note("The core is not running.");
+                    Ok(())
+                }
+            };
+        }
         Ok(hello) => hello.pid,
     };
-    match runtime()?.block_on(shut_down(&socket)) {
-        Ok(()) => {}
-        Err(ClientError::VersionMismatch { pid, .. }) => return terminate(pid, &socket),
-        Err(error) => return Err(error.to_string()),
+    match runtime()?
+        .block_on(async { tokio::time::timeout(SHUT_DOWN_ANSWER, shut_down(&socket)).await })
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(ClientError::VersionMismatch { pid, .. })) => return terminate(pid, &socket),
+        Ok(Err(error)) => return Err(error.to_string()),
+        Err(_) => return end_stuck(pid, &socket),
     }
     if !stopped(&socket) {
         return Err(format!("the core, pid {pid}, is still running"));
@@ -143,6 +155,17 @@ fn stop() -> Result<(), String> {
 async fn shut_down(socket: &Path) -> Result<(), ClientError> {
     let (client, _events) = CoreClient::connect(socket).await?;
     client.shutdown(true).await
+}
+
+fn end_stuck(pid: u32, socket: &Path) -> Result<(), String> {
+    if !core_start::end(socket, pid) {
+        return Err(format!("the core, pid {pid}, is still running"));
+    }
+    style::done(
+        "Stopped the core",
+        &format!("pid {pid}, which had stopped answering"),
+    );
+    Ok(())
 }
 
 fn terminate(pid: u32, socket: &Path) -> Result<(), String> {

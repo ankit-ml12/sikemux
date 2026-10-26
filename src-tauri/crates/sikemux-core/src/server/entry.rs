@@ -253,7 +253,7 @@ fn run_runtime(
 fn exit_code(result: Result<(), ServerError>) -> i32 {
     match result {
         Ok(()) => 0,
-        Err(error @ ServerError::AlreadyRunning { .. }) => {
+        Err(error @ (ServerError::AlreadyRunning { .. } | ServerError::Unanswering { .. })) => {
             eprintln!("sikemux core: {error}");
             0
         }
