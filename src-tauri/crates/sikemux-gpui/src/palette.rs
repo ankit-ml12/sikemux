@@ -23,6 +23,9 @@ use crate::workbench::Workbench;
 actions!(palette, [Next, Previous, PageDown, PageUp, Choose, Close]);
 
 const ROW_HEIGHT: f32 = 30.;
+const HEAD_HEIGHT: f32 = 54.;
+/// The room between the panel's edge and a row's, chosen so a row's corners sit parallel to the panel's.
+const INSET: f32 = 8.;
 /// A hairline between groups, with the room around it.
 const RULE_HEIGHT: f32 = 17.;
 const SHOWN: usize = 200;
@@ -61,6 +64,8 @@ pub struct Row {
     pub title: SharedString,
     /// The small words after the title, such as a command's category.
     pub meta: SharedString,
+    /// The meta is a path, drawn in the mono face.
+    pub meta_is_path: bool,
     /// The keys that do the same, drawn at the end.
     pub keys: Option<SharedString>,
     /// An agent's @name, dimmed after its title.
@@ -85,6 +90,7 @@ impl Row {
             search: title.to_string(),
             title,
             meta: SharedString::default(),
+            meta_is_path: false,
             keys: None,
             handle: None,
             state: None,
@@ -102,6 +108,12 @@ impl Row {
 
     pub fn meta(mut self, meta: impl Into<SharedString>) -> Self {
         self.meta = meta.into();
+        self
+    }
+
+    pub fn path(mut self, path: impl Into<SharedString>) -> Self {
+        self.meta = path.into();
+        self.meta_is_path = true;
         self
     }
 
@@ -650,9 +662,15 @@ pub fn overlay(
     let t = Tokens::get(cx).clone();
     let count = palette.lines.len();
     let deck = palette.spec.deck;
-    let list_pad = if deck { 6. } else { 4. };
     let lines_height: f32 = palette.lines.iter().map(|line| line.height()).sum();
     let viewport = window.viewport_size();
+    let room = match deck {
+        true => 680_f32.min(f32::from(viewport.height) * 0.72),
+        false => f32::from(viewport.height) * 0.62,
+    };
+    let whole_rows =
+        ((room - HEAD_HEIGHT - 1. - 2. * INSET - 2.) / ROW_HEIGHT).floor() * ROW_HEIGHT;
+    let list_height = lines_height.min(whole_rows.max(ROW_HEIGHT));
     let stage = palette
         .spec
         .on_stage
@@ -731,8 +749,8 @@ pub fn overlay(
                             .flex()
                             .items_center()
                             .gap(px(10.))
-                            .px(px(16.))
-                            .py(px(14.))
+                            .h(px(HEAD_HEIGHT))
+                            .px(px(2. * INSET))
                             .border_b_1()
                             .border_color(t.border)
                             .child(ui::icon(Icon::Search, 15.).text_color(t.text_tertiary))
@@ -807,13 +825,15 @@ pub fn overlay(
                         let bench = cx.entity();
                         panel.child(
                             list(palette.list.clone(), move |line, _, cx| {
-                                bench.update(cx, |bench, cx| line_of(bench, line, cx))
+                                div()
+                                    .px(px(INSET))
+                                    .child(bench.update(cx, |bench, cx| line_of(bench, line, cx)))
+                                    .into_any_element()
                             })
-                            .h(px(lines_height + 2. * list_pad))
+                            .h(px(list_height + 2. * INSET))
                             .min_h_0()
                             .flex_shrink(1.)
-                            .py(px(list_pad))
-                            .px(px(6.)),
+                            .py(px(INSET)),
                         )
                     }),
             )
@@ -843,7 +863,7 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
             return div()
                 .w_full()
                 .h(px(RULE_HEIGHT))
-                .px(px(12.))
+                .px(px(INSET))
                 .flex()
                 .items_center()
                 .child(div().h(px(1.)).flex_1().bg(t.border))
@@ -900,7 +920,7 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
         .when_some(row.mark.clone(), |element, mark| {
             element.child(
                 div()
-                    .w(px(18.))
+                    .w(px(16.))
                     .flex_none()
                     .flex()
                     .justify_center()
@@ -933,6 +953,7 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                         .text_color(t.text_tertiary)
                         .flex_none(),
                 ),
+                None if row.meta_is_path => element.child(ui::mono(meta, 10.5, cx).flex_none()),
                 None => element.child(ui::meta(meta, cx).flex_none()),
             }
         })

@@ -227,9 +227,10 @@ impl Workbench {
                 .filter(|project| Some(project.path.as_path()) != from)
             {
                 let path = tilde(&project.path);
+                let folder = project.path.parent().map(tilde).unwrap_or_default();
                 rows.push(
                     Row::new(format!("{PROJECT}{}", project.id), project.name.clone())
-                        .meta(path.clone())
+                        .path(folder)
                         .mark(Mark::Place(Icon::Folder))
                         .group("Projects")
                         .also(&path),
@@ -249,9 +250,14 @@ impl Workbench {
                     continue;
                 }
                 let shown = tilde(Path::new(path));
+                let folder = shown
+                    .strip_suffix(name)
+                    .map(|folder| folder.trim_end_matches('/'))
+                    .unwrap_or(&shown)
+                    .to_owned();
                 rows.push(
                     Row::new(format!("{FOLDER}{path}"), name.to_owned())
-                        .meta(shown.clone())
+                        .path(folder)
                         .mark(Mark::Place(Icon::FolderPlus))
                         .group("Folders")
                         .also(&shown),
