@@ -19,6 +19,7 @@ use crate::agent_setup::{self, Installing};
 use crate::core::Target;
 use crate::hosts::Place;
 use crate::icons::Icon;
+use crate::model_picker::{Move, Moving};
 use crate::theme::Tokens;
 use crate::toast;
 use crate::ui::{self, dialog};
@@ -32,6 +33,8 @@ type Asked = (String, String);
 
 pub struct AddProvider {
     target: Target,
+    /// Moves the chat the dialog was opened from, while it has not started, onto the provider.
+    chat: Option<Move>,
     url: Entity<InputState>,
     key: Entity<InputState>,
     name: Entity<InputState>,
@@ -59,7 +62,12 @@ fn input(
 }
 
 impl AddProvider {
-    fn new(target: Target, window: &mut Window, cx: &mut Context<Workbench>) -> Self {
+    fn new(
+        target: Target,
+        chat: Option<Move>,
+        window: &mut Window,
+        cx: &mut Context<Workbench>,
+    ) -> Self {
         let url = input("https://api.example.com/v1", false, window, cx);
         let key = input(
             "Not needed for a model server on this host",
@@ -92,6 +100,7 @@ impl AddProvider {
             ];
         Self {
             target,
+            chat,
             url,
             key,
             name,
@@ -126,13 +135,25 @@ impl AddProvider {
 }
 
 impl Workbench {
-    /// Opens the dialog, adding to the host in front.
-    pub fn add_provider(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.add_provider_to(self.target(), window, cx);
+    /// Opens the dialog, adding to the host in front; `chat` moves the chat it was opened from
+    /// onto the provider once it is added.
+    pub fn add_provider(
+        &mut self,
+        chat: Option<Move>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.add_provider_to(self.target(), chat, window, cx);
     }
 
-    pub fn add_provider_to(&mut self, target: Target, window: &mut Window, cx: &mut Context<Self>) {
-        self.adding_provider = Some(AddProvider::new(target, window, cx));
+    pub fn add_provider_to(
+        &mut self,
+        target: Target,
+        chat: Option<Move>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.adding_provider = Some(AddProvider::new(target, chat, window, cx));
         cx.notify();
     }
 }
@@ -224,8 +245,8 @@ fn add(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) 
     cx.notify();
     cx.spawn_in(window, async move |bench, cx| {
         let added = added.await;
-        let _ = bench.update_in(cx, |bench, window, cx| {
-            match added {
+        let moved = bench.update_in(cx, |bench, window, cx| {
+            let moved = match added {
                 Ok(provider) => {
                     let label = provider["label"].as_str().unwrap_or("the provider");
                     window.push_notification(
@@ -234,20 +255,45 @@ fn add(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) 
                         )),
                         cx,
                     );
-                    bench.adding_provider = None;
+                    let chat = bench.adding_provider.take().and_then(|adding| adding.chat);
                     crate::settings::providers_changed(bench, cx);
+                    chat.zip(onto(bench, &provider))
                 }
                 Err(failure) => {
                     if let Some(adding) = bench.adding_provider.as_mut() {
                         adding.adding = false;
                         adding.failure = Some(readable(failure));
                     }
+                    None
                 }
-            }
+            };
             cx.notify();
+            moved
         });
+        if let Ok(Some((chat, going))) = moved {
+            let _ = cx.update(|window, cx| chat(going, window, cx));
+        }
     })
     .detach();
+}
+
+/// Where a chat goes to run on `provider`: the agent Sikemux runs it with, on that agent's
+/// account, starting on the provider's model for it, else its first.
+fn onto(bench: &Workbench, provider: &Value) -> Option<Moving> {
+    let agent = provider["runsWith"].as_str()?;
+    let model = provider["defaults"][agent]
+        .as_str()
+        .or_else(|| provider["models"][0].as_str())
+        .map(str::to_owned);
+    Some(Moving {
+        provider: agent.to_owned(),
+        profile: bench
+            .accounts
+            .current(agent)
+            .map(|profile| profile.id.clone()),
+        model,
+        model_provider: provider["id"].as_str().map(str::to_owned),
+    })
 }
 
 /// A failed request in the person's words: the core words its own refusals, but a host too old

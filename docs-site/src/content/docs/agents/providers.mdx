@@ -7,11 +7,9 @@ An agent normally runs on its maker's account: Claude on Anthropic's, Codex on O
 
 ## Picking a model
 
-The model picker in a chat lists models by provider: the agent's own account first, headed by its maker, then every provider you connected, then **+ Add provider**.
+The model picker in a chat lists the models of the agent picked above them, by provider: the agent's own account first, headed by its maker, then each provider you connected that the agent can run, then **+ Add provider**. Pick another agent to see what it runs: Claude lists Anthropic's models and Ollama's, OMP and OpenCode list every provider with a chat completions API.
 
 Each model shows its context size, its price per million tokens and whether its tool calls work with agents, when Sikemux knows them. Models served on this host are headed with **local**.
-
-A model the chosen agent can't run still shows, marked with the agent that can, such as **via OMP**. Picking it moves a chat that hasn't started yet to that agent, installing it first if this host doesn't have it.
 
 Above the models, every chat agent sits in one row. One this host doesn't have is dimmed: click it to install it with its own installer.
 
@@ -25,7 +23,7 @@ Once a chat has started, it keeps its agent and provider, and the picker lists o
 - **API key**, which the field hides as you type. A model server on this host needs none.
 - **Name**, filled in from the URL's domain. Change it if you like.
 
-Sikemux asks the provider for its models to check the key. It shows how many models the provider serves before you add it.
+Sikemux asks the provider for its models to check the key. It shows how many models the provider serves before you add it. Added from a chat that hasn't started, the provider takes the chat with it: the chat moves to the agent that runs the provider, on its first model.
 
 A URL Sikemux already knows, such as OpenRouter's, connects that provider. Any other URL is added as a provider of your own. The key is kept in the macOS Keychain and handed only to the chats that run on that provider. Removing a provider you added takes its key out of the Keychain too.
 
@@ -39,7 +37,7 @@ Each provider runs with the agent that speaks its API:
 | OpenAI's Responses API | Codex |
 | Only chat completions | OMP, or OpenCode |
 
-When that agent isn't installed, Sikemux installs it with the agent's own installer as soon as the key checks out, and you can add the provider while it runs. If the install fails, click **Install failed** to see its output.
+When that agent isn't installed, Sikemux installs it with the agent's own installer as soon as the key checks out, and you can add the provider while it runs. A message you send before the install ends waits in the draft, under "Waiting for OMP to finish installing…", and goes by itself once it does. If the install fails, the chat says so, with a link to the installer's output.
 
 OMP and OpenCode can run any provider. Sikemux tells them of it for that one chat: your own OMP and OpenCode settings, sign-ins and models stay as they are.
 

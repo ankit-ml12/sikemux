@@ -33,7 +33,8 @@ use sikemux_wire::protocol::{
     DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE, MIN_TEXT_SCALE,
 };
 
-use crate::composer::{Composer, Strip};
+use crate::agent_setup::Installing;
+use crate::composer::{Composer, Notice, Strip};
 use crate::core::{Ask, ChatAsk, Target};
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
@@ -54,6 +55,7 @@ pub(crate) mod draft;
 mod edit;
 mod files;
 mod find;
+mod installing;
 mod link;
 mod live;
 mod mention;
@@ -61,6 +63,8 @@ mod meta;
 mod page;
 mod status;
 mod tools;
+
+pub(crate) use installing::installs_moved;
 mod worktree;
 
 pub use attach::lasting;
@@ -535,6 +539,8 @@ pub struct Composing {
     pub preparing: Option<String>,
     /// The message waits for the chat to be ready in its new worktree.
     pub send_when_ready: bool,
+    /// The agent the message waits for while it installs, or whose install failed under it.
+    pub install: Option<(String, Installing)>,
     /// The last message as it was written, chips, files and all, until the core takes it.
     pub sent: Option<Sent>,
     /// A turned-down message, going back into the draft when it next draws.
@@ -922,6 +928,7 @@ impl Chat {
             && self.composer.as_ref().is_none_or(|composing| {
                 composing.sent.is_none()
                     && !composing.send_when_ready
+                    && composing.install.is_none()
                     && composing.preparing.is_none()
             })
     }
@@ -1619,6 +1626,7 @@ impl Chat {
     ) -> Option<Ask> {
         if let Some(composing) = self.composer.as_mut() {
             composing.refusal = None;
+            composing.install = None;
             composing.attachments.clear();
             composing.context.clear();
             composing.tracked_context.clear();
@@ -3023,7 +3031,12 @@ fn composer(
     .map(IntoElement::into_any_element);
     let mut composer = Composer::new(&composing.draft, &agent.provider, label, on_send, on_stop)
         .answering(answering(bench, &agent.id, chat, cx))
-        .refusal(composing.refusal.clone())
+        .notice(installing::notice(bench, composing, &this).or_else(|| {
+            composing
+                .refusal
+                .clone()
+                .map(|refusal| Notice::Refused(refusal, None))
+        }))
         .text_scale(chat.scale)
         .attachments(
             tiles,

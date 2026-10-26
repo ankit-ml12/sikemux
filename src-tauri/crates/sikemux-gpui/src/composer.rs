@@ -23,6 +23,13 @@ use crate::ui::{self, DockMenu, IconButton};
 use crate::workbench::Workbench;
 
 type Act = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// The line under the composer: why the last message did not go, with what to do about it, or
+/// what it waits for.
+pub enum Notice {
+    Refused(SharedString, Option<(SharedString, Act)>),
+    Waiting(SharedString),
+}
 type Pick = Rc<dyn Fn(&str, &str, &mut Window, &mut App)>;
 type Paste = Rc<dyn Fn(&ClipboardItem, &mut Window, &mut App) -> bool>;
 type Chip = Rc<dyn Fn(&InlineTokenContext, &mut Window, &mut App) -> AnyElement>;
@@ -69,8 +76,7 @@ pub struct Composer {
     attachments: Option<(Option<AnyElement>, Act, Paste, Chip)>,
     /// What the word at the caret is offered, docked over the top edge.
     menu: Option<DockMenu>,
-    /// Why the core turned down the last message.
-    refusal: Option<SharedString>,
+    notice: Option<Notice>,
     /// The mic, and what it has heard so far.
     dictation: Option<AnyView>,
     heard: Option<SharedString>,
@@ -105,7 +111,7 @@ impl Composer {
             usage: None,
             attachments: None,
             menu: None,
-            refusal: None,
+            notice: None,
             dictation: None,
             heard: None,
             text_scale: 1.,
@@ -193,8 +199,8 @@ impl Composer {
         self
     }
 
-    pub fn refusal(mut self, refusal: Option<SharedString>) -> Self {
-        self.refusal = refusal;
+    pub fn notice(mut self, notice: Option<Notice>) -> Self {
+        self.notice = notice;
         self
     }
 
@@ -379,15 +385,28 @@ impl RenderOnce for Composer {
                     .child(bar)
                     .children(self.menu),
             )
-            .children(self.refusal.map(|refusal| {
-                div()
+            .children(self.notice.map(|notice| {
+                let line = div()
                     .w_full()
                     .max_w(px(820.))
                     .pt(px(6.))
                     .px(px(4.))
-                    .text_size(crate::theme::ui_text(12.))
-                    .text_color(t.danger)
-                    .child(refusal)
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .text_size(crate::theme::ui_text(12.));
+                match notice {
+                    Notice::Refused(words, action) => line
+                        .text_color(t.danger)
+                        .child(words)
+                        .children(action.map(|(label, act)| {
+                            ui::sign_in::link("composer-notice-action", label, cx)
+                                .on_click(move |_, window, cx| act(window, cx))
+                        })),
+                    Notice::Waiting(words) => {
+                        line.child(ui::shimmer::shimmer("composer-notice-waiting", words))
+                    }
+                }
             }))
     }
 }

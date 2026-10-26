@@ -1,6 +1,7 @@
-//! A chat's model menu: the models its agent offers, searched from its own field.
-//! Before the chat starts it also lists every connected provider's models, grouped by
-//! provider, and picking one moves the chat to it, and to the agent that can run it.
+//! A chat's model menu: the models its agent offers, searched from its own field, under its
+//! maker's name, then those of every connected provider the agent can run. Before the chat
+//! starts, the agents above the list move it to another agent, and a provider's model moves it
+//! onto that provider.
 
 use std::rc::Rc;
 
@@ -9,7 +10,7 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, div, px, Anchor, AnyElement, App, AppContext, Context, Entity, FontWeight,
-    InteractiveElement, IntoElement, KeyBinding, ParentElement, Render, SharedString,
+    InteractiveElement, IntoElement, KeyBinding, ParentElement, Render, ScrollHandle, SharedString,
     StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window,
 };
 use serde_json::{json, Value};
@@ -79,17 +80,12 @@ struct Route {
     local: bool,
     models: Vec<String>,
     agents: Vec<String>,
-    runs_with: Option<String>,
     provider: Value,
 }
 
 impl Route {
-    /// The agent a model of it runs on: the chat's own when it can, else the one Sikemux picks.
-    fn agent<'a>(&'a self, own: &'a str) -> Option<&'a str> {
-        match self.agents.iter().any(|agent| agent == own) {
-            true => Some(own),
-            false => self.runs_with.as_deref(),
-        }
+    fn runs(&self, agent: &str) -> bool {
+        self.agents.iter().any(|each| each == agent)
     }
 
     /// `model` as the agent names it once a chat runs on this provider.
@@ -103,8 +99,7 @@ impl Route {
 enum Act {
     /// Sets the model of the chat's own agent.
     Set(String),
-    /// Moves the chat, installing its new agent first when this host does not have it.
-    Move(Moving, bool),
+    Move(Moving),
     AddProvider,
 }
 
@@ -136,6 +131,9 @@ pub struct Menu {
     chosen: usize,
     routes: Vec<Route>,
     close: Dismiss,
+    scroll: ScrollHandle,
+    /// The keys moved the chosen row, so the list scrolls it into view when it next draws.
+    follow: bool,
     _typing: Subscription,
     _bench: Subscription,
 }
@@ -200,6 +198,7 @@ impl Menu {
         let typing = cx.subscribe(&query, |menu, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 menu.chosen = 0;
+                menu.scroll.set_offset(gpui_kit::point(px(0.), px(0.)));
                 cx.notify();
             }
         });
@@ -211,6 +210,8 @@ impl Menu {
             chosen: 0,
             routes: Vec::new(),
             close,
+            scroll: ScrollHandle::new(),
+            follow: false,
             _typing: typing,
             _bench: cx.observe(bench, |_, _, cx| cx.notify()),
         }
@@ -245,7 +246,6 @@ impl Menu {
                     local: provider["kind"] == "local",
                     models,
                     agents: strings(&provider["agents"]),
-                    runs_with: provider["runsWith"].as_str().map(str::to_owned),
                     provider: provider.clone(),
                     id,
                 });
@@ -259,7 +259,8 @@ impl Menu {
     }
 
     /// The group headings and every row under them, matched to the search: the agent's own
-    /// models under its maker, then each connected provider's, then the row that adds one.
+    /// models under its maker, then those of each connected provider it runs, then the row that
+    /// adds one.
     fn options(&self, cx: &App) -> (Vec<String>, Vec<Row>) {
         let Some(bench) = self.bench.upgrade() else {
             return (Vec::new(), Vec::new());
@@ -343,7 +344,7 @@ impl Menu {
                     label: "Default model".into(),
                     meta: None,
                     current: false,
-                    act: Act::Move(going(None), false),
+                    act: Act::Move(going(None)),
                 }),
                 false => options.extend(offered.iter().map(|choice| Row {
                     group: 0,
@@ -351,18 +352,13 @@ impl Menu {
                     label: choice.label.clone(),
                     meta: choice.is_default.then(|| "Default".to_owned()),
                     current: false,
-                    act: Act::Move(going(Some(choice.value.clone())), false),
+                    act: Act::Move(going(Some(choice.value.clone()))),
                 })),
             }
         }
         if !self.picked.locked {
-            for route in &self.routes {
-                let Some(agent) = route.agent(own) else {
-                    continue;
-                };
-                let installed = bench.has_agent(agent);
+            for route in self.routes.iter().filter(|route| route.runs(own)) {
                 let here = self.picked.model_provider.as_deref() == Some(route.id.as_str());
-                let via = (agent != own).then(|| format!("via {}", label(agent)));
                 groups.push(match route.local && !route.label.starts_with("Local") {
                     true => format!("{} · local", route.label),
                     false => route.label.clone(),
@@ -379,27 +375,17 @@ impl Menu {
                         .flatten();
                     let act = match set {
                         Some(choice) => Act::Set(choice.value.clone()),
-                        None => Act::Move(
-                            Moving {
-                                provider: agent.to_owned(),
-                                profile: match agent == own {
-                                    true => self.picked.profile.clone(),
-                                    false => bench
-                                        .accounts
-                                        .current(agent)
-                                        .map(|profile| profile.id.clone()),
-                                },
-                                model: Some(model.clone()),
-                                model_provider: Some(route.id.clone()),
-                            },
-                            !installed,
-                        ),
+                        None => Act::Move(Moving {
+                            provider: own.to_owned(),
+                            profile: self.picked.profile.clone(),
+                            model: Some(model.clone()),
+                            model_provider: Some(route.id.clone()),
+                        }),
                     };
-                    let meta: Vec<String> =
-                        via.iter().cloned().chain(facts(route, model)).collect();
+                    let meta = facts(route, model);
                     Row {
                         group,
-                        mark: Some(agent.to_owned()),
+                        mark: Some(own.to_owned()),
                         label: model.clone(),
                         meta: (!meta.is_empty()).then(|| meta.join(" · ")),
                         current: chosen,
@@ -442,15 +428,11 @@ impl Menu {
                     }
                 }
             }
-            Act::Move(going, install) => {
-                if install && self.here() {
-                    install_agent(&self.bench, &going.provider, cx);
-                }
-                (self.picked.moving)(going, window, cx);
-            }
+            Act::Move(going) => (self.picked.moving)(going, window, cx),
             Act::AddProvider => {
+                let chat = (!self.picked.locked).then(|| self.picked.moving.clone());
                 if let Some(bench) = self.bench.upgrade() {
-                    bench.update(cx, |bench, cx| bench.add_provider(window, cx));
+                    bench.update(cx, |bench, cx| bench.add_provider(chat, window, cx));
                 }
             }
         }
@@ -465,6 +447,7 @@ impl Menu {
         let count = self.options(cx).1.len() as isize;
         if count > 0 {
             self.chosen = (self.chosen as isize + by).rem_euclid(count) as usize;
+            self.follow = true;
         }
         cx.notify();
     }
@@ -711,6 +694,7 @@ impl Render for Menu {
             .find(|(_, row)| matches!(row.act, Act::AddProvider))
             .map(|(at, row)| self.row(at, row, &typed, found, &t, &this));
         let mut list: Vec<AnyElement> = Vec::new();
+        let mut chosen_at = None;
         for (group, heading) in groups.iter().enumerate() {
             let rows: Vec<(usize, Row)> = options
                 .iter()
@@ -748,10 +732,15 @@ impl Render for Menu {
                         .into_any_element(),
                 );
             }
-            list.extend(
-                rows.into_iter()
-                    .map(|(at, row)| self.row(at, row, &typed, found, &t, &this)),
-            );
+            for (at, row) in rows {
+                if at == self.chosen {
+                    chosen_at = Some(list.len());
+                }
+                list.push(self.row(at, row, &typed, found, &t, &this));
+            }
+        }
+        if let Some(at) = chosen_at.filter(|_| std::mem::take(&mut self.follow)) {
+            self.scroll.scroll_to_item(at);
         }
         div()
             .key_context(format!("{CONTEXT} Modal").as_str())
@@ -800,6 +789,7 @@ impl Render for Menu {
                     .p(px(5.))
                     .max_h(px(360.))
                     .overflow_y_scroll()
+                    .track_scroll(&self.scroll)
                     .children(list),
             )
             .children(footer.map(|footer| {

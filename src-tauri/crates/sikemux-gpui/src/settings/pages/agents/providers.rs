@@ -787,7 +787,7 @@ pub fn render(
                         .on_click(move |_, window, cx| {
                             this.update(cx, |bench, cx| {
                                 let here = core::Target::here(&bench.asks);
-                                bench.add_provider_to(here, window, cx)
+                                bench.add_provider_to(here, None, window, cx)
                             })
                         }),
                 )

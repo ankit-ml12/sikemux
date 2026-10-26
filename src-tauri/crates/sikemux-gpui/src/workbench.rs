@@ -1490,6 +1490,7 @@ impl Workbench {
             refusal: None,
             preparing: None,
             send_when_ready: false,
+            install: None,
             sent: None,
             returned: None,
             synced: json!({ "text": "" }),
@@ -1671,7 +1672,7 @@ impl Workbench {
             .get(agent)
             .and_then(|chat| chat.composer.as_ref())
             .is_some_and(|composing| composing.preparing.is_some());
-        if preparing {
+        if preparing || self.hold_for_install(agent, cx) {
             return;
         }
         if self.starts_in_worktree(agent, cx) {
