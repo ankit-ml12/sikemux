@@ -420,6 +420,7 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
     let tail = match recent.pinned {
         true => ui::icon(Icon::Pin, 11.)
             .text_color(t.text_tertiary)
+            .group_hover(RECENT_ROW, |pin| pin.opacity(0.))
             .into_any_element(),
         false => ui::mono(age(recent.active_at), 11., cx).into_any_element(),
     };
@@ -435,6 +436,28 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
         move |bench, _, _, _| bench.resume_chat(&recent)
     }));
     let pin = pin_chat(&cx.entity(), recent);
+    let unpin = recent.pinned.then(|| {
+        let unpin = pin.1.clone();
+        div()
+            .absolute()
+            .top_0()
+            .right(px(4.))
+            .h(px(if bench.rail_compact() { 27. } else { 28. }))
+            .flex()
+            .items_center()
+            .opacity(0.)
+            .group_hover(RECENT_ROW, |actions| actions.opacity(1.))
+            .child(
+                IconButton::new(
+                    SharedString::from(format!("unpin-{}", recent.id)),
+                    Icon::Pin,
+                    format!("Unpin {}", recent.title),
+                )
+                .small()
+                .pressed(true)
+                .on_click(move |_, window, cx| unpin(window, cx)),
+            )
+    });
     let deletable = bench
         .read("catalog")
         .and_then(Value::as_array)
@@ -447,7 +470,10 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
     let (this, chat) = (cx.weak_entity(), recent.clone());
     div()
         .id(SharedString::from(format!("recent-menu-{}", recent.id)))
+        .group(RECENT_ROW)
+        .relative()
         .child(row)
+        .children(unpin)
         .context_menu(ui::menu(move |popup, _, cx| {
             let (label, pin) = pin.clone();
             let pin = PopupMenuItem::new(label)
@@ -994,6 +1020,9 @@ fn agent_row(
 
 /// The hover group of an agent's rail row, whose pin and close buttons show on hover.
 const AGENT_ROW: &str = "agent-row";
+
+/// The hover group of a saved chat's rail row, whose unpin button shows on hover.
+const RECENT_ROW: &str = "recent-row";
 
 fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
     let t = Tokens::get(cx).clone();
