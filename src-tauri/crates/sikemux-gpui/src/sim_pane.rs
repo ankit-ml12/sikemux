@@ -529,6 +529,21 @@ impl Workbench {
         });
     }
 
+    /// Stops the screens of the desks the tab in front no longer shows, which would otherwise
+    /// stream and decode every frame out of sight.
+    pub(crate) fn stop_screens_hidden(&mut self, shown: &[String]) {
+        let hidden: Vec<String> = self
+            .sims
+            .screens
+            .keys()
+            .filter(|agent| !shown.contains(agent))
+            .cloned()
+            .collect();
+        for agent in hidden {
+            self.stop_screen(&agent);
+        }
+    }
+
     /// Starts showing the agent's device: its screen streams, and its size is read for touches.
     pub(crate) fn start_screen(&mut self, agent: &str, cx: &mut Context<Self>) {
         let Some(device) = self.sims.attached.get(agent).cloned() else {

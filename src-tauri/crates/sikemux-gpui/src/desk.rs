@@ -1131,6 +1131,7 @@ pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Work
     if let Some(tab) = bench.tab() {
         desks_in(&tab.pane, &mut agents);
     }
+    bench.stop_screens_hidden(&agents);
     for agent in &agents {
         if bench.desks.kinds.get(agent) == Some(&DeskKind::Simulator) {
             match bench.sims.live(agent) {
