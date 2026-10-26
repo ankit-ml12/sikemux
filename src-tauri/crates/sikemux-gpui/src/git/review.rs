@@ -20,11 +20,12 @@ use crate::core::Target;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, RADIUS_2};
 use crate::ui;
 
 const HEADER_HEIGHT: Pixels = px(32.);
 const TITLE_HEIGHT: Pixels = px(22.);
+const CARD_GAP: Pixels = px(8.);
 /// Cards past the first one showing whose diffs are read ahead of being scrolled to.
 const READ_AHEAD: usize = 6;
 
@@ -481,10 +482,31 @@ fn draw(
 ) -> AnyElement {
     let review = &pane.review;
     let t = Tokens::get(cx).clone();
-    let body = |inner: Div| inner.bg(t.surface);
+    let body = |inner: Div| {
+        div().pr(CARD_GAP).child(
+            inner
+                .border_l_1()
+                .border_r_1()
+                .border_color(t.border)
+                .bg(t.surface),
+        )
+    };
     match item {
         Item::Header(card) => header(view, pane, card, cx),
-        Item::End(_) => div().border_b_1().border_color(t.border).into_any_element(),
+        Item::End(_) => div()
+            .pr(CARD_GAP)
+            .pb(CARD_GAP)
+            .child(
+                div()
+                    .h(px(1.))
+                    .border_b_1()
+                    .border_l_1()
+                    .border_r_1()
+                    .border_color(t.border)
+                    .rounded_b(RADIUS_2)
+                    .bg(t.surface),
+            )
+            .into_any_element(),
         Item::Title(card, at) => {
             let section = &review.cards[card].sections[at];
             let file = review.cards[card].file.as_ref();
@@ -608,70 +630,83 @@ fn header(view: &Entity<GitPane>, pane: &GitPane, card: usize, cx: &App) -> AnyE
     let id = SharedString::from(format!("card-{path}"));
     let key = SharedString::from(format!("card:{path}"));
     div()
-        .id(id.clone())
-        .on_hover(super::pane::hover(view, key.clone()))
-        .h(HEADER_HEIGHT)
-        .px(px(8.))
-        .flex()
-        .items_center()
-        .gap(px(7.))
-        .when(!open, |head| head.border_b_1().border_color(t.border))
-        .bg(t.surface)
-        .font_family(crate::theme::UI)
-        .cursor_pointer()
-        .on_click(move |_, _, cx| {
-            toggling.update(cx, |pane, cx| {
-                pane.review.toggle(card);
-                cx.notify();
-            })
-        })
-        .child(motion::turn(
-            format!("{key}:chevron"),
-            motion::fold_angle(open),
-            motion::DETAIL_FOLD,
-            ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary),
-        ))
-        .child(glyph)
+        .pr(CARD_GAP)
+        .when(!open, |card| card.pb(CARD_GAP))
         .child(
             div()
-                .id(SharedString::from(format!("{id}-name")))
-                .min_w_0()
-                .truncate()
-                .text_size(crate::theme::ui_text(13.))
-                .hover(|name| name.underline())
-                .tooltip(ui::tooltip("Open in editor"))
-                .on_click(move |_, window, cx| {
-                    cx.stop_propagation();
-                    window.dispatch_action(gpui_kit::Action::boxed_clone(&target), cx);
-                })
-                .when_some(dir, |name, dir| {
-                    name.child(
-                        div()
-                            .flex_none()
-                            .text_color(t.text_tertiary)
-                            .child(format!("{dir}/")),
-                    )
-                })
-                .flex()
-                .child(div().text_color(t.text_primary).child(base)),
-        )
-        .child(div().flex_1())
-        .when(pane.hovered.as_ref() == Some(&key), |head| {
-            head.child(
-                div().flex().gap(px(2.)).pr(px(4.)).children(
-                    file.map(|file| super::pane::file_actions(view, file, None, cx))
-                        .into_iter()
-                        .flatten(),
-                ),
-            )
-        })
-        .child(
-            div()
+                .id(id.clone())
+                .on_hover(super::pane::hover(view, key.clone()))
+                .h(HEADER_HEIGHT)
+                .px(px(8.))
                 .flex()
                 .items_center()
-                .gap(px(5.))
-                .pr(px(1.))
-                .children(file.map(|file| badges(file, cx)).into_iter().flatten()),
+                .gap(px(7.))
+                .border_1()
+                .border_color(t.border)
+                .map(|head| {
+                    if open {
+                        head.rounded_t(RADIUS_2).border_b_0()
+                    } else {
+                        head.rounded(RADIUS_2)
+                    }
+                })
+                .bg(t.surface)
+                .font_family(crate::theme::UI)
+                .cursor_pointer()
+                .on_click(move |_, _, cx| {
+                    toggling.update(cx, |pane, cx| {
+                        pane.review.toggle(card);
+                        cx.notify();
+                    })
+                })
+                .child(motion::turn(
+                    format!("{key}:chevron"),
+                    motion::fold_angle(open),
+                    motion::DETAIL_FOLD,
+                    ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary),
+                ))
+                .child(glyph)
+                .child(
+                    div()
+                        .id(SharedString::from(format!("{id}-name")))
+                        .min_w_0()
+                        .truncate()
+                        .text_size(crate::theme::ui_text(13.))
+                        .hover(|name| name.underline())
+                        .tooltip(ui::tooltip("Open in editor"))
+                        .on_click(move |_, window, cx| {
+                            cx.stop_propagation();
+                            window.dispatch_action(gpui_kit::Action::boxed_clone(&target), cx);
+                        })
+                        .when_some(dir, |name, dir| {
+                            name.child(
+                                div()
+                                    .flex_none()
+                                    .text_color(t.text_tertiary)
+                                    .child(format!("{dir}/")),
+                            )
+                        })
+                        .flex()
+                        .child(div().text_color(t.text_primary).child(base)),
+                )
+                .child(div().flex_1())
+                .when(pane.hovered.as_ref() == Some(&key), |head| {
+                    head.child(
+                        div().flex().gap(px(2.)).pr(px(4.)).children(
+                            file.map(|file| super::pane::file_actions(view, file, None, cx))
+                                .into_iter()
+                                .flatten(),
+                        ),
+                    )
+                })
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(5.))
+                        .pr(px(1.))
+                        .children(file.map(|file| badges(file, cx)).into_iter().flatten()),
+                ),
         )
         .into_any_element()
 }
