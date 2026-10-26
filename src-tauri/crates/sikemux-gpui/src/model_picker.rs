@@ -8,9 +8,9 @@ use gpui_kit::base::{Popover, Selectable};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, div, px, Anchor, AnyElement, App, AppContext, Context, Entity, FontWeight,
-    InteractiveElement, IntoElement, KeyBinding, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window,
+    actions, div, px, Anchor, AnyElement, App, AppContext, Context, Entity, InteractiveElement,
+    IntoElement, KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement,
+    Styled, Subscription, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{ConfigChoice, ConfigPicker};
@@ -367,6 +367,10 @@ impl Render for Menu {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         let options = self.options(cx);
+        let (typed, found) = (
+            self.query.read(cx).value().trim().to_owned(),
+            ui::found_mark(cx),
+        );
         let current = self
             .picked
             .model
@@ -504,15 +508,13 @@ impl Render for Menu {
                     let value = value.clone();
                     this.update(cx, |menu, cx| menu.pick(value, window, cx))
                 })
-                .child(ui::mark(&self.picked.provider, 14.))
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(crate::theme::ui_text(12.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(option.label.clone()),
+                        .text_size(crate::theme::ui_text(12.5))
+                        .child(ui::found_with(option.label.clone(), &typed, found)),
                 )
                 .when(option.value == current, |row| {
                     row.child(ui::icon(Icon::Check, 14.).text_color(t.text_secondary))

@@ -611,6 +611,15 @@ fn chosen(picker: &ConfigPicker, name: &str) -> String {
     }
 }
 
+/// An effort choice as its trigger says it, so "Default" or "High" beside the model's own
+/// "Default" says what it sets.
+fn effort(label: String) -> String {
+    match label.to_lowercase().contains("effort") {
+        true => label,
+        false => format!("{label} effort"),
+    }
+}
+
 /// The button a picker opens from: the agent's mark beside the first, the choice, a chevron.
 fn picker_trigger(
     id: &str,
@@ -687,8 +696,11 @@ fn picker(
     pick: Pick,
     cx: &App,
 ) -> impl IntoElement {
-    let label = chosen(&picker, name);
     let first = provider.is_some();
+    let label = match first {
+        true => chosen(&picker, name),
+        false => effort(chosen(&picker, name)),
+    };
     let enabled = settable && !picker.choices.is_empty();
     if !enabled {
         return picker_trigger(&picker.id, label, name, provider, enabled, cx).into_any_element();
