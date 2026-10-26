@@ -74,10 +74,17 @@ fn theirs(tool: &ToolCall, args: &Map<String, Value>) -> ToolRow {
         (Some(action), None) => action,
         (None, None) => ToolAction::Other,
     };
-    let target = match server {
-        Some(_) => line.replace('_', " "),
-        None if is_path(line) => basename(line).to_owned(),
-        None => line.to_owned(),
+    let command = action == ToolAction::Execute;
+    let file = tool
+        .path
+        .as_deref()
+        .map(without_line)
+        .filter(|path| !command && names_file(line, path));
+    let target = match (server, file) {
+        (Some(_), _) => line.replace('_', " "),
+        (None, Some(path)) => basename(path).to_owned(),
+        (None, None) if !command && is_path(line) => basename(line).to_owned(),
+        (None, None) => line.to_owned(),
     };
     let verb = (action == ToolAction::Other).then(|| {
         let word = name
@@ -94,10 +101,13 @@ fn theirs(tool: &ToolCall, args: &Map<String, Value>) -> ToolRow {
         action,
         detail: server.and_then(|_| first_short_argument(args)),
         server: server.map(str::to_owned),
-        path: tool
-            .path
-            .clone()
-            .or_else(|| is_path(line).then(|| line.to_owned())),
+        path: (!command)
+            .then(|| {
+                tool.path
+                    .clone()
+                    .or_else(|| is_path(line).then(|| line.to_owned()))
+            })
+            .flatten(),
         icon: (verb.as_deref() == Some("toolsearch")).then(|| "wrench".to_owned()),
         activity: (says && !target.is_empty() && fits(&target, MAX_ACTIVITY_CHARS))
             .then(|| target.clone()),
@@ -129,6 +139,30 @@ fn label(title: &str) -> (Option<&str>, &str) {
         (Some("mcp"), Some(server), Some(name)) => (Some(server), name),
         _ => (None, title),
     }
+}
+
+/// `path` without the `:line` a call's location adds.
+fn without_line(path: &str) -> &str {
+    match path.rsplit_once(':') {
+        Some((file, line))
+            if !line.is_empty() && line.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            file
+        }
+        _ => path,
+    }
+}
+
+/// Whether a title names the file at `path`: the path alone, or a word such as `Read`
+/// before it, whole or relative to the folder the agent works in.
+fn names_file(line: &str, path: &str) -> bool {
+    if line == path {
+        return true;
+    }
+    let named = line
+        .split_once(char::is_whitespace)
+        .map_or(line, |(_, rest)| rest.trim());
+    !named.is_empty() && (named == path || path.ends_with(&format!("/{named}")))
 }
 
 /// A title names a file when it is one word with a slash in it, and not a page.
