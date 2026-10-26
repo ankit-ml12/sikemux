@@ -23,9 +23,8 @@ use crate::workbench::Workbench;
 actions!(palette, [Next, Previous, PageDown, PageUp, Choose, Close]);
 
 const ROW_HEIGHT: f32 = 30.;
-const HEAD_HEIGHT: f32 = 54.;
-/// The room between the panel's edge and a row's, chosen so a row's corners sit parallel to the panel's.
-const INSET: f32 = 8.;
+pub(crate) const HEAD_HEIGHT: f32 = 54.;
+const INSET: f32 = ui::FLOAT_INSET;
 /// A hairline between groups, with the room around it.
 const RULE_HEIGHT: f32 = 17.;
 const SHOWN: usize = 200;
@@ -653,6 +652,17 @@ impl Workbench {
     }
 }
 
+/// The tallest list a palette shows under its search, in whole rows so none is cut through.
+pub(crate) fn list_room(window: &Window, deck: bool) -> f32 {
+    let height = f32::from(window.viewport_size().height);
+    let panel = match deck {
+        true => 680_f32.min(height * 0.72),
+        false => height * 0.62,
+    };
+    let rows = ((panel - HEAD_HEIGHT - 1. - 2. * INSET - 2.) / ROW_HEIGHT).floor();
+    rows.max(1.) * ROW_HEIGHT
+}
+
 pub fn overlay(
     bench: &Workbench,
     window: &Window,
@@ -664,13 +674,7 @@ pub fn overlay(
     let deck = palette.spec.deck;
     let lines_height: f32 = palette.lines.iter().map(|line| line.height()).sum();
     let viewport = window.viewport_size();
-    let room = match deck {
-        true => 680_f32.min(f32::from(viewport.height) * 0.72),
-        false => f32::from(viewport.height) * 0.62,
-    };
-    let whole_rows =
-        ((room - HEAD_HEIGHT - 1. - 2. * INSET - 2.) / ROW_HEIGHT).floor() * ROW_HEIGHT;
-    let list_height = lines_height.min(whole_rows.max(ROW_HEIGHT));
+    let list_height = lines_height.min(list_room(window, deck));
     let stage = palette
         .spec
         .on_stage

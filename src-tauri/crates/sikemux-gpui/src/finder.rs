@@ -326,8 +326,8 @@ pub fn overlay(
                             .flex()
                             .items_center()
                             .gap(px(10.))
-                            .px(px(16.))
-                            .py(px(14.))
+                            .h(px(crate::palette::HEAD_HEIGHT))
+                            .px(px(2. * ui::FLOAT_INSET))
                             .border_b_1()
                             .border_color(t.border)
                             .child(ui::icon(Icon::Search, 15.).text_color(t.text_tertiary))
@@ -355,16 +355,23 @@ pub fn overlay(
                                 count,
                                 cx.processor(
                                     |bench: &mut Workbench, range: Range<usize>, _window, cx| {
-                                        range.map(|place| row(bench, place, cx)).collect::<Vec<_>>()
+                                        range
+                                            .map(|place| {
+                                                div()
+                                                    .px(px(ui::FLOAT_INSET))
+                                                    .child(row(bench, place, cx))
+                                            })
+                                            .collect::<Vec<_>>()
                                     },
                                 ),
                             )
                             .track_scroll(&finder.scroll)
-                            .h(px(30. * count as f32 + 8.))
+                            .h(px((30. * count as f32)
+                                .min(crate::palette::list_room(window, false))
+                                + 2. * ui::FLOAT_INSET))
                             .min_h_0()
                             .flex_shrink(1.)
-                            .py(px(4.))
-                            .px(px(6.)),
+                            .py(px(ui::FLOAT_INSET)),
                         ),
                     }),
             )
@@ -389,7 +396,7 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
         .items_center()
         .gap(px(10.))
         .h(px(30.))
-        .px(px(6.))
+        .px(px(8.))
         .rounded(theme::RADIUS_2)
         .text_size(crate::theme::ui_text(13.))
         .text_color(if selected {

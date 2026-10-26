@@ -763,7 +763,7 @@ impl Render for Menu {
             .shadow(t.shadow_float())
             .child(
                 div()
-                    .px(px(12.))
+                    .px(px(ui::PANEL_INSET + 10.))
                     .py(px(10.))
                     .border_b_1()
                     .border_color(t.line)
@@ -777,7 +777,7 @@ impl Render for Menu {
                         .flex()
                         .flex_wrap()
                         .gap(px(4.))
-                        .p(px(6.))
+                        .p(px(ui::PANEL_INSET + 2.))
                         .border_b_1()
                         .border_color(t.line)
                         .children(agents),
@@ -786,7 +786,7 @@ impl Render for Menu {
             .child(
                 div()
                     .id("model-options")
-                    .p(px(5.))
+                    .p(px(ui::PANEL_INSET))
                     .max_h(px(360.))
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
@@ -794,7 +794,7 @@ impl Render for Menu {
             )
             .children(footer.map(|footer| {
                 div()
-                    .p(px(5.))
+                    .p(px(ui::PANEL_INSET))
                     .border_t_1()
                     .border_color(t.line)
                     .child(footer)

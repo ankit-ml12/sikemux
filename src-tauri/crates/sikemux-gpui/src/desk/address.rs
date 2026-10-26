@@ -370,7 +370,7 @@ pub(super) fn overlay(
         .flex_none()
         .flex()
         .flex_col()
-        .p(px(4.))
+        .p(px(ui::FLOAT_INSET))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_action(cx.listener(|bench, _: &Next, _, cx| bench.step_address(1, cx)))
         .on_action(cx.listener(|bench, _: &Previous, _, cx| bench.step_address(-1, cx)))
@@ -381,7 +381,7 @@ pub(super) fn overlay(
         .child(
             div()
                 .h(px(38.))
-                .pl(px(10.))
+                .pl(px(8.))
                 .flex()
                 .items_center()
                 .child(ui::icon(Icon::Search, 14.).text_color(t.text_tertiary))

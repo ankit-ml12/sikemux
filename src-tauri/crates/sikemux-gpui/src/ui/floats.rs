@@ -17,6 +17,12 @@ use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{Tokens, RADIUS_2, RADIUS_3, RADIUS_4};
 
+/// How far rows sit inside a float, so a chosen row's corners run parallel to the float's:
+/// the float's corner less its border and a row's corner.
+pub const FLOAT_INSET: f32 = 14. - 1. - 5.;
+/// The same inside a panel with the smaller [`RADIUS_3`] corners.
+pub const PANEL_INSET: f32 = 10. - 1. - 5.;
+
 /// What floats over everything else: menus, pickers, palettes.
 pub fn float(cx: &App) -> Div {
     let t = Tokens::get(cx);

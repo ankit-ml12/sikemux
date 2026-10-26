@@ -227,7 +227,7 @@ impl Render for Switcher {
                 && (at == 0 || choices[at - 1].project.is_some() != choice.project.is_some()))
             .then(|| {
                 div()
-                    .px(px(10.))
+                    .px(px(8.))
                     .pt(px(8.))
                     .pb(px(2.))
                     .text_size(crate::theme::ui_text(10.5))
@@ -247,7 +247,7 @@ impl Render for Switcher {
                     .items_center()
                     .gap(px(8.))
                     .h(px(28.))
-                    .px(px(10.))
+                    .px(px(8.))
                     .rounded(theme::RADIUS_2)
                     .cursor_pointer()
                     .when(at == self.chosen, |row| row.bg(t.surface_hover))
@@ -266,7 +266,7 @@ impl Render for Switcher {
                         let picked = picked.clone();
                         this.update(cx, |switcher, cx| switcher.pick(picked, window, cx))
                     })
-                    .child(ui::icon(Icon::Folder, 12.).text_color(t.text_tertiary))
+                    .child(ui::icon(Icon::Folder, 12.).text_color(t.live))
                     .child(
                         div()
                             .flex_none()
@@ -307,7 +307,7 @@ impl Render for Switcher {
             .flex()
             .flex_col()
             .gap(px(4.))
-            .p(px(6.))
+            .p(px(ui::PANEL_INSET))
             .bg(t.surface_overlay)
             .border_1()
             .border_color(t.border)
@@ -315,8 +315,8 @@ impl Render for Switcher {
             .shadow(t.shadow_float())
             .child(
                 div()
-                    .mx(px(-6.))
-                    .mt(px(-6.))
+                    .mx(px(-ui::PANEL_INSET))
+                    .mt(px(-ui::PANEL_INSET))
                     .mb(px(2.))
                     .child(ui::Field::new(&self.query).icon(Icon::Search).flush()),
             )
@@ -329,7 +329,7 @@ impl Render for Switcher {
                     .when(empty, |list| {
                         list.child(
                             div()
-                                .px(px(10.))
+                                .px(px(8.))
                                 .py(px(8.))
                                 .text_size(crate::theme::ui_text(12.))
                                 .text_color(t.text_tertiary)
