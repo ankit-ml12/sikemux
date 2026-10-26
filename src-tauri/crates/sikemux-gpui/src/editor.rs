@@ -408,7 +408,12 @@ pub fn pane(
                     .font_family(theme::MONO)
                     .text_size(size)
                     .text_color(t.text_primary)
-                    .child(Editor::new(&document.state).bordered(false).h_full())
+                    .child(
+                        Editor::new(&document.state)
+                            .appearance(false)
+                            .text_size(size)
+                            .h_full(),
+                    )
                     .child(gutter::overlay(
                         &this,
                         &key,
