@@ -951,6 +951,16 @@ impl Chat {
         self.head_moved = true;
     }
 
+    fn forget_choices(&mut self) {
+        self.head.remove("model");
+        self.head.remove("effort");
+        if let Some(state) = self.state.as_mut() {
+            state.model = None;
+            state.effort = None;
+        }
+        self.head_moved = true;
+    }
+
     /// Whether the head changed since this was last asked.
     pub fn take_head_moved(&mut self) -> bool {
         std::mem::take(&mut self.head_moved)
@@ -3206,8 +3216,12 @@ impl Workbench {
         Some(chat.reader.read(cx).tools.counts())
     }
 
-    /// Moves a chat that has not started to another agent, account or provider.
-    pub fn move_chat(&self, agent: &str, to: crate::model_picker::Moving) {
+    /// Moves a chat that has not started to another agent, account or provider. The model and
+    /// effort it offered belong to the agent it leaves, so they go until the core says the new ones.
+    pub fn move_chat(&mut self, agent: &str, to: crate::model_picker::Moving) {
+        if let Some(chat) = self.chats.get_mut(agent) {
+            chat.forget_choices();
+        }
         let account = to
             .profile
             .as_deref()
@@ -3253,7 +3267,7 @@ impl Workbench {
 
     /// Moves the chat in front to `provider` on its chosen account, as the model menu's chip for
     /// the agent does.
-    pub fn move_front_to(&self, provider: &str) {
+    pub fn move_front_to(&mut self, provider: &str) {
         let Some(agent) = self.agent().map(|agent| agent.id) else {
             return;
         };

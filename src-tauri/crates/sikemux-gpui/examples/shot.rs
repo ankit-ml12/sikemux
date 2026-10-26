@@ -317,7 +317,7 @@ fn main() -> anyhow::Result<()> {
                 }
                 "move-to" => {
                     if let Some(bench) = bench.borrow().clone() {
-                        bench.read(cx).move_front_to(rest);
+                        bench.update(cx, |bench, _| bench.move_front_to(rest));
                     }
                 }
                 "open-tool" => {

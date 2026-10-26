@@ -278,20 +278,21 @@ fn add(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) 
 }
 
 /// Where a chat goes to run on `provider`: the agent Sikemux runs it with, on that agent's
-/// account, starting on the provider's model for it, else its first.
+/// account, starting on the provider's model for it, else its first. A provider serving no
+/// model leaves the chat where it is, as the agent could not start on it.
 fn onto(bench: &Workbench, provider: &Value) -> Option<Moving> {
     let agent = provider["runsWith"].as_str()?;
     let model = provider["defaults"][agent]
         .as_str()
         .or_else(|| provider["models"][0].as_str())
-        .map(str::to_owned);
+        .map(str::to_owned)?;
     Some(Moving {
         provider: agent.to_owned(),
         profile: bench
             .accounts
             .current(agent)
             .map(|profile| profile.id.clone()),
-        model,
+        model: Some(model),
         model_provider: provider["id"].as_str().map(str::to_owned),
     })
 }
