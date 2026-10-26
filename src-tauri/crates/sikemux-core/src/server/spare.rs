@@ -131,9 +131,10 @@ pub(crate) fn settle(core: &Arc<Core>) {
         let fits = wanted.as_ref().is_some_and(|((project, _, _), size)| {
             *project == spare.project && *size == spare.size
         });
-        let stale = now >= spare.started_at + IDLE_LIMIT_MS && spare.started_at >= held.changed_at;
+        let idle_until = spare.started_at.max(held.changed_at) + IDLE_LIMIT_MS;
+        let stale = now >= idle_until;
         if fits && !stale {
-            core.spares.wake.at(spare.started_at + IDLE_LIMIT_MS);
+            core.spares.wake.at(idle_until);
             return;
         }
         let id = spare.id;
