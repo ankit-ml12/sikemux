@@ -356,72 +356,49 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
     let me = {
         let this = this.clone();
         let chosen = settings.page == Page::Account && !searching;
-        let (mark, name, line): (AnyElement, SharedString, SharedString) = match account {
+        let (mark, name): (AnyElement, SharedString) = match account {
             Some(account) => (
-                crate::rail::avatar(bench, account, 26., &t).into_any_element(),
+                crate::rail::avatar(bench, account, 16., &t).into_any_element(),
                 account
                     .name
                     .clone()
                     .or_else(|| account.email.clone())
                     .unwrap_or_else(|| "Signed in".into())
                     .into(),
-                account
-                    .name
-                    .as_ref()
-                    .and(account.email.clone())
-                    .unwrap_or_else(|| "Your account".into())
-                    .into(),
             ),
             None => (
-                div()
-                    .size(px(26.))
-                    .flex_none()
-                    .rounded_full()
-                    .border_1()
-                    .border_color(t.border)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(ui::icon(Icon::User, 14.).text_color(t.text_tertiary))
+                ui::icon(Icon::User, 14.)
+                    .text_color(if chosen {
+                        t.text_secondary
+                    } else {
+                        t.text_tertiary
+                    })
                     .into_any_element(),
                 "Not signed in".into(),
-                "Sign in to reach this host from anywhere".into(),
             ),
         };
         div()
             .id("settings-page-Account")
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(px(9.))
+            .h(px(24.))
             .px(px(8.))
-            .py(px(5.))
             .rounded(theme::RADIUS_2)
             .cursor_pointer()
+            .text_size(crate::theme::ui_text(12.5))
+            .text_color(if chosen {
+                t.text_primary
+            } else {
+                t.text_secondary
+            })
             .when(chosen, |row| row.bg(t.surface_chosen))
             .when(!chosen, |row| row.hover(|style| style.bg(t.surface_hover)))
             .on_click(move |_, window, cx| {
                 this.update(cx, |bench, cx| open(bench, Page::Account, window, cx))
             })
-            .child(mark)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        ui::text(name, 12.5, FontWeight::MEDIUM)
-                            .truncate()
-                            .text_color(t.text_primary),
-                    )
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(crate::theme::ui_text(11.))
-                            .text_color(t.text_tertiary)
-                            .child(line),
-                    ),
-            )
+            .child(div().w(px(14.)).flex().justify_center().child(mark))
+            .child(div().flex_1().min_w_0().truncate().child(name))
     };
 
     let release = bench
@@ -437,6 +414,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
         .mt(px(6.))
         .border_t_1()
         .border_color(t.border)
+        .child(me)
         .children(index::FOOT.map(|page| {
             page_row(page).when(page == Page::About && !release.is_empty(), |row| {
                 row.child(ui::mono(format!("v{release}"), 10., cx))
@@ -453,7 +431,6 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
         .bg(rows::card_fill(cx).opacity(0.7))
         .border_r_1()
         .border_color(t.border)
-        .p(px(8.))
         .child(
             div()
                 .key_context(SEARCH)
@@ -482,28 +459,37 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                         }
                     }),
                 )
-                .child(ui::Field::new(&settings.search).icon(Icon::Search).hint(
-                    crate::keymap::label(if cfg!(target_os = "macos") {
-                        "Meta+F"
-                    } else {
-                        "Ctrl+F"
-                    }),
-                )),
+                .child(
+                    ui::Field::new(&settings.search)
+                        .flush()
+                        .small()
+                        .icon(Icon::Search)
+                        .hint(crate::keymap::label(if cfg!(target_os = "macos") {
+                            "Meta+F"
+                        } else {
+                            "Ctrl+F"
+                        })),
+                ),
         )
-        .child(div().pt(px(8.)).child(me))
         .child(
             div()
-                .id("settings-nav")
-                .track_scroll(&settings.nav)
-                .mt(px(6.))
-                .border_t_1()
-                .border_color(t.border)
                 .flex_1()
                 .min_h_0()
-                .overflow_y_scroll()
-                .children(nav),
-        )
-        .child(foot);
+                .flex()
+                .flex_col()
+                .px(px(8.))
+                .pb(px(8.))
+                .child(
+                    div()
+                        .id("settings-nav")
+                        .track_scroll(&settings.nav)
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .children(nav),
+                )
+                .child(foot),
+        );
 
     let (title, about): (SharedString, SharedString) = match searching {
         true => (

@@ -40,8 +40,8 @@ pub enum Page {
 
 use Page::*;
 
-/// The pages in the list on the left, under their groups. Account leads the list
-/// and Usage and About close it, outside any group.
+/// The pages in the list on the left, under their groups. Account, Usage and About
+/// close it, outside any group.
 pub const GROUPS: [(&str, &[Page]); 6] = [
     ("General", &[General, Keyboard, Notifications]),
     ("Appearance", &[Theme, Interface, Buddies, Window]),
@@ -169,8 +169,10 @@ impl Page {
 
     /// Every page on this system, in the order the list shows them.
     pub fn all() -> impl Iterator<Item = Page> {
-        std::iter::once(Account)
-            .chain(GROUPS.iter().flat_map(|(_, pages)| pages.iter().copied()))
+        GROUPS
+            .iter()
+            .flat_map(|(_, pages)| pages.iter().copied())
+            .chain(std::iter::once(Account))
             .chain(FOOT)
             .filter(|page| page.here())
     }

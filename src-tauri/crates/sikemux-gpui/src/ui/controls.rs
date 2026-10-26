@@ -692,6 +692,7 @@ pub struct Field {
     state: Entity<InputState>,
     icon: Option<Icon>,
     flush: bool,
+    small: bool,
     mono: bool,
     hint: Option<SharedString>,
 }
@@ -702,6 +703,7 @@ impl Field {
             state: state.clone(),
             icon: None,
             flush: false,
+            small: false,
             mono: false,
             hint: None,
         }
@@ -729,6 +731,13 @@ impl Field {
         self.icon = Some(icon);
         self
     }
+
+    /// A row's height, for a field at the head of a list of rows; flush, it sits on the
+    /// rows' inset rather than a dropdown's.
+    pub fn small(mut self) -> Self {
+        self.small = true;
+        self
+    }
 }
 
 impl RenderOnce for Field {
@@ -737,13 +746,13 @@ impl RenderOnce for Field {
         let field = div().flex().items_center().gap(px(7.));
         match self.flush {
             true => field
-                .h(px(32.))
-                .px(px(12.))
+                .h(px(if self.small { 34. } else { 32. }))
+                .px(px(if self.small { 18. } else { 12. }))
                 .border_b_1()
                 .border_color(t.border),
             false => field
-                .h(px(34.))
-                .px(px(10.))
+                .h(px(if self.small { 26. } else { 34. }))
+                .px(px(if self.small { 8. } else { 10. }))
                 .border_1()
                 .border_color(t.line)
                 .rounded(RADIUS_2)
@@ -764,7 +773,9 @@ impl RenderOnce for Field {
                     true => text
                         .font_family(crate::theme::MONO)
                         .text_size(crate::theme::ui_text(12.)),
-                    false => text.text_size(crate::theme::ui_text(13.)),
+                    false => {
+                        text.text_size(crate::theme::ui_text(if self.small { 12. } else { 13. }))
+                    }
                 })
                 .text_color(t.text_primary)
                 .child(Input::new(&self.state).appearance(false).bordered(false)),
