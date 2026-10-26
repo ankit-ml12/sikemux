@@ -467,6 +467,7 @@ fn page_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea
         }),
         folding,
     );
+    let footer = merge_footer(area, found, cx);
     let page = |body: AnyElement| {
         div()
             .id("pull-page")
@@ -511,6 +512,7 @@ fn page_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea
         .flex_col()
         .child(super::band(centred(div().child(top).child(tabs)), cx))
         .child(div().flex_1().min_h_0().child(body))
+        .children(footer)
         .into_any_element()
 }
 
@@ -532,29 +534,37 @@ fn back(cx: &mut Context<HostArea>) -> IconButton {
 
 /// Checks the pull request out in the project, or says it is checked out already.
 fn checkout_button(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) -> Button {
-    let opened = area.pull.as_ref().expect("a pull request is open");
+    let (label, here, can) = checkout_state(area, view);
+    Button::new("pull-checkout", label, Variant::Outline)
+        .icon(if here { Icon::Check } else { Icon::Checkout })
+        .disabled(!can)
+        .on_click(cx.listener(|area, _, _, cx| area.checkout(cx)))
+}
+
+/// What checking the pull request out says, whether it is checked out here already, and
+/// whether it can be now.
+fn checkout_state(area: &HostArea, view: &OpenPull) -> (&'static str, bool, bool) {
+    let busy = area.pull.as_ref().is_some_and(|opened| opened.busy);
     let checkout = view.checkout.clone().filter(|_| area.elsewhere.is_none());
     let current = area.pulls.branch.as_ref().map(|(branch, _)| branch.clone());
     let here = checkout.is_some() && checkout == current;
     let label = if here {
         "Checked out"
-    } else if opened.busy {
+    } else if busy {
         "Checking out…"
     } else {
         "Check out"
     };
-    Button::new("pull-checkout", label, Variant::Outline)
-        .icon(if here { Icon::Check } else { Icon::Checkout })
-        .disabled(here || checkout.is_none() || opened.busy)
-        .on_click(cx.listener(|area, _, _, cx| area.checkout(cx)))
+    (label, here, !here && checkout.is_some() && !busy)
 }
 
 /// Merges by the method picked, as GitHub's split button does: the method's name merges,
 /// asking first, and the chevron beside it picks another method.
+/// `compact` says only Merge, for a narrow pane, and lists Check out in its menu too.
 fn merge_button(
     area: &HostArea,
     view: &OpenPull,
-    fill: bool,
+    compact: bool,
     cx: &mut Context<HostArea>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
@@ -569,17 +579,18 @@ fn merge_button(
     let opened = area.pull.as_ref().expect("a pull request is open");
     let methods = area.host.pulls.merge_methods.clone();
     let chosen = opened.method;
-    let says = methods
-        .get(chosen)
-        .map_or("Merge pull request", |method| method_words(method).0)
-        .to_owned();
+    let says = match compact {
+        true => "Merge",
+        false => methods
+            .get(chosen)
+            .map_or("Merge pull request", |method| method_words(method).0),
+    }
+    .to_owned();
+    let (checking_out, _, can_check_out) = checkout_state(area, view);
     let off = opened.busy || blocked;
     let merge = BaseButton::new("pull-merge")
         .accessibility_label(says.clone())
-        .map(|button| match fill {
-            true => button.flex_1(),
-            false => button.px(px(12.)),
-        })
+        .px(px(12.))
         .h(px(28.))
         .flex()
         .items_center()
@@ -621,10 +632,10 @@ fn merge_button(
                 .text_color(t.on_accent),
         );
     let view = cx.entity().downgrade();
-    let picker = (methods.len() > 1).then(|| {
+    let picker = (methods.len() > 1 || compact).then(|| {
         ui::menu_button(
             "pull-merge-method",
-            gpui_kit::Anchor::TopRight,
+            gpui_kit::Anchor::BottomRight,
             chevron,
             move |mut popup, _, cx| {
                 for (index, method) in methods.iter().enumerate() {
@@ -644,12 +655,23 @@ fn merge_button(
                             }),
                     );
                 }
+                if compact {
+                    let view = view.clone();
+                    popup = popup.separator().item(
+                        ui::MenuRow::new(checking_out)
+                            .icon(Icon::Checkout)
+                            .item(cx)
+                            .disabled(!can_check_out)
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |area, cx| area.checkout(cx)).ok();
+                            }),
+                    );
+                }
                 popup
             },
         )
     });
     div()
-        .when(fill, |button| button.flex_1())
         .flex()
         .rounded(RADIUS_2)
         .overflow_hidden()
@@ -714,18 +736,14 @@ fn readiness(view: &OpenPull, area: &HostArea) -> Option<(Outcome, String, Optio
     })
 }
 
-/// What stands between an open pull request and its merge, on one bar: its reviews, its
-/// checks and whether it can merge, then Check out and Merge. A narrow pane spreads the
-/// statuses across the bar in their short words and gives the buttons a row of their own.
-fn merge_bar(
-    area: &HostArea,
-    view: &OpenPull,
-    narrow: bool,
-    cx: &mut Context<HostArea>,
-) -> Option<Div> {
+/// What stands between an open pull request and its merge, on a footer pinned under its
+/// page as the chat's composer is: its reviews, its checks and whether it can merge, then
+/// Check out and Merge. A narrow pane says each in a word and folds Check out into Merge.
+fn merge_footer(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
     if view.pull.state != "open" {
         return None;
     }
+    let narrow = area.pull.as_ref().is_some_and(|opened| opened.narrow);
     let t = Tokens::get(cx).clone();
     let (outcome, said) = reviews(view);
     let short = match view.verdict {
@@ -778,31 +796,29 @@ fn merge_bar(
                 .child(if narrow { short } else { long })
         })
         .collect::<Vec<_>>();
-    let checkout = checkout_button(area, view, cx);
-    let merge = merge_button(area, view, narrow, cx);
-    Some(match narrow {
-        true => div()
-            .flex()
-            .flex_col()
-            .gap(px(10.))
-            .child(div().flex().justify_between().children(statuses))
-            .child(div().flex().gap(px(6.)).child(checkout).child(merge)),
-        false => div()
-            .pl(px(AVATAR + AVATAR_GAP))
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap(px(14.))
-            .children(statuses)
-            .child(
-                div()
-                    .ml_auto()
-                    .flex()
-                    .gap(px(6.))
-                    .child(checkout)
-                    .child(merge),
-            ),
-    })
+    let row = div()
+        .px(px(16.))
+        .py(px(10.))
+        .flex()
+        .items_center()
+        .gap(px(if narrow { 12. } else { 16. }))
+        .children(statuses)
+        .child(
+            div()
+                .ml_auto()
+                .flex()
+                .gap(px(6.))
+                .when(!narrow, |acts| acts.child(checkout_button(area, view, cx)))
+                .child(merge_button(area, view, narrow, cx)),
+        );
+    Some(
+        div()
+            .flex_none()
+            .when(!crate::see_through::clear(cx), |foot| foot.bg(t.surface))
+            .border_t_1()
+            .border_color(t.border)
+            .child(centred(row)),
+    )
 }
 
 /// Whether the host would take a merge now: not while it conflicts, its rules block it or
@@ -881,44 +897,38 @@ fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div 
             false => at.absolute().top_0().left(px(-30.)),
         }
     });
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(12.))
-        .child(
-            div()
-                .relative()
-                .flex()
-                .items_start()
-                .gap(px(AVATAR_GAP))
-                .children(back)
-                .child(area.face(Some(&author), pull.avatar_url.as_deref(), AVATAR, cx))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap(px(6.))
-                        .child(
-                            ui::text(pull.title.clone(), 16., FontWeight::SEMIBOLD)
-                                .whitespace_normal()
-                                .text_color(t.text_primary),
-                        )
-                        .child(meta)
-                        .children(under),
-                )
-                .child(
-                    IconButton::new("pull-open-host", Icon::Globe, format!("Open on {host}"))
-                        .small()
-                        .on_click(move |_, _, cx| cx.open_url(&url)),
-                ),
-        )
-        .children(merge_bar(area, found, narrow, cx))
+    div().flex().flex_col().gap(px(12.)).child(
+        div()
+            .relative()
+            .flex()
+            .items_start()
+            .gap(px(AVATAR_GAP))
+            .children(back)
+            .child(area.face(Some(&author), pull.avatar_url.as_deref(), AVATAR, cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(
+                        ui::text(pull.title.clone(), 16., FontWeight::SEMIBOLD)
+                            .whitespace_normal()
+                            .text_color(t.text_primary),
+                    )
+                    .child(meta)
+                    .children(under),
+            )
+            .child(
+                IconButton::new("pull-open-host", Icon::Globe, format!("Open on {host}"))
+                    .small()
+                    .on_click(move |_, _, cx| cx.open_url(&url)),
+            ),
+    )
 }
 
-/// The author's face beside the title, and the gap between them, which the merge line
-/// under them is inset by so its statuses start where the title does.
+/// The author's face beside the title, and the gap between them.
 const AVATAR: f32 = 36.;
 const AVATAR_GAP: f32 = 12.;
 
