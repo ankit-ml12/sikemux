@@ -530,69 +530,42 @@ fn back(cx: &mut Context<HostArea>) -> IconButton {
         }))
 }
 
-/// Check out and merge, merge being what an open pull request asks for.
-fn actions(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
+/// Checks the pull request out in the project, or says it is checked out already.
+fn checkout_button(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) -> Button {
     let opened = area.pull.as_ref().expect("a pull request is open");
-    let view = opened.view.as_ref().and_then(|view| view.as_ref().ok());
-    let open = view.is_some_and(|view| view.pull.state == "open");
-    let can_merge = open && view.is_some_and(mergeable);
-    let why_not = view
-        .filter(|_| open && !can_merge)
-        .and_then(|view| readiness(view, area))
-        .map(|(_, title, _)| title);
-    let (merge_label, merge_look) = match view.map(|view| view.pull.state.as_str()) {
-        Some("merged") => ("Merged", Variant::Outline),
-        Some("closed") => ("Closed", Variant::Outline),
-        _ if can_merge => ("Merge", Variant::Primary),
-        _ => ("Merge", Variant::Outline),
-    };
-    let checkout = view
-        .and_then(|view| view.checkout.clone())
-        .filter(|_| area.elsewhere.is_none());
+    let checkout = view.checkout.clone().filter(|_| area.elsewhere.is_none());
     let current = area.pulls.branch.as_ref().map(|(branch, _)| branch.clone());
     let here = checkout.is_some() && checkout == current;
-    let checkout_label = if here {
+    let label = if here {
         "Checked out"
     } else if opened.busy {
         "Checking out…"
     } else {
         "Check out"
     };
-    div()
-        .flex()
-        .gap(px(6.))
-        .flex_wrap()
-        .child(
-            Button::new("pull-checkout", checkout_label, Variant::Outline)
-                .icon(if here { Icon::Check } else { Icon::Checkout })
-                .disabled(here || !open || checkout.is_none() || opened.busy)
-                .on_click(cx.listener(|area, _, _, cx| area.checkout(cx))),
-        )
-        .child(
-            Button::new("pull-merge-page", merge_label, merge_look)
-                .icon(Icon::Merge)
-                .disabled(open && !can_merge)
-                .when_some(why_not, |button, why| button.tooltip(why))
-                .on_click(cx.listener(|area, _, _, cx| {
-                    if let Some(opened) = &mut area.pull {
-                        opened.section = Section::Checks;
-                    }
-                    cx.notify();
-                })),
-        )
+    Button::new("pull-checkout", label, Variant::Outline)
+        .icon(if here { Icon::Check } else { Icon::Checkout })
+        .disabled(here || checkout.is_none() || opened.busy)
+        .on_click(cx.listener(|area, _, _, cx| area.checkout(cx)))
 }
 
 /// Merges by the method picked, as GitHub's split button does: the method's name merges,
 /// asking first, and the chevron beside it picks another method.
 fn merge_button(
     area: &HostArea,
-    blocked: bool,
-    number: u64,
-    base: String,
-    title: String,
+    view: &OpenPull,
+    fill: bool,
     cx: &mut Context<HostArea>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
+    let blocked = !mergeable(view);
+    let number = view.pull.number;
+    let title = view.pull.title.clone();
+    let base = view
+        .pull
+        .base
+        .clone()
+        .unwrap_or_else(|| "the base branch".into());
     let opened = area.pull.as_ref().expect("a pull request is open");
     let methods = area.host.pulls.merge_methods.clone();
     let chosen = opened.method;
@@ -603,8 +576,11 @@ fn merge_button(
     let off = opened.busy || blocked;
     let merge = BaseButton::new("pull-merge")
         .accessibility_label(says.clone())
-        .flex_1()
-        .h(px(34.))
+        .map(|button| match fill {
+            true => button.flex_1(),
+            false => button.px(px(12.)),
+        })
+        .h(px(28.))
         .flex()
         .items_center()
         .justify_center()
@@ -630,8 +606,8 @@ fn merge_button(
         .child(says);
     let chevron = BaseButton::new("pull-merge-method-pill")
         .accessibility_label("Merge method")
-        .w(px(34.))
-        .h(px(34.))
+        .w(px(28.))
+        .h(px(28.))
         .flex()
         .items_center()
         .justify_center()
@@ -673,7 +649,7 @@ fn merge_button(
         )
     });
     div()
-        .w_full()
+        .when(fill, |button| button.flex_1())
         .flex()
         .rounded(RADIUS_2)
         .overflow_hidden()
@@ -738,59 +714,103 @@ fn readiness(view: &OpenPull, area: &HostArea) -> Option<(Outcome, String, Optio
     })
 }
 
-/// What stands between an open pull request and its merge, one chip each: its reviews, its
-/// checks and whether it can merge, a chip that stops the merge in the danger colour.
-fn standing(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
+/// What stands between an open pull request and its merge, on one bar: its reviews, its
+/// checks and whether it can merge, then Check out and Merge. A narrow pane spreads the
+/// statuses across the bar in their short words and gives the buttons a row of their own.
+fn merge_bar(
+    area: &HostArea,
+    view: &OpenPull,
+    narrow: bool,
+    cx: &mut Context<HostArea>,
+) -> Option<Div> {
     if view.pull.state != "open" {
         return None;
     }
+    let t = Tokens::get(cx).clone();
     let (outcome, said) = reviews(view);
-    let mut chips = vec![(outcome, said.to_owned())];
+    let short = match view.verdict {
+        Some(ReviewVerdict::Approved) => "Approved",
+        Some(ReviewVerdict::ChangesRequested) => "Changes requested",
+        None if view.reviewed => "Not approved",
+        None => "No reviews",
+    };
+    let mut statuses = vec![(outcome, said.to_owned(), short.to_owned())];
     if let Some(tally) = &view.checks {
-        chips.push((
+        let counted = format!("{}/{}", tally.passed, tally.total);
+        statuses.push((
             tally.outcome,
-            format!("{}/{} checks passed", tally.passed, tally.total),
+            format!("{counted} checks passed"),
+            format!("{counted} checks"),
         ));
     }
-    chips.extend(readiness(view, area).map(|(outcome, title, _)| (outcome, title)));
-    let t = Tokens::get(cx).clone();
-    Some(
-        div()
+    if let Some((outcome, title, _)) = readiness(view, area) {
+        let short = match view.merge {
+            _ if view.pull.draft => "Draft",
+            MergeReadiness::Conflicts => "Conflicts",
+            MergeReadiness::Blocked => "Blocked",
+            MergeReadiness::Behind => "Behind",
+            MergeReadiness::Ready => "Ready",
+            MergeReadiness::Checking => "Checking",
+        };
+        statuses.push((outcome, title, short.to_owned()));
+    }
+    let statuses = statuses
+        .into_iter()
+        .enumerate()
+        .map(|(at, (outcome, long, short))| {
+            let stops = matches!(outcome, Outcome::Failure | Outcome::Blocked);
+            div()
+                .id(("pull-status", at))
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .whitespace_nowrap()
+                .text_size(crate::theme::ui_text(12.))
+                .text_color(if stops { t.danger } else { t.text_primary })
+                .cursor_pointer()
+                .on_click(cx.listener(|area, _, _, cx| {
+                    if let Some(opened) = &mut area.pull {
+                        opened.section = Section::Checks;
+                    }
+                    cx.notify();
+                }))
+                .child(ui::status_of_run(outcome_word(outcome), 13., cx))
+                .child(if narrow { short } else { long })
+        })
+        .collect::<Vec<_>>();
+    let checkout = checkout_button(area, view, cx);
+    let merge = merge_button(area, view, narrow, cx);
+    let bar = div()
+        .py(px(8.))
+        .pl(px(12.))
+        .pr(px(8.))
+        .rounded(RADIUS_2)
+        .border_1()
+        .border_color(t.border)
+        .bg(t.text_primary.opacity(0.03));
+    Some(match narrow {
+        true => bar
+            .pl(px(8.))
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(div().px(px(4.)).flex().justify_between().children(statuses))
+            .child(div().flex().gap(px(6.)).child(checkout).child(merge)),
+        false => bar
             .flex()
             .flex_wrap()
-            .gap(px(6.))
-            .children(chips.into_iter().enumerate().map(|(at, (outcome, said))| {
-                let stops = matches!(outcome, Outcome::Failure | Outcome::Blocked);
+            .items_center()
+            .gap(px(14.))
+            .children(statuses)
+            .child(
                 div()
-                    .id(("pull-standing", at))
-                    .h(px(24.))
-                    .pl(px(7.))
-                    .pr(px(9.))
+                    .ml_auto()
                     .flex()
-                    .items_center()
                     .gap(px(6.))
-                    .rounded(RADIUS_2)
-                    .border_1()
-                    .border_color(if stops {
-                        t.danger.opacity(0.45)
-                    } else {
-                        t.border
-                    })
-                    .when(stops, |chip| chip.bg(t.danger.opacity(0.08)))
-                    .text_size(crate::theme::ui_text(12.))
-                    .text_color(t.text_primary)
-                    .cursor_pointer()
-                    .hover(move |chip| chip.bg(t.surface_hover))
-                    .on_click(cx.listener(|area, _, _, cx| {
-                        if let Some(opened) = &mut area.pull {
-                            opened.section = Section::Checks;
-                        }
-                        cx.notify();
-                    }))
-                    .child(ui::status_of_run(outcome_word(outcome), 13., cx))
-                    .child(said)
-            })),
-    )
+                    .child(checkout)
+                    .child(merge),
+            ),
+    })
 }
 
 /// Whether the host would take a merge now: not while it conflicts, its rules block it or
@@ -804,72 +824,99 @@ fn mergeable(view: &OpenPull) -> bool {
 fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div {
     let t = Tokens::get(cx).clone();
     let host = super::host_label(&area.host.host);
+    let narrow = area.pull.as_ref().is_some_and(|opened| opened.narrow);
     let pull = &found.pull;
     let author = pull.author.clone().unwrap_or_else(|| "someone".into());
     let url = pull.url.clone();
-    let commits = match pull.commits {
-        Some(1) => "1 commit".to_owned(),
-        Some(count) => format!("{count} commits"),
-        None => "its commits".to_owned(),
+    let dot = || div().text_color(t.text_tertiary).child("·");
+    let branches = || {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(5.))
+            .children(
+                pull.base
+                    .as_ref()
+                    .map(|base| branch_chip(base, t.text_primary, cx)),
+            )
+            .child("←")
+            .children(
+                pull.head
+                    .as_ref()
+                    .map(|head| branch_chip(head, t.text_primary, cx)),
+            )
     };
-    let doing = match found.state {
-        PullState::Merged => format!("merged {commits} into"),
-        _ => format!("wants to merge {commits} into"),
+    let line = || {
+        div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(px(6.))
+            .text_size(crate::theme::ui_text(12.))
+            .text_color(t.text_tertiary)
     };
-    let word = |words: String| div().child(words);
+    let who = div()
+        .text_color(t.text_primary)
+        .font_weight(FontWeight::MEDIUM)
+        .child(author.clone());
+    let labels = pull.labels.iter().map(|label| super::label_chip(label, cx));
+    let meta = line()
+        .child(state_pill(found.state, cx))
+        .child(ui::mono(format!("#{}", pull.number), 11.5, cx).text_color(t.text_tertiary))
+        .child(dot())
+        .child(who);
+    let meta = match narrow {
+        true => meta.child(dot()).child(ago(&pull.updated_at)),
+        false => meta
+            .child(match found.state {
+                PullState::Merged => "merged into",
+                _ => "wants to merge into",
+            })
+            .child(branches())
+            .child(dot())
+            .child(ago(&pull.updated_at))
+            .children(labels.collect::<Vec<_>>()),
+    };
+    let under = narrow.then(|| {
+        line()
+            .child(branches())
+            .children(pull.labels.iter().map(|label| super::label_chip(label, cx)))
+    });
     div()
         .flex()
         .flex_col()
-        .gap(px(8.))
+        .gap(px(12.))
         .child(
             div()
                 .flex()
-                .items_center()
-                .gap(px(8.))
-                .when(area.desk.is_none(), |row| row.child(back(cx)))
-                .child(state_pill(found.state, cx))
-                .child(ui::mono(format!("#{}", pull.number), 12., cx).text_color(t.text_tertiary))
-                .child(div().flex_1())
-                .child(actions(area, cx))
+                .items_start()
+                .gap(px(12.))
+                .when(area.desk.is_none(), |row| {
+                    row.child(div().h(px(36.)).flex().items_center().child(back(cx)))
+                })
+                .child(area.face(Some(&author), pull.avatar_url.as_deref(), 36., cx))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap(px(6.))
+                        .child(
+                            ui::text(pull.title.clone(), 16., FontWeight::SEMIBOLD)
+                                .whitespace_normal()
+                                .text_color(t.text_primary),
+                        )
+                        .child(meta)
+                        .children(under),
+                )
                 .child(
                     IconButton::new("pull-open-host", Icon::Globe, format!("Open on {host}"))
                         .small()
                         .on_click(move |_, _, cx| cx.open_url(&url)),
                 ),
         )
-        .child(
-            ui::text(pull.title.clone(), 16., FontWeight::SEMIBOLD)
-                .whitespace_normal()
-                .text_color(t.text_primary),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .gap(px(5.))
-                .text_size(crate::theme::ui_text(12.))
-                .text_color(t.text_tertiary)
-                .child(area.face(Some(&author), pull.avatar_url.as_deref(), 16., cx))
-                .child(div().text_color(t.text_primary).child(author.clone()))
-                .child(word(doing))
-                .children(
-                    pull.base
-                        .as_ref()
-                        .map(|base| branch_chip(base, t.text_primary, cx)),
-                )
-                .children(pull.head.as_ref().map(|head| {
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(5.))
-                        .child("from")
-                        .child(branch_chip(head, t.text_primary, cx))
-                }))
-                .child(word(format!("· {}", ago(&pull.updated_at))))
-                .children(pull.labels.iter().map(|label| super::label_chip(label, cx))),
-        )
-        .children(standing(area, found, cx))
+        .children(merge_bar(area, found, narrow, cx))
 }
 
 /// How the pull request stands, as a pill in its colour.
@@ -883,11 +930,11 @@ fn state_pill(state: PullState, cx: &App) -> Div {
     };
     div()
         .flex_none()
-        .h(px(22.))
-        .px(px(9.))
+        .h(px(20.))
+        .px(px(8.))
         .flex()
         .items_center()
-        .gap(px(5.))
+        .gap(px(4.))
         .rounded_full()
         .bg(ink.opacity(0.16))
         .text_size(crate::theme::ui_text(11.5))
@@ -1304,23 +1351,9 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     let verdict = part(outcome, said, None, cx);
     let readiness =
         readiness(view, area).map(|(outcome, title, detail)| part(outcome, title, detail, cx));
-    let blocked = !mergeable(view);
-    let number = pull.number;
-    let title = pull.title.clone();
-    let base_name = base.clone();
-    let actions = div()
-        .px(px(12.))
-        .py(px(10.))
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .when(!pull.draft, |actions| {
-            actions.child(merge_button(area, blocked, number, base_name, title, cx))
-        });
     card.child(verdict)
         .children(checks)
         .children(readiness)
-        .child(actions)
         .into_any_element()
 }
 

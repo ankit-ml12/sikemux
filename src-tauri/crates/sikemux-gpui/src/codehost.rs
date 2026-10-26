@@ -1084,6 +1084,7 @@ fn branch_chip(name: &str, ink: Hsla, cx: &App) -> Div {
         .rounded(crate::theme::RADIUS_1)
         .bg(t.surface_active)
         .font_family(crate::theme::MONO)
+        .text_size(crate::theme::ui_text(11.5))
         .text_color(ink)
         .truncate()
         .child(name.to_owned())
