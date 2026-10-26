@@ -3891,18 +3891,20 @@ fn row(
                     .flex()
                     .flex_col()
                     .items_end()
-                    .child(
-                        div()
-                            .max_w_full()
-                            .px(px(12.))
-                            .py(px(8.))
-                            .border_1()
-                            .border_color(looks.line)
-                            .rounded(theme::RADIUS_3)
-                            .bg(looks.bubble)
-                            .children(attach::sent(message, open, looks.file_pressed(), cx))
-                            .children(parts),
-                    )
+                    .children(attach::sent(message, open, looks.file_pressed(), cx))
+                    .when(!parts.is_empty(), |column| {
+                        column.child(
+                            div()
+                                .max_w_full()
+                                .px(px(12.))
+                                .py(px(8.))
+                                .border_1()
+                                .border_color(looks.line)
+                                .rounded(theme::RADIUS_3)
+                                .bg(looks.bubble)
+                                .children(parts),
+                        )
+                    })
                     .children(meta::line(rows, ix, &group, looks, cx))
             }
         }
