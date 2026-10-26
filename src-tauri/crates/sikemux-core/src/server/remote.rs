@@ -859,6 +859,22 @@ impl Remote {
         })
     }
 
+    /// Forgets every linked host the account no longer has, answering which.
+    pub(crate) fn forget_links_off(&self, account: &[String]) -> CoreResult<Vec<String>> {
+        self.change(|stored| {
+            let gone: Vec<String> = stored
+                .links
+                .iter()
+                .map(|link| link.id.clone())
+                .filter(|id| !account.contains(id))
+                .collect();
+            for id in &gone {
+                stored.forget(id);
+            }
+            Ok(gone)
+        })
+    }
+
     /// Keeps a host this one is now linked with, replacing what it knew of it.
     pub(crate) fn add_link(&self, link: LinkedHost) -> CoreResult<()> {
         self.change(|stored| {

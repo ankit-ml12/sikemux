@@ -242,8 +242,30 @@ pub(crate) async fn rename_device(core: &Core, params: DeviceParams) -> CoreResu
 }
 
 /// Takes a device or host off the account, which revokes it on every host at once.
+/// A host the account already lost is only forgotten here.
 pub(crate) async fn remove_device(core: &Core, params: DeviceParams) -> CoreResult<()> {
-    host_request(core, Method::DELETE, &device_path(&params.key)?, None).await?;
+    let Err(error) = host_request(core, Method::DELETE, &device_path(&params.key)?, None).await
+    else {
+        return Ok(());
+    };
+    let hosts: DeviceList = as_host(core, Method::GET, "/v1/devices?role=host", None).await?;
+    forget_hosts_off_account(core, &hosts)?;
+    if hosts.devices.iter().any(|host| host.key == params.key) {
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// Forgets the linked hosts that `hosts`, the account's, no longer holds.
+fn forget_hosts_off_account(core: &Core, hosts: &DeviceList) -> CoreResult<()> {
+    let keys: Vec<String> = hosts.devices.iter().map(|host| host.key.clone()).collect();
+    let gone = core.remote.forget_links_off(&keys)?;
+    for host in &gone {
+        super::unlinked(core, host, "it was removed from your account");
+    }
+    if !gone.is_empty() {
+        super::super::remote::announce(core);
+    }
     Ok(())
 }
 
@@ -315,6 +337,7 @@ async fn link_all(core: &Arc<Core>) -> CoreResult<()> {
         .core_id()
         .ok_or_else(|| CoreError::from("this host's key has not loaded"))?;
     let hosts: DeviceList = as_host(core, Method::GET, "/v1/devices?role=host", None).await?;
+    forget_hosts_off_account(core, &hosts)?;
     let names: Vec<(String, String)> = hosts
         .devices
         .iter()
