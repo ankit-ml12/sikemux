@@ -6,8 +6,6 @@
 //! - [`native_view`] is the element. It lays out like any other, hands the
 //!   surface its frame whenever that changes, and puts it out of sight once
 //!   the element is no longer drawn.
-//! - [`below`] keeps the native views inside an element out of a strip along its top,
-//!   where something GPUI draws floats over them.
 //! - [`document::Document`] is a surface for a file macOS draws itself: PDFs in
 //!   PDFKit's view, office and iWork files in Quick Look's.
 //!
@@ -23,13 +21,13 @@ mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    point, AnyElement, App, Bounds, Element, ElementId, FocusHandle, GlobalElementId,
-    HitboxBehavior, InspectorElementId, IntoElement, LayoutId, Pixels, Refineable, Style,
-    StyleRefinement, Styled, Window,
+    App, Bounds, Element, ElementId, FocusHandle, GlobalElementId, HitboxBehavior,
+    InspectorElementId, IntoElement, LayoutId, Pixels, Refineable, Style, StyleRefinement, Styled,
+    Window,
 };
 
 #[cfg(target_os = "linux")]
@@ -173,12 +171,7 @@ impl Element for NativeView {
         if let Some(focus) = &self.focus {
             window.set_focus_handle(focus, cx);
         }
-        let visible = CLIPS.with_borrow(|clips| {
-            clips.iter().fold(
-                bounds.intersect(&window.content_mask().bounds),
-                |visible, clip| visible.intersect(clip),
-            )
-        });
+        let visible = bounds.intersect(&window.content_mask().bounds);
         window.insert_hitbox(visible, HitboxBehavior::BlockMouseExceptScroll);
         let frame = (!visible.is_empty()).then_some(Frame { bounds, visible });
         let id = id.expect("a native view has an id");
@@ -251,84 +244,5 @@ impl Drop for Placement {
         if self.surface.0.placed_by.get() == self.mark {
             self.surface.place(self.mark, None);
         }
-    }
-}
-
-thread_local! {
-    static CLIPS: RefCell<Vec<Bounds<Pixels>>> = const { RefCell::new(Vec::new()) };
-}
-
-/// Lays out as `child`, and shows the native views inside it only below the top `top` of it.
-pub fn below(top: Pixels, child: impl IntoElement) -> Below {
-    Below {
-        top,
-        child: child.into_any_element(),
-    }
-}
-
-pub struct Below {
-    top: Pixels,
-    child: AnyElement,
-}
-
-impl IntoElement for Below {
-    type Element = Self;
-
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
-impl Element for Below {
-    type RequestLayoutState = ();
-    type PrepaintState = ();
-
-    fn id(&self) -> Option<ElementId> {
-        None
-    }
-
-    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
-        None
-    }
-
-    fn request_layout(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> (LayoutId, ()) {
-        (self.child.request_layout(window, cx), ())
-    }
-
-    fn prepaint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        _: &mut (),
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        let clip = Bounds::from_corners(
-            point(bounds.left(), bounds.top() + self.top),
-            bounds.bottom_right(),
-        );
-        CLIPS.with_borrow_mut(|clips| clips.push(clip));
-        self.child.prepaint(window, cx);
-        CLIPS.with_borrow_mut(|clips| clips.pop());
-    }
-
-    fn paint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        _: Bounds<Pixels>,
-        _: &mut (),
-        _: &mut (),
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        self.child.paint(window, cx);
     }
 }

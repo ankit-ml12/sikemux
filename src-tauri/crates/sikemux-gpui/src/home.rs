@@ -87,27 +87,20 @@ pub fn agent_view(
         .as_ref()
         .and_then(|agent| bench.agent_terminal(&agent.id))
     {
-        return ui::pane(cx)
-            .p(px(ui::AGENT_INSET))
-            .child(div().size_full().pt(px(40.)).child(terminal::pane(
-                bench,
-                &cx.entity(),
-                &crate::hosts::Place::This,
-                &session.to_string(),
-                cx,
-            )))
-            .children(header)
-            .into_any_element();
+        let terminal = terminal::pane(
+            bench,
+            &cx.entity(),
+            &crate::hosts::Place::This,
+            &session.to_string(),
+            cx,
+        );
+        return under_header(header, div().size_full().child(terminal), cx);
     }
     if let Some(agent) = agent.as_ref().filter(|agent| bench.in_terminal(&agent.id)) {
         let asleep = bench
             .terminal_asleep(&agent.id)
             .then(|| asleep_in_terminal(bench, agent, cx));
-        return ui::pane(cx)
-            .p(px(ui::AGENT_INSET))
-            .children(asleep)
-            .children(header)
-            .into_any_element();
+        return under_header(header, div().size_full().children(asleep), cx);
     }
     if let Some((agent, chat)) = agent
         .as_ref()
@@ -123,16 +116,26 @@ pub fn agent_view(
             chat::connection_note(agent, chat, resumes, cx)
                 .unwrap_or_else(|| welcome(bench, Some(agent), cx).into_any_element())
         });
-        return ui::pane(cx)
-            .p(px(ui::AGENT_INSET))
-            .child(chat::pane(bench, agent, chat, welcome, cx))
-            .children(header)
-            .into_any_element();
+        return under_header(header, chat::pane(bench, agent, chat, welcome, cx), cx);
     }
+    under_header(
+        header,
+        centred(welcome(bench, agent.as_ref(), cx)).size_full(),
+        cx,
+    )
+}
+
+/// An agent pane: its header across the top, and what it shows below it.
+fn under_header(
+    header: Option<impl IntoElement>,
+    shown: impl IntoElement,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
     ui::pane(cx)
-        .p(px(ui::AGENT_INSET))
-        .child(centred(welcome(bench, agent.as_ref(), cx)).size_full())
+        .flex()
+        .flex_col()
         .children(header)
+        .child(div().flex_1().min_h_0().p(px(ui::AGENT_INSET)).child(shown))
         .into_any_element()
 }
 
@@ -375,7 +378,6 @@ fn pane_header(
     let more = KitButton::new("agent-more")
         .ghost()
         .compact()
-        .rounded_full()
         .w(px(24.))
         .h(px(24.))
         .tooltip("More")
@@ -413,7 +415,7 @@ fn pane_header(
                 .items_center()
                 .justify_center()
                 .gap(px(3.))
-                .rounded_full()
+                .rounded(crate::theme::RADIUS_2)
                 .text_size(crate::theme::ui_text(12.))
                 .text_color(t.live)
                 .tooltip(ui::tooltip(share.watching()))
@@ -423,7 +425,7 @@ fn pane_header(
                 .into_any_element()
         }
         None => IconButton::new("agent-share", Icon::Share, "Share this chat read-only")
-            .round()
+            .compact()
             .on_click(open_share)
             .into_any_element(),
     };
@@ -468,26 +470,24 @@ fn pane_header(
         .when(has_chat, |header| header.action(share))
         .action(more)
         .controls(
-            div().flex().items_center().gap(px(4.)).child(
-                Segmented::new("agent-view", views, usize::from(in_terminal))
-                    .pill()
-                    .disabled_because(match (has_chat, working) {
-                        (false, _) => Some("This agent has no built-in chat".to_owned()),
-                        (true, true) => {
-                            let other = if in_terminal { "GUI" } else { "TUI" };
-                            Some(format!(
-                                "Wait for the agent to finish before opening {other}"
-                            ))
-                        }
-                        (true, false) => None,
-                    })
-                    .on_select(cx.listener(move |bench, picked: &usize, _, _| {
-                        let terminal = *picked == 1;
-                        if terminal != in_terminal {
-                            bench.switch_view(&switched, terminal);
-                        }
-                    })),
-            ),
+            Segmented::new("agent-view", views, usize::from(in_terminal))
+                .slide()
+                .disabled_because(match (has_chat, working) {
+                    (false, _) => Some("This agent has no built-in chat".to_owned()),
+                    (true, true) => {
+                        let other = if in_terminal { "GUI" } else { "TUI" };
+                        Some(format!(
+                            "Wait for the agent to finish before opening {other}"
+                        ))
+                    }
+                    (true, false) => None,
+                })
+                .on_select(cx.listener(move |bench, picked: &usize, _, _| {
+                    let terminal = *picked == 1;
+                    if terminal != in_terminal {
+                        bench.switch_view(&switched, terminal);
+                    }
+                })),
         )
         .side(
             IconButton::new(
@@ -499,7 +499,7 @@ fn pane_header(
                     "Open the desk"
                 },
             )
-            .glyph(13.)
+            .compact()
             .pressed(desk_open)
             .on_click(
                 cx.listener(move |bench, _, _, cx| bench.toggle_desk(&tab, &view, &agent_id, cx)),

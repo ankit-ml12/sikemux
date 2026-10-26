@@ -1733,7 +1733,6 @@ pub fn pane(
                 .flex()
                 .flex_col()
                 .items_center()
-                .pt(px(44.))
                 .child(note)
                 .children(welcome)
                 .into_any_element(),
@@ -1754,12 +1753,11 @@ pub fn pane(
         .flex_1()
         .min_h_0()
         .relative()
-        .child(gpui_native_view::below(
-            px(ui::HEADER_REACH),
+        .child(
             chat.transcript
                 .clone()
                 .cached(StyleRefinement::default().size_full()),
-        ))
+        )
         .children(scrollbar)
         .children(chat.finding.as_ref().map(|finding| {
             let transcript = chat.transcript.read(cx);
@@ -3771,7 +3769,7 @@ fn row(
     let lost = (ix == 0 && looks.reading.earlier_lost).then(|| {
         div()
             .w_full()
-            .pt(px(44.))
+            .pt(px(12.))
             .pb(px(8.))
             .flex()
             .justify_center()
@@ -3793,7 +3791,7 @@ fn row(
                 .w_full()
                 .flex()
                 .justify_center()
-                .when(!looks.reading.earlier_lost, |row| row.pt(px(44.)))
+                .when(!looks.reading.earlier_lost, |row| row.pt(px(12.)))
                 .child(note)
         });
     let noted = worktree.is_some();
@@ -3883,7 +3881,7 @@ fn row(
                     }
                 })
                 .when(ix == 0 && !looks.reading.earlier_lost && !noted, |row| {
-                    row.pt(px(56.))
+                    row.pt(px(12.))
                 })
                 .when(ix + 1 == rows.len(), |row| row.pb(px(32.)))
                 .child(content),

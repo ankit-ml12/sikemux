@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, ClickEvent, Div, FontWeight, Hsla, InteractiveElement, IntoElement,
+    div, px, AnyElement, App, ClickEvent, Div, FontWeight, InteractiveElement, IntoElement,
     ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use smallvec::SmallVec;
@@ -12,11 +12,6 @@ use crate::theme::{Tokens, RADIUS_3};
 
 /// How far an agent pane's contents sit inside its frame, as on the Mac.
 pub const AGENT_INSET: f32 = 6.;
-
-const PILL_HEIGHT: f32 = 32.;
-const HEADER_GAP: f32 = 2.;
-/// How far an agent pane's header reaches down over its contents, which scroll under it.
-pub const HEADER_REACH: f32 = HEADER_GAP + PILL_HEIGHT;
 
 /// A pane's frame. Panes paint no ground of their own: the shell's shows through.
 pub fn pane(cx: &App) -> Div {
@@ -30,26 +25,9 @@ pub fn pane(cx: &App) -> Div {
         .children(super::grain::field(cx))
 }
 
-/// The blurred pill a pane's header is made of.
-pub fn pill(cx: &App) -> Div {
-    let t = Tokens::get(cx);
-    div()
-        .h(px(PILL_HEIGHT))
-        .flex()
-        .items_center()
-        .border_1()
-        .border_color(t.border)
-        .rounded_full()
-        .bg(Hsla {
-            a: 0.62,
-            ..t.surface_sunken
-        })
-        .backdrop_blur(px(14.))
-}
-
-/// An agent pane's header, two pills floating over what the pane shows: what it
-/// is with its actions, then its controls and anything beside them. It sits as far
-/// in from the frame's top as from its sides, as on the Mac.
+/// An agent pane's header: a bar across the top of the frame, what the pane is on the left
+/// and its controls and actions on the right. What the pane shows starts below it, so
+/// nothing passes underneath.
 #[derive(IntoElement)]
 pub struct PaneHeader {
     mark: Option<AnyElement>,
@@ -110,7 +88,7 @@ impl PaneHeader {
         self
     }
 
-    /// What sits beside the controls in a circle of its own, as the desk toggle.
+    /// What sits last, after the controls, as the desk toggle.
     pub fn side(mut self, side: impl IntoElement) -> Self {
         self.side = Some(side.into_any_element());
         self
@@ -119,68 +97,55 @@ impl PaneHeader {
 
 impl RenderOnce for PaneHeader {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let primary = Tokens::get(cx).text_primary;
+        let t = Tokens::get(cx);
+        let (primary, border) = (t.text_primary, t.border);
+        let rule = || div().flex_none().w(px(1.)).h(px(14.)).mx(px(2.)).bg(border);
+        let has_actions = !self.actions.is_empty();
         div()
-            .absolute()
-            .top(px(AGENT_INSET + HEADER_GAP))
-            .left(px(AGENT_INSET + 6.))
-            .right(px(AGENT_INSET + 4.))
+            .flex_none()
+            .w_full()
+            .h(px(44.))
             .flex()
             .items_center()
-            .justify_between()
-            .gap(px(12.))
-            .child(
-                pill(cx)
-                    .min_w_0()
-                    .overflow_hidden()
-                    .pl(px(8.))
-                    .pr(px(4.))
-                    .gap(px(8.))
-                    .children(self.mark.map(|mark| mark_box(18., mark).flex_none()))
-                    .children(self.title_view.or_else(|| {
-                        let double_click = self.on_title_double_click;
-                        (!self.title.is_empty()).then(|| {
-                            text(self.title, 13., FontWeight::MEDIUM)
-                                .id("pane-title")
-                                .min_w_0()
-                                .overflow_hidden()
-                                .text_ellipsis()
-                                .text_color(primary)
-                                .when_some(double_click, |title, handler| {
-                                    title.on_click(move |event, window, cx| {
-                                        if event.click_count() == 2 {
-                                            handler(event, window, cx)
-                                        }
-                                    })
-                                })
-                                .into_any_element()
+            .gap(px(8.))
+            .pl(px(18.))
+            .pr(px(14.))
+            .children(self.mark.map(|mark| mark_box(18., mark).flex_none()))
+            .children(self.title_view.or_else(|| {
+                let double_click = self.on_title_double_click;
+                (!self.title.is_empty()).then(|| {
+                    text(self.title, 13., FontWeight::MEDIUM)
+                        .id("pane-title")
+                        .min_w_0()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .text_color(primary)
+                        .when_some(double_click, |title, handler| {
+                            title.on_click(move |event, window, cx| {
+                                if event.click_count() == 2 {
+                                    handler(event, window, cx)
+                                }
+                            })
                         })
-                    }))
-                    .children(self.name.map(|name| {
-                        meta(name, cx)
-                            .text_size(crate::theme::ui_text(12.))
-                            .min_w_0()
-                            .truncate()
-                    }))
-                    .children(
-                        self.actions
-                            .into_iter()
-                            .map(|action| div().flex_none().child(action)),
-                    ),
+                        .into_any_element()
+                })
+            }))
+            .children(self.name.map(|name| {
+                meta(name, cx)
+                    .text_size(crate::theme::ui_text(12.))
+                    .min_w_0()
+                    .truncate()
+            }))
+            .child(div().flex_1())
+            .when_some(self.controls, |bar, controls| {
+                bar.child(div().flex_none().child(controls))
+                    .when(has_actions, |bar| bar.child(rule()))
+            })
+            .children(
+                self.actions
+                    .into_iter()
+                    .map(|action| div().flex_none().child(action)),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .children(
-                        self.controls
-                            .map(|controls| pill(cx).px(px(3.)).gap(px(6.)).child(controls)),
-                    )
-                    .when_some(self.side, |end, side| {
-                        end.child(pill(cx).size(px(32.)).justify_center().child(side))
-                    }),
-            )
+            .children(self.side.map(|side| div().flex_none().child(side)))
     }
 }

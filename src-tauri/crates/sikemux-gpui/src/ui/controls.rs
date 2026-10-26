@@ -32,7 +32,6 @@ pub struct IconButton {
     height: Option<f32>,
     glyph: f32,
     quiet: bool,
-    round: bool,
     pressed: bool,
     disabled: bool,
     turned: f32,
@@ -52,7 +51,6 @@ impl IconButton {
             width: None,
             glyph: 15.,
             quiet: true,
-            round: false,
             pressed: false,
             disabled: false,
             turned: 0.,
@@ -88,12 +86,11 @@ impl IconButton {
         self
     }
 
-    /// A 24px circle in a pane's header pill.
-    pub fn round(mut self) -> Self {
+    /// The 24px buttons in a pane's header.
+    pub fn compact(mut self) -> Self {
         self.size = 24.;
         self.glyph = 13.;
         self.quiet = false;
-        self.round = true;
         self
     }
 
@@ -177,13 +174,7 @@ impl RenderOnce for IconButton {
             .flex()
             .items_center()
             .justify_center()
-            .map(|button| {
-                if self.round {
-                    button.rounded_full()
-                } else {
-                    button.rounded(RADIUS_2)
-                }
-            })
+            .rounded(RADIUS_2)
             .text_color(ink)
             .bg(wash)
             .on_hover(keep_over)
@@ -440,7 +431,7 @@ pub struct Segmented {
     /// Each choice's icon, its label, and how many it holds when that is known.
     options: Vec<(Option<Icon>, SharedString, Option<u64>)>,
     selected: usize,
-    pill: bool,
+    slide: bool,
     fill: bool,
     on_select: Option<OnSelect>,
     /// Why it cannot be changed now, shown over it; none while it can.
@@ -463,7 +454,7 @@ impl Segmented {
             id: id.into(),
             options,
             selected,
-            pill: false,
+            slide: false,
             fill: false,
             on_select: None,
             disabled: None,
@@ -485,7 +476,7 @@ impl Segmented {
             id: id.into(),
             options,
             selected,
-            pill: false,
+            slide: false,
             fill: false,
             on_select: None,
             disabled: None,
@@ -499,9 +490,9 @@ impl Segmented {
         self
     }
 
-    /// The round, borderless switch in a pane's header, as GUI and TUI.
-    pub fn pill(mut self) -> Self {
-        self.pill = true;
+    /// The switch in a pane's header, as GUI and TUI: a grey thumb slides to the chosen one.
+    pub fn slide(mut self) -> Self {
+        self.slide = true;
         self
     }
 
@@ -522,11 +513,92 @@ impl Segmented {
     }
 }
 
-impl RenderOnce for Segmented {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+impl Segmented {
+    fn sliding(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        const SLOT: f32 = 50.;
         let t = Tokens::get(cx).clone();
         let on_select = self.on_select.filter(|_| self.disabled.is_none());
-        let (pill, fill, waiting) = (self.pill, self.fill, self.waiting);
+        let thumb_id = ElementId::NamedChild(Arc::new(self.id.clone()), "thumb".into());
+        let at = motion::follow(
+            thumb_id,
+            self.selected as f32,
+            motion::THUMB_SLIDE,
+            window,
+            cx,
+        );
+        div()
+            .id(self.id)
+            .relative()
+            .flex()
+            .h(px(24.))
+            .p(px(1.))
+            .rounded(px(7.))
+            .bg(t.surface_hover)
+            .border_1()
+            .border_color(t.border)
+            .when_some(self.disabled, |track, reason| {
+                track.opacity(0.5).tooltip(super::tooltip(reason))
+            })
+            .child(
+                div()
+                    .absolute()
+                    .top(px(1.))
+                    .left(px(1. + at * SLOT))
+                    .w(px(SLOT))
+                    .h(px(20.))
+                    .rounded(px(5.))
+                    .bg(t.surface_active),
+            )
+            .children(
+                self.options
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (glyph, label, _))| {
+                        let chosen = index == self.selected;
+                        let ink = if chosen {
+                            t.text_primary
+                        } else {
+                            t.text_tertiary
+                        };
+                        let on_select = on_select.clone();
+                        BaseButton::new(("segment", index))
+                            .group(GROUP)
+                            .selected(chosen)
+                            .accessibility_label(label.clone())
+                            .w(px(SLOT))
+                            .h_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .gap(px(5.))
+                            .text_color(ink)
+                            .when(!chosen, |segment| {
+                                segment.hover(move |style| style.text_color(t.text_secondary))
+                            })
+                            .when_some(on_select, |segment, handler| {
+                                segment.on_click(move |_, window, cx| handler(&index, window, cx))
+                            })
+                            .children(glyph.map(|glyph| {
+                                icon(glyph, 12.).text_color(ink).when(!chosen, |glyph| {
+                                    glyph.group_hover(GROUP, move |style| {
+                                        style.text_color(t.text_secondary)
+                                    })
+                                })
+                            }))
+                            .child(text(label, 11., FontWeight::NORMAL))
+                    }),
+            )
+    }
+}
+
+impl RenderOnce for Segmented {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        if self.slide {
+            return self.sliding(window, cx).into_any_element();
+        }
+        let t = Tokens::get(cx).clone();
+        let on_select = self.on_select.filter(|_| self.disabled.is_none());
+        let (fill, waiting) = (self.fill, self.waiting);
         div()
             .id(self.id)
             .flex()
@@ -534,18 +606,11 @@ impl RenderOnce for Segmented {
             .when_some(self.disabled, |track, reason| {
                 track.opacity(0.5).tooltip(super::tooltip(reason))
             })
-            .map(|track| {
-                if pill {
-                    track.h(px(24.)).p(px(2.)).rounded_full()
-                } else {
-                    track
-                        .h(px(30.))
-                        .p(px(3.))
-                        .rounded(RADIUS_2)
-                        .border_1()
-                        .border_color(t.border)
-                }
-            })
+            .h(px(30.))
+            .p(px(3.))
+            .rounded(RADIUS_2)
+            .border_1()
+            .border_color(t.border)
             .children(
                 self.options
                     .into_iter()
@@ -558,22 +623,14 @@ impl RenderOnce for Segmented {
                             .selected(chosen)
                             .accessibility_label(label.clone())
                             .when(fill, |segment| segment.flex_1().min_w_0())
-                            .when(!fill && !pill && glyph.is_some(), |segment| {
-                                segment.flex_1()
-                            })
+                            .when(!fill && glyph.is_some(), |segment| segment.flex_1())
                             .h_full()
                             .px(px(8.))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .gap(px(if pill { 5. } else { 7. }))
-                            .map(|segment| {
-                                if pill {
-                                    segment.rounded_full()
-                                } else {
-                                    segment.rounded(px(3.))
-                                }
-                            })
+                            .gap(px(7.))
+                            .rounded(px(3.))
                             .text_color(if chosen {
                                 t.text_primary
                             } else {
@@ -596,7 +653,7 @@ impl RenderOnce for Segmented {
                                     })
                             }))
                             .child(
-                                text(label, if pill { 10.5 } else { 11. }, FontWeight::NORMAL)
+                                text(label, 11., FontWeight::NORMAL)
                                     .overflow_hidden()
                                     .text_ellipsis(),
                             )
@@ -624,6 +681,7 @@ impl RenderOnce for Segmented {
                             }))
                     }),
             )
+            .into_any_element()
     }
 }
 

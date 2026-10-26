@@ -382,7 +382,6 @@ pub(super) fn connection_note(
     let this = cx.weak_entity();
     let row = div()
         .px(px(22.))
-        .pt(px(44.))
         .flex()
         .flex_wrap()
         .items_center()

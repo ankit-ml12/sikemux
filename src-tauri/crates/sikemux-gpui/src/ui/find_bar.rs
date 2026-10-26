@@ -7,7 +7,7 @@ use std::rc::Rc;
 use gpui_kit::component::input::InputState;
 use gpui_kit::{
     actions, div, px, App, Entity, InteractiveElement, IntoElement, KeyBinding, MouseButton,
-    ParentElement, Pixels, RenderOnce, SharedString, Styled, Window,
+    ParentElement, RenderOnce, SharedString, Styled, Window,
 };
 
 use super::{mono, Field, IconButton, Toggle};
@@ -41,7 +41,6 @@ pub struct FindBar {
     on_word: Act,
     on_step: Step,
     on_close: Act,
-    top: Pixels,
 }
 
 impl FindBar {
@@ -57,14 +56,7 @@ impl FindBar {
             on_word: none.clone(),
             on_step: Rc::new(|_, _, _| {}),
             on_close: none,
-            top: px(7.),
         }
-    }
-
-    /// How far below the top edge it sits, to clear a header drawn over what it searches.
-    pub fn below(mut self, top: Pixels) -> Self {
-        self.top = top;
-        self
     }
 
     /// Whether case counts, and what flips it.
@@ -115,7 +107,7 @@ impl RenderOnce for FindBar {
             .on_action(move |_: &FindPrevious, window, cx| previous(false, window, cx))
             .on_action(move |_: &CloseFind, window, cx| closing(window, cx))
             .absolute()
-            .top(self.top)
+            .top(px(7.))
             .right(px(12.))
             .flex()
             .items_center()

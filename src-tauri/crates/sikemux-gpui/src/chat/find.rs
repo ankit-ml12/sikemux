@@ -6,7 +6,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::{px, AppContext, Context, Entity, Focusable, Subscription, Window};
+use gpui_kit::{AppContext, Context, Entity, Focusable, Subscription, Window};
 use gpui_transcript::Query;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -368,7 +368,6 @@ pub fn bar(
         }
     };
     FindBar::new(&finding.input, label)
-        .below(px(46.))
         .match_case(
             finding.match_case,
             on(|bench, agent, _, cx| {
