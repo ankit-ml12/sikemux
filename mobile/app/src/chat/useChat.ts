@@ -4,7 +4,7 @@ import { AppState } from 'react-native';
 import type { ConnectionLike } from '@sikemux/native';
 
 import { connectionOf, onChatEvents, useLive } from '@/devices/hub';
-import { keptChat } from './kept';
+import { keptChat, unsavedDraft } from './kept';
 import { ChatSession, type ChatSnapshot, type OpenTimes } from './session';
 
 function logOpen(agentId: string, took: OpenTimes) {
@@ -25,6 +25,7 @@ export function chatSession(core: string, agentId: string): ChatSession {
     session = new ChatSession(agentId, {
       listen: (take) => onChatEvents(core, take),
       store: keptChat(core, agentId),
+      drafts: unsavedDraft(core, agentId),
       timed: __DEV__ ? (took) => logOpen(agentId, took) : undefined,
     });
     sessions.set(key, session);
@@ -51,7 +52,11 @@ export function useChat(
   useEffect(() => session.hold(connection), [session, connection]);
   // The phone may be closed for good once it leaves the app, with the chat still on screen.
   useEffect(() => {
-    const watching = AppState.addEventListener('change', (state) => state === 'background' && session.keep());
+    const watching = AppState.addEventListener('change', (state) => {
+      if (state !== 'background') return;
+      session.keep();
+      session.keepDraft();
+    });
     return () => watching.remove();
   }, [session]);
 

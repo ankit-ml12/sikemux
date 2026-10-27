@@ -3,6 +3,7 @@ import * as Updates from 'expo-updates';
 import type { ChatRows } from '@shared/chat/rows';
 
 import { writeWhole } from '@/devices/disk';
+import type { Attachment } from './uploads';
 
 /** A chat as this phone last drew it, so opening it again draws at once and asks the host only for what came after. */
 export type Kept = {
@@ -53,5 +54,37 @@ export function keptChat(core: string, agentId: string): ChatStore {
           evictOldest();
         } catch {}
       }),
+  };
+}
+
+/** What was written in a chat's composer here and not saved on the host yet, with the host's revision it was written over. */
+export type UnsavedDraft = { text: string; attachments: Attachment[]; extra: Record<string, unknown>; rev?: number };
+
+export type DraftStore = { load: () => UnsavedDraft | undefined; save: (draft: UnsavedDraft) => void; clear: () => void };
+
+/** Kept with the app's documents rather than its cache, so writing survives the app quitting before the host has it. */
+const drafts = new Directory(Paths.document, 'drafts');
+
+export function unsavedDraft(core: string, agentId: string): DraftStore {
+  const file = new File(drafts, `${encodeURIComponent(`${core}:${agentId}`)}.json`);
+  return {
+    load: () => {
+      try {
+        return file.exists ? (JSON.parse(file.textSync()) as UnsavedDraft) : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    save: (draft) => {
+      try {
+        drafts.create({ idempotent: true, intermediates: true });
+        writeWhole(file, JSON.stringify(draft));
+      } catch {}
+    },
+    clear: () => {
+      try {
+        if (file.exists) file.delete();
+      } catch {}
+    },
   };
 }

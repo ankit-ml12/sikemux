@@ -10,7 +10,7 @@ import { problem as problemOf } from '@/core/problem';
 import type { ChatInfo } from '@/core/protocol';
 import type { ChatDelivery } from '@/devices/hub';
 import { Folds } from './folds';
-import type { ChatStore, Kept } from './kept';
+import type { ChatStore, DraftStore, Kept } from './kept';
 import { fitting, pathsOf, uploadEach, type Attachment } from './uploads';
 import type { StashItem } from '@/stash/api';
 
@@ -63,6 +63,8 @@ type Options = {
   read?: (uri: string) => Promise<ArrayBuffer>;
   /** Where the chat is kept between launches. */
   store?: ChatStore;
+  /** Where writing not saved on the host yet is kept, so it outlives the app quitting. */
+  drafts?: DraftStore;
   /** Told how long each step of taking the chat up took, to measure it. */
   timed?: (took: OpenTimes) => void;
 };
@@ -230,6 +232,14 @@ export class ChatSession {
     if (kept) {
       this.restore(kept);
       this.restoreTook = performance.now() - reading;
+    }
+    const unsaved = options.drafts?.load();
+    if (unsaved) {
+      this.draft = unsaved.text;
+      this.attachments = unsaved.attachments.filter((attachment) => attachment.path || new File(attachment.uri).exists);
+      this.draftExtra = unsaved.extra;
+      this.draftRev = unsaved.rev;
+      this.edits = 1;
     }
     this.snap = this.build();
   }
@@ -747,8 +757,22 @@ export class ChatSession {
   private edited() {
     this.edits += 1;
     clearTimeout(this.saving);
-    this.saving = setTimeout(() => void this.saveDraft(), DRAFT_SAVE_MS);
+    this.saving = setTimeout(() => {
+      this.keepDraft();
+      void this.saveDraft();
+    }, DRAFT_SAVE_MS);
   }
+
+  /** Writes down what is not saved on the host yet, so it outlives the app quitting. */
+  keepDraft = () => {
+    if (!this.edits) return;
+    this.options.drafts?.save({
+      text: this.draft,
+      attachments: this.attachments.filter((attachment) => !attachment.upload),
+      extra: this.draftExtra,
+      rev: this.draftRev,
+    });
+  };
 
   /**
    * Saves the draft as the chat's own on the host, naming the revision last taken in, so the host keeps
@@ -773,6 +797,7 @@ export class ChatSession {
     }
     if (this.edits !== edits) return;
     this.edits = 0;
+    this.options.drafts?.clear();
     this.takeDraft();
   }
 
