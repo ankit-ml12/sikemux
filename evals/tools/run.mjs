@@ -23,6 +23,8 @@ const { values: options } = parseArgs({
     models: { type: 'string', default: 'sonnet' },
     search: { type: 'string', default: 'on' },
     cases: { type: 'string' },
+    'cases-dir': { type: 'string' },
+    'results-dir': { type: 'string' },
     category: { type: 'string' },
     concurrency: { type: 'string', default: '4' },
     turns: { type: 'string', default: '16' },
@@ -55,6 +57,8 @@ if (options.help) {
   --keep                          keep each case's home and repo after grading
   --resume <run folder>           finish a run that stopped: grade what finished, run the rest
   --at <commit>                   run the tools as they were at a commit, with its host saved by an earlier build
+  --cases-dir <folder>            read cases from another folder, such as a held-back set kept outside the repo
+  --results-dir <folder>          where --record saves the result (default evals/tools/results)
   --record <label>                also save the result under evals/tools/results/
   --list                          list the cases that would run, and stop`);
   process.exit(0);
@@ -118,13 +122,15 @@ report(summary, cases);
 console.log(`\nresult: ${join(runDir, 'result.json')}`);
 if (options.record) {
   const day = summary.date.slice(0, 10);
-  const path = join(EVAL, 'results', `${day}-${summary.commit.slice(0, 9)}-${options.record}.json`);
+  const folder = options['results-dir'] ?? join(EVAL, 'results');
+  mkdirSync(folder, { recursive: true });
+  const path = join(folder, `${day}-${summary.commit.slice(0, 9)}-${options.record}.json`);
   writeFileSync(path, `${JSON.stringify(compact(summary), null, 1)}\n`);
   console.log(`recorded: ${path}`);
 }
 
 function loadCases() {
-  const folder = join(EVAL, 'cases');
+  const folder = options['cases-dir'] ?? join(EVAL, 'cases');
   const all = readdirSync(folder)
     .filter((name) => name.endsWith('.json'))
     .flatMap((name) => JSON.parse(readFileSync(join(folder, name), 'utf8')).map((testCase) => ({ ...testCase, file: name })));

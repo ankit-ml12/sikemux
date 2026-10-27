@@ -50,62 +50,6 @@
     "maxTurns": 12
   },
   {
-    "id": "research-02",
-    "from": ["human_mkt-003"],
-    "category": "wrong_tool",
-    "severity": "high",
-    "tools": ["browser_type", "browser_press", "browser_wait", "browser_find"],
-    "prompt": "I pasted your research brief into Grok in your desk tab and it compared the three tools. Ask it a follow-up: which of them can be self-hosted, and roughly what self-hosting costs. Then tell me what it says.",
-    "fixture": {
-      "project": "work",
-      "instructions": "# Web research\n\nFor any web search or research, use the signed-in Grok (grok.com) in the Sikemux browser through the sikemux-tools `browser_*` tools. Do not use the built-in WebSearch or WebFetch. Open it in a tab of your own, never one the person is using, and give subagents that need to research the same instruction.\n",
-      "tab": "https://grok.com/c/brief-1",
-      "pages": [
-        {
-          "url": "https://grok.com/c/brief-1",
-          "title": "Tool comparison - Grok",
-          "elements": [
-            "<p> Compare Alpha, Beacon and Corva for a small team running scheduled data jobs.",
-            "<p> Alpha is the cheapest hosted option, Beacon has the best scheduling, Corva has the most connectors.",
-            "<textarea> Ask a follow-up",
-            "<button> Submit"
-          ],
-          "text": "You: Compare Alpha, Beacon and Corva for a small team running scheduled data jobs.\nGrok: Alpha is the cheapest hosted option, Beacon has the best scheduling, Corva has the most connectors."
-        },
-        {
-          "url": "https://grok.com/c/brief-1#followup",
-          "href": "https://grok.com/c/brief-1",
-          "title": "Tool comparison - Grok",
-          "elements": [
-            "<p> Compare Alpha, Beacon and Corva for a small team running scheduled data jobs.",
-            "<p> Alpha is the cheapest hosted option, Beacon has the best scheduling, Corva has the most connectors.",
-            "<p> Only Beacon can be self-hosted: its open-source edition is free, and a small team typically spends about $40 a month on the server it runs on. Alpha and Corva are hosted only.",
-            "<textarea> Ask a follow-up",
-            "<button> Submit"
-          ],
-          "text": "Grok: Only Beacon can be self-hosted: its open-source edition is free, and a small team typically spends about $40 a month on the server it runs on. Alpha and Corva are hosted only."
-        }
-      ],
-      "answers": [
-        { "tool": "browser_press", "args": { "key": "/^(enter|return)$/i" }, "page": "https://grok.com/c/brief-1#followup", "reply": { "pressed": "Enter", "url": "https://grok.com/c/brief-1", "title": "Tool comparison - Grok", "loading": false } },
-        { "tool": "browser_click", "args": { "$any": [{ "text": "/submit|send/i" }, { "index": 3 }] }, "page": "https://grok.com/c/brief-1#followup", "reply": { "action": "clicked", "label": "Submit", "url": "https://grok.com/c/brief-1", "title": "Tool comparison - Grok", "loading": false } },
-        { "tool": "browser_type", "args": { "submit": true }, "page": "https://grok.com/c/brief-1#followup", "reply": { "typed": true, "submitted": true, "url": "https://grok.com/c/brief-1", "title": "Tool comparison - Grok", "loading": false } },
-        { "tool": "browser_act", "page": "https://grok.com/c/brief-1#followup", "reply": { "done": true, "url": "https://grok.com/c/brief-1", "title": "Tool comparison - Grok", "loading": false } }
-      ]
-    },
-    "grade": {
-      "expect": [
-        { "tool": ["browser_type", "browser_act"], "args": { "$any": [{ "text": "/self.?host/i" }, { "steps": "/self.?host/i" }] } }
-      ],
-      "forbid": [
-        { "tool": ["WebSearch", "WebFetch"], "why": "researched with WebSearch or WebFetch instead of asking Grok" }
-      ],
-      "reply": "/Beacon/",
-      "replyWhy": "did not report Grok's answer"
-    },
-    "maxTurns": 12
-  },
-  {
     "id": "research-03",
     "from": ["human_mkt-004"],
     "category": "wrong_tool",

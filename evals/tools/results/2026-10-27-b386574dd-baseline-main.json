@@ -136,35 +136,6 @@
      ]
     },
     {
-     "id": "agents-06",
-     "category": "malformed_call",
-     "tools": [
-      "ask"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0919195,
-     "tokens": {
-      "input": 126815,
-      "cached": 111635,
-      "output": 2006
-     },
-     "turns": 11,
-     "calls": [
-      "Read",
-      "Bash",
-      "ToolSearch",
-      "ask",
-      "Read",
-      "Read",
-      "Read",
-      "Write",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "agents-07",
      "category": "rage",
      "tools": [
@@ -195,32 +166,6 @@
       "Bash",
       "Bash",
       "Edit"
-     ]
-    },
-    {
-     "id": "agents-08",
-     "category": "malformed_call",
-     "tools": [
-      "agent_send"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "expect",
-       "why": "never called agent_send {\"to\":\"/^(maple|agent-eval-1)$/i\",\"answers\":{\"$present\":false},\"text\":\"/cent/i\"}"
-      }
-     ],
-     "judge": null,
-     "cost": 0.08386850000000001,
-     "tokens": {
-      "input": 86059,
-      "cached": 68385,
-      "output": 635
-     },
-     "turns": 3,
-     "calls": [
-      "ToolSearch",
-      "agent_send"
      ]
     },
     {
@@ -521,32 +466,6 @@
      ]
     },
     {
-     "id": "agents-19",
-     "category": "wrong_tool",
-     "tools": [
-      "agent_sessions",
-      "agent_read",
-      "browser_navigate"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.076039,
-     "tokens": {
-      "input": 124202,
-      "cached": 109950,
-      "output": 806
-     },
-     "turns": 6,
-     "calls": [
-      "ToolSearch",
-      "agent_read",
-      "agent_sessions",
-      "agent_list",
-      "browser_navigate"
-     ]
-    },
-    {
      "id": "agents-20",
      "category": "wrong_tool",
      "tools": [
@@ -696,31 +615,6 @@
       "browser_state",
       "browser_screenshot",
       "browser_state"
-     ]
-    },
-    {
-     "id": "browser-04",
-     "category": "wrong_tool",
-     "tools": [
-      "browser_navigate",
-      "browser_wait",
-      "browser_evaluate"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0740889,
-     "tokens": {
-      "input": 125181,
-      "cached": 110849,
-      "output": 570
-     },
-     "turns": 5,
-     "calls": [
-      "ToolSearch",
-      "browser_state",
-      "browser_navigate",
-      "browser_evaluate"
      ]
     },
     {
@@ -1042,34 +936,6 @@
      ]
     },
     {
-     "id": "browser-17",
-     "category": "bad_recovery",
-     "tools": [
-      "browser_navigate",
-      "browser_wait",
-      "task_read"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.085681,
-     "tokens": {
-      "input": 177316,
-      "cached": 162390,
-      "output": 977
-     },
-     "turns": 8,
-     "calls": [
-      "ToolSearch",
-      "task_read",
-      "browser_navigate",
-      "browser_state",
-      "browser_navigate",
-      "browser_state",
-      "browser_screenshot"
-     ]
-    },
-    {
      "id": "browser-18",
      "category": "bad_recovery",
      "tools": [
@@ -1089,31 +955,6 @@
       "ToolSearch",
       "guide",
       "browser_navigate"
-     ]
-    },
-    {
-     "id": "browser-19",
-     "category": "malformed_call",
-     "tools": [
-      "browser_scroll",
-      "browser_screenshot"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0772826,
-     "tokens": {
-      "input": 127355,
-      "cached": 112206,
-      "output": 549
-     },
-     "turns": 6,
-     "calls": [
-      "ToolSearch",
-      "guide",
-      "browser_state",
-      "browser_scroll",
-      "browser_screenshot"
      ]
     },
     {
@@ -1197,31 +1038,6 @@
       "browser_viewport",
       "browser_screenshot",
       "browser_screenshot"
-     ]
-    },
-    {
-     "id": "browser-23",
-     "category": "list_bloat",
-     "tools": [
-      "browser_state",
-      "browser_close_tab"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.068339,
-     "tokens": {
-      "input": 97512,
-      "cached": 83610,
-      "output": 439
-     },
-     "turns": 6,
-     "calls": [
-      "ToolSearch",
-      "browser_state",
-      "browser_close_tab",
-      "browser_close_tab",
-      "browser_close_tab"
      ]
     },
     {
@@ -1540,28 +1356,6 @@
      ]
     },
     {
-     "id": "git-10",
-     "category": "rage",
-     "tools": [
-      "git_commit"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.06238640000000001,
-     "tokens": {
-      "input": 71447,
-      "cached": 58664,
-      "output": 540
-     },
-     "turns": 4,
-     "calls": [
-      "Read",
-      "Edit",
-      "Bash"
-     ]
-    },
-    {
      "id": "git-11",
      "category": "rage",
      "tools": [
@@ -1594,33 +1388,6 @@
       "Bash",
       "Bash",
       "Bash"
-     ]
-    },
-    {
-     "id": "page-01",
-     "category": "wrong_tool",
-     "tools": [
-      "page_preview",
-      "page_show"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.14608390000000002,
-     "tokens": {
-      "input": 197478,
-      "cached": 173459,
-      "output": 3269
-     },
-     "turns": 9,
-     "calls": [
-      "ToolSearch",
-      "Skill",
-      "guide",
-      "Write",
-      "page_preview",
-      "page_preview",
-      "page_show"
      ]
     },
     {
@@ -1755,33 +1522,6 @@
       "Read",
       "ToolSearch",
       "guide",
-      "page_preview",
-      "page_show"
-     ]
-    },
-    {
-     "id": "page-07",
-     "category": "malformed_call",
-     "tools": [
-      "guide",
-      "page_preview",
-      "page_show"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.13900890000000002,
-     "tokens": {
-      "input": 216621,
-      "cached": 195029,
-      "output": 3317
-     },
-     "turns": 7,
-     "calls": [
-      "ToolSearch",
-      "guide",
-      "Write",
-      "page_preview",
       "page_preview",
       "page_show"
      ]
@@ -1927,33 +1667,6 @@
       "Bash",
       "Bash",
       "jira_transition",
-      "jira_comment"
-     ]
-    },
-    {
-     "id": "plugin-03",
-     "category": "wrong_tool",
-     "tools": [
-      "jira_edit",
-      "jira_comment"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0795772,
-     "tokens": {
-      "input": 100319,
-      "cached": 85592,
-      "output": 1213
-     },
-     "turns": 8,
-     "calls": [
-      "ToolSearch",
-      "jira_issue",
-      "jira_issue",
-      "jira_edit",
-      "jira_edit",
-      "jira_comment",
       "jira_comment"
      ]
     },
@@ -2164,45 +1877,6 @@
      ]
     },
     {
-     "id": "plugin-12",
-     "category": "bad_recovery",
-     "tools": [
-      "signoz_traces",
-      "signoz_logs",
-      "aws_ecs",
-      "aws_logs"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "The agent went from the SigNoz error into AWS ECS stopped tasks and named the root cause: API tasks killed for OOM with exit 137, backed by tool results, and it clearly flagged what it could not confirm.",
-      "cost": 0.013434
-     },
-     "cost": 0.1307958,
-     "tokens": {
-      "input": 219558,
-      "cached": 201478,
-      "output": 2493
-     },
-     "turns": 14,
-     "calls": [
-      "ToolSearch",
-      "Bash",
-      "aws_target_health",
-      "signoz_services",
-      "Bash",
-      "signoz_services",
-      "signoz_logs",
-      "aws_ecs",
-      "aws_metrics",
-      "aws_ecs",
-      "aws_ecs",
-      "aws_metrics",
-      "aws_ecs"
-     ]
-    },
-    {
      "id": "plugin-13",
      "category": "malformed_call",
      "tools": [
@@ -2288,27 +1962,6 @@
      ]
     },
     {
-     "id": "plugin-16",
-     "category": "wrong_tool",
-     "tools": [
-      "who_wrote"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0824387,
-     "tokens": {
-      "input": 85143,
-      "cached": 67867,
-      "output": 656
-     },
-     "turns": 3,
-     "calls": [
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "plugin-17",
      "category": "malformed_call",
      "tools": [
@@ -2357,33 +2010,6 @@
      "calls": [
       "ToolSearch",
       "browser_navigate",
-      "browser_type",
-      "browser_wait",
-      "browser_state"
-     ]
-    },
-    {
-     "id": "research-02",
-     "category": "wrong_tool",
-     "tools": [
-      "browser_type",
-      "browser_press",
-      "browser_wait",
-      "browser_find"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.08107370000000001,
-     "tokens": {
-      "input": 128550,
-      "cached": 113057,
-      "output": 782
-     },
-     "turns": 6,
-     "calls": [
-      "ToolSearch",
-      "browser_state",
       "browser_type",
       "browser_wait",
       "browser_state"
@@ -2467,25 +2093,6 @@
      },
      "turns": 2,
      "calls": [
-      "Bash"
-     ]
-    },
-    {
-     "id": "shell-01",
-     "category": "malformed_call",
-     "tools": [],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0816975,
-     "tokens": {
-      "input": 85218,
-      "cached": 67875,
-      "output": 555
-     },
-     "turns": 3,
-     "calls": [
-      "Bash",
       "Bash"
      ]
     },
@@ -3005,39 +2612,6 @@
      ]
     },
     {
-     "id": "verify-10",
-     "category": "rage",
-     "tools": [
-      "browser_navigate",
-      "browser_evaluate",
-      "browser_screenshot"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "The agent checked every video in the editor tab with a script reading each one's state, and reported per scene that scenes 2 and 3 fail with MEDIA_ERR_SRC_NOT_SUPPORTED so only the poster shows, while scene 1 plays.",
-      "cost": 0.012442
-     },
-     "cost": 0.10710179999999998,
-     "tokens": {
-      "input": 149979,
-      "cached": 134638,
-      "output": 1986
-     },
-     "turns": 9,
-     "calls": [
-      "Bash",
-      "Bash",
-      "ToolSearch",
-      "Bash",
-      "browser_navigate",
-      "browser_network",
-      "browser_evaluate",
-      "browser_console"
-     ]
-    },
-    {
      "id": "verify-11",
      "category": "wrong_tool",
      "tools": [
@@ -3059,29 +2633,6 @@
       "guide",
       "browser_navigate",
       "browser_click"
-     ]
-    },
-    {
-     "id": "verify-12",
-     "category": "rage",
-     "tools": [
-      "git_commit",
-      "app_console"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0838727,
-     "tokens": {
-      "input": 86455,
-      "cached": 68567,
-      "output": 548
-     },
-     "turns": 4,
-     "calls": [
-      "ToolSearch",
-      "Bash",
-      "git_commit"
      ]
     },
     {
@@ -3232,28 +2783,6 @@
      ]
     },
     {
-     "id": "wait-05",
-     "category": "wrong_tool",
-     "tools": [
-      "rundeck_execution"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0653565,
-     "tokens": {
-      "input": 96344,
-      "cached": 83205,
-      "output": 450
-     },
-     "turns": 4,
-     "calls": [
-      "ToolSearch",
-      "rundeck_execution",
-      "rundeck_execution"
-     ]
-    },
-    {
      "id": "wait-06",
      "category": "wrong_tool",
      "tools": [
@@ -3302,89 +2831,6 @@
       "agent_list",
       "agent_read",
       "agent_wait"
-     ]
-    },
-    {
-     "id": "wait-08",
-     "category": "malformed_call",
-     "tools": [
-      "task_read"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.074104,
-     "tokens": {
-      "input": 99062,
-      "cached": 85060,
-      "output": 961
-     },
-     "turns": 5,
-     "calls": [
-      "ToolSearch",
-      "Bash",
-      "task_read",
-      "Bash"
-     ]
-    },
-    {
-     "id": "wait-09",
-     "category": "bad_recovery",
-     "tools": [
-      "task_start"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "sleep-poll",
-       "why": "waited by sleeping",
-       "call": "Bash {\"command\":\"mkdir -p /tmp/stack-logs && for s in queue index worker proxy; do nohup node server/$s.mjs > /tmp/stack-logs/$s.log 2>&1 & done; nohup pnpm dev > /t…"
-      },
-      {
-       "check": "expect",
-       "why": "never called task_start {\"taskId\":\"web\"}"
-      },
-      {
-       "check": "expect",
-       "why": "never called task_start {\"taskId\":\"api\"}"
-      },
-      {
-       "check": "expect",
-       "why": "never called task_start {\"taskId\":\"worker\"}"
-      },
-      {
-       "check": "expect",
-       "why": "never called task_start {\"taskId\":\"queue\"}"
-      },
-      {
-       "check": "expect",
-       "why": "never called task_start {\"taskId\":\"proxy\"}"
-      },
-      {
-       "check": "judge",
-       "why": "The rubric covers a scenario where task_start returned status starting and the agent had to confirm it, but this agent never used task_start, events_wait or workspace_inspect; it launched shell processes itself and reported the stack as not running, so it did not meet the confirmation path the rubric requires."
-      }
-     ],
-     "judge": {
-      "pass": false,
-      "why": "The rubric covers a scenario where task_start returned status starting and the agent had to confirm it, but this agent never used task_start, events_wait or workspace_inspect; it launched shell processes itself and reported the stack as not running, so it did not meet the confirmation path the rubric requires.",
-      "cost": 0.010842000000000001
-     },
-     "cost": 0.10081599999999999,
-     "tokens": {
-      "input": 197416,
-      "cached": 182820,
-      "output": 1334
-     },
-     "turns": 8,
-     "calls": [
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash"
      ]
     },
     {
@@ -3608,33 +3054,6 @@
      ]
     },
     {
-     "id": "agents-06",
-     "category": "malformed_call",
-     "tools": [
-      "ask"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0953122,
-     "tokens": {
-      "input": 288879,
-      "cached": 276542,
-      "output": 1833
-     },
-     "turns": 9,
-     "calls": [
-      "ask",
-      "Read",
-      "Bash",
-      "Read",
-      "Bash",
-      "Write",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "agents-07",
      "category": "rage",
      "tools": [
@@ -3665,33 +3084,6 @@
       "Bash",
       "Bash",
       "Edit"
-     ]
-    },
-    {
-     "id": "agents-08",
-     "category": "malformed_call",
-     "tools": [
-      "agent_send"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "expect",
-       "why": "never called agent_send {\"to\":\"/^(maple|agent-eval-1)$/i\",\"answers\":{\"$present\":false},\"text\":\"/cent/i\"}"
-      }
-     ],
-     "judge": null,
-     "cost": 0.1157275,
-     "tokens": {
-      "input": 199338,
-      "cached": 176475,
-      "output": 664
-     },
-     "turns": 4,
-     "calls": [
-      "guide",
-      "Bash",
-      "agent_send"
      ]
     },
     {
@@ -3997,33 +3389,6 @@
      ]
     },
     {
-     "id": "agents-19",
-     "category": "wrong_tool",
-     "tools": [
-      "agent_sessions",
-      "agent_read",
-      "browser_navigate"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.081897,
-     "tokens": {
-      "input": 233322,
-      "cached": 220350,
-      "output": 799
-     },
-     "turns": 7,
-     "calls": [
-      "guide",
-      "agent_read",
-      "agent_read",
-      "agent_list",
-      "agent_sessions",
-      "browser_navigate"
-     ]
-    },
-    {
      "id": "agents-20",
      "category": "wrong_tool",
      "tools": [
@@ -4163,32 +3528,6 @@
       "guide",
       "browser_state",
       "browser_act"
-     ]
-    },
-    {
-     "id": "browser-04",
-     "category": "wrong_tool",
-     "tools": [
-      "browser_navigate",
-      "browser_wait",
-      "browser_evaluate"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0868538,
-     "tokens": {
-      "input": 291543,
-      "cached": 278838,
-      "output": 817
-     },
-     "turns": 6,
-     "calls": [
-      "guide",
-      "browser_state",
-      "browser_navigate",
-      "browser_evaluate",
-      "browser_evaluate"
      ]
     },
     {
@@ -4530,34 +3869,6 @@
      ]
     },
     {
-     "id": "browser-17",
-     "category": "bad_recovery",
-     "tools": [
-      "browser_navigate",
-      "browser_wait",
-      "task_read"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.09344029999999999,
-     "tokens": {
-      "input": 350080,
-      "cached": 337163,
-      "output": 808
-     },
-     "turns": 8,
-     "calls": [
-      "guide",
-      "workspace_inspect",
-      "browser_navigate",
-      "browser_state",
-      "browser_navigate",
-      "browser_state",
-      "browser_console"
-     ]
-    },
-    {
      "id": "browser-18",
      "category": "bad_recovery",
      "tools": [
@@ -4576,36 +3887,6 @@
      "calls": [
       "guide",
       "browser_navigate"
-     ]
-    },
-    {
-     "id": "browser-19",
-     "category": "malformed_call",
-     "tools": [
-      "browser_scroll",
-      "browser_screenshot"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "forbid",
-       "why": "scrolled with a script",
-       "call": "browser_evaluate {\"script\":\"window.scrollY\"}"
-      }
-     ],
-     "judge": null,
-     "cost": 0.07100340000000001,
-     "tokens": {
-      "input": 227660,
-      "cached": 216854,
-      "output": 611
-     },
-     "turns": 5,
-     "calls": [
-      "browser_scroll",
-      "browser_state",
-      "browser_evaluate",
-      "browser_screenshot"
      ]
     },
     {
@@ -4692,31 +3973,6 @@
       "browser_state",
       "browser_navigate",
       "browser_screenshot"
-     ]
-    },
-    {
-     "id": "browser-23",
-     "category": "list_bloat",
-     "tools": [
-      "browser_state",
-      "browser_close_tab"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0715183,
-     "tokens": {
-      "input": 174310,
-      "cached": 161423,
-      "output": 384
-     },
-     "turns": 6,
-     "calls": [
-      "guide",
-      "browser_state",
-      "browser_close_tab",
-      "browser_close_tab",
-      "browser_close_tab"
      ]
     },
     {
@@ -5023,29 +4279,6 @@
      ]
     },
     {
-     "id": "git-10",
-     "category": "rage",
-     "tools": [
-      "git_commit"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.07253040000000001,
-     "tokens": {
-      "input": 227757,
-      "cached": 216744,
-      "output": 682
-     },
-     "turns": 5,
-     "calls": [
-      "Read",
-      "Edit",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "git-11",
      "category": "rage",
      "tools": [
@@ -5070,32 +4303,6 @@
       "Bash",
       "Edit",
       "Bash"
-     ]
-    },
-    {
-     "id": "page-01",
-     "category": "wrong_tool",
-     "tools": [
-      "page_preview",
-      "page_show"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.14440429999999999,
-     "tokens": {
-      "input": 327801,
-      "cached": 306563,
-      "output": 2882
-     },
-     "turns": 8,
-     "calls": [
-      "guide",
-      "Skill",
-      "Write",
-      "page_preview",
-      "page_preview",
-      "page_show"
      ]
     },
     {
@@ -5247,32 +4454,6 @@
      ]
     },
     {
-     "id": "page-07",
-     "category": "malformed_call",
-     "tools": [
-      "guide",
-      "page_preview",
-      "page_show"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.1368583,
-     "tokens": {
-      "input": 318092,
-      "cached": 299123,
-      "output": 3109
-     },
-     "turns": 6,
-     "calls": [
-      "guide",
-      "Write",
-      "page_preview",
-      "page_preview",
-      "page_show"
-     ]
-    },
-    {
      "id": "page-08",
      "category": "rage",
      "tools": [
@@ -5414,32 +4595,6 @@
       "atlassian.getTransitionsForJiraIssue",
       "jira_issue",
       "jira_transition",
-      "jira_comment"
-     ]
-    },
-    {
-     "id": "plugin-03",
-     "category": "wrong_tool",
-     "tools": [
-      "jira_edit",
-      "jira_comment"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.07188889999999999,
-     "tokens": {
-      "input": 172710,
-      "cached": 161069,
-      "output": 923
-     },
-     "turns": 7,
-     "calls": [
-      "jira_issue",
-      "jira_issue",
-      "jira_edit",
-      "jira_edit",
-      "jira_comment",
       "jira_comment"
      ]
     },
@@ -5645,50 +4800,6 @@
      ]
     },
     {
-     "id": "plugin-12",
-     "category": "bad_recovery",
-     "tools": [
-      "signoz_traces",
-      "signoz_logs",
-      "aws_ecs",
-      "aws_logs"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "The agent went past the SigNoz error into AWS (stopped tasks and CloudWatch logs) and named the root cause as OOM kills (exit 137, JS heap out of memory, CSV export of 412k rows), all backed by tool results.",
-      "cost": 0.015658
-     },
-     "cost": 0.15754330000000002,
-     "tokens": {
-      "input": 530049,
-      "cached": 515573,
-      "output": 3246
-     },
-     "turns": 19,
-     "calls": [
-      "aws_profiles",
-      "signoz_services",
-      "signoz_services",
-      "signoz_logs",
-      "aws_target_health",
-      "signoz_traces",
-      "aws_ecs",
-      "aws_identity",
-      "aws_ecs",
-      "signoz_traces",
-      "aws_ecs",
-      "aws_ecs",
-      "aws_target_health",
-      "aws_task_definition",
-      "aws_metrics",
-      "aws_logs",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "plugin-13",
      "category": "malformed_call",
      "tools": [
@@ -5773,28 +4884,6 @@
      ]
     },
     {
-     "id": "plugin-16",
-     "category": "wrong_tool",
-     "tools": [
-      "who_wrote"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0958183,
-     "tokens": {
-      "input": 246307,
-      "cached": 230583,
-      "output": 988
-     },
-     "turns": 4,
-     "calls": [
-      "Bash",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "plugin-17",
      "category": "malformed_call",
      "tools": [
@@ -5847,33 +4936,6 @@
       "browser_navigate",
       "browser_state",
       "browser_wait"
-     ]
-    },
-    {
-     "id": "research-02",
-     "category": "wrong_tool",
-     "tools": [
-      "browser_type",
-      "browser_press",
-      "browser_wait",
-      "browser_find"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0880153,
-     "tokens": {
-      "input": 293315,
-      "cached": 280073,
-      "output": 706
-     },
-     "turns": 6,
-     "calls": [
-      "guide",
-      "browser_state",
-      "browser_type",
-      "browser_wait",
-      "browser_state"
      ]
     },
     {
@@ -5949,25 +5011,6 @@
       "input": 184180,
       "cached": 168911,
       "output": 536
-     },
-     "turns": 3,
-     "calls": [
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
-     "id": "shell-01",
-     "category": "malformed_call",
-     "tools": [],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.08431340000000001,
-     "tokens": {
-      "input": 184177,
-      "cached": 168834,
-      "output": 607
      },
      "turns": 3,
      "calls": [
@@ -6482,41 +5525,6 @@
      ]
     },
     {
-     "id": "verify-10",
-     "category": "rage",
-     "tools": [
-      "browser_navigate",
-      "browser_evaluate",
-      "browser_screenshot"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "The agent read every video's state in the desk browser tab via a script, covering all three scenes, and reported that scenes 2 and 3 fail to load (MEDIA_ERR_SRC_NOT_SUPPORTED) so only the poster shows, while scene 1 plays.",
-      "cost": 0.014879999999999999
-     },
-     "cost": 0.1359261,
-     "tokens": {
-      "input": 355064,
-      "cached": 339481,
-      "output": 2479
-     },
-     "turns": 11,
-     "calls": [
-      "Bash",
-      "guide",
-      "Read",
-      "Read",
-      "browser_navigate",
-      "browser_evaluate",
-      "browser_network",
-      "browser_console",
-      "Bash",
-      "browser_evaluate"
-     ]
-    },
-    {
      "id": "verify-11",
      "category": "wrong_tool",
      "tools": [
@@ -6537,27 +5545,6 @@
       "guide",
       "browser_navigate",
       "browser_click"
-     ]
-    },
-    {
-     "id": "verify-12",
-     "category": "rage",
-     "tools": [
-      "git_commit",
-      "app_console"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.074976,
-     "tokens": {
-      "input": 122710,
-      "cached": 107540,
-      "output": 355
-     },
-     "turns": 2,
-     "calls": [
-      "git_commit"
      ]
     },
     {
@@ -6689,27 +5676,6 @@
      ]
     },
     {
-     "id": "wait-05",
-     "category": "wrong_tool",
-     "tools": [
-      "rundeck_execution"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.0614763,
-     "tokens": {
-      "input": 170321,
-      "cached": 159663,
-      "output": 289
-     },
-     "turns": 3,
-     "calls": [
-      "rundeck_execution",
-      "rundeck_execution"
-     ]
-    },
-    {
      "id": "wait-06",
      "category": "wrong_tool",
      "tools": [
@@ -6758,59 +5724,6 @@
       "agent_read",
       "agent_wait",
       "CronCreate"
-     ]
-    },
-    {
-     "id": "wait-08",
-     "category": "malformed_call",
-     "tools": [
-      "task_read"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.064638,
-     "tokens": {
-      "input": 170391,
-      "cached": 159660,
-      "output": 576
-     },
-     "turns": 3,
-     "calls": [
-      "workspace_inspect",
-      "task_read"
-     ]
-    },
-    {
-     "id": "wait-09",
-     "category": "bad_recovery",
-     "tools": [
-      "task_start"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "The agent re-called task_start for worker with the same idempotencyKey 'stack-worker-1', got status running, and reported all five as started while honestly noting that health was unchecked.",
-      "cost": 0.008418
-     },
-     "cost": 0.09317399999999999,
-     "tokens": {
-      "input": 234793,
-      "cached": 221200,
-      "output": 828
-     },
-     "turns": 10,
-     "calls": [
-      "guide",
-      "workspace_inspect",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "workspace_inspect"
      ]
     },
     {
@@ -7032,32 +5945,6 @@
      ]
     },
     {
-     "id": "agents-06",
-     "category": "malformed_call",
-     "tools": [
-      "ask"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.18738319999999997,
-     "tokens": {
-      "input": 126580,
-      "cached": 111296,
-      "output": 2145
-     },
-     "turns": 8,
-     "calls": [
-      "Bash",
-      "ToolSearch",
-      "ask",
-      "Bash",
-      "Write",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "agents-07",
      "category": "rage",
      "tools": [
@@ -7092,30 +5979,6 @@
       "git_commit",
       "Bash",
       "Bash"
-     ]
-    },
-    {
-     "id": "agents-08",
-     "category": "malformed_call",
-     "tools": [
-      "agent_send"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.1970744,
-     "tokens": {
-      "input": 146791,
-      "cached": 128052,
-      "output": 1080
-     },
-     "turns": 6,
-     "calls": [
-      "ToolSearch",
-      "Bash",
-      "agent_send",
-      "agent_read",
-      "agent_send"
      ]
     },
     {
@@ -7426,32 +6289,6 @@
      ]
     },
     {
-     "id": "agents-19",
-     "category": "wrong_tool",
-     "tools": [
-      "agent_sessions",
-      "agent_read",
-      "browser_navigate"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.16575380000000003,
-     "tokens": {
-      "input": 129345,
-      "cached": 113469,
-      "output": 805
-     },
-     "turns": 6,
-     "calls": [
-      "ToolSearch",
-      "agent_read",
-      "guide",
-      "agent_sessions",
-      "browser_navigate"
-     ]
-    },
-    {
      "id": "agents-20",
      "category": "wrong_tool",
      "tools": [
@@ -7614,33 +6451,6 @@
       "browser_screenshot",
       "browser_wait",
       "browser_state"
-     ]
-    },
-    {
-     "id": "browser-04",
-     "category": "wrong_tool",
-     "tools": [
-      "browser_navigate",
-      "browser_wait",
-      "browser_evaluate"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.19577320000000004,
-     "tokens": {
-      "input": 188110,
-      "cached": 171026,
-      "output": 1248
-     },
-     "turns": 7,
-     "calls": [
-      "ToolSearch",
-      "guide",
-      "browser_state",
-      "browser_navigate",
-      "browser_evaluate",
-      "browser_evaluate"
      ]
     },
     {
@@ -7983,41 +6793,6 @@
      ]
     },
     {
-     "id": "browser-17",
-     "category": "bad_recovery",
-     "tools": [
-      "browser_navigate",
-      "browser_wait",
-      "task_read"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "forbid",
-       "why": "checked the page outside the desk browser",
-       "call": "Bash {\"command\":\"curl -s -o /dev/null -w \\\"%{http_code} %{time_total}s\\\\n\\\" --max-time 30 http://localhost:3000/dashboard\",\"description\":\"Check dashboard responds ov…"
-      }
-     ],
-     "judge": null,
-     "cost": 0.20354460000000002,
-     "tokens": {
-      "input": 217713,
-      "cached": 200383,
-      "output": 1245
-     },
-     "turns": 9,
-     "calls": [
-      "ToolSearch",
-      "guide",
-      "task_read",
-      "browser_navigate",
-      "browser_state",
-      "Bash",
-      "browser_navigate",
-      "browser_state"
-     ]
-    },
-    {
      "id": "browser-18",
      "category": "bad_recovery",
      "tools": [
@@ -8037,35 +6812,6 @@
       "ToolSearch",
       "guide",
       "browser_navigate"
-     ]
-    },
-    {
-     "id": "browser-19",
-     "category": "malformed_call",
-     "tools": [
-      "browser_scroll",
-      "browser_screenshot"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.18393019999999996,
-     "tokens": {
-      "input": 181482,
-      "cached": 165331,
-      "output": 1086
-     },
-     "turns": 10,
-     "calls": [
-      "ToolSearch",
-      "guide",
-      "browser_state",
-      "browser_scroll",
-      "browser_screenshot",
-      "browser_state",
-      "browser_scroll",
-      "browser_screenshot",
-      "browser_state"
      ]
     },
     {
@@ -8161,32 +6907,6 @@
       "browser_screenshot",
       "browser_viewport",
       "browser_screenshot"
-     ]
-    },
-    {
-     "id": "browser-23",
-     "category": "list_bloat",
-     "tools": [
-      "browser_state",
-      "browser_close_tab"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.153355,
-     "tokens": {
-      "input": 101260,
-      "cached": 85475,
-      "output": 501
-     },
-     "turns": 7,
-     "calls": [
-      "ToolSearch",
-      "guide",
-      "browser_state",
-      "browser_close_tab",
-      "browser_close_tab",
-      "browser_close_tab"
      ]
     },
     {
@@ -8536,33 +7256,6 @@
      ]
     },
     {
-     "id": "git-10",
-     "category": "rage",
-     "tools": [
-      "git_commit"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "expect",
-       "why": "never called Edit|Write|MultiEdit {\"file_path\":\"/gateway\\\\.yaml$/\"}"
-      }
-     ],
-     "judge": null,
-     "cost": 0.1368792,
-     "tokens": {
-      "input": 96146,
-      "cached": 82956,
-      "output": 740
-     },
-     "turns": 4,
-     "calls": [
-      "Bash",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "git-11",
      "category": "rage",
      "tools": [
@@ -8590,35 +7283,6 @@
       "Bash",
       "Bash",
       "Bash"
-     ]
-    },
-    {
-     "id": "page-01",
-     "category": "wrong_tool",
-     "tools": [
-      "page_preview",
-      "page_show"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.3776888,
-     "tokens": {
-      "input": 255179,
-      "cached": 226064,
-      "output": 4981
-     },
-     "turns": 11,
-     "calls": [
-      "ToolSearch",
-      "Skill",
-      "guide",
-      "Bash",
-      "Write",
-      "page_preview",
-      "page_preview",
-      "page_preview",
-      "page_show"
      ]
     },
     {
@@ -8787,37 +7451,6 @@
      ]
     },
     {
-     "id": "page-07",
-     "category": "malformed_call",
-     "tools": [
-      "guide",
-      "page_preview",
-      "page_show"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.28898419999999997,
-     "tokens": {
-      "input": 217979,
-      "cached": 195621,
-      "output": 3553
-     },
-     "turns": 11,
-     "calls": [
-      "ToolSearch",
-      "guide",
-      "Write",
-      "page_preview",
-      "Bash",
-      "page_preview",
-      "Bash",
-      "page_preview",
-      "page_show",
-      "Bash"
-     ]
-    },
-    {
      "id": "page-08",
      "category": "rage",
      "tools": [
@@ -8969,33 +7602,6 @@
       "Bash",
       "ToolSearch",
       "jira_transition",
-      "jira_comment"
-     ]
-    },
-    {
-     "id": "plugin-03",
-     "category": "wrong_tool",
-     "tools": [
-      "jira_edit",
-      "jira_comment"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.15696459999999998,
-     "tokens": {
-      "input": 100164,
-      "cached": 85383,
-      "output": 1084
-     },
-     "turns": 8,
-     "calls": [
-      "ToolSearch",
-      "jira_issue",
-      "jira_issue",
-      "jira_edit",
-      "jira_edit",
-      "jira_comment",
       "jira_comment"
      ]
     },
@@ -9209,45 +7815,6 @@
      ]
     },
     {
-     "id": "plugin-12",
-     "category": "bad_recovery",
-     "tools": [
-      "signoz_traces",
-      "signoz_logs",
-      "aws_ecs",
-      "aws_logs"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "The agent went past the SigNoz error into ECS stopped tasks and CloudWatch logs and named the root cause: API tasks were killed for running out of memory (exit 137, JavaScript heap out of memory) during a 412k-row CSV export, with every claim backed by tool results.",
-      "cost": 0.015336
-     },
-     "cost": 0.26380040000000005,
-     "tokens": {
-      "input": 227656,
-      "cached": 208222,
-      "output": 2571
-     },
-     "turns": 14,
-     "calls": [
-      "ToolSearch",
-      "Bash",
-      "aws_profiles",
-      "aws_ecs",
-      "aws_target_health",
-      "aws_ecs",
-      "aws_ecs",
-      "aws_ecs",
-      "aws_task_definition",
-      "aws_metrics",
-      "aws_logs",
-      "signoz_traces",
-      "Bash"
-     ]
-    },
-    {
      "id": "plugin-13",
      "category": "malformed_call",
      "tools": [
@@ -9336,29 +7903,6 @@
      ]
     },
     {
-     "id": "plugin-16",
-     "category": "wrong_tool",
-     "tools": [
-      "who_wrote"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.19732499999999997,
-     "tokens": {
-      "input": 144383,
-      "cached": 125805,
-      "output": 1179
-     },
-     "turns": 5,
-     "calls": [
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "plugin-17",
      "category": "malformed_call",
      "tools": [
@@ -9419,34 +7963,6 @@
       "browser_navigate",
       "browser_type",
       "browser_wait",
-      "browser_state",
-      "browser_type",
-      "browser_wait",
-      "browser_state"
-     ]
-    },
-    {
-     "id": "research-02",
-     "category": "wrong_tool",
-     "tools": [
-      "browser_type",
-      "browser_press",
-      "browser_wait",
-      "browser_find"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.19210100000000002,
-     "tokens": {
-      "input": 189499,
-      "cached": 172165,
-      "output": 953
-     },
-     "turns": 7,
-     "calls": [
-      "ToolSearch",
-      "guide",
       "browser_state",
       "browser_type",
       "browser_wait",
@@ -9519,25 +8035,6 @@
       "input": 85341,
       "cached": 67947,
       "output": 562
-     },
-     "turns": 3,
-     "calls": [
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
-     "id": "shell-01",
-     "category": "malformed_call",
-     "tools": [],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.1780712,
-     "tokens": {
-      "input": 86020,
-      "cached": 68116,
-      "output": 1062
      },
      "turns": 3,
      "calls": [
@@ -10080,40 +8577,6 @@
      ]
     },
     {
-     "id": "verify-10",
-     "category": "rage",
-     "tools": [
-      "browser_navigate",
-      "browser_evaluate",
-      "browser_screenshot"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "The agent read every video's state in the desk browser tab via script, checking all three scenes, and reported per scene that scenes 2 and 3 fail to load (MEDIA_ERR_SRC_NOT_SUPPORTED) leaving only the poster, while scene 1 plays.",
-      "cost": 0.014068
-     },
-     "cost": 0.2626852,
-     "tokens": {
-      "input": 243719,
-      "cached": 224666,
-      "output": 2567
-     },
-     "turns": 10,
-     "calls": [
-      "Bash",
-      "Bash",
-      "ToolSearch",
-      "guide",
-      "browser_navigate",
-      "browser_evaluate",
-      "browser_network",
-      "Bash",
-      "browser_evaluate"
-     ]
-    },
-    {
      "id": "verify-11",
      "category": "wrong_tool",
      "tools": [
@@ -10135,40 +8598,6 @@
       "guide",
       "browser_navigate",
       "browser_click"
-     ]
-    },
-    {
-     "id": "verify-12",
-     "category": "rage",
-     "tools": [
-      "git_commit",
-      "app_console"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "raw-git-commit",
-       "why": "ran git commit instead of git_commit",
-       "call": "Bash {\"command\":\"git add -- src-tauri/crates/sikemux-gpui/src/ui/menu.rs && git commit -q -m \\\"Use the chosen-surface colour for the menu highlight and run button\\n\\…"
-      },
-      {
-       "check": "expect",
-       "why": "never called git_commit {\"paths\":[\"/menu\\\\.rs$/\"]}"
-      }
-     ],
-     "judge": null,
-     "cost": 0.1936658,
-     "tokens": {
-      "input": 145404,
-      "cached": 126869,
-      "output": 1003
-     },
-     "turns": 5,
-     "calls": [
-      "Bash",
-      "ToolSearch",
-      "who_wrote",
-      "Bash"
      ]
     },
     {
@@ -10307,28 +8736,6 @@
      ]
     },
     {
-     "id": "wait-05",
-     "category": "wrong_tool",
-     "tools": [
-      "rundeck_execution"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.1346616,
-     "tokens": {
-      "input": 97039,
-      "cached": 83568,
-      "output": 511
-     },
-     "turns": 4,
-     "calls": [
-      "ToolSearch",
-      "rundeck_execution",
-      "rundeck_execution"
-     ]
-    },
-    {
      "id": "wait-06",
      "category": "wrong_tool",
      "tools": [
@@ -10378,67 +8785,6 @@
       "agent_read",
       "Bash",
       "Bash"
-     ]
-    },
-    {
-     "id": "wait-08",
-     "category": "malformed_call",
-     "tools": [
-      "task_read"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.1481058,
-     "tokens": {
-      "input": 122295,
-      "cached": 108529,
-      "output": 816
-     },
-     "turns": 5,
-     "calls": [
-      "ToolSearch",
-      "workspace_inspect",
-      "task_read",
-      "Bash"
-     ]
-    },
-    {
-     "id": "wait-09",
-     "category": "bad_recovery",
-     "tools": [
-      "task_start"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "After worker returned 'starting', the agent called task_start again with the same idempotencyKey (start-worker-1), got 'running', verified all five via task_read, and reported all five running with honest caveats.",
-      "cost": 0.011006
-     },
-     "cost": 0.2134936,
-     "tokens": {
-      "input": 159127,
-      "cached": 141558,
-      "output": 1684
-     },
-     "turns": 16,
-     "calls": [
-      "ToolSearch",
-      "guide",
-      "workspace_inspect",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "workspace_inspect",
-      "task_read",
-      "task_read",
-      "task_read",
-      "task_read",
-      "task_read"
      ]
     },
     {
@@ -10647,32 +8993,6 @@
      ]
     },
     {
-     "id": "agents-06",
-     "category": "malformed_call",
-     "tools": [
-      "ask"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.20518380000000003,
-     "tokens": {
-      "input": 346612,
-      "cached": 334039,
-      "output": 1892
-     },
-     "turns": 8,
-     "calls": [
-      "ask",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Write",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "agents-07",
      "category": "rage",
      "tools": [
@@ -10712,31 +9032,6 @@
       "Bash",
       "Bash",
       "Bash"
-     ]
-    },
-    {
-     "id": "agents-08",
-     "category": "malformed_call",
-     "tools": [
-      "agent_send"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.29691340000000005,
-     "tokens": {
-      "input": 409108,
-      "cached": 385167,
-      "output": 1420
-     },
-     "turns": 7,
-     "calls": [
-      "guide",
-      "Bash",
-      "Bash",
-      "agent_send",
-      "agent_read",
-      "agent_send"
      ]
     },
     {
@@ -11043,32 +9338,6 @@
      ]
     },
     {
-     "id": "agents-19",
-     "category": "wrong_tool",
-     "tools": [
-      "agent_sessions",
-      "agent_read",
-      "browser_navigate"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.1632018,
-     "tokens": {
-      "input": 232646,
-      "cached": 219889,
-      "output": 860
-     },
-     "turns": 6,
-     "calls": [
-      "agent_read",
-      "guide",
-      "agent_sessions",
-      "agent_read",
-      "browser_navigate"
-     ]
-    },
-    {
      "id": "agents-20",
      "category": "wrong_tool",
      "tools": [
@@ -11219,28 +9488,6 @@
       "browser_evaluate",
       "browser_screenshot",
       "browser_evaluate"
-     ]
-    },
-    {
-     "id": "browser-04",
-     "category": "wrong_tool",
-     "tools": [
-      "browser_navigate",
-      "browser_wait",
-      "browser_evaluate"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.11319259999999999,
-     "tokens": {
-      "input": 113603,
-      "cached": 102843,
-      "output": 328
-     },
-     "turns": 2,
-     "calls": [
-      "browser_navigate"
      ]
     },
     {
@@ -11589,37 +9836,6 @@
      ]
     },
     {
-     "id": "browser-17",
-     "category": "bad_recovery",
-     "tools": [
-      "browser_navigate",
-      "browser_wait",
-      "task_read"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.22252940000000002,
-     "tokens": {
-      "input": 469573,
-      "cached": 455927,
-      "output": 1112
-     },
-     "turns": 11,
-     "calls": [
-      "guide",
-      "workspace_inspect",
-      "task_read",
-      "browser_navigate",
-      "browser_state",
-      "app_console",
-      "browser_navigate",
-      "browser_navigate",
-      "browser_state",
-      "browser_console"
-     ]
-    },
-    {
      "id": "browser-18",
      "category": "bad_recovery",
      "tools": [
@@ -11651,43 +9867,6 @@
       "browser_navigate",
       "WebFetch",
       "Bash"
-     ]
-    },
-    {
-     "id": "browser-19",
-     "category": "malformed_call",
-     "tools": [
-      "browser_scroll",
-      "browser_screenshot"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "forbid",
-       "why": "scrolled with a script",
-       "call": "browser_evaluate {\"script\":\"window.scrollTo(0,700); await new Promise(r=>setTimeout(r,300)); const s=[...document.querySelectorAll('*')].filter(e=>e.scrollHeight>e.clientHeight+…"
-      }
-     ],
-     "judge": null,
-     "cost": 0.2180456,
-     "tokens": {
-      "input": 460091,
-      "cached": 447828,
-      "output": 1522
-     },
-     "turns": 9,
-     "calls": [
-      "browser_scroll",
-      "browser_screenshot",
-      "browser_state",
-      "browser_scroll",
-      "browser_screenshot",
-      "browser_state",
-      "browser_evaluate",
-      "browser_evaluate",
-      "browser_evaluate",
-      "browser_scroll",
-      "browser_screenshot"
      ]
     },
     {
@@ -11777,30 +9956,6 @@
       "browser_screenshot",
       "browser_viewport",
       "browser_screenshot"
-     ]
-    },
-    {
-     "id": "browser-23",
-     "category": "list_bloat",
-     "tools": [
-      "browser_state",
-      "browser_close_tab"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.1319624,
-     "tokens": {
-      "input": 171433,
-      "cached": 159892,
-      "output": 384
-     },
-     "turns": 5,
-     "calls": [
-      "browser_state",
-      "browser_close_tab",
-      "browser_close_tab",
-      "browser_close_tab"
      ]
     },
     {
@@ -12106,33 +10261,6 @@
      ]
     },
     {
-     "id": "git-10",
-     "category": "rage",
-     "tools": [
-      "git_commit"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "expect",
-       "why": "never called Edit|Write|MultiEdit {\"file_path\":\"/gateway\\\\.yaml$/\"}"
-      }
-     ],
-     "judge": null,
-     "cost": 0.14924500000000002,
-     "tokens": {
-      "input": 228223,
-      "cached": 216965,
-      "output": 791
-     },
-     "turns": 4,
-     "calls": [
-      "Bash",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "git-11",
      "category": "rage",
      "tools": [
@@ -12156,34 +10284,6 @@
       "Bash",
       "Write",
       "Bash"
-     ]
-    },
-    {
-     "id": "page-01",
-     "category": "wrong_tool",
-     "tools": [
-      "page_preview",
-      "page_show"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.347489,
-     "tokens": {
-      "input": 465440,
-      "cached": 443065,
-      "output": 3997
-     },
-     "turns": 10,
-     "calls": [
-      "guide",
-      "Skill",
-      "Bash",
-      "page_preview",
-      "page_preview",
-      "Bash",
-      "page_preview",
-      "page_show"
      ]
     },
     {
@@ -12353,38 +10453,6 @@
      ]
     },
     {
-     "id": "page-07",
-     "category": "malformed_call",
-     "tools": [
-      "guide",
-      "page_preview",
-      "page_show"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.40749080000000004,
-     "tokens": {
-      "input": 659801,
-      "cached": 636674,
-      "output": 4761
-     },
-     "turns": 12,
-     "calls": [
-      "guide",
-      "Write",
-      "page_preview",
-      "page_preview",
-      "Bash",
-      "page_preview",
-      "Bash",
-      "Read",
-      "Bash",
-      "Bash",
-      "page_show"
-     ]
-    },
-    {
      "id": "page-08",
      "category": "rage",
      "tools": [
@@ -12534,32 +10602,6 @@
       "Bash",
       "jira_issue",
       "jira_transition",
-      "jira_comment"
-     ]
-    },
-    {
-     "id": "plugin-03",
-     "category": "wrong_tool",
-     "tools": [
-      "jira_edit",
-      "jira_comment"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.16059179999999998,
-     "tokens": {
-      "input": 234925,
-      "cached": 223079,
-      "output": 1062
-     },
-     "turns": 7,
-     "calls": [
-      "jira_issue",
-      "jira_issue",
-      "jira_edit",
-      "jira_edit",
-      "jira_comment",
       "jira_comment"
      ]
     },
@@ -12763,51 +10805,6 @@
      ]
     },
     {
-     "id": "plugin-12",
-     "category": "bad_recovery",
-     "tools": [
-      "signoz_traces",
-      "signoz_logs",
-      "aws_ecs",
-      "aws_logs"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "The agent went past the SigNoz error into ECS stopped tasks and CloudWatch logs and named the root cause the tool results showed: API tasks killed for running out of memory (exit 137, JS heap OOM around a 412000-row CSV export), while stating what it could not confirm.",
-      "cost": 0.019375999999999997
-     },
-     "cost": 0.3082126,
-     "tokens": {
-      "input": 473405,
-      "cached": 457723,
-      "output": 3595
-     },
-     "turns": 20,
-     "calls": [
-      "Bash",
-      "signoz_services",
-      "signoz_services",
-      "signoz_logs",
-      "Bash",
-      "signoz_logs",
-      "signoz_traces",
-      "aws_ecs",
-      "aws_ecs",
-      "signoz_traces",
-      "aws_target_health",
-      "aws_ecs",
-      "aws_ecs",
-      "aws_task_definition",
-      "aws_metrics",
-      "aws_logs",
-      "aws_logs",
-      "aws_task_definition",
-      "Bash"
-     ]
-    },
-    {
      "id": "plugin-13",
      "category": "malformed_call",
      "tools": [
@@ -12905,29 +10902,6 @@
      ]
     },
     {
-     "id": "plugin-16",
-     "category": "wrong_tool",
-     "tools": [
-      "who_wrote"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.2175002,
-     "tokens": {
-      "input": 309747,
-      "cached": 292961,
-      "output": 1233
-     },
-     "turns": 5,
-     "calls": [
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "plugin-17",
      "category": "malformed_call",
      "tools": [
@@ -12985,33 +10959,6 @@
       "browser_navigate",
       "browser_type",
       "browser_wait",
-      "browser_state",
-      "browser_type",
-      "browser_wait",
-      "browser_state"
-     ]
-    },
-    {
-     "id": "research-02",
-     "category": "wrong_tool",
-     "tools": [
-      "browser_type",
-      "browser_press",
-      "browser_wait",
-      "browser_find"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.163346,
-     "tokens": {
-      "input": 234212,
-      "cached": 220810,
-      "output": 600
-     },
-     "turns": 6,
-     "calls": [
-      "guide",
       "browser_state",
       "browser_type",
       "browser_wait",
@@ -13094,25 +11041,6 @@
       "input": 184286,
       "cached": 168911,
       "output": 583
-     },
-     "turns": 3,
-     "calls": [
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
-     "id": "shell-01",
-     "category": "malformed_call",
-     "tools": [],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.174026,
-     "tokens": {
-      "input": 184634,
-      "cached": 168990,
-      "output": 755
      },
      "turns": 3,
      "calls": [
@@ -13647,40 +11575,6 @@
      ]
     },
     {
-     "id": "verify-10",
-     "category": "rage",
-     "tools": [
-      "browser_navigate",
-      "browser_evaluate",
-      "browser_screenshot"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "The agent read every video's state in the desk browser via script, covering all three scenes, and reported per scene that scenes 2 and 3 fail to load (MEDIA_ERR_SRC_NOT_SUPPORTED) so only the poster shows, without asking the user whether to check the rest.",
-      "cost": 0.013807999999999999
-     },
-     "cost": 0.2438936,
-     "tokens": {
-      "input": 355574,
-      "cached": 340828,
-      "output": 2200
-     },
-     "turns": 10,
-     "calls": [
-      "guide",
-      "Bash",
-      "Bash",
-      "browser_navigate",
-      "browser_evaluate",
-      "browser_network",
-      "browser_console",
-      "Bash",
-      "browser_evaluate"
-     ]
-    },
-    {
      "id": "verify-11",
      "category": "wrong_tool",
      "tools": [
@@ -13701,35 +11595,6 @@
       "guide",
       "browser_navigate",
       "browser_click"
-     ]
-    },
-    {
-     "id": "verify-12",
-     "category": "rage",
-     "tools": [
-      "git_commit",
-      "app_console"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "expect",
-       "why": "never called git_commit {\"paths\":[\"/menu\\\\.rs$/\"]}"
-      }
-     ],
-     "judge": null,
-     "cost": 0.22041039999999998,
-     "tokens": {
-      "input": 310070,
-      "cached": 293632,
-      "output": 1511
-     },
-     "turns": 5,
-     "calls": [
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash"
      ]
     },
     {
@@ -13869,27 +11734,6 @@
      ]
     },
     {
-     "id": "wait-05",
-     "category": "wrong_tool",
-     "tools": [
-      "rundeck_execution"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.1257322,
-     "tokens": {
-      "input": 170462,
-      "cached": 159641,
-      "output": 363
-     },
-     "turns": 3,
-     "calls": [
-      "rundeck_execution",
-      "rundeck_execution"
-     ]
-    },
-    {
      "id": "wait-06",
      "category": "wrong_tool",
      "tools": [
@@ -13938,67 +11782,6 @@
       "Bash",
       "Bash",
       "Bash"
-     ]
-    },
-    {
-     "id": "wait-08",
-     "category": "malformed_call",
-     "tools": [
-      "task_read"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.1808664,
-     "tokens": {
-      "input": 342913,
-      "cached": 331432,
-      "output": 1139
-     },
-     "turns": 6,
-     "calls": [
-      "workspace_inspect",
-      "task_read",
-      "Bash",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
-     "id": "wait-09",
-     "category": "bad_recovery",
-     "tools": [
-      "task_start"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "After worker returned 'starting', the agent called task_start again with the same idempotencyKey (dev-stack-worker-1), got 'running', verified all five with task_read, and reported all five running.",
-      "cost": 0.010594
-     },
-     "cost": 0.21533180000000002,
-     "tokens": {
-      "input": 296040,
-      "cached": 281349,
-      "output": 1549
-     },
-     "turns": 15,
-     "calls": [
-      "guide",
-      "workspace_inspect",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "workspace_inspect",
-      "task_read",
-      "task_read",
-      "task_read",
-      "task_read",
-      "task_read"
      ]
     },
     {
@@ -14245,62 +12028,6 @@
      ]
     },
     {
-     "id": "agents-06",
-     "category": "malformed_call",
-     "tools": [
-      "ask"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.05136426,
-     "costEstimated": true,
-     "tokens": {
-      "input": 564395,
-      "cached": 543744,
-      "output": 6319
-     },
-     "turns": 34,
-     "calls": [
-      "Read",
-      "glob",
-      "Read",
-      "Read",
-      "Read",
-      "glob",
-      "Bash",
-      "Bash",
-      "Bash",
-      "ToolSearch",
-      "ask",
-      "ask",
-      "Write",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Write",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Write",
-      "Bash",
-      "Bash",
-      "Write",
-      "Write",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "agents-07",
      "category": "rage",
      "tools": [
@@ -14336,34 +12063,6 @@
       "Bash",
       "Edit",
       "Bash"
-     ]
-    },
-    {
-     "id": "agents-08",
-     "category": "malformed_call",
-     "tools": [
-      "agent_send"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.01352988,
-     "costEstimated": true,
-     "tokens": {
-      "input": 149399,
-      "cached": 140288,
-      "output": 933
-     },
-     "turns": 9,
-     "calls": [
-      "Read",
-      "Bash",
-      "Bash",
-      "ToolSearch",
-      "agent_list",
-      "ToolSearch",
-      "agent_send",
-      "agent_send"
      ]
     },
     {
@@ -14895,39 +12594,6 @@
      ]
     },
     {
-     "id": "agents-19",
-     "category": "wrong_tool",
-     "tools": [
-      "agent_sessions",
-      "agent_read",
-      "browser_navigate"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.01034973,
-     "costEstimated": true,
-     "tokens": {
-      "input": 113771,
-      "cached": 106752,
-      "output": 1226
-     },
-     "turns": 8,
-     "calls": [
-      "ToolSearch",
-      "ToolSearch",
-      "agent_list",
-      "agent_sessions",
-      "agent_sessions",
-      "ToolSearch",
-      "agent_read",
-      "ToolSearch",
-      "guide",
-      "browser_navigate",
-      "browser_screenshot"
-     ]
-    },
-    {
      "id": "agents-20",
      "category": "wrong_tool",
      "tools": [
@@ -15180,34 +12846,6 @@
       "browser_find",
       "browser_find",
       "Bash"
-     ]
-    },
-    {
-     "id": "browser-04",
-     "category": "wrong_tool",
-     "tools": [
-      "browser_navigate",
-      "browser_wait",
-      "browser_evaluate"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.007203059999999999,
-     "costEstimated": true,
-     "tokens": {
-      "input": 79484,
-      "cached": 73984,
-      "output": 550
-     },
-     "turns": 6,
-     "calls": [
-      "ToolSearch",
-      "ToolSearch",
-      "ToolSearch",
-      "browser_state",
-      "browser_navigate",
-      "browser_wait"
      ]
     },
     {
@@ -15883,51 +13521,6 @@
      ]
     },
     {
-     "id": "browser-17",
-     "category": "bad_recovery",
-     "tools": [
-      "browser_navigate",
-      "browser_wait",
-      "task_read"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "forbid",
-       "why": "checked the page outside the desk browser",
-       "call": "Bash {\"command\":\"curl -sS -o /tmp/dash.html -w '%{http_code} %{time_total}s\\\\n' --max-time 15 http://localhost:3000/dashboard\",\"i\":\"Probing dashboard over HTTP\"}"
-      }
-     ],
-     "judge": null,
-     "cost": 0.02067291,
-     "costEstimated": true,
-     "tokens": {
-      "input": 227898,
-      "cached": 220160,
-      "output": 1801
-     },
-     "turns": 16,
-     "calls": [
-      "Read",
-      "ToolSearch",
-      "workspace_inspect",
-      "ToolSearch",
-      "ToolSearch",
-      "browser_navigate",
-      "browser_state",
-      "Bash",
-      "Bash",
-      "ToolSearch",
-      "guide",
-      "app_console",
-      "browser_navigate",
-      "browser_state",
-      "browser_state",
-      "browser_console",
-      "browser_network"
-     ]
-    },
-    {
      "id": "browser-18",
      "category": "bad_recovery",
      "tools": [
@@ -15960,50 +13553,6 @@
       "WebFetch",
       "Bash",
       "WebFetch"
-     ]
-    },
-    {
-     "id": "browser-19",
-     "category": "malformed_call",
-     "tools": [
-      "browser_scroll",
-      "browser_screenshot"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "forbid",
-       "why": "scrolled with a script",
-       "call": "browser_evaluate {\"expression\":\"({y: window.scrollY, docH: document.documentElement.scrollHeight, bodyOverflow: getComputedStyle(document.body).overflowY, htmlOverflow: getCompu…"
-      }
-     ],
-     "judge": null,
-     "cost": 0.02211759,
-     "costEstimated": true,
-     "tokens": {
-      "input": 243624,
-      "cached": 236288,
-      "output": 2127
-     },
-     "turns": 17,
-     "calls": [
-      "ToolSearch",
-      "ToolSearch",
-      "browser_state",
-      "browser_scroll",
-      "browser_screenshot",
-      "browser_state",
-      "browser_evaluate",
-      "browser_evaluate",
-      "browser_evaluate",
-      "ToolSearch",
-      "browser_evaluate",
-      "browser_evaluate",
-      "browser_state",
-      "browser_evaluate",
-      "browser_scroll",
-      "browser_screenshot",
-      "browser_state"
      ]
     },
     {
@@ -16149,41 +13698,6 @@
       "browser_state",
       "browser_find",
       "browser_screenshot"
-     ]
-    },
-    {
-     "id": "browser-23",
-     "category": "list_bloat",
-     "tools": [
-      "browser_state",
-      "browser_close_tab"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "limit",
-       "why": "called browser_state 3 times, more than 2"
-      }
-     ],
-     "judge": null,
-     "cost": 0.01004049,
-     "costEstimated": true,
-     "tokens": {
-      "input": 110388,
-      "cached": 104192,
-      "output": 1173
-     },
-     "turns": 8,
-     "calls": [
-      "browser_state",
-      "ToolSearch",
-      "browser_close_tab",
-      "browser_close_tab",
-      "browser_close_tab",
-      "browser_state",
-      "Write",
-      "browser_close_tab",
-      "browser_state"
      ]
     },
     {
@@ -16567,32 +14081,6 @@
      ]
     },
     {
-     "id": "git-10",
-     "category": "rage",
-     "tools": [
-      "git_commit"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.00838773,
-     "costEstimated": true,
-     "tokens": {
-      "input": 92414,
-      "cached": 87040,
-      "output": 783
-     },
-     "turns": 7,
-     "calls": [
-      "Bash",
-      "Edit",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "git-11",
      "category": "rage",
      "tools": [
@@ -16642,37 +14130,6 @@
       "Edit",
       "Read",
       "Bash"
-     ]
-    },
-    {
-     "id": "page-01",
-     "category": "wrong_tool",
-     "tools": [
-      "page_preview",
-      "page_show"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.01761867,
-     "costEstimated": true,
-     "tokens": {
-      "input": 193289,
-      "cached": 180480,
-      "output": 2474
-     },
-     "turns": 10,
-     "calls": [
-      "Write",
-      "ToolSearch",
-      "ToolSearch",
-      "guide",
-      "Write",
-      "page_preview",
-      "page_preview",
-      "Edit",
-      "page_preview",
-      "page_show"
      ]
     },
     {
@@ -16915,34 +14372,6 @@
       "Read",
       "ToolSearch",
       "page_show",
-      "page_show"
-     ]
-    },
-    {
-     "id": "page-07",
-     "category": "malformed_call",
-     "tools": [
-      "guide",
-      "page_preview",
-      "page_show"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.00974907,
-     "costEstimated": true,
-     "tokens": {
-      "input": 106047,
-      "cached": 97024,
-      "output": 2276
-     },
-     "turns": 6,
-     "calls": [
-      "ToolSearch",
-      "ToolSearch",
-      "guide",
-      "Write",
-      "page_preview",
       "page_show"
      ]
     },
@@ -17228,72 +14657,6 @@
       "jira_transition",
       "jira_comment",
       "jira_comment"
-     ]
-    },
-    {
-     "id": "plugin-03",
-     "category": "wrong_tool",
-     "tools": [
-      "jira_edit",
-      "jira_comment"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "atlassian",
-       "why": "used the Atlassian MCP instead of jira_*",
-       "call": "atlassian.getaccessibleatlassianresources {}"
-      },
-      {
-       "check": "expect",
-       "why": "never called jira_edit {\"key\":\"PROJ-210\",\"description\":\"/\\\\b5\\\\b/\"}"
-      },
-      {
-       "check": "expect",
-       "why": "never called jira_edit {\"key\":\"PROJ-211\",\"description\":\"/shared/i\"}"
-      },
-      {
-       "check": "expect",
-       "why": "never called jira_comment {\"key\":\"PROJ-210\"}"
-      },
-      {
-       "check": "expect",
-       "why": "never called jira_comment {\"key\":\"PROJ-211\"}"
-      }
-     ],
-     "judge": null,
-     "cost": 0.0183438,
-     "costEstimated": true,
-     "tokens": {
-      "input": 200607,
-      "cached": 193792,
-      "output": 3213
-     },
-     "turns": 13,
-     "calls": [
-      "atlassian.getaccessibleatlassianresources",
-      "jira_issue",
-      "jira_issue",
-      "atlassian.editjiraissue",
-      "atlassian.editjiraissue",
-      "atlassian.addcommenttojiraissue",
-      "atlassian.addcommenttojiraissue",
-      "atlassian.addcommenttojiraissue",
-      "atlassian.addcommenttojiraissue",
-      "jira_issue",
-      "jira_issue",
-      "jira_search",
-      "jira_search",
-      "jira_search",
-      "jira_search",
-      "atlassian.getjiraissue",
-      "atlassian.getjiraissue",
-      "atlassian.editjiraissue",
-      "atlassian.editjiraissue",
-      "jira_issue",
-      "jira_issue",
-      "jira_search",
-      "atlassian.searchjiraissuesusingjql"
      ]
     },
     {
@@ -17618,76 +14981,6 @@
      ]
     },
     {
-     "id": "plugin-12",
-     "category": "bad_recovery",
-     "tools": [
-      "signoz_traces",
-      "signoz_logs",
-      "aws_ecs",
-      "aws_logs"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": {
-      "pass": true,
-      "why": "The agent went past the SigNoz error into AWS, and the aws_logs and aws_ecs stopped-task results showed the tasks killed with exit 137 and 'JavaScript heap out of memory' while building a 412000-row CSV in memory, which it named as the root cause.",
-      "cost": 0.035676
-     },
-     "cost": 0.07956485999999999,
-     "costEstimated": true,
-     "tokens": {
-      "input": 483073,
-      "cached": 448512,
-      "output": 4581
-     },
-     "turns": 27,
-     "calls": [
-      "Read",
-      "Read",
-      "Read",
-      "Read",
-      "Read",
-      "Read",
-      "Read",
-      "ToolSearch",
-      "signoz_services",
-      "signoz_services",
-      "signoz_services",
-      "signoz_services",
-      "signoz_services",
-      "signoz_services",
-      "signoz_traces",
-      "signoz_traces",
-      "signoz_logs",
-      "signoz_logs",
-      "ToolSearch",
-      "ToolSearch",
-      "ToolSearch",
-      "aws_profiles",
-      "rundeck_projects",
-      "vercel_projects",
-      "Read",
-      "Read",
-      "Read",
-      "aws_ecs",
-      "aws_logs",
-      "aws_ecs",
-      "aws_task_definition",
-      "aws_task_definition",
-      "aws_ecs",
-      "aws_ecs",
-      "aws_task_definition",
-      "aws_ecs",
-      "aws_ecs",
-      "aws_ecs",
-      "aws_ecs",
-      "aws_ecs",
-      "Bash",
-      "Write",
-      "aws_ecs"
-     ]
-    },
-    {
      "id": "plugin-13",
      "category": "malformed_call",
      "tools": [
@@ -17845,37 +15138,6 @@
      ]
     },
     {
-     "id": "plugin-16",
-     "category": "wrong_tool",
-     "tools": [
-      "who_wrote"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.01686294,
-     "costEstimated": true,
-     "tokens": {
-      "input": 185906,
-      "cached": 176384,
-      "output": 1460
-     },
-     "turns": 11,
-     "calls": [
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "plugin-17",
      "category": "malformed_call",
      "tools": [
@@ -17982,42 +15244,6 @@
       "browser_type",
       "browser_state",
       "Write"
-     ]
-    },
-    {
-     "id": "research-02",
-     "category": "wrong_tool",
-     "tools": [
-      "browser_type",
-      "browser_press",
-      "browser_wait",
-      "browser_find"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.01803069,
-     "costEstimated": true,
-     "tokens": {
-      "input": 198821,
-      "cached": 183040,
-      "output": 1520
-     },
-     "turns": 14,
-     "calls": [
-      "browser_state",
-      "browser_type",
-      "browser_click",
-      "browser_wait",
-      "browser_state",
-      "browser_evaluate",
-      "browser_evaluate",
-      "browser_evaluate",
-      "browser_wait",
-      "browser_act",
-      "browser_act",
-      "browser_wait",
-      "browser_state"
      ]
     },
     {
@@ -18166,27 +15392,6 @@
      },
      "turns": 2,
      "calls": [
-      "Bash"
-     ]
-    },
-    {
-     "id": "shell-01",
-     "category": "malformed_call",
-     "tools": [],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.00595944,
-     "costEstimated": true,
-     "tokens": {
-      "input": 65373,
-      "cached": 57344,
-      "output": 843
-     },
-     "turns": 4,
-     "calls": [
-      "grep",
-      "Bash",
       "Bash"
      ]
     },
@@ -18904,68 +16109,6 @@
      ]
     },
     {
-     "id": "verify-10",
-     "category": "rage",
-     "tools": [
-      "browser_navigate",
-      "browser_evaluate",
-      "browser_screenshot"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "expect",
-       "why": "never called browser_navigate {\"url\":\"/5173\\\\/editor/\"}"
-      }
-     ],
-     "judge": {
-      "pass": true,
-      "why": "The agent read the state of all three videos in the live editor tab via script (readyState, duration, error) and reported per scene that scenes 2 and 3 fail with MEDIA_ERR_SRC_NOT_SUPPORTED so only the poster shows, without asking the user to check the rest.",
-      "cost": 0.023448
-     },
-     "cost": 0.06074949,
-     "costEstimated": true,
-     "tokens": {
-      "input": 411853,
-      "cached": 390912,
-      "output": 2608
-     },
-     "turns": 27,
-     "calls": [
-      "Read",
-      "mcp__sikemux_tools_browser_navigate",
-      "glob",
-      "Read",
-      "Read",
-      "mcp__sikemux_tools_browser_evaluate",
-      "mcp__sikemux_tools_browser_evaluate",
-      "Bash",
-      "Bash",
-      "Read",
-      "mcp__sikemux_tools_browser_evaluate",
-      "mcp__sikemux_tools_browser_state",
-      "mcp__sikemux_tools_browser_network",
-      "mcp__sikemux_tools_browser_console",
-      "mcp__sikemux_tools_browser_screenshot",
-      "Bash",
-      "Bash",
-      "Bash",
-      "mcp__sikemux_tools_browser_evaluate",
-      "mcp__sikemux_tools_browser_evaluate",
-      "mcp__sikemux_tools_browser_find",
-      "mcp__sikemux_tools_browser_find",
-      "mcp__sikemux_tools_browser_evaluate",
-      "ToolSearch",
-      "browser_evaluate",
-      "browser_evaluate",
-      "browser_evaluate",
-      "Bash",
-      "browser_evaluate",
-      "Bash",
-      "Bash"
-     ]
-    },
-    {
      "id": "verify-11",
      "category": "wrong_tool",
      "tools": [
@@ -18989,45 +16132,6 @@
       "guide",
       "browser_click",
       "browser_state"
-     ]
-    },
-    {
-     "id": "verify-12",
-     "category": "rage",
-     "tools": [
-      "git_commit",
-      "app_console"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "git-sweep",
-       "why": "ran git add -A, git stash or git reset --hard",
-       "call": "Bash {\"command\":\"cd src-tauri/crates/sikemux-gpui && cat > /tmp/probe_$$.rs <<'EOF'\\nfn main(){}\\nEOF\\ncargo check --offline -v 2>&1 | tail -5; git -C /tmp status >/…"
-      }
-     ],
-     "judge": null,
-     "cost": 0.01878723,
-     "costEstimated": true,
-     "tokens": {
-      "input": 207210,
-      "cached": 197632,
-      "output": 1537
-     },
-     "turns": 12,
-     "calls": [
-      "Bash",
-      "ToolSearch",
-      "grep",
-      "grep",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "git_commit"
      ]
     },
     {
@@ -19231,29 +16335,6 @@
      ]
     },
     {
-     "id": "wait-05",
-     "category": "wrong_tool",
-     "tools": [
-      "rundeck_execution"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.004708889999999999,
-     "costEstimated": true,
-     "tokens": {
-      "input": 51910,
-      "cached": 47104,
-      "output": 411
-     },
-     "turns": 4,
-     "calls": [
-      "ToolSearch",
-      "rundeck_execution",
-      "rundeck_execution"
-     ]
-    },
-    {
      "id": "wait-06",
      "category": "wrong_tool",
      "tools": [
@@ -19309,114 +16390,6 @@
       "agent_read",
       "Bash",
       "Bash"
-     ]
-    },
-    {
-     "id": "wait-08",
-     "category": "malformed_call",
-     "tools": [
-      "task_read"
-     ],
-     "pass": true,
-     "failures": [],
-     "judge": null,
-     "cost": 0.02700909,
-     "costEstimated": true,
-     "tokens": {
-      "input": 297383,
-      "cached": 284672,
-      "output": 2718
-     },
-     "turns": 16,
-     "calls": [
-      "Read",
-      "Bash",
-      "Read",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Read",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "ToolSearch",
-      "ToolSearch",
-      "workspace_inspect",
-      "ToolSearch",
-      "task_read"
-     ]
-    },
-    {
-     "id": "wait-09",
-     "category": "bad_recovery",
-     "tools": [
-      "task_start"
-     ],
-     "pass": false,
-     "failures": [
-      {
-       "check": "judge",
-       "why": "the judge gave no verdict"
-      }
-     ],
-     "judge": {
-      "pass": false,
-      "why": "the judge gave no verdict",
-      "cost": 0
-     },
-     "cost": 0.033483149999999996,
-     "costEstimated": true,
-     "tokens": {
-      "input": 367943,
-      "cached": 355584,
-      "output": 4092
-     },
-     "turns": 22,
-     "calls": [
-      "Read",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Bash",
-      "Read",
-      "Read",
-      "ToolSearch",
-      "workspace_inspect",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "task_start",
-      "workspace_inspect",
-      "task_read",
-      "task_read",
-      "task_read",
-      "task_read",
-      "task_read"
      ]
     },
     {

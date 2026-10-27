@@ -1,26 +1,5 @@
 [
   {
-    "id": "page-01",
-    "from": ["human_sikemux_b-021"],
-    "category": "wrong_tool",
-    "severity": "low",
-    "tools": ["page_preview", "page_show"],
-    "prompt": "How has the DMG size moved over the last six nightlies? They were 15.2, 15.4, 15.9, 16.1, 16.0 and 16.4 MB. I want to see the trend, right here in the chat.",
-    "fixture": {},
-    "grade": {
-      "order": true,
-      "expect": [
-        { "tool": "page_preview", "args": { "path": "/\\.html?$/" } },
-        { "tool": "page_show", "args": { "path": "/\\.html?$/" } }
-      ],
-      "forbid": [
-        { "tool": "browser_navigate", "why": "opened the chart in a desk tab instead of showing it in the reply" },
-        { "tool": "ui_open", "why": "opened the chart on the desk instead of showing it in the reply" }
-      ]
-    },
-    "maxTurns": 12
-  },
-  {
     "id": "page-02",
     "from": ["err_tools_mkt-013", "err_tools_sikemux-037"],
     "category": "wrong_tool",
@@ -178,28 +157,6 @@
       "limit": [{ "tool": "page_show", "max": 1 }]
     },
     "maxTurns": 10
-  },
-  {
-    "id": "page-07",
-    "from": ["other_agents-001", "other_agents-002"],
-    "category": "malformed_call",
-    "severity": "med",
-    "tools": ["guide", "page_preview", "page_show"],
-    "prompt": "Show me a nice visualization, in the chat, of how page preview works: you write a file, check it off screen, then it shows up in your reply.",
-    "fixture": {},
-    "grade": {
-      "order": true,
-      "expect": [
-        { "tool": "guide", "args": { "topic": "pages" } },
-        { "tool": "page_preview", "args": { "path": "/\\.html?$/" } },
-        { "tool": "page_show", "args": { "path": "/\\.html?$/", "title": { "$present": true } } }
-      ],
-      "forbid": [
-        { "tool": "guide", "args": { "topic": { "$not": { "$any": [{ "$present": false }, "pages", "all", "config", "tasks", "output", "ui", "browser-reading", "browser-input", "browser-pages", "browser-evidence", "browser-debugging", "simulator", "databases", "aws", "skills", "agents", "board", "shell"] } } }, "why": "asked the guide for a topic that does not exist" },
-        { "tool": ["page_preview", "page_show"], "args": { "path": { "$present": false } }, "why": "called a page tool without a path to probe its usage" }
-      ]
-    },
-    "maxTurns": 12
   },
   {
     "id": "page-08",

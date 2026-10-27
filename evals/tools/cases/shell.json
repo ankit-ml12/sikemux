@@ -1,26 +1,5 @@
 [
   {
-    "id": "shell-01",
-    "from": ["err_bash-005"],
-    "category": "malformed_call",
-    "severity": "high",
-    "tools": [],
-    "prompt": "Find every place under src-tauri that mentions gamma or smoothing, in both the Rust and the Metal shader files, and list them by file.",
-    "fixture": {
-      "files": {
-        "src-tauri/crates/sikemux-gpui/src/text/raster.rs": "pub const LIGHT_TEXT_GAMMA: f32 = 1.5;\n\npub fn stem_smoothing(enabled: bool) -> f32 {\n    if enabled { 0.25 } else { 0.0 }\n}\n",
-        "src-tauri/crates/sikemux-gpui/src/text/shaders.metal": "fragment float4 glyph(float coverage [[stage_in]]) {\n    float gamma = 1.5;\n    return float4(pow(coverage, 1.0 / gamma));\n}\n",
-        "src-tauri/crates/sikemux-gpui/src/theme.rs": "pub struct Theme {\n    pub text_gamma: f32,\n}\n"
-      }
-    },
-    "grade": {
-      "forbid": [
-        { "tool": "Bash", "args": { "command": "/--include=\\{?\\*|--glob[= ]\\*|(^|\\s)-g\\s+\\*|-i?name\\s+\\*/" }, "why": "left a file glob unquoted, which zsh expands and aborts on with \"no matches found\"" }
-      ]
-    },
-    "maxTurns": 8
-  },
-  {
     "id": "shell-02",
     "from": ["err_bash-006"],
     "category": "malformed_call",
