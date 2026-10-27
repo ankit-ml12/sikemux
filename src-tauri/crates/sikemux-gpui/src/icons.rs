@@ -180,6 +180,9 @@ icons!(
     Omp => "omp",
     OpenCode => "opencode",
     Pi => "pi",
+    Postgresql => "postgresql",
+    Mysql => "mysql",
+    Sqlite => "sqlite",
 );
 
 /// Whether an SVG draws in `currentColor`.

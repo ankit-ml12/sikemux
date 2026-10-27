@@ -5,10 +5,11 @@ use std::rc::Rc;
 
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Context, Entity, FontWeight, InteractiveElement,
-    IntoElement, ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    div, px, AnyElement, App, AppContext, ClickEvent, Context, Div, Entity, FontWeight,
+    InteractiveElement, IntoElement, ParentElement, PathPromptOptions, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::json;
 use sikemux_wire::database::{Engine, ProfileDraft, ProfileForm};
@@ -18,7 +19,7 @@ use crate::icons::Icon;
 use crate::plugin_pane::Failure;
 use crate::plugin_pane::{after, listen};
 use crate::theme::{Tokens, RADIUS_2};
-use crate::ui::{self, Button, IconButton, Pick, Segmented, Variant};
+use crate::ui::{self, Button, IconButton, Pick, Variant};
 
 /// What the last Test or Save said.
 enum Said {
@@ -262,34 +263,53 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
         None => "New connection".to_owned(),
     };
     let server = form.engine != Engine::Sqlite;
-    let at = form
-        .choices
-        .engines
-        .iter()
-        .position(|each| each.engine == form.engine)
-        .unwrap_or(0);
-    let engines = Segmented::words(
-        "db-form-engine",
-        form.choices
-            .engines
-            .iter()
-            .map(|each| (SharedString::from(each.label.clone()), None))
-            .collect(),
-        at,
-    )
-    .on_select(listen::<Database, usize>(
-        cx,
-        |database, _, picked, window, cx| {
-            if let Some(form) = &mut database.form {
-                if let Some(engine) = form.choices.engines.get(*picked).map(|each| each.engine) {
-                    form.engine = engine;
-                    form.said = None;
-                    form.hint(window, cx);
-                }
-            }
-            cx.notify();
-        },
-    ));
+    let engines = div()
+        .flex()
+        .gap(px(10.))
+        .children(form.choices.engines.iter().map(|each| {
+            let engine = each.engine;
+            let chosen = engine == form.engine;
+            div()
+                .id(SharedString::from(format!("db-form-engine-{}", each.label)))
+                .flex_1()
+                .min_w_0()
+                .py(px(14.))
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap(px(8.))
+                .rounded(RADIUS_2)
+                .border_1()
+                .cursor_pointer()
+                .map(|tile| match chosen {
+                    true => tile.bg(t.surface_chosen).border_color(t.border_strong),
+                    false => tile
+                        .border_color(t.border)
+                        .hover(|tile| tile.bg(t.surface_hover)),
+                })
+                .child(logo_mark(engine, 34.))
+                .child(
+                    ui::text(each.label.clone(), 12.5, FontWeight::MEDIUM).text_color(
+                        match chosen {
+                            true => t.text_primary,
+                            false => t.text_secondary,
+                        },
+                    ),
+                )
+                .on_click(listen::<Database, ClickEvent>(
+                    cx,
+                    move |database, _, _, window, cx| {
+                        if let Some(form) = &mut database.form {
+                            if form.engine != engine {
+                                form.engine = engine;
+                                form.said = None;
+                                form.hint(window, cx);
+                            }
+                        }
+                        cx.notify();
+                    },
+                ))
+        }));
     let labelled = |label: &'static str, input: &Entity<InputState>| {
         div()
             .flex_1()
@@ -449,6 +469,10 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
         ))
     });
     let actions = div()
+        .px(px(20.))
+        .py(px(14.))
+        .border_t_1()
+        .border_color(t.border)
         .flex()
         .items_center()
         .gap(px(8.))
@@ -492,26 +516,72 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                 run(database, host, "save", cx)
             })),
         );
+    let subtitle = match server {
+        true => "A PostgreSQL or MySQL server. Passwords stay in the Keychain.",
+        false => "A SQLite file on this host.",
+    };
+    let header = div()
+        .px(px(20.))
+        .pt(px(18.))
+        .pb(px(14.))
+        .flex()
+        .items_center()
+        .gap(px(12.))
+        .child(logo_mark(form.engine, 30.))
+        .child(
+            div()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(ui::text(title, 15., FontWeight::SEMIBOLD).text_color(t.text_primary))
+                .child(ui::meta(subtitle, cx)),
+        );
+    let body = div()
+        .px(px(20.))
+        .pb(px(18.))
+        .flex()
+        .flex_col()
+        .gap(px(16.))
+        .child(engines)
+        .child(fields)
+        .child(toggles)
+        .children(said);
     div()
         .id("db-form")
         .size_full()
         .overflow_y_scroll()
         .child(
             div()
-                .max_w(px(560.))
-                .px(px(20.))
-                .py(px(16.))
+                .min_h_full()
+                .px(px(24.))
+                .py(px(32.))
                 .flex()
-                .flex_col()
-                .gap(px(14.))
-                .child(ui::text(title, 15., FontWeight::SEMIBOLD).text_color(t.text_primary))
-                .child(engines)
-                .child(fields)
-                .child(toggles)
-                .children(said)
-                .child(actions),
+                .items_center()
+                .justify_center()
+                .child(
+                    ui::panel(cx)
+                        .w_full()
+                        .max_w(px(540.))
+                        .flex_none()
+                        .child(header)
+                        .child(body)
+                        .child(actions),
+                ),
         )
         .into_any_element()
+}
+
+fn logo_mark(engine: Engine, size: f32) -> Div {
+    ui::mark_box(size, ui::picture(logo(engine), size, gpui_kit::white()))
+}
+
+fn logo(engine: Engine) -> Icon {
+    match engine {
+        Engine::Postgres => Icon::Postgresql,
+        Engine::Mysql => Icon::Mysql,
+        Engine::Sqlite => Icon::Sqlite,
+    }
 }
 
 fn on_pick(cx: &Context<PluginPane>) -> impl Fn(&SharedString, &mut Window, &mut App) + 'static {
