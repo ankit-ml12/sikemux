@@ -8,17 +8,18 @@ import type { Context, MiddlewareHandler } from "hono";
 import { sql, type Kysely } from "kysely";
 
 import type { Tables } from "./db.ts";
-import { hostRequestMessage, signedBy } from "./devices/signature.ts";
+import { bodySha256, requestMessage, signedBy } from "./devices/signature.ts";
 import { ApiFailure, forbidden, unauthorized, type Env } from "./http.ts";
 
 export interface Identity {
   userId: string;
   /**
    * "session" for Clerk session tokens from the phone and the web app, "mac" for the Mac app's
-   * OAuth tokens, "host" for a request a host on the account signed with its key.
+   * OAuth tokens, "host" for a request a host on the account signed with its key, "device" for
+   * one a phone on the account signed with its key.
    */
-  via: "session" | "mac" | "host";
-  /** The host that signed the request. */
+  via: "session" | "mac" | "host" | "device";
+  /** The host or phone that signed the request. */
   deviceKey?: string;
   /** When Clerk issued a Mac app's OAuth token. */
   issuedAt?: Date;
@@ -141,7 +142,16 @@ export async function checkStanding(
     throw unauthorized("This sign-in was removed from the account.");
 }
 
-export type AuthEnv = Env & { Variables: { identity: Identity } };
+export type AuthEnv = Env & {
+  Variables: {
+    identity: Identity;
+    /**
+     * Checks a signed request's body by its SHA-256, in hex, for a route that streams the body
+     * rather than reading it before the handler. Does nothing for a bearer token.
+     */
+    proveBody: (bodySha256: string) => void;
+  };
+};
 
 /**
  * The ways in a route takes. The Mac app's OAuth token is only for adding its host, right after
@@ -149,14 +159,19 @@ export type AuthEnv = Env & { Variables: { identity: Identity } };
  * it from the account cuts it off. "mac" takes that token at any age, for the routes Macs on
  * 0.5.3 and earlier call with it.
  */
-export type SignIn = "session" | "host" | "macRegistration" | "mac";
+export type SignIn = "session" | "host" | "device" | "macRegistration" | "mac";
 
 /** How long after its sign-in the Mac app's OAuth token may add its host. */
 const MAC_REGISTRATION_MINUTES = 10;
 /** How far a signed request's time may be from the server's. */
 const HOST_CLOCK_SECONDS = 60;
-const HOST_SCHEME =
-  /^SikemuxHost\s+([0-9a-f]{64})\.(\d{1,12})\.([0-9a-f]{128})$/;
+const SIGNED_SCHEME =
+  /^Sikemux(Host|Device)\s+([0-9a-f]{64})\.(\d{1,12})\.([0-9a-f]{128})$/;
+
+const SIGNERS = {
+  Host: { via: "host", role: "host" },
+  Device: { via: "device", role: "client" },
+} as const;
 
 /** Signatures already taken, with when each stops being accepted, so a request is never made twice. */
 const takenSignatures = new Map<string, number>();
@@ -171,42 +186,60 @@ function takeSignature(signature: string, until: number) {
   takenSignatures.set(signature, until);
 }
 
-async function hostIdentity(
+/**
+ * Who signed a request with a host's or a phone's key. With `streamed`, the body is not read
+ * here: proveBody checks it once the handler has hashed it.
+ */
+async function signedIdentity(
   c: Context,
   db: Kysely<Tables>,
-  [key, time, signature]: [string, string, string],
-): Promise<Identity> {
+  [scheme, key, time, signature]: [
+    keyof typeof SIGNERS,
+    string,
+    string,
+    string,
+  ],
+  streamed: boolean,
+): Promise<{ identity: Identity; proveBody: (bodySha256: string) => void }> {
+  const signer = SIGNERS[scheme];
   const signedAt = Number(time) * 1000;
   if (Math.abs(Date.now() - signedAt) > HOST_CLOCK_SECONDS * 1000)
     throw unauthorized(
-      "The request's time is more than a minute from the server's; check this host's clock.",
+      `The request's time is more than a minute from the server's; check this ${signer.via}'s clock.`,
     );
   const url = new URL(c.req.url);
-  const body = new Uint8Array(await c.req.arrayBuffer());
-  const message = hostRequestMessage(
-    c.req.method,
-    url.pathname + url.search,
-    time,
-    body,
-  );
-  if (!signedBy(key, message, signature))
-    throw unauthorized("The request is not signed by that host.");
-  const host = await db
+  const expiresAt = signedAt + HOST_CLOCK_SECONDS * 1000;
+  const proveBody = (sha256: string) => {
+    const message = requestMessage(
+      signer.via,
+      c.req.method,
+      url.pathname + url.search,
+      time,
+      sha256,
+    );
+    if (!signedBy(key, message, signature))
+      throw unauthorized(`The request is not signed by that ${signer.via}.`);
+    takeSignature(signature, expiresAt);
+  };
+  if (!streamed)
+    proveBody(bodySha256(new Uint8Array(await c.req.arrayBuffer())));
+  const device = await db
     .selectFrom("devices")
     .innerJoin("users", "users.id", "devices.user_id")
     .select(["devices.user_id", "users.deleted_at"])
     .where("devices.key", "=", key)
-    .where("devices.role", "=", "host")
+    .where("devices.role", "=", signer.role)
     .executeTakeFirst();
-  if (!host || host.deleted_at)
-    throw unauthorized("This host is not on an account.");
-  const expiresAt = signedAt + HOST_CLOCK_SECONDS * 1000;
-  takeSignature(signature, expiresAt);
+  if (!device || device.deleted_at)
+    throw unauthorized(`This ${signer.via} is not on an account.`);
   return {
-    userId: host.user_id,
-    via: "host",
-    deviceKey: key,
-    expiresAt: new Date(expiresAt),
+    identity: {
+      userId: device.user_id,
+      via: signer.via,
+      deviceKey: key,
+      expiresAt: new Date(expiresAt),
+    },
+    proveBody: streamed ? proveBody : () => undefined,
   };
 }
 
@@ -235,31 +268,43 @@ export function requireIdentity(
   {
     allowDeleted = false,
     accept = ["session"],
-  }: { allowDeleted?: boolean; accept?: readonly SignIn[] } = {},
+    streamed = () => false,
+  }: {
+    allowDeleted?: boolean;
+    accept?: readonly SignIn[];
+    /** Whether a request's body is left for its handler to hash as it streams it. */
+    streamed?: (c: Context) => boolean;
+  } = {},
 ): MiddlewareHandler<AuthEnv> {
   return async (c, next) => {
     const header = c.req.header("authorization") ?? "";
-    const host = HOST_SCHEME.exec(header);
+    const signed = SIGNED_SCHEME.exec(header);
     const bearer = /^Bearer\s+(\S+)$/i.exec(header);
     let identity: Identity;
-    if (host && accept.includes("host")) {
-      identity = await hostIdentity(
+    let proveBody: (bodySha256: string) => void = () => undefined;
+    const scheme = signed?.[1] as keyof typeof SIGNERS | undefined;
+    if (signed && scheme && accept.includes(SIGNERS[scheme].via)) {
+      ({ identity, proveBody } = await signedIdentity(
         c,
         db,
-        host.slice(1) as [string, string, string],
-      );
+        signed.slice(1) as [keyof typeof SIGNERS, string, string, string],
+        streamed(c),
+      ));
     } else if (bearer?.[1]) {
       identity = await verifier.verify(bearer[1]);
       await checkStanding(db, identity, { allowDeleted });
     } else {
       throw unauthorized(
-        accept.includes("host")
-          ? "Sign in first: send Authorization: Bearer <token>, or sign the request as a host."
-          : "Sign in first: send Authorization: Bearer <token>.",
+        accept.includes("device")
+          ? "Sign in first: send Authorization: Bearer <token>, or sign the request with the device's key."
+          : accept.includes("host")
+            ? "Sign in first: send Authorization: Bearer <token>, or sign the request as a host."
+            : "Sign in first: send Authorization: Bearer <token>.",
       );
     }
     admit(identity, accept);
     c.set("identity", identity);
+    c.set("proveBody", proveBody);
     c.set("log", c.get("log").child({ userId: identity.userId }));
     await next();
   };

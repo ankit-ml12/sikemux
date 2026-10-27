@@ -27,15 +27,40 @@ export function shareViewerMessage(nonce: string, key: string): string {
   return `sikemux-share-viewer|${nonce}|${key}`;
 }
 
-/** What a host signs to make a request of the API as itself. The body goes in as its SHA-256, in hex. */
+/**
+ * What a host, or a phone using the stash, signs to make a request of the API as itself. The body
+ * goes in as its SHA-256, in hex. The prefix keeps a phone's signature from passing for a host's.
+ */
+export function requestMessage(
+  signer: "host" | "device",
+  method: string,
+  pathAndQuery: string,
+  time: string,
+  bodySha256: string,
+): string {
+  return `sikemux-${signer}-request|${method}|${pathAndQuery}|${time}|${bodySha256}`;
+}
+
+export function bodySha256(body: Uint8Array): string {
+  return createHash("sha256").update(body).digest("hex");
+}
+
 export function hostRequestMessage(
   method: string,
   pathAndQuery: string,
   time: string,
   body: Uint8Array,
 ): string {
-  const bodyHash = createHash("sha256").update(body).digest("hex");
-  return `sikemux-host-request|${method}|${pathAndQuery}|${time}|${bodyHash}`;
+  return requestMessage("host", method, pathAndQuery, time, bodySha256(body));
+}
+
+export function deviceRequestMessage(
+  method: string,
+  pathAndQuery: string,
+  time: string,
+  body: Uint8Array,
+): string {
+  return requestMessage("device", method, pathAndQuery, time, bodySha256(body));
 }
 
 /** What a phone signs to send its notifications to a token. The token goes in as its SHA-256, in hex. */
