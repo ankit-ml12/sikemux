@@ -337,12 +337,15 @@ chooses how much:
 - `"full"` returns the whole state, as `browser_state` would.
 
 **Element numbers expire** when their element leaves the page. A number stays
-with the same element for as long as that element is there, so a number from
-an earlier read either reaches the same element or fails with "no element".
-Elements that appear later get new numbers. A page that redraws a list builds
-new elements, so read again after it does. Numbering starts again at 0 on
-every new page, so never carry a number across a navigation; the error says
-when a number was never handed out on this page.
+with the same element for as long as that element is there. When the page
+swaps in a fresh copy of it, with the same label in the same place, the number
+reaches the copy and the result gives its new `index`; otherwise it fails with
+"no element". Numbering starts again at 0 on every new page, so never carry a
+number across a navigation; the error says when a number was never handed out
+on this page.
+
+Browser calls run one at a time in the order you sent them, and
+`browser_evaluate` waits for a page that is still loading.
 
 Each element line shows what a person would see of its state: `value="…"` for
 a filled field, `[checked]` or `[unchecked]` for checkboxes, radios and
@@ -365,8 +368,9 @@ reports one you were not shown as removed.
 accessible name, placeholder, `name` or `id` contains it, with their numbers,
 exact matches first. `role` narrows it, as in `button`, `link`, `checkbox`,
 `textbox` or `tab`; when nothing of that role is named that way, it lists
-every element of that role instead. When no element matches but the words
-show on the page, it returns `points` with their `x`, `y` to click instead.
+every element of that role instead. When no control matches but the words
+show on the page, it lists the elements that show them, such as a heading or a
+caption, numbered like the rest.
 
 Controls inside a frame from the same site are numbered with the rest of the
 page. A frame from another site, such as a card field or a sign-in widget,
@@ -384,9 +388,10 @@ the text both respond to them.
 `browser_click` takes a number from the latest state, or `text` naming the
 element by its visible text or accessible name, or a CSS `selector`, or `x`
 and `y` in CSS pixels from the top left of the viewport, which is where a
-screenshot's pixels sit too. `text` and `selector` must pick out one element:
-when several match, nothing is clicked and the error lists them, so pass
-their number, a `role` or a narrower selector. `expectLabel` makes the click
+screenshot's pixels sit too. `text` names a control first, else the heading, caption or other element
+showing those words. `text` and `selector` must pick out one element: when
+several match, nothing is clicked and the error lists them, so pass a `role`,
+a narrower selector, or one of their numbers as `index`, alone or beside them. `expectLabel` makes the click
 fail rather than land on an element whose label does not contain it, with
 coordinates too. The result names the `index` and `label` it clicked; a click
 by coordinates names what it `hit` instead, so check that before trusting a

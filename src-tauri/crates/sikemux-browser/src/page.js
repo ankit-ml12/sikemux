@@ -14,6 +14,8 @@
     const MAX_FOUND = 30;
     const MAX_OFFSCREEN = 40;
     const MAX_MARK_SHARE = 0.4;
+    const MAX_REMEMBERED = 2000;
+    const CONTEXT_TEXT = 200;
     const IMPLICIT_ROLES = { A: "link", BUTTON: "button", SUMMARY: "button", SELECT: "combobox", TEXTAREA: "textbox", OPTION: "option" };
     const INPUT_ROLES = { checkbox: "checkbox", radio: "radio", button: "button", submit: "button", reset: "button", image: "button", range: "slider", search: "searchbox" };
 
@@ -233,6 +235,44 @@
         return out;
     };
     const refs = () => window.__sikemuxRefs || new Map();
+    const numbering = () => window.__sikemuxNumbers || (window.__sikemuxNumbers = { ids: new WeakMap(), next: 0, seen: new Map() });
+    const numberOf = (element) => {
+        const numbers = numbering();
+        if (!numbers.ids.has(element)) numbers.ids.set(element, numbers.next++);
+        return numbers.ids.get(element);
+    };
+    const briefText = (node, budget) => {
+        let text = "";
+        const walker = node.ownerDocument.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+        for (let part = walker.nextNode(); part && text.length < budget; part = walker.nextNode()) text += ` ${part.data}`;
+        return compact(text).slice(0, budget);
+    };
+    // A typed value is left out, so a field is still itself once filled in.
+    const identity = (element) => {
+        const typed = currentValue(element) != null ? compact(element.value).toLowerCase() : null;
+        const own = briefText(element, CONTEXT_TEXT);
+        let context = "";
+        for (let node = parentAcross(element), hops = 0; node && hops < 3 && !context; node = parentAcross(node), hops++) {
+            const text = briefText(node, CONTEXT_TEXT);
+            if (text !== own) context = text;
+        }
+        return JSON.stringify([element.tagName, element.type || "", roleOf(element), ...names(element).filter((name) => name !== typed), context]);
+    };
+    // What each number the agent was shown named, so the number still finds
+    // its element after the page swaps in a fresh copy of it.
+    const remember = (id, element) => {
+        const seen = numbering().seen;
+        if (seen.has(id)) return;
+        seen.set(id, { label: describe(element), identity: identity(element) });
+        if (seen.size > MAX_REMEMBERED) seen.delete(seen.keys().next().value);
+    };
+    const refound = (index) => {
+        const was = numbering().seen.get(index);
+        if (!was) return null;
+        listing();
+        const same = [...refs().values()].filter((element) => element.isConnected && identity(element) === was.identity);
+        return same.length === 1 ? same[0] : null;
+    };
     const pick = (index) => {
         const element = refs().get(index);
         if (element && element.isConnected) return element;
@@ -241,7 +281,10 @@
             const latest = numbers && numbers.next ? `; this page has handed out [0] to [${numbers.next - 1}]` : "; this page has not been read yet";
             throw new Error(`no element [${index}]${latest}. Numbers start again on every new page, so read browser_state or browser_find first`);
         }
-        const was = element ? ` ("${describe(element)}")` : "";
+        const again = refound(index);
+        if (again) return again;
+        const label = element ? describe(element) : numbers.seen.get(index)?.label;
+        const was = label ? ` ("${label}")` : "";
         throw new Error(`no element [${index}]${was}: it has left the page or is hidden now, so read browser_state or browser_find again`);
     };
     // Elements named by a CSS selector, searched through open shadow roots and
@@ -265,25 +308,16 @@
         search(document);
         return found;
     };
-    // The one element a selector names, numbered so later calls can use it.
+    // An element outside the list, numbered so later calls can use it.
     const numberFor = (element) => {
-        const numbers = window.__sikemuxNumbers || (window.__sikemuxNumbers = { ids: new WeakMap(), next: 0 });
-        if (!numbers.ids.has(element)) numbers.ids.set(element, numbers.next++);
-        const id = numbers.ids.get(element);
+        const id = numberOf(element);
         const current = window.__sikemuxRefs || (window.__sikemuxRefs = new Map());
         current.set(id, element);
+        remember(id, element);
         return id;
     };
-    const bySelector = (selector) => {
-        const found = selected(selector).filter(shown);
-        if (!found.length) throw new Error(`nothing shown matches "${selector}"`);
-        if (found.length > 1) {
-            const lines = found.slice(0, 10).map((element) => entry(numberFor(element), element).line);
-            throw new Error(`${found.length} shown elements match "${selector}"; nothing was done. Pass a narrower selector or one of these numbers:\n${lines.join("\n")}`);
-        }
-        return numberFor(found[0]);
-    };
     const entry = (id, element) => {
+        remember(id, element);
         const tag = element.tagName.toLowerCase();
         const parts = [`[${id}]`, `<${tag}${element.type ? ` type=${element.type}` : ""}${element.name ? ` name=${compact(element.name)}` : ""}>`];
         const text = label(element);
@@ -318,7 +352,6 @@
     // Covered elements and the parts of a listed control keep a number but are
     // left out of the list.
     const listing = () => {
-        const numbers = window.__sikemuxNumbers || (window.__sikemuxNumbers = { ids: new WeakMap(), next: 0 });
         const listed = new Map();
         const current = new Map();
         const present = interactive(document, []).filter(shown);
@@ -330,8 +363,7 @@
         const partOfAnother = (element) =>
             (!element.matches(CONTROL) && insideReachable(element)) || (element.tagName === "LABEL" && reachable.has(element.control));
         for (const element of present) {
-            if (!numbers.ids.has(element)) numbers.ids.set(element, numbers.next++);
-            const id = numbers.ids.get(element);
+            const id = numberOf(element);
             current.set(id, element);
             if (reachable.has(element) && !partOfAnother(element)) listed.set(id, entry(id, element));
         }
@@ -397,26 +429,39 @@
         const found = exact.length ? exact : candidates.filter(([, element]) => names(element).some((name) => name.includes(wanted)));
         return found.filter(([, element]) => !found.some(([, other]) => other !== element && within(other, element)));
     };
-    // Spots where the words show on the page outside any numbered element,
-    // such as a clickable card that is a plain div.
-    const textPoints = (query) => {
+    // Elements that show the words themselves outside any control, such as a
+    // heading, a caption or a clickable card that is a plain div.
+    const textHolders = (query) => {
         const wanted = compact(query).toLowerCase();
-        const points = [];
-        if (!wanted || !document.body) return points;
+        const first = wanted.split(" ")[0];
+        const holders = [];
+        if (!wanted || !document.body) return holders;
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-        for (let node = walker.nextNode(); node && points.length < 5; node = walker.nextNode()) {
-            const at = node.data.toLowerCase().indexOf(wanted);
-            if (at < 0 || !node.parentElement || !shown(node.parentElement)) continue;
-            const range = document.createRange();
-            range.setStart(node, at);
-            range.setEnd(node, Math.min(node.data.length, at + wanted.length));
-            const rect = range.getBoundingClientRect();
-            if (rect.width < 1 || rect.height < 1 || rect.right <= 0 || rect.bottom <= 0 || rect.left >= innerWidth) continue;
-            const point = { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), text: compact(node.parentElement.innerText || node.data).slice(0, 96) };
-            if (!inViewport(rect)) point.offscreen = true;
-            points.push(point);
+        for (let node = walker.nextNode(); node && holders.length < MAX_FOUND; node = walker.nextNode()) {
+            if (!node.data.toLowerCase().includes(first)) continue;
+            let holder = node.parentElement;
+            for (let hops = 0; holder && hops < 3 && !compact(holder.innerText).toLowerCase().includes(wanted); hops++) holder = holder.parentElement;
+            if (!holder || holder === document.body || holders.includes(holder) || !compact(holder.innerText).toLowerCase().includes(wanted) || !shown(holder)) continue;
+            holders.push(holder);
         }
-        return points;
+        const deepest = holders.filter((holder) => !holders.some((other) => other !== holder && within(other, holder)));
+        const exact = deepest.filter((holder) => compact(holder.innerText).toLowerCase() === wanted);
+        return (exact.length ? exact : deepest).map((holder) => [numberFor(holder), holder]);
+    };
+    // The numbered elements a call names by `selector` or `text`, and what to
+    // say when that is not exactly one.
+    const named = (target) => {
+        if (target.selector != null) {
+            const found = selected(target.selector)
+                .filter(shown)
+                .map((element) => [numberFor(element), element]);
+            return { found, none: `nothing shown matches "${target.selector}"`, many: `${found.length} shown elements match "${target.selector}"`, narrower: "a narrower selector" };
+        }
+        if (target.text == null) return null;
+        const scope = target.role ? ` with role ${target.role}` : "";
+        const labelled = matching(target.text, target.role);
+        const found = labelled.length || target.role ? labelled : textHolders(target.text);
+        return { found, none: `nothing${scope} shows or is labelled "${target.text}"; try browser_find with part of the words`, many: `${found.length} elements${scope} match "${target.text}"`, narrower: "a role or fuller text" };
     };
     const centre = (element) => {
         const rect = rectOf(element);
@@ -533,9 +578,9 @@
             const found = matching(query, role);
             const result = { matches: found.length, elements: found.slice(0, MAX_FOUND).map(([id, element]) => entry(id, element).line).join("\n") };
             if (!found.length) {
-                const points = textPoints(query);
-                result.note = points.length ? "the words are on the page but on nothing numbered; click one of these points by x and y" : "nothing on the page shows those words";
-                if (points.length) result.points = points;
+                const holders = textHolders(query);
+                result.note = holders.length ? "the words are on the page but on no control; these elements show them" : "nothing on the page shows those words";
+                if (holders.length) result.elements = holders.map(([id, element]) => entry(id, element).line).join("\n");
                 if (role) {
                     const wantedRole = compact(role).toLowerCase();
                     const listed = listing();
@@ -560,25 +605,28 @@
             if (condition.url != null && !location.href.includes(condition.url)) failing.push(`the url is ${location.href}, which does not contain "${condition.url}"`);
             return { met: failing.length === 0, failing };
         },
-        locate(text, role) {
-            const found = matching(text, role);
-            if (found.length === 1) return found[0][0];
-            const scope = role ? ` with role ${role}` : "";
-            if (!found.length) throw new Error(`nothing${scope} is labelled "${text}"; try browser_find with part of the words`);
-            const listedMatches = found.slice(0, 10).map(([id, element]) => entry(id, element).line);
-            throw new Error(`${found.length} elements${scope} match "${text}"; nothing was done. Pass an index, or a role or fuller text:\n${listedMatches.join("\n")}`);
-        },
         // The number of the element a call names by `index`, `text` (with an
-        // optional `role`) or `selector`, whichever it gives.
+        // optional `role`) or `selector`. An index given beside text or a
+        // selector picks one of the elements they match.
         resolve(target) {
-            if (target.index != null) return target.index;
-            if (target.selector != null) return bySelector(target.selector);
-            if (target.text != null) return this.locate(target.text, target.role);
-            throw new Error("pass index, text or selector");
+            const match = named(target);
+            if (!match) {
+                if (target.index != null) return target.index;
+                throw new Error("pass index, text or selector");
+            }
+            const { found } = match;
+            const listed = () => found.slice(0, 10).map(([id, element]) => entry(id, element).line).join("\n");
+            if (found.length === 1 && (target.index == null || target.index === found[0][0])) return found[0][0];
+            if (!found.length) throw new Error(match.none);
+            if (target.index != null) {
+                if (found.some(([id]) => id === target.index)) return target.index;
+                throw new Error(`element [${target.index}] is not one of the ${found.length} that match; nothing was done. Pass one of these numbers as index:\n${listed()}`);
+            }
+            throw new Error(`${match.many}; nothing was done. Pass ${match.narrower}, or one of these numbers as index:\n${listed()}`);
         },
         point(target, expectLabel) {
-            const index = typeof target === "number" ? target : this.resolve(target);
-            const element = pick(index);
+            const element = pick(typeof target === "number" ? target : this.resolve(target));
+            const index = numberOf(element);
             if (expectLabel != null && !names(element).some((name) => name.includes(compact(expectLabel).toLowerCase()))) {
                 throw new Error(`element [${index}] is "${describe(element)}", not "${expectLabel}"; nothing was done`);
             }
@@ -591,8 +639,8 @@
         // The part of an element a person can see, scrolled into view, for a
         // picture of just that element.
         areaOf(target) {
-            const index = this.resolve(target);
-            const element = pick(index);
+            const element = pick(this.resolve(target));
+            const index = numberOf(element);
             element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
             const rect = visibleRect(element);
             if (!rect) throw new Error(`element [${index}] ("${describe(element)}") is hidden or cut off, so there is nothing of it to capture`);
