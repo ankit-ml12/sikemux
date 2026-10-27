@@ -370,6 +370,14 @@ impl Host {
         }
     }
 
+    /// Shows `value` as the view `method` with `params`, read straight from the plugin, until
+    /// the core next says it changed.
+    pub fn put_view(&mut self, method: &str, params: &Value, value: Value) {
+        if let Some(kept) = self.kept.get_mut(&(method.to_owned(), params.to_string())) {
+            kept.answer = Answer::Got(value, Read::default());
+        }
+    }
+
     /// Calls the plugin's `method`; the core reads its views again after a write.
     pub fn call(
         &self,

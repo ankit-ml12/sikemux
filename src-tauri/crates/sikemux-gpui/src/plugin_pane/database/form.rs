@@ -49,7 +49,11 @@ fn kept_key(host: &Host) -> (Place, String) {
 }
 
 /// The form this pane's slot left open, filled in as it was left.
-pub(super) fn restore(host: &Host, window: &mut Window, cx: &mut Context<PluginPane>) -> Option<Form> {
+pub(super) fn restore(
+    host: &Host,
+    window: &mut Window,
+    cx: &mut Context<PluginPane>,
+) -> Option<Form> {
     let kept = KEPT.with_borrow_mut(|kept| kept.remove(&kept_key(host)))?;
     let mut form = Form::new(kept.choices, window, cx);
     form.fill(&kept.draft, window, cx);
@@ -268,7 +272,12 @@ pub(super) fn open(
 }
 
 /// Fills the fields from the connection URL `typed`, as the plugin reads it.
-fn from_url(pane: &mut PluginPane, typed: String, window: &mut Window, cx: &mut Context<PluginPane>) {
+fn from_url(
+    pane: &mut PluginPane,
+    typed: String,
+    window: &mut Window,
+    cx: &mut Context<PluginPane>,
+) {
     let Some((database, host)) = pane.parts::<Database>() else {
         return;
     };
@@ -280,7 +289,10 @@ fn from_url(pane: &mut PluginPane, typed: String, window: &mut Window, cx: &mut 
     if typed.is_empty() {
         return;
     }
-    let call = host.call("fromUrl", json!({ "url": typed, "profile": form.draft(cx) }));
+    let call = host.call(
+        "fromUrl",
+        json!({ "url": typed, "profile": form.draft(cx) }),
+    );
     cx.spawn_in(window, async move |pane, cx| {
         let read = call.await;
         let _ = pane.update_in(cx, |pane, window, cx| {
@@ -328,26 +340,45 @@ fn run(database: &mut Database, host: &Host, kind: &'static str, cx: &mut Contex
     let call = host.call(kind, params);
     after::<Database, _>(
         call,
-        move |database, _, done, _| {
+        move |database, host, done, cx| {
             let Some(form) = &mut database.form else {
                 return;
             };
+            if let ("save", Ok(_)) = (kind, &done) {
+                return show_saved(database, host, cx);
+            }
             form.busy = None;
-            match (kind, done) {
-                ("save", Ok(_)) => database.form = None,
-                (_, Ok(tested)) => {
+            match done {
+                Ok(tested) => {
                     let version = tested["version"].as_str().unwrap_or_default();
                     let millis = tested["millis"].as_u64().unwrap_or_default();
                     form.said = Some(Said::Tested(format!(
                         "Connected to {version} in {millis} ms"
                     )));
                 }
-                (_, Err(failure)) => form.said = Some(Said::Failed(failure.message)),
+                Err(failure) => form.said = Some(Said::Failed(failure.message)),
             }
         },
         cx,
     );
     cx.notify();
+}
+
+/// Closes the form once the explorer, read again from the plugin itself, holds what was saved,
+/// since the explorer the core keeps can still be the one from before.
+fn show_saved(database: &mut Database, host: &Host, cx: &mut Context<PluginPane>) {
+    let params = json!({ "open": database.open_nodes() });
+    let read = host.call("explorerView", params.clone());
+    after::<Database, _>(
+        read,
+        move |database, host, read, _| {
+            if let Ok(explorer) = read {
+                host.put_view("explorerView", &params, explorer);
+            }
+            database.form = None;
+        },
+        cx,
+    );
 }
 
 /// Fills the file and, when it has none yet, the name from a file the person picks.
