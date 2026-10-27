@@ -19,7 +19,7 @@ use crate::protocol::WindowCall;
 use crate::text::clipped;
 
 use super::activity::Activity;
-use super::approvals::Approval;
+use super::approvals::{Approval, Keeper};
 use super::changed::Topic;
 use super::connection::ClientId;
 use super::kept::Kept;
@@ -112,9 +112,9 @@ struct Question {
     #[serde(skip_serializing_if = "Option::is_none")]
     from_host: Option<String>,
     /// The plugin tool call the person approves or turns down with their
-    /// answer. It is never written down, so such a question is not kept.
-    #[serde(skip)]
-    approval: Option<Arc<Approval>>,
+    /// answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    approval: Option<Approval>,
 }
 
 /// Where a question stands for the person.
@@ -270,6 +270,7 @@ struct State {
     /// Every question put to the person, assumptions too, that devices'
     /// views last showed, and whose they are.
     shown_devices: HashMap<String, String>,
+    keeper: Keeper,
 }
 
 pub(crate) struct Questions {
@@ -299,7 +300,7 @@ struct Asked {
     blocked: bool,
     assumption: Option<String>,
     secret: bool,
-    approval: Option<Arc<Approval>>,
+    approval: Option<Approval>,
 }
 
 impl Questions {
@@ -307,7 +308,18 @@ impl Questions {
     pub(crate) fn new(data_dir: Option<&Path>, known: impl Fn(&str) -> bool) -> Self {
         let kept = Kept::new(data_dir, FILE);
         let mut record: QuestionsRecord = kept.load();
-        record.open.retain(|question| known(&question.agent_id));
+        let mut keeper = Keeper::new(data_dir.is_some());
+        record.open.retain_mut(|question| {
+            let known = known(&question.agent_id);
+            match &mut question.approval {
+                Some(approval) if known => keeper.restore(&question.id, approval),
+                Some(_) => {
+                    keeper.forget(&question.id);
+                    false
+                }
+                None => known,
+            }
+        });
         let secrets = data_dir.map(|dir| dir.join(SECRETS));
         if let Some(entries) = secrets
             .as_deref()
@@ -324,6 +336,7 @@ impl Questions {
             state: Mutex::new(State {
                 dirty: !record.open.is_empty(),
                 open: record.open,
+                keeper,
                 ..State::default()
             }),
             kept,
@@ -361,13 +374,13 @@ impl Questions {
     fn changed(&self, state: &mut State) {
         state.dirty = true;
         self.kept.save(&QuestionsRecord {
-            open: state
-                .open
-                .iter()
-                .filter(|question| question.approval.is_none())
-                .cloned()
-                .collect(),
+            open: state.open.clone(),
         });
+        let waiting = state
+            .open
+            .iter()
+            .filter_map(|question| Some((question.id.as_str(), question.approval.as_ref()?)));
+        state.keeper.keep(waiting);
         self.wake.now();
     }
 
@@ -871,7 +884,7 @@ pub(crate) fn put_to_person(
             blocked: true,
             assumption: None,
             secret: false,
-            approval: Some(Arc::new(approval)),
+            approval: Some(approval),
         }],
     )
     .map(drop)
