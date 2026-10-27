@@ -1843,6 +1843,8 @@ export interface ProjectBoard {
   autoNote?: string;
   /** What could not be done of what the person asked, a line each. */
   problems?: string[];
+  /** The triggers that add cards to it when their time comes, soonest first. */
+  triggers: ChatTrigger[];
 }
 
 /** A card as the app and devices read it. */

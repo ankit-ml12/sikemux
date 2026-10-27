@@ -1887,6 +1887,10 @@
           "type": "string",
           "maxLength": 5
         },
+        "board": {
+          "description": "Add a card to this project's board when it fires instead of prompting this chat",
+          "type": "boolean"
+        },
         "weekdays": {
           "description": "With daily, the days it fires on; every day when left out",
           "type": "array",

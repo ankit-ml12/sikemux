@@ -1368,6 +1368,14 @@ once it has done its job. Triggers end when your chat closes. A time that
 passes while the host is off fires once the host is back: a one-time trigger
 always, a repeating one only within 15 minutes of its time.
 
+For recurring work that should not depend on this chat, such as triaging new
+issues every morning, pass `board: true`. Each time it fires, the trigger adds a
+card to the project's board, titled as the trigger with its prompt as the
+details, as if the person added it, so Auto starts an agent on it when Auto is
+on. A board trigger stays after your chat closes. `trigger_list` lists your
+chat's triggers and the board's, with `board` saying which, and you may remove
+either.
+
 ## shell: The same operations from a shell
 
 Every tool here is also a CLI verb, which is useful inside a task or a script:

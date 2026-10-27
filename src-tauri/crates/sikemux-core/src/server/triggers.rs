@@ -1,5 +1,6 @@
-//! Triggers an agent sets on its own chat: each sends the chat a message when
-//! its time comes, once or again and again, and goes when the chat closes.
+//! Triggers an agent sets: each, when its time comes, once or again and again, sends the
+//! agent's own chat a prompt, and goes when the chat closes, or adds a card to its project's
+//! board, which Auto carries when it is on, and stays until it is removed.
 
 use std::sync::{Arc, Mutex};
 
@@ -20,6 +21,7 @@ use crate::cli::protocol::HarnessRequest;
 
 const FILE: &str = "triggers.json";
 const MAX_PER_AGENT: usize = 20;
+const MAX_PER_BOARD: usize = 20;
 const MAX_TRIGGERS: usize = 512;
 const MAX_TITLE_CHARS: usize = 120;
 const MAX_PROMPT_CHARS: usize = 8192;
@@ -34,7 +36,11 @@ const WEEKDAYS: [&str; 7] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 #[serde(rename_all = "camelCase")]
 struct Trigger {
     id: u64,
+    /// The chat that set it, which its prompt goes to unless it adds cards.
     agent_id: String,
+    /// The project whose board it adds a card to when it fires, rather than prompting the chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    board: Option<String>,
     title: String,
     prompt: String,
     when: TriggerWhen,
@@ -74,11 +80,20 @@ impl Triggers {
 
     /// The chat's triggers, soonest first, as its clients show them.
     pub(crate) fn shown(&self, agent_id: &str) -> Vec<ChatTrigger> {
+        self.shown_where(|trigger| trigger.board.is_none() && trigger.agent_id == agent_id)
+    }
+
+    /// The triggers that add cards to the project's board, soonest first.
+    pub(crate) fn on_board(&self, project: &str) -> Vec<ChatTrigger> {
+        self.shown_where(|trigger| trigger.board.as_deref() == Some(project))
+    }
+
+    fn shown_where(&self, keep: impl Fn(&Trigger) -> bool) -> Vec<ChatTrigger> {
         let state = self.state.locked();
         let mut shown: Vec<ChatTrigger> = state
             .triggers
             .iter()
-            .filter(|trigger| trigger.agent_id == agent_id)
+            .filter(|trigger| keep(trigger))
             .map(|trigger| ChatTrigger {
                 id: trigger.id,
                 title: trigger.title.clone(),
@@ -90,13 +105,13 @@ impl Triggers {
         shown
     }
 
-    /// When the agent's soonest trigger fires.
+    /// When the soonest trigger that prompts the agent's chat fires.
     pub(crate) fn next_at(&self, agent_id: &str) -> Option<u64> {
         let state = self.state.locked();
         state
             .triggers
             .iter()
-            .filter(|trigger| trigger.agent_id == agent_id)
+            .filter(|trigger| trigger.board.is_none() && trigger.agent_id == agent_id)
             .map(|trigger| trigger.next_at)
             .min()
     }
@@ -147,12 +162,14 @@ impl Triggers {
         (firing, next)
     }
 
+    /// The chats with triggers that prompt them.
     fn agents(&self) -> Vec<String> {
         let mut agents: Vec<String> = self
             .state
             .locked()
             .triggers
             .iter()
+            .filter(|trigger| trigger.board.is_none())
             .map(|trigger| trigger.agent_id.clone())
             .collect();
         agents.sort();
@@ -206,21 +223,15 @@ pub(crate) fn settle(core: &Arc<Core>) {
         core.triggers.change(|state| {
             state
                 .triggers
-                .retain(|trigger| !gone.contains(&trigger.agent_id))
+                .retain(|trigger| trigger.board.is_some() || !gone.contains(&trigger.agent_id))
         });
     }
     let (firing, next) = core.triggers.take_due(epoch_ms());
     if let Some(next) = next {
         core.triggers.wake.at(next);
     }
-    let mut touched: Vec<String> = firing
-        .iter()
-        .map(|firing| firing.trigger.agent_id.clone())
-        .collect();
-    touched.sort();
-    touched.dedup();
-    for agent_id in touched {
-        show(core, &agent_id);
+    for firing in &firing {
+        show(core, &firing.trigger);
     }
     for firing in firing {
         tokio::spawn(fire(core.clone(), firing));
@@ -229,6 +240,17 @@ pub(crate) fn settle(core: &Arc<Core>) {
 
 async fn fire(core: Arc<Core>, firing: Firing) {
     let trigger = &firing.trigger;
+    if let Some(project) = &trigger.board {
+        if let Err(error) =
+            super::board::add_for_trigger(&core, project, &trigger.title, &trigger.prompt)
+        {
+            eprintln!(
+                "sikemux core: trigger {} added no card to {project}'s board: {error}",
+                trigger.id
+            );
+        }
+        return;
+    }
     let mut text = format!("{}\n\n{}", trigger.title, trigger.prompt);
     if let Some(due) = firing.late_since {
         text.push_str(&format!(
@@ -270,11 +292,15 @@ async fn fire(core: Arc<Core>, firing: Firing) {
     }
 }
 
-/// Tells the chat's clients what triggers it has now, and every device's view when it next
-/// fires.
-fn show(core: &Core, agent_id: &str) {
-    if let Some(feed) = core.chats.heard(agent_id) {
-        feed.set_triggers(core.triggers.shown(agent_id));
+/// Tells the clients of the trigger's chat or board what triggers it has now, and every
+/// device's view when the chat's next one fires.
+fn show(core: &Core, trigger: &Trigger) {
+    if let Some(project) = &trigger.board {
+        super::board::triggers_changed(core, project);
+        return;
+    }
+    if let Some(feed) = core.chats.heard(&trigger.agent_id) {
+        feed.set_triggers(core.triggers.shown(&trigger.agent_id));
     }
     core.view_changed();
 }
@@ -291,17 +317,37 @@ pub(crate) fn add(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, S
     let params = &request.params;
     let title = text(params, "title", MAX_TITLE_CHARS)?;
     let prompt = text(params, "prompt", MAX_PROMPT_CHARS)?;
+    let board = match params.get("board") {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => None,
+        Some(Value::Bool(true)) => Some(super::board::caller_project(core, request)),
+        Some(_) => return Err("board must be a boolean".into()),
+    };
     let now = epoch_ms();
     let (rule, next_at) = when_of(params, now)?;
-    let id = core.triggers.change(|state| {
-        let own = state
-            .triggers
-            .iter()
-            .filter(|trigger| trigger.agent_id == agent_id)
-            .count();
-        if own >= MAX_PER_AGENT {
+    let trigger = core.triggers.change(|state| {
+        let (own, most, whose) = match &board {
+            Some(project) => (
+                state
+                    .triggers
+                    .iter()
+                    .filter(|trigger| trigger.board.as_ref() == Some(project))
+                    .count(),
+                MAX_PER_BOARD,
+                "This project's board",
+            ),
+            None => (
+                state
+                    .triggers
+                    .iter()
+                    .filter(|trigger| trigger.board.is_none() && trigger.agent_id == agent_id)
+                    .count(),
+                MAX_PER_AGENT,
+                "This chat",
+            ),
+        };
+        if own >= most {
             return Err(format!(
-                "This chat already has {MAX_PER_AGENT} triggers; remove one with trigger_remove first"
+                "{whose} already has {most} triggers; remove one with trigger_remove first"
             ));
         }
         if state.triggers.len() >= MAX_TRIGGERS {
@@ -310,33 +356,39 @@ pub(crate) fn add(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, S
             ));
         }
         state.next_id += 1;
-        let id = state.next_id;
-        state.triggers.push(Trigger {
-            id,
+        let trigger = Trigger {
+            id: state.next_id,
             agent_id: agent_id.clone(),
+            board,
             title,
             prompt,
             when: rule,
             next_at,
-        });
-        Ok(id)
+        };
+        state.triggers.push(trigger.clone());
+        Ok(trigger)
     })?;
-    show(core, &agent_id);
+    show(core, &trigger);
+    let note = match trigger.board {
+        Some(_) => "It adds a card to this project's board then, titled as the trigger with its prompt as the details, which Auto carries when it is on. It stays after this chat closes.",
+        None => "It sends this chat its prompt then, as a message you read like any other.",
+    };
     Ok(json!({
-        "trigger": id,
+        "trigger": trigger.id,
         "next": when(next_at),
         "nextAt": next_at,
-        "note": "It sends this chat its prompt then, as a message you read like any other.",
+        "note": note,
     }))
 }
 
 pub(crate) fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
     let agent_id = caller(request, "trigger_list")?;
+    let project = super::board::caller_project(core, request);
     let state = core.triggers.state.locked();
     let mut triggers: Vec<&Trigger> = state
         .triggers
         .iter()
-        .filter(|trigger| trigger.agent_id == agent_id)
+        .filter(|trigger| yours(trigger, &agent_id, &project))
         .collect();
     triggers.sort_by_key(|trigger| trigger.next_at);
     let listed: Vec<Value> = triggers
@@ -347,6 +399,7 @@ pub(crate) fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, 
                 "title": trigger.title,
                 "prompt": trigger.prompt,
                 "when": trigger.when,
+                "board": trigger.board.is_some(),
                 "next": when(trigger.next_at),
                 "nextAt": trigger.next_at,
             })
@@ -357,32 +410,44 @@ pub(crate) fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, 
 
 pub(crate) fn remove_by_agent(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
     let agent_id = caller(request, "trigger_remove")?;
+    let project = super::board::caller_project(core, request);
     let id = request
         .params
         .get("trigger")
         .and_then(Value::as_u64)
         .ok_or("trigger must be the number trigger_add or trigger_list gave")?;
-    if !remove(core, &agent_id, id) {
+    if remove_where(core, |trigger| {
+        trigger.id == id && yours(trigger, &agent_id, &project)
+    })
+    .is_none()
+    {
         return Err(format!(
-            "This chat has no trigger {id}; trigger_list shows its triggers"
+            "Neither this chat nor its project's board has trigger {id}; trigger_list shows them"
         ));
     }
     Ok(json!({ "removed": id }))
 }
 
-/// Removes the chat's trigger `id`, saying whether it had one.
-pub(crate) fn remove(core: &Core, agent_id: &str, id: u64) -> bool {
-    let removed = core.triggers.change(|state| {
-        let before = state.triggers.len();
-        state
-            .triggers
-            .retain(|trigger| !(trigger.id == id && trigger.agent_id == agent_id));
-        state.triggers.len() != before
-    });
-    if removed {
-        show(core, agent_id);
+/// A trigger of the agent's own chat, or of its project's board.
+fn yours(trigger: &Trigger, agent_id: &str, project: &str) -> bool {
+    match &trigger.board {
+        Some(board) => board == project,
+        None => trigger.agent_id == agent_id,
     }
-    removed
+}
+
+/// Removes trigger `id` at the person's word, saying whether there was one.
+pub(crate) fn remove(core: &Core, id: u64) -> bool {
+    remove_where(core, |trigger| trigger.id == id).is_some()
+}
+
+fn remove_where(core: &Core, matches: impl Fn(&Trigger) -> bool) -> Option<Trigger> {
+    let removed = core.triggers.change(|state| {
+        let at = state.triggers.iter().position(&matches)?;
+        Some(state.triggers.remove(at))
+    })?;
+    show(core, &removed);
+    Some(removed)
 }
 
 /// Puts the chat's triggers in its feed, as it starts or wakes.

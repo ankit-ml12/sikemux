@@ -611,7 +611,7 @@ fn board_project(core: &Core, path: &str) -> String {
     project_of(Path::new(path), &core.workspaces.project_paths())
 }
 
-fn caller_project(core: &Core, request: &HarnessRequest) -> String {
+pub(crate) fn caller_project(core: &Core, request: &HarnessRequest) -> String {
     request
         .agent_id
         .as_deref()
@@ -816,6 +816,8 @@ pub(crate) struct BoardView {
     /// What could not be done of what the person asked, a line each.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     problems: Vec<String>,
+    /// The triggers that add cards to it when their time comes, soonest first.
+    triggers: Vec<sikemux_wire::chat::ChatTrigger>,
 }
 
 fn card_view(core: &Core, board: &Board, card: &Card) -> CardView {
@@ -864,6 +866,7 @@ fn board_view(core: &Core, board: &Board) -> BoardView {
         running: auto::running(core, board),
         auto_note: board.auto_note.clone(),
         problems: Vec::new(),
+        triggers: core.triggers.on_board(&board.project),
     }
 }
 
@@ -1022,6 +1025,32 @@ fn add_card(
         fields.insert("note".into(), note.into());
     }
     Ok(view)
+}
+
+/// Adds a card for a trigger that came due, as the person's own, so Auto carries it when it is
+/// on.
+pub(crate) fn add_for_trigger(
+    core: &Core,
+    project: &str,
+    title: &str,
+    details: &str,
+) -> Result<(), String> {
+    let adding = Adding {
+        title: title.to_owned(),
+        details: details.to_owned(),
+        acceptance: String::new(),
+        parent: None,
+        depends_on: Vec::new(),
+        ticket: None,
+    };
+    add_card(core, project, &By::Auto("Trigger"), adding, false)?;
+    tell_clients(core);
+    Ok(())
+}
+
+/// The triggers that add cards to the project's board changed, so its clients hear of it.
+pub(crate) fn triggers_changed(core: &Core, project: &str) {
+    core.changes.changed(Topic::Boards, Some(project), None);
 }
 
 fn take(core: &Core, card: &mut Card, agent: &str) {

@@ -274,7 +274,7 @@ calls! { core, client, params;
     },
     "removeTrigger": Full => {
         let params: TriggerParams = parse(params)?;
-        answer(super::triggers::remove(&core, &params.agent_id, params.trigger))
+        answer(super::triggers::remove(&core, params.trigger))
     },
     "cancelResume": Full => {
         agent_accounts::cancel_resume(&core, parse(params)?);
@@ -1059,7 +1059,6 @@ struct AgentParams {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TriggerParams {
-    agent_id: String,
     trigger: u64,
 }
 
