@@ -917,7 +917,7 @@ fn diff_body(
     let whole = looks.reading.tools.whole.contains(id);
     let folded = looks.reading.tools.folded.contains(id);
     let shown = looks.files.borrow().shown(path);
-    let opens: Box<dyn Fn(&mut gpui_kit::Window, &mut App)> =
+    let opens: ui::Opens =
         Box::new(move |window, cx| window.dispatch_action(open.boxed_clone(), cx));
     let (reader, folding) = (looks.reader.clone(), id.to_owned());
     let head = ui::file_head(format!("diff:{id}"), &shown, !folded, Some(opens), cx)

@@ -14,7 +14,8 @@ use crate::theme::{self, Tokens, RADIUS_2};
 
 const FILE_HEAD_HEIGHT: Pixels = px(32.);
 
-type Opens = Box<dyn Fn(&mut Window, &mut App)>;
+/// What clicking a file head's name does: opens the file.
+pub type Opens = Box<dyn Fn(&mut Window, &mut App)>;
 
 /// The head of the card for `path`, open or folded. A click on the name calls `open_file`,
 /// and anywhere else on the head is left to the caller, which folds the card.

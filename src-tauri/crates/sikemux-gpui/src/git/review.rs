@@ -610,7 +610,7 @@ fn header(view: &Entity<GitPane>, pane: &GitPane, card: usize, cx: &App) -> AnyE
     };
     let toggling = view.clone();
     let key = SharedString::from(format!("card:{path}"));
-    let opens: Box<dyn Fn(&mut Window, &mut App)> = Box::new(move |window, cx| {
+    let opens: crate::ui::Opens = Box::new(move |window, cx| {
         window.dispatch_action(gpui_kit::Action::boxed_clone(&target), cx)
     });
     div()
