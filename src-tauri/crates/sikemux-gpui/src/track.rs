@@ -329,7 +329,7 @@ pub fn stage(
         cards,
         start,
         motion,
-        None,
+        Between::Gap(panes::GAP),
         move |event, cx| {
             this.update(cx, |bench, cx| bench.swipe_stage(event, cx))
                 .unwrap_or(false)
@@ -359,7 +359,7 @@ pub fn rail(
         cards,
         start,
         motion,
-        Some(crate::theme::Tokens::get(cx).border),
+        Between::Seam(crate::theme::Tokens::get(cx).border),
         move |event, cx| {
             this.update(cx, |bench, cx| bench.swipe_rail(event, cx))
                 .unwrap_or(false)
@@ -371,32 +371,52 @@ pub fn rail(
     .into_any_element()
 }
 
-/// A row's frame: what it shows, and the hearing of its swipes; the caller sizes it. A
-/// `seam` colour draws a hairline between things while they move side by side.
+/// What shows between things while they move side by side.
+#[derive(Clone, Copy)]
+pub(crate) enum Between {
+    /// A hairline of this colour.
+    Seam(Hsla),
+    /// Empty room this many points wide, showing what lies behind the row.
+    Gap(f32),
+}
+
+/// A row's frame: what it shows, and the hearing of its swipes; the caller sizes it.
 pub(crate) fn row(
     id: &'static str,
     width: &Rc<Cell<f32>>,
     cards: Vec<(AnyElement, i32)>,
     start: f32,
     motion: Option<(usize, Option<f32>)>,
-    seam: Option<Hsla>,
+    between: Between,
     swiped: impl Fn(&ScrollEvent, &mut App) -> bool + 'static,
 ) -> Div {
+    let gap = match between {
+        Between::Gap(gap) => gap,
+        Between::Seam(_) => 0.,
+    };
     div()
         .relative()
         .overflow_hidden()
-        .child(listener(width, swiped))
-        .child(lane(id, cards, start, motion, seam))
+        .child(listener(width, gap, swiped))
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left_0()
+                .right(px(-gap))
+                .child(lane(id, cards, start, motion, between)),
+        )
 }
 
-/// A row of things, each a row's width, sitting `start` places along and travelling to
-/// rest at 0 while it moves.
+/// A row of things, each a row's width and its gap, sitting `start` places along and
+/// travelling to rest at 0 while it moves.
 fn lane(
     id: &'static str,
     mut cards: Vec<(AnyElement, i32)>,
     start: f32,
     motion: Option<(usize, Option<f32>)>,
-    seam: Option<Hsla>,
+    between: Between,
 ) -> AnyElement {
     cards.sort_by_key(|(_, place)| *place);
     let first = cards.first().map_or(0, |(_, place)| *place);
@@ -410,6 +430,10 @@ fn lane(
         .w(relative(count))
         .left(relative(first as f32 - start))
         .children(cards.into_iter().enumerate().map(|(at, (card, _))| {
+            let (seam, gap) = match between {
+                Between::Seam(color) => (Some(color), 0.),
+                Between::Gap(gap) => (None, gap),
+            };
             let line = seam.filter(|_| at > 0).map(|color| {
                 div()
                     .absolute()
@@ -423,6 +447,7 @@ fn lane(
                 .relative()
                 .h_full()
                 .w(relative(1. / count))
+                .pr(px(gap))
                 .flex()
                 .child(card)
                 .children(line)
@@ -442,17 +467,18 @@ fn lane(
     .into_any_element()
 }
 
-/// Measures its row, and hears scrolls over it before what is under the pointer does, so a
-/// swipe does not also scroll what it starts on.
+/// Measures one place along its row, a thing and the gap after it, and hears scrolls over
+/// it before what is under the pointer does, so a swipe does not also scroll what it starts on.
 fn listener(
     width: &Rc<Cell<f32>>,
+    gap: f32,
     swiped: impl Fn(&ScrollEvent, &mut App) -> bool + 'static,
 ) -> impl IntoElement {
     let (width, swiped) = (width.clone(), Rc::new(swiped));
     canvas(
         |_, _, _| {},
         move |bounds, _, window, _| {
-            width.set(f32::from(bounds.size.width));
+            width.set(f32::from(bounds.size.width) + gap);
             SCROLLERS.with(|scrollers| {
                 scrollers
                     .borrow_mut()
