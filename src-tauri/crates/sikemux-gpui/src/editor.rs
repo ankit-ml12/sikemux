@@ -27,7 +27,7 @@ use crate::workbench::{Strip, TakesKeys, Workbench};
 mod blame;
 mod copies;
 mod dbml;
-mod diagram;
+pub(crate) mod diagram;
 mod gutter;
 mod insights;
 mod lsp;

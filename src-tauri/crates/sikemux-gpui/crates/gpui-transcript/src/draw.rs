@@ -21,8 +21,21 @@ use crate::select::{Key, Selecting, Shown};
 /// A fenced code block, for a host that draws its own.
 pub struct Fence {
     pub id: ElementId,
-    pub lang: Option<SharedString>,
+    pub lang: SharedString,
     pub code: SharedString,
+    /// The block's text as the transcript draws it, coloured, selectable and scrolling, for
+    /// when the host shows the code itself.
+    pub lines: AnyElement,
+    /// The block's Copy button.
+    pub copy: AnyElement,
+}
+
+/// Draws the fenced code blocks of some languages in a way of its own.
+#[derive(Clone)]
+pub struct Fences {
+    /// The languages it draws, in lower case.
+    pub langs: Rc<[&'static str]>,
+    pub draw: DrawFence,
 }
 
 pub type OnLink = Rc<dyn Fn(&str, &mut Window, &mut App)>;
@@ -118,7 +131,7 @@ pub struct Style {
     pub file_icon: Option<FileIcon>,
     /// Draws an icon before the words of each link it knows, such as a service's mark.
     pub link_icon: Option<LinkIcon>,
-    pub fence: Option<DrawFence>,
+    pub fences: Option<Fences>,
     pub code: Option<CodeColours>,
     pub image: Option<DrawImage>,
     pub chips: Rc<[Chip]>,
@@ -172,7 +185,7 @@ impl Default for Style {
             on_file: None,
             file_icon: None,
             link_icon: None,
-            fence: None,
+            fences: None,
             code: None,
             image: None,
             chips: Rc::from(Vec::new()),
@@ -1152,21 +1165,33 @@ impl Draw<'_> {
             return div().into_any_element();
         };
         let id = self.id("code");
-        if let Some(fence) = &style.fence {
-            return fence(
+        let colours = style
+            .code
+            .clone()
+            .and_then(|colour| colour(lang.as_ref(), &code.text, cx));
+        let fences = (style.fences.clone())
+            .zip(lang.clone())
+            .filter(|(fences, lang)| {
+                fences
+                    .langs
+                    .iter()
+                    .any(|known| lang.eq_ignore_ascii_case(known))
+            });
+        if let Some((fences, lang)) = fences {
+            let lines = self.lines(id.clone(), code, colours);
+            let copy = self.copy(code.text.clone(), window, cx).into_any_element();
+            return (fences.draw)(
                 Fence {
                     id,
                     lang,
                     code: code.text.clone(),
+                    lines,
+                    copy,
                 },
                 window,
                 cx,
             );
         }
-        let colours = style
-            .code
-            .clone()
-            .and_then(|colour| colour(lang.as_ref(), &code.text, cx));
         let title = div()
             .h(px(23.))
             .px(px(10.))
@@ -1178,18 +1203,7 @@ impl Draw<'_> {
             .text_color(style.ink_faint)
             .child(div().flex_1().min_w_0().truncate().children(lang))
             .child(self.copy(code.text.clone(), window, cx));
-        let body = div()
-            .id(id)
-            .max_h(px(420.))
-            .overflow_scroll()
-            .px(px(12.))
-            .py(px(9.))
-            .font(style.mono.clone())
-            .text_size(style.code_size)
-            .line_height(relative(1.55))
-            .whitespace_nowrap()
-            .text_color(style.ink_dim)
-            .child(self.code(code, colours));
+        let body = self.lines(id, code, colours);
         let frame = div()
             .rounded(style.radius)
             .border_1()
@@ -1198,6 +1212,25 @@ impl Draw<'_> {
             .bg(style.code_ground)
             .child(title)
             .child(body)
+            .into_any_element()
+    }
+
+    /// A code block's text in its colours, scrolling once it is long.
+    fn lines(&mut self, id: ElementId, code: &Rich, colours: Option<CodeRuns>) -> AnyElement {
+        let style = &*self.on.style;
+        let (mono, size, ink) = (style.mono.clone(), style.code_size, style.ink_dim);
+        div()
+            .id(id)
+            .max_h(px(420.))
+            .overflow_scroll()
+            .px(px(12.))
+            .py(px(9.))
+            .font(mono)
+            .text_size(size)
+            .line_height(relative(1.55))
+            .whitespace_nowrap()
+            .text_color(ink)
+            .child(self.code(code, colours))
             .into_any_element()
     }
 

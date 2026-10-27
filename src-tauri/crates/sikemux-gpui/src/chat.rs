@@ -60,6 +60,7 @@ mod live;
 mod mention;
 mod meta;
 mod page;
+mod schema;
 mod status;
 mod tools;
 
@@ -3680,6 +3681,7 @@ impl Looks {
                 ..t.surface_sunken
             },
             code: Some(code_colours(reader.clone())),
+            fences: Some(schema::fences()),
             on_link: Some(Rc::new({
                 let (bench, agent) = (bench.clone(), agent.clone());
                 move |href: &str, window: &mut Window, cx: &mut App| {

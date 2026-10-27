@@ -17,7 +17,7 @@ mod select;
 mod transcript;
 
 pub use draw::{
-    Chip, CodeColours, CodeRuns, DrawFence, DrawImage, Fence, FileIcon, FileKind, FileOf,
+    Chip, CodeColours, CodeRuns, DrawFence, DrawImage, Fence, Fences, FileIcon, FileKind, FileOf,
     FilePress, LinkIcon, OnFile, OnLink, OnTask, Pen, Style,
 };
 pub use find::{FoundChanged, Query};

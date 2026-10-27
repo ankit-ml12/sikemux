@@ -5,6 +5,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, point, px, quad, App, BorderStyle, Bounds, ContentMask, Context, Corners,
     CursorStyle, DispatchPhase, Font, FontWeight, Hitbox, HitboxBehavior, Hsla, InteractiveElement,
@@ -42,6 +43,7 @@ const MAP_WIDTH: f32 = 176.;
 const MAP_HEIGHT: f32 = 116.;
 const MAP_MARGIN: f32 = 12.;
 const GROUP_PAD: f32 = 26.;
+const EMBEDDED_HEIGHT: std::ops::Range<f32> = 240.0..560.0;
 
 /// Where a table sits and how big it is, in the diagram's own units.
 #[derive(Clone, Copy, Default)]
@@ -88,9 +90,9 @@ enum Drag {
 }
 
 /// Shows the file's text at a line, counted from 0.
-pub(super) type OpenLine = Rc<dyn Fn(u32, &mut Window, &mut App)>;
+pub(crate) type OpenLine = Rc<dyn Fn(u32, &mut Window, &mut App)>;
 
-pub(super) struct Diagram {
+pub(crate) struct Diagram {
     schema: Rc<Schema>,
     cards: Vec<Card>,
     /// The tables in the order they are drawn, the last on top.
@@ -103,15 +105,35 @@ pub(super) struct Diagram {
     zoom: f32,
     viewport: Rc<Cell<Bounds<Pixels>>>,
     fit_pending: bool,
+    /// The canvas's size when the tables were last fitted to it.
+    fitted: gpui_kit::Size<Pixels>,
     hover: Option<Spot>,
     pointer: Option<Point<Pixels>>,
     drag: Option<Drag>,
-    open: OpenLine,
+    open: Option<OpenLine>,
+    /// Drawn inside other content, such as a chat: scrolling passes through it to what holds
+    /// it until the person clicks into it.
+    embedded: bool,
+    engaged: bool,
+    /// Whether the pointer is over the canvas.
+    inside: bool,
+    /// Whether the person moved, panned or zoomed it; until they do, it lays itself out
+    /// again whenever its text changes.
+    touched: bool,
 }
 
 impl Diagram {
     /// The diagram of `source`; `open` shows the file's text at a line.
     pub(super) fn new(source: &str, open: OpenLine) -> Self {
+        Self::with(source, Some(open), false)
+    }
+
+    /// The diagram of `source` drawn inside other content.
+    pub(crate) fn embedded(source: &str) -> Self {
+        Self::with(source, None, true)
+    }
+
+    fn with(source: &str, open: Option<OpenLine>, embedded: bool) -> Self {
         let mut diagram = Diagram {
             schema: Rc::new(Schema::default()),
             cards: Vec::new(),
@@ -122,21 +144,38 @@ impl Diagram {
             zoom: 1.,
             viewport: Rc::new(Cell::new(Bounds::default())),
             fit_pending: true,
+            fitted: gpui_kit::Size::default(),
             hover: None,
             pointer: None,
             drag: None,
             open,
+            embedded,
+            engaged: false,
+            inside: false,
+            touched: false,
         };
         diagram.read(source);
         diagram
     }
 
-    pub(super) fn set_source(&mut self, source: &str, cx: &mut Context<Self>) {
-        for (table, card) in self.schema.tables.iter().zip(&self.cards) {
-            self.kept.insert(table.name.clone(), point(card.x, card.y));
+    pub(crate) fn set_source(&mut self, source: &str, cx: &mut Context<Self>) {
+        match self.touched {
+            true => {
+                for (table, card) in self.schema.tables.iter().zip(&self.cards) {
+                    self.kept.insert(table.name.clone(), point(card.x, card.y));
+                }
+            }
+            false => {
+                self.kept.clear();
+                self.fit_pending = true;
+            }
         }
         self.read(source);
         cx.notify();
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.schema.tables.is_empty()
     }
 
     fn read(&mut self, source: &str) {
@@ -226,6 +265,7 @@ impl Diagram {
         let world = self.to_world(at);
         let origin = self.viewport.get().origin;
         self.zoom = (self.zoom * factor).clamp(MIN_ZOOM, MAX_ZOOM);
+        self.touched = true;
         self.pan = point(
             f32::from(at.x - origin.x) - world.x * self.zoom,
             f32::from(at.y - origin.y) - world.y * self.zoom,
@@ -246,24 +286,51 @@ impl Diagram {
             return;
         };
         let (w, h) = (extent.2 - extent.0, extent.3 - extent.1);
-        self.zoom = ((width - 96.) / w)
-            .min((height - 96.) / h)
+        let margin = self.margin();
+        self.zoom = ((width - margin) / w)
+            .min((height - margin) / h)
             .clamp(MIN_ZOOM, 1.);
         self.pan = point(
             width / 2. - (extent.0 + w / 2.) * self.zoom,
             height / 2. - (extent.1 + h / 2.) * self.zoom,
         );
         self.fit_pending = false;
+        self.fitted = size;
         cx.notify();
+    }
+
+    /// Room left around the tables when they are fitted to the canvas.
+    fn margin(&self) -> f32 {
+        if self.embedded {
+            56.
+        } else {
+            96.
+        }
+    }
+
+    /// How tall an embedded diagram draws: as tall as its tables need at the width it has,
+    /// within bounds a reader can scroll past.
+    fn height(&self) -> f32 {
+        let width = f32::from(self.viewport.get().size.width);
+        let Some(extent) = extent(&self.cards).filter(|_| width > 0.) else {
+            return EMBEDDED_HEIGHT.start;
+        };
+        let zoom = ((width - self.margin()) / (extent.2 - extent.0)).min(1.);
+        ((extent.3 - extent.1) * zoom + self.margin() + 40.)
+            .clamp(EMBEDDED_HEIGHT.start, EMBEDDED_HEIGHT.end)
     }
 
     fn rearrange(&mut self, cx: &mut Context<Self>) {
         arrange(&self.schema, &mut self.cards);
         self.kept.clear();
+        self.touched = false;
         self.fit(cx);
     }
 
     fn map(&self) -> Option<Map> {
+        if self.embedded {
+            return None;
+        }
         minimap(&self.cards, self.viewport.get(), self.pan, self.zoom)
     }
 
@@ -278,6 +345,7 @@ impl Diagram {
     }
 
     fn press(&mut self, event: &MouseDownEvent, cx: &mut Context<Self>) -> Option<u32> {
+        self.engaged = true;
         if let Some(map) = self.map().filter(|map| map.frame.contains(&event.position)) {
             self.drag = Some(Drag::Map);
             self.centre_on_map(event.position, &map, cx);
@@ -318,6 +386,7 @@ impl Diagram {
         }
         match &self.drag {
             Some(Drag::Pan { from, pan }) => {
+                self.touched = true;
                 self.pan = point(
                     pan.x + f32::from(event.position.x - from.x),
                     pan.y + f32::from(event.position.y - from.y),
@@ -325,6 +394,7 @@ impl Diagram {
                 cx.notify();
             }
             Some(Drag::Card { table, from, at }) => {
+                self.touched = true;
                 let card = &mut self.cards[*table];
                 card.x = at.x + f32::from(event.position.x - from.x) / self.zoom;
                 card.y = at.y + f32::from(event.position.y - from.y) / self.zoom;
@@ -336,6 +406,11 @@ impl Diagram {
                 }
             }
             None => {
+                if self.inside != hovered {
+                    self.inside = hovered;
+                    self.engaged &= hovered;
+                    cx.notify();
+                }
                 let spot = hovered.then(|| self.spot_at(event.position)).flatten();
                 let pointer = hovered.then_some(event.position);
                 if spot != self.hover || (spot.is_some() && pointer != self.pointer) {
@@ -354,7 +429,8 @@ impl Render for Diagram {
             self.measure(window);
         }
         let viewport = self.viewport.get();
-        if self.fit_pending && viewport.size.width > px(0.) {
+        let resized = !self.touched && viewport.size != self.fitted;
+        if (self.fit_pending || resized) && viewport.size.width > px(0.) {
             self.fit(cx);
         }
         let t = Tokens::get(cx).clone();
@@ -380,6 +456,7 @@ impl Render for Diagram {
             dragging: matches!(self.drag, Some(Drag::Card { .. } | Drag::Pan { .. })),
             waiting: self.fit_pending,
             lanes: lanes(&self.schema, &self.cards),
+            map: !self.embedded,
             t: t.clone(),
         };
         let this = cx.entity().downgrade();
@@ -400,9 +477,16 @@ impl Render for Diagram {
             },
         );
         let percent = format!("{}%", (self.zoom * 100.).round());
+        let hint = (self.embedded && self.inside && !self.engaged)
+            .then_some("Click in to scroll and zoom");
+        let height = self.embedded.then(|| self.height());
         div()
             .relative()
-            .size_full()
+            .w_full()
+            .map(|diagram| match height {
+                Some(height) => diagram.h(px(height)),
+                None => diagram.h_full(),
+            })
             .overflow_hidden()
             .child(
                 canvas(
@@ -443,6 +527,17 @@ impl Render for Diagram {
                     .text_color(t.text_tertiary)
                     .child(summary),
             )
+            .when_some(hint, |diagram, hint| {
+                diagram.child(
+                    div()
+                        .absolute()
+                        .top(px(10.))
+                        .right(px(12.))
+                        .text_size(theme::ui_text(11.))
+                        .text_color(t.text_disabled)
+                        .child(hint),
+                )
+            })
             .child(
                 div()
                     .id("diagram-controls")
@@ -526,10 +621,11 @@ fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
                 .update(cx, |diagram, cx| diagram.press(event, cx))
                 .ok()
                 .flatten();
-            if let Some(line) = line {
-                if let Some(open) = this.upgrade().map(|diagram| diagram.read(cx).open.clone()) {
-                    open(line, window, cx);
-                }
+            let open = this
+                .upgrade()
+                .and_then(|diagram| diagram.read(cx).open.clone());
+            if let Some((line, open)) = line.zip(open) {
+                open(line, window, cx);
             }
         }
     });
@@ -559,7 +655,7 @@ fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
     window.on_mouse_event({
         let (this, hitbox) = (this.clone(), hitbox.clone());
         move |event: &ScrollEvent, phase, window, cx| {
-            if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) {
+            if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) || passes(&this, cx) {
                 return;
             }
             cx.stop_propagation();
@@ -579,7 +675,7 @@ fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
     window.on_mouse_event({
         let (this, hitbox) = (this.clone(), hitbox.clone());
         move |event: &PinchEvent, phase, window, cx| {
-            if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) {
+            if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) || passes(&this, cx) {
                 return;
             }
             cx.stop_propagation();
@@ -588,6 +684,14 @@ fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
             });
         }
     });
+}
+
+/// Whether scrolling and pinching go past the diagram to what holds it.
+fn passes(this: &WeakEntity<Diagram>, cx: &App) -> bool {
+    this.upgrade().is_some_and(|diagram| {
+        let diagram = diagram.read(cx);
+        diagram.embedded && !diagram.engaged
+    })
 }
 
 /// What one frame draws, taken from the diagram when it renders.
@@ -604,6 +708,8 @@ struct Frame {
     /// Where each reference crossing a gap between tables turns, so lines sharing a gap
     /// take lanes of their own.
     lanes: HashMap<usize, f32>,
+    /// Whether it shows the picture of the whole diagram when it does not fit.
+    map: bool,
     t: Tokens,
 }
 
@@ -688,7 +794,8 @@ impl Frame {
             self.paint_card(bounds, table, &related, &linked, window, cx);
         }
         self.paint_tip(bounds, window, cx);
-        if let Some(map) = minimap(&self.cards, bounds, self.pan, self.zoom) {
+        let map = (self.map).then(|| minimap(&self.cards, bounds, self.pan, self.zoom));
+        if let Some(map) = map.flatten() {
             self.paint_map(&map, window);
         }
     }
