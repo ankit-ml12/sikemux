@@ -952,6 +952,14 @@ impl Workbench {
         (kind == DeskKind::Pages).then_some(agent)
     }
 
+    /// The file the front agent's desk shows, while it is open on its pages.
+    pub(crate) fn desk_file(&self) -> Option<PathBuf> {
+        match self.desks.front.get(&self.front_pages()?)? {
+            DeskItem::File(path) => Some(path.clone()),
+            _ => None,
+        }
+    }
+
     /// Closes what the desk holding the keys shows, its page or its simulator, and says whether
     /// it had one to close; elsewhere, ⌘W closes the tab as it would anywhere else.
     pub fn close_shown_page(&mut self, window: &Window, cx: &mut Context<Self>) -> bool {
@@ -1799,6 +1807,7 @@ pub fn pane(
                     cx.stop_propagation();
                     bench.close_desk_item(&close_agent, close_item.clone(), cx);
                     bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw(&bench.parts.tabs, cx);
                 }),
                 cx,
             )
@@ -1806,6 +1815,7 @@ pub fn pane(
             .on_click(cx.listener(move |bench, _, _, cx| {
                 bench.bring_front(&pick_agent, pick_item.clone());
                 bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw(&bench.parts.tabs, cx);
             }))
             .context_menu(ui::menu(tab_menu(
                 cx.weak_entity(),

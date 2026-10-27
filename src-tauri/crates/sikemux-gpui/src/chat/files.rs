@@ -425,6 +425,7 @@ fn open_on_desk(agent: &str, found: &PathRef, bench: &WeakEntity<Workbench>, cx:
             }
             bench.open_file_on_desk(agent, path, found.line, found.column);
             bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw(&bench.parts.tabs, cx);
         })
         .ok();
 }

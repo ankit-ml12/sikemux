@@ -537,7 +537,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 "file-rows",
                 count,
                 cx.processor(|bench: &mut Workbench, range: Range<usize>, window, cx| {
-                    let front = bench.front_file();
+                    let front = bench.front_file().or_else(|| bench.desk_file());
                     let rows = bench.files.rows();
                     let naming = bench.files.naming_at(&rows);
                     range
