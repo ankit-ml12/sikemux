@@ -28,26 +28,10 @@ wait 1.3
 still card-tip
 move 760,560 0.6
 pinch 1.45 0.9
-wait 0.8
-still card-pinched
-click 958,244
-wait 1.4
-still card-source
-click 909,244
-wait 0.8
-still back-to-diagram
-click 1030,244
-hold 1.5
-wait 0.6
-still after-open
-zoom 744,150,456,700 0.9 &
-move 952,511 1.0
 wait 0.3
-pinch 1.9 1.1
+pan -120,-60 0.9
 wait 0.6
-move 980,560 0.6
-wait 1.2
-still desk
-zoom out 0.9 &
-move 1250,700 1.0
+still card-pinched
+move 1250,700 1.0 &
+zoom out 0.9
 end 2.2
