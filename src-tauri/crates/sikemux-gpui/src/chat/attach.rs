@@ -846,7 +846,6 @@ pub fn tiles(
     }
     let t = Tokens::get(cx).clone();
     let tiles = attachments.iter().enumerate().map(|(index, path)| {
-        let number = badge(index + 1, &t, cx);
         let remove = remove.clone();
         let opens = is_image(path).then(|| {
             let (open, path) = (open.clone(), path.clone());
@@ -854,13 +853,17 @@ pub fn tiles(
                 open(path.clone(), window, cx)
             }
         });
+        let name = match is_image(path) {
+            true => format!("#{} {}", index + 1, file_name(path)),
+            false => file_name(path).to_string(),
+        };
         Attachment::new()
             .id(SharedString::from(format!("attachment-{index}")))
             .when_some(opens, |tile, opens| tile.on_click(opens))
-            .axis(Axis::Vertical)
-            .with_size(gpui_kit::component::Size::Size(px(16.6)))
+            .with_size(gpui_kit::component::Size::Small)
             .tooltip(path.to_string_lossy().into_owned())
-            .media(media(path, &t, cx).overlay(number))
+            .media(chip_media(path, &t, cx))
+            .content(AttachmentContent::new().title(AttachmentTitle::new(name)))
             .on_remove(move |_, window, cx| remove(index, window, cx))
     });
     let chips = context.iter().enumerate().map(|(index, item)| {
@@ -872,7 +875,7 @@ pub fn tiles(
         div()
             .flex()
             .flex_wrap()
-            .items_end()
+            .items_center()
             .gap(px(7.))
             .px(px(10.))
             .pt(px(10.))
@@ -889,6 +892,21 @@ fn file_name(path: &Path) -> SharedString {
 }
 
 /// A picture's preview, or the icon of a file's kind.
+/// A file's mark in a draft's chip: a picture's own thumbnail, else its kind's icon.
+fn chip_media(path: &Path, t: &Tokens, cx: &App) -> AttachmentMedia {
+    if is_image(path) {
+        return AttachmentMedia::new()
+            .src(crate::picture::Picture::File(path.to_path_buf()).source_at(px(48.)));
+    }
+    let icon = crate::file_icons::icon(&file_name(path), cx)
+        .map(|icon| gpui_kit::img(icon).size(px(14.)).into_any_element());
+    AttachmentMedia::new().child(icon.unwrap_or_else(|| {
+        ui::icon(Icon::File, 13.)
+            .text_color(t.text_tertiary)
+            .into_any_element()
+    }))
+}
+
 fn media(path: &Path, t: &Tokens, cx: &App) -> AttachmentMedia {
     let media = if is_image(path) {
         AttachmentMedia::new()

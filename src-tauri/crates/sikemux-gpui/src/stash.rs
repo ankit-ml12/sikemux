@@ -400,14 +400,16 @@ impl Workbench {
     }
 
     /// The person has seen everything in the stash, which every device then knows.
-    pub fn see_stash(&self) {
-        if let Some(at) = Stash::of(self).newest() {
-            let _ = crate::core::request(&self.asks, "seeStash", json!({ "at": at }));
-        }
+    pub fn see_stash(&mut self) {
+        let Some(at) = Stash::of(self).newest().map(str::to_owned) else {
+            return;
+        };
+        self.seen_stash_at(&at);
+        let _ = crate::core::request(&self.asks, "seeStash", json!({ "at": at }));
     }
 
     /// Opens the Stash's pane in the strip in front, and marks the stash seen.
-    pub fn open_stash(&self) {
+    pub fn open_stash(&mut self) {
         if let Some(strip) = self.strip() {
             let params = json!({ "kind": PaneKind::Stash, "target": "stash" });
             self.call_in_front("openTab", strip.with(params));
