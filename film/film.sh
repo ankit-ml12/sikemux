@@ -55,7 +55,7 @@ fi
 args=(
   "$ROOT/film/scenes/$scene.film"
   --core "$bin/sikemux-host" --claude "$bin/sikemux-fake-claude"
-  --work "$work/run" --lockup "$ROOT/brand/wordmark/lockup-white-2048.png"
+  --work "$work/run" --lockup "$ROOT/brand/wordmark/lockup-white-2048.png" --world "$ROOT/film/world.json"
   "${wallpaper_args[@]}"
 )
 [[ $draft == 1 ]] && args+=(--draft)

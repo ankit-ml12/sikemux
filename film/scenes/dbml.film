@@ -5,65 +5,56 @@ project shop shop
 chat Wren
 settle 6
 cursor 1200,700
+zoom 760,800 1.9 0.1
 record
 wait 0.2
-zoom 760,800 1.9 0.8 &
-move 600,768 0.8
+move 600,768 0.7
 click
 type "draw the shop's schema so I can see how orders connect" 26
 key enter
 hold 0.5
 zoom 760,520 1.25 0.8 &
 wait 6.5
-move 318,600 0.6
+move 330,600 0.5
 scroll 220 0.8
-zoom 360,230,760,480 0.8 &
-move 696,552 0.8
+zoom 360,230,760,470 0.8 &
+move 700,553 0.8
 wait 0.8
 still card-hover
-move 712,598 0.4
+move 716,600 0.4
 wait 0.8
 still card-tip
-move 760,560 0.4
+move 740,610 0.3
 pinch 1.45 0.8
 pan -120,-60 0.8
 wait 0.3
 still card-pinched
-zoom out 0.7 &
+# The camera settles on the editor's pane while the finder is open, then holds still.
+zoom 300,140,890,700 0.7 &
 key cmd-p
-wait 0.4
-type "schema" 20
+move 848,453 0.6 &
 wait 0.3
+type "schema" 20
+wait 0.2
 key enter
 hold 1
-wait 0.6
-still opened
-# One frame on the diagram's pane from here on, so every zoom seen is the canvas's own.
-zoom 290,150,900,720 0.8 &
-move 850,452 0.9
-wait 0.6
-still hover-orders
-pinch 2.1 1.0
-wait 0.3
-move 870,500 0.5
+move 850,456 0.15
+pinch 2.3 0.7
+wait 0.4
+still canvas-in
+move 863,504 0.5
 wait 0.9
 still column-tip
-move 557,600 0.6
-drag 520,470 0.8
+move 543,603 0.6
+drag 560,470 0.8
 wait 0.3
 still dragged
-click 1167,833
-wait 0.8
-still arranged
-move 700,480 0.6
-pinch 1.9 0.9
-pan -280,-80 0.9
-pan 200,60 0.8
-wait 0.2
+move 900,520 0.4
+pan -240,-60 1.0
+pan 120,30 0.7
+pinch 0.82 0.7
+wait 0.4
 still panned
-click 1123,833
-wait 0.7
-still fitted
 zoom out 0.8 &
 move 1300,700 0.8
 end 1.6

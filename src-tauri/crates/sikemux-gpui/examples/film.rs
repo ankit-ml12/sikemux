@@ -158,6 +158,7 @@ struct Args {
     draft: bool,
     stills: Option<Vec<f64>>,
     grid: bool,
+    world: Value,
 }
 
 fn args() -> anyhow::Result<Args> {
@@ -197,6 +198,11 @@ fn args() -> anyhow::Result<Args> {
                 .collect()
         }),
         grid: flag("--grid"),
+        world: match option("--world") {
+            Some(path) => serde_json::from_str(&std::fs::read_to_string(&path)?)
+                .with_context(|| format!("reading {path}"))?,
+            None => Value::Null,
+        },
     })
 }
 
@@ -211,6 +217,8 @@ struct World {
     home: PathBuf,
     scenes: PathBuf,
     project: Option<(String, PathBuf)>,
+    claude: PathBuf,
+    world: Value,
 }
 
 impl World {
@@ -225,6 +233,10 @@ impl World {
             claude.join("fake-account.json"),
             json!({ "loggedIn": true, "authMethod": "claude.ai", "email": "edon@acme.dev", "subscriptionType": "max" })
                 .to_string(),
+        )?;
+        std::fs::write(
+            claude.join("fake-usage.json"),
+            usage(&args.world["account"]["usage"]).to_string(),
         )?;
         let socket = work.join("core.sock");
         let _ = std::fs::remove_file(&socket);
@@ -264,17 +276,32 @@ impl World {
             }
         };
         let profile = json!({
-            "id": "fake", "name": "Claude", "provider": "claude", "accent": "#d97757",
+            "id": "fake", "provider": "claude", "accent": "#d97757",
+            "name": args.world["account"]["name"].as_str().unwrap_or("Claude"),
             "executablePath": args.claude, "configPath": claude,
         });
         runtime.block_on(client.call("setAgentAccounts", json!({ "profiles": [profile] })))?;
+        runtime.block_on(client.call(
+            "selectAgentAccount",
+            json!({ "provider": "claude", "id": "fake" }),
+        ))?;
         let version = client.hello().build.version.clone();
-        for (key, value) in [
-            ("onboardingComplete", json!(true)),
-            ("lastSeenVersion", json!(version)),
-        ] {
+        let mut preferences = vec![
+            ("onboardingComplete".to_owned(), json!(true)),
+            ("lastSeenVersion".to_owned(), json!(version)),
+        ];
+        if let Some(kept) = args.world["preferences"].as_object() {
+            preferences.extend(
+                kept.iter()
+                    .map(|(key, value)| (key.clone(), expand_home(value))),
+            );
+        }
+        for (key, value) in preferences {
             runtime
                 .block_on(client.call("setPreference", json!({ "key": key, "value": value })))?;
+        }
+        if args.world["faceStyle"].is_object() {
+            runtime.block_on(client.call("setFaceStyle", args.world["faceStyle"].clone()))?;
         }
         Ok(Self {
             core,
@@ -289,7 +316,117 @@ impl World {
                 .parent()
                 .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
             project: None,
+            claude,
+            world: args.world.clone(),
         })
+    }
+
+    /// Fills the first project's rail and strip the way a working day leaves them: agents
+    /// with their titles and teammates, some still working and some done and unread, chats
+    /// closed earlier among the recent ones and one of them pinned, and tabs of other kinds.
+    fn populate(&self, project: &str, path: &Path) -> anyhow::Result<()> {
+        let world = &self.world;
+        let path = &path.canonicalize()?;
+        let transcripts = claude_project_dir(&self.claude, path);
+        std::fs::create_dir_all(&transcripts)?;
+        let mut pinned = Vec::new();
+        for (at, chat) in world["recent"].as_array().into_iter().flatten().enumerate() {
+            let session = session_id(at);
+            let title = chat["title"].as_str().unwrap_or("Chat");
+            let file = transcripts.join(format!("{session}.jsonl"));
+            let lines = [
+                json!({ "type": "user", "uuid": session_id(at + 100), "sessionId": session, "cwd": path,
+                    "message": { "role": "user", "content": [{ "type": "text", "text": title }] } }),
+                json!({ "type": "custom-title", "customTitle": title, "sessionId": session }),
+            ];
+            std::fs::write(
+                &file,
+                lines
+                    .iter()
+                    .map(|line| format!("{line}\n"))
+                    .collect::<String>(),
+            )?;
+            let minutes = 20 + at as u64 * 25;
+            sikemux_process::user_environment::command("touch")
+                .args(["-A", &format!("-{:02}{:02}00", minutes / 60, minutes % 60)])
+                .arg(&file)
+                .status()?;
+            if chat["pinned"] == true {
+                pinned.push(format!("claude:{session}"));
+            }
+        }
+        let mut named = std::collections::HashMap::new();
+        let agents: Vec<&Value> = world["agents"].as_array().into_iter().flatten().collect();
+        for agent in &agents {
+            let (chat, _) = self.runtime.block_on(self.client.start_chat(
+                "claude:fake".into(),
+                project.to_owned(),
+                None,
+            ))?;
+            if let Some(name) = agent["name"].as_str() {
+                self.call("renameAgent", json!({ "agentId": chat, "name": name }))?;
+                named.insert(name.to_owned(), chat.clone());
+            }
+            let prompt = match agent["state"].as_str() {
+                Some("working") => Some("hold 3600000".to_owned()),
+                Some("done") => Some(agent["title"].as_str().unwrap_or("done").to_owned()),
+                _ => None,
+            };
+            if let Some(prompt) = prompt {
+                self.runtime.block_on(self.client.acp_prompt(
+                    chat.clone(),
+                    None,
+                    prompt,
+                    Vec::new(),
+                    Vec::new(),
+                ))?;
+            }
+        }
+        std::thread::sleep(Duration::from_secs(2));
+        for agent in &agents {
+            let Some(chat) = agent["name"].as_str().and_then(|name| named.get(name)) else {
+                continue;
+            };
+            let mut patch = json!({ "title": agent["title"], "renamed": true });
+            if let Some(lead) = agent["lead"].as_str().and_then(|lead| named.get(lead)) {
+                patch["lead"] = json!(lead);
+            }
+            self.call("updateAgent", json!({ "agentId": chat, "patch": patch }))?;
+        }
+        for tab in world["tabs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            let opened = match tab {
+                "terminal" => self.call("newTerminal", json!({ "project": project })),
+                "git" => self.call(
+                    "openTab",
+                    json!({ "project": project, "kind": "git", "target": path }),
+                ),
+                file => self.call(
+                    "openTab",
+                    json!({ "project": project, "kind": "files", "target": path.join(file) }),
+                ),
+            };
+            if let Err(error) = opened {
+                eprintln!("film: could not open the {tab} tab: {error}");
+            }
+        }
+        for recent in pinned {
+            let started = Instant::now();
+            while let Err(error) = self.call("pinChat", json!({ "recent": recent, "pinned": true }))
+            {
+                if started.elapsed() > Duration::from_secs(10) {
+                    eprintln!("film: could not pin {recent}: {error}");
+                    break;
+                }
+                let _ = self.call("recentChats", json!({}));
+                std::thread::sleep(Duration::from_millis(300));
+            }
+        }
+        Ok(())
     }
 
     fn call(&self, method: &str, params: Value) -> anyhow::Result<Value> {
@@ -338,6 +475,9 @@ impl World {
                     "addProject",
                     json!({ "id": name, "name": name, "path": path }),
                 )?;
+                if self.project.is_none() {
+                    self.populate(&name, &path)?;
+                }
                 self.project = Some((name, path));
             }
             "chat" => {
@@ -365,6 +505,60 @@ impl World {
             _ => return Ok(false),
         }
         Ok(true)
+    }
+}
+
+/// Claude Code's own folder for a project's sessions: every character of its path that is not
+/// an ASCII letter or digit turned into `-`.
+fn claude_project_dir(root: &Path, cwd: &Path) -> PathBuf {
+    let name: String = cwd
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    root.join("projects").join(name)
+}
+
+fn session_id(seed: usize) -> String {
+    let n = 0x5ee1_0000_0000_0000u64 + seed as u64;
+    format!(
+        "{:08x}-{:04x}-4{:03x}-8{:03x}-{:012x}",
+        n >> 32,
+        (n >> 16) & 0xffff,
+        seed,
+        seed,
+        n
+    )
+}
+
+/// Claude's usage answer, with each window's `resetsInMinutes` turned into when it resets.
+fn usage(world: &Value) -> Value {
+    let mut usage = world.clone();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    fn stamp(window: &mut Value, now: u64) {
+        if let Some(minutes) = window["resetsInMinutes"].as_u64() {
+            window["resets_at"] = json!(now + minutes * 60);
+        }
+    }
+    if let Some(limits) = usage["rate_limits"].as_object_mut() {
+        for (_, window) in limits.iter_mut() {
+            match window.as_array_mut() {
+                Some(windows) => windows.iter_mut().for_each(|window| stamp(window, now)),
+                None => stamp(window, now),
+            }
+        }
+    }
+    usage
+}
+
+/// `value` with a leading `~/` in a string taken as the home folder.
+fn expand_home(value: &Value) -> Value {
+    match value.as_str().and_then(|text| text.strip_prefix("~/")) {
+        Some(rest) => json!(sikemux_process::paths::home()
+            .map_or_else(|| PathBuf::from(rest), |home| home.join(rest))),
+        None => value.clone(),
     }
 }
 

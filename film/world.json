@@ -1,0 +1,202 @@
+{
+  "preferences": {
+    "themeId": "custom-1a17ae63585",
+    "customThemes": [
+      {
+        "id": "custom-1a17ae63585",
+        "name": "shinobu-kocho-5120x2880-25374",
+        "dark": true,
+        "chrome": {
+          "bg": "#161016",
+          "bgDim": "#110c11",
+          "bgRaised": "#231c23",
+          "ink": "#e7dee7",
+          "inkDim": "#989098",
+          "inkMuted": "#7f777f",
+          "acc": "#e688eb",
+          "accLine": "rgba(230,136,235,0.3)",
+          "accDim": "rgba(230,136,235,0.1)",
+          "line": "#2d272d",
+          "hl": "rgba(230,136,235,0.055)",
+          "danger": "#d78d91"
+        },
+        "editor": {
+          "fg": "#e7dee7",
+          "bg": "transparent",
+          "caret": "#e688eb",
+          "selection": "#4c284e",
+          "activeLine": "rgba(230,136,235,0.055)",
+          "gutter": "#655e65",
+          "gutterActive": "#e688eb",
+          "indent": "#2d272d",
+          "indentActive": "#403940"
+        },
+        "highlight": {
+          "keyword": "#89a5d7",
+          "string": "#b0a66b",
+          "comment": "#6e666e",
+          "number": "#88b283",
+          "function": "#63b5b4",
+          "type": "#9ecd98",
+          "variable": "#e7dee7",
+          "property": "#b795ce",
+          "tag": "#d78d91",
+          "operator": "#989098",
+          "link": "#b795ce",
+          "invalid": "#f7a4a8",
+          "meta": "#989098",
+          "heading": "#e688eb"
+        },
+        "terminal": {
+          "background": "#161016",
+          "foreground": "#e7dee7",
+          "cursor": "#e688eb",
+          "cursorAccent": "#161016",
+          "selectionBackground": "#4c284e",
+          "black": "#322b32",
+          "red": "#d78d91",
+          "green": "#b0a66b",
+          "yellow": "#88b283",
+          "blue": "#63b5b4",
+          "magenta": "#89a5d7",
+          "cyan": "#b795ce",
+          "white": "#c9c1ca",
+          "brightBlack": "#6e666e",
+          "brightRed": "#f7a4a8",
+          "brightGreen": "#cbc07c",
+          "brightYellow": "#9ecd98",
+          "brightBlue": "#74d0cf",
+          "brightMagenta": "#9fbef7",
+          "brightCyan": "#d3aced",
+          "brightWhite": "#f7eef8"
+        }
+      }
+    ],
+    "paneShader": true,
+    "paneStrength": 0.55,
+    "paneColours": "theme",
+    "paneInks": [
+      "#0f1214",
+      "#e673af",
+      "#fff0fa"
+    ],
+    "panePattern": "bayer8",
+    "paneDotSize": 2,
+    "paneContrast": 0.0,
+    "paneBrightness": 0.0,
+    "paneGlow": 0.4,
+    "paneGlowSize": 0.4,
+    "paneCoverage": "band",
+    "railDensity": "comfortable",
+    "windowBlur": 0.0,
+    "windowOpacity": 1.0,
+    "sideRailWidth": 290.0,
+    "tabRailWidth": 310.0,
+    "paneImage": "~/wallpaper/wmremove-transformed.jpeg"
+  },
+  "faceStyle": {
+    "on": true,
+    "pack": "glow",
+    "shape": "mixed",
+    "motion": true
+  },
+  "account": {
+    "name": "edon",
+    "usage": {
+      "rate_limits_available": true,
+      "subscription_type": "max",
+      "rate_limits": {
+        "five_hour": {
+          "utilization": 18,
+          "resetsInMinutes": 177
+        },
+        "seven_day": {
+          "utilization": 53,
+          "resetsInMinutes": 6900
+        },
+        "model_scoped": [
+          {
+            "display_name": "Fable",
+            "utilization": 9,
+            "resetsInMinutes": 6900
+          }
+        ]
+      }
+    }
+  },
+  "agents": [
+    {
+      "name": "Rohan",
+      "title": "Checkout flow refactor",
+      "state": "done"
+    },
+    {
+      "name": "Yajirobe",
+      "title": "Cart totals property tests",
+      "lead": "Rohan",
+      "state": "working"
+    },
+    {
+      "name": "Suzuha",
+      "title": "Stripe webhook retries",
+      "lead": "Rohan",
+      "state": "working"
+    },
+    {
+      "name": "Crusch",
+      "title": "Tax rules per country",
+      "lead": "Rohan"
+    },
+    {
+      "name": "Brosh",
+      "title": "Inventory sync job",
+      "state": "done"
+    },
+    {
+      "name": "Mayuri",
+      "title": "Order emails in React Email",
+      "state": "done"
+    },
+    {
+      "name": "Takamura",
+      "title": "Pre-push hook tests",
+      "state": "working"
+    },
+    {
+      "name": "Botan",
+      "title": "Product search ranking"
+    },
+    {
+      "name": "Grisha",
+      "title": "Refund flow edge cases"
+    },
+    {
+      "name": "Zeref",
+      "title": "Shipping rates API"
+    }
+  ],
+  "recent": [
+    {
+      "name": "Sena",
+      "title": "Release checklist for v2",
+      "pinned": true
+    },
+    {
+      "name": "Hana",
+      "title": "Migrate to Postgres 17"
+    },
+    {
+      "name": "Kaito",
+      "title": "Flaky cart test on CI"
+    },
+    {
+      "name": "Mio",
+      "title": "Seed data for demos"
+    }
+  ],
+  "tabs": [
+    "terminal",
+    "git",
+    "README.md"
+  ]
+}
