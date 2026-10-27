@@ -10,7 +10,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
-use sikemux_core::server::plugins::{Answer, Failure, Listing, Plugins, Sink};
+use sikemux_core::server::plugins::{Answer, Failure, Gated, Listing, Plugins, Sink};
 
 pub(super) struct Fake(pub(super) Box<dyn Plugins>);
 
@@ -135,6 +135,10 @@ impl Plugins for Fake {
 
     fn agent_tools<'a>(&'a self, _: &'a [String]) -> Listing<'a> {
         Box::pin(async { Vec::new() })
+    }
+
+    fn gated(&self, _: &str) -> Option<Gated> {
+        None
     }
 
     fn call_agent_tool<'a>(&'a self, name: &'a str, _: Value) -> Answer<'a, Value> {

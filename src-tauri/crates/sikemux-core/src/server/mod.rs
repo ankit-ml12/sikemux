@@ -9,6 +9,7 @@ mod agent_sign_in;
 mod agent_view;
 mod agent_worktree;
 mod ansi;
+mod approvals;
 mod attachments;
 mod backdrop;
 mod board;

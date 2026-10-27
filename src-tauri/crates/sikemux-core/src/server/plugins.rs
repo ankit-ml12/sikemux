@@ -14,6 +14,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::cli::protocol::HarnessRequest;
+
 use super::changed::Topic;
 use super::connection::ClientConn;
 use super::{Core, CoreError, CoreResult};
@@ -67,6 +69,14 @@ pub type Listing<'a> = Pin<Box<dyn Future<Output = Vec<Value>> + Send + 'a>>;
 /// Takes a stream's next item; false once nobody reads them, which ends it.
 pub type Sink = Box<dyn Fn(Value) -> bool + Send + Sync>;
 
+/// A plugin tool whose every call the person approves first: `check` answers
+/// what they are asked, and `method` runs once they approve.
+pub struct Gated {
+    pub plugin: String,
+    pub method: String,
+    pub check: String,
+}
+
 pub trait Plugins: Send + Sync {
     fn manifests(&self) -> Vec<Value>;
     fn set_disabled(&self, ids: Vec<String>);
@@ -88,6 +98,8 @@ pub trait Plugins: Send + Sync {
     ) -> Answer<'a, ()>;
     /// The tools an agent in a repository with these git remotes is offered.
     fn agent_tools<'a>(&'a self, remotes: &'a [String]) -> Listing<'a>;
+    /// The tool an agent knows by `name`, when the person approves each call to it.
+    fn gated(&self, name: &str) -> Option<Gated>;
     fn call_agent_tool<'a>(&'a self, name: &'a str, arguments: Value) -> Answer<'a, Value>;
 }
 
@@ -375,7 +387,13 @@ pub(crate) async fn agent_tools(project: &str) -> Result<Value, String> {
     Ok(Value::Array(plugins.agent_tools(&remotes).await))
 }
 
-pub(crate) async fn call_agent_tool(params: &Value) -> Result<Value, String> {
+/// Runs the tool an agent called, or puts the call to the person when they
+/// approve each one.
+pub(crate) async fn call_agent_tool(
+    core: &Arc<Core>,
+    request: &HarnessRequest,
+) -> Result<Value, String> {
+    let params = &request.params;
     let name = params
         .get("tool")
         .and_then(Value::as_str)
@@ -387,15 +405,20 @@ pub(crate) async fn call_agent_tool(params: &Value) -> Result<Value, String> {
     let Some(plugins) = PLUGINS.get() else {
         return Err("plugins are not loaded".into());
     };
-    plugins
+    if let Some(gated) = plugins.gated(name) {
+        return super::approvals::propose(core, request, gated, arguments).await;
+    }
+    let answer = plugins
         .call_agent_tool(name, arguments)
         .await
-        .map_err(|failure| explain(&failure))
+        .map_err(|failure| explain(&failure))?;
+    super::plugin_views::tool_ran(core, name);
+    Ok(answer)
 }
 
 /// An agent cannot sign in on the person's behalf, so a signed-out plugin says
 /// who can fix it and where.
-fn explain(failure: &Failure) -> String {
+pub(crate) fn explain(failure: &Failure) -> String {
     let signed_out = matches!(failure.category.as_str(), "unconfigured" | "auth")
         || matches!(failure.status, Some(401 | 403));
     if signed_out {

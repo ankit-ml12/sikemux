@@ -57,6 +57,21 @@ pub struct AgentTool {
     /// How the chat pane draws a call to this tool; `pnpm agent-tools:check` validates it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub row: Option<Value>,
+    /// Puts each call to the person first, and runs `method` only once they approve it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approve: Option<Approve>,
+    /// Offered even where the plugin offers none of its other tools, such as before
+    /// anything is set up in it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub always: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Approve {
+    /// The method that checks a call before the person sees it and answers what they are
+    /// shown; its failure goes back to the agent and nothing is asked.
+    pub check: String,
 }
 
 impl Manifest {

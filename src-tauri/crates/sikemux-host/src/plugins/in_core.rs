@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::{json, Value};
-use sikemux_core::server::plugins::{Answer, Listing, Plugins, Sink};
+use sikemux_core::server::plugins::{Answer, Gated, Listing, Plugins, Sink};
 use sikemux_plugin_api::{AgentTool, StreamSink};
 use sikemux_process::user_environment::UserEnvironment;
 
@@ -64,6 +64,15 @@ impl Plugins for InCore {
 
     fn agent_tools<'a>(&'a self, remotes: &'a [String]) -> Listing<'a> {
         Box::pin(async move { describe(self.0.agent_tools_for(remotes).await) })
+    }
+
+    fn gated(&self, name: &str) -> Option<Gated> {
+        let (plugin, tool) = self.0.agent_tool(name)?;
+        Some(Gated {
+            plugin: plugin.to_owned(),
+            method: tool.method.clone(),
+            check: tool.approve.as_ref()?.check.clone(),
+        })
     }
 
     fn call_agent_tool<'a>(&'a self, name: &'a str, arguments: Value) -> Answer<'a, Value> {

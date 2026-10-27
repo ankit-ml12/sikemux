@@ -19,6 +19,7 @@ use crate::protocol::WindowCall;
 use crate::text::clipped;
 
 use super::activity::Activity;
+use super::approvals::Approval;
 use super::changed::Topic;
 use super::connection::ClientId;
 use super::kept::Kept;
@@ -110,6 +111,10 @@ struct Question {
     /// for an agent there.
     #[serde(skip_serializing_if = "Option::is_none")]
     from_host: Option<String>,
+    /// The plugin tool call the person approves or turns down with their
+    /// answer. It is never written down, so such a question is not kept.
+    #[serde(skip)]
+    approval: Option<Arc<Approval>>,
 }
 
 /// Where a question stands for the person.
@@ -294,6 +299,7 @@ struct Asked {
     blocked: bool,
     assumption: Option<String>,
     secret: bool,
+    approval: Option<Arc<Approval>>,
 }
 
 impl Questions {
@@ -355,7 +361,12 @@ impl Questions {
     fn changed(&self, state: &mut State) {
         state.dirty = true;
         self.kept.save(&QuestionsRecord {
-            open: state.open.clone(),
+            open: state
+                .open
+                .iter()
+                .filter(|question| question.approval.is_none())
+                .cloned()
+                .collect(),
         });
         self.wake.now();
     }
@@ -630,7 +641,7 @@ fn open(
     let questions: Vec<Question> = asked
         .into_iter()
         .map(|asked| Question {
-            stage: if asked.secret {
+            stage: if asked.secret || asked.approval.is_some() {
                 Stage::Person {
                     lead: None,
                     passed: false,
@@ -654,6 +665,7 @@ fn open(
             at,
             relayed: None,
             from_host: None,
+            approval: asked.approval,
         })
         .collect();
     let mut state = core.harness.questions.state.locked();
@@ -812,6 +824,7 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
             blocked,
             assumption,
             secret,
+            approval: None,
         }],
     )?
     .remove(0);
@@ -834,6 +847,34 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
         },
         "note": sent_note(&question),
     }))
+}
+
+/// Asks the person, never a lead, whether a plugin tool call goes ahead.
+pub(crate) fn put_to_person(
+    core: &Core,
+    agent_id: &str,
+    project: &str,
+    header: String,
+    text: String,
+    choices: Vec<Choice>,
+    approval: Approval,
+) -> Result<(), String> {
+    open(
+        core,
+        agent_id,
+        project,
+        vec![Asked {
+            text: clipped(&text, MAX_QUESTION_BYTES),
+            header: Some(clipped(&header, MAX_HEADER_CHARS)),
+            choices,
+            multi: false,
+            blocked: true,
+            assumption: None,
+            secret: false,
+            approval: Some(Arc::new(approval)),
+        }],
+    )
+    .map(drop)
 }
 
 /// The worker of `lead` on a linked host that `worker` names, by its id or
@@ -942,6 +983,7 @@ pub(crate) fn ask_from_cli(core: &Arc<Core>, agent_id: &str, input: &Value) -> S
                 blocked: true,
                 assumption: None,
                 secret: question["isSecret"].as_bool().unwrap_or(false),
+                approval: None,
             })
         })
         .collect();
@@ -1079,23 +1121,31 @@ pub(crate) async fn answer_all(core: &Arc<Core>, params: AnswersParams) -> Resul
             super::hosts::route::relay_answer(core, host, params);
             continue;
         }
-        let Some(mut text) = text else { continue };
-        if question.secret {
-            match core.harness.questions.keep_secret(&question, &text) {
-                Ok(path) => text = secret_note(&path),
-                Err(error) => {
-                    reopen(
-                        letters
-                            .into_iter()
-                            .map(|(question, _)| question)
-                            .chain([question])
-                            .collect(),
-                    );
-                    return Err(error);
-                }
+        let Some(text) = text else { continue };
+        let told = match (&question.approval, question.secret) {
+            (Some(approval), _) => {
+                super::approvals::settle(core, approval, given.choice, &text).await
+            }
+            (None, true) => core
+                .harness
+                .questions
+                .keep_secret(&question, &text)
+                .map(|path| secret_note(&path)),
+            (None, false) => Ok(text),
+        };
+        match told {
+            Ok(text) => letters.push((question, text)),
+            Err(error) => {
+                reopen(
+                    letters
+                        .into_iter()
+                        .map(|(question, _)| question)
+                        .chain([question])
+                        .collect(),
+                );
+                return Err(error);
             }
         }
-        letters.push((question, text));
     }
     let mut askers: Vec<&str> = letters
         .iter()

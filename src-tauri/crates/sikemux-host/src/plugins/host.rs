@@ -193,7 +193,7 @@ impl PluginHost {
     /// Every tool the loaded plugins offer agents, beside the plugin that answers
     /// it. When two plugins name the same tool, the first keeps it.
     pub fn agent_tools(&self) -> Vec<(&str, &AgentTool)> {
-        self.tools_of(|id| self.is_enabled(id))
+        self.tools_of(|id, _| self.is_enabled(id))
     }
 
     /// The tools an agent in a repository with these git remotes can use: only
@@ -239,14 +239,14 @@ impl PluginHost {
                 offering.insert(id);
             }
         }
-        self.tools_of(|id| offering.contains(id))
+        self.tools_of(|id, tool| offering.contains(id) || (tool.always && self.is_enabled(id)))
     }
 
-    fn tools_of(&self, include: impl Fn(&str) -> bool) -> Vec<(&str, &AgentTool)> {
+    fn tools_of(&self, include: impl Fn(&str, &AgentTool) -> bool) -> Vec<(&str, &AgentTool)> {
         let mut offered: Vec<(&str, &AgentTool)> = Vec::new();
-        for (id, loaded) in self.plugins.iter().filter(|(id, _)| include(id)) {
+        for (id, loaded) in &self.plugins {
             for tool in &loaded.plugin.manifest().tools {
-                if offered.iter().all(|(_, kept)| kept.name != tool.name) {
+                if include(id, tool) && offered.iter().all(|(_, kept)| kept.name != tool.name) {
                     offered.push((id.as_str(), tool));
                 }
             }
@@ -254,21 +254,31 @@ impl PluginHost {
         offered
     }
 
-    /// Runs a tool by the name an agent knows it by. A plugin method that no
-    /// tool names cannot be reached this way.
-    pub async fn call_agent_tool(&self, name: &str, arguments: Value) -> Result<Value, Failure> {
-        let (plugin, method) = self
-            .agent_tools()
+    /// The tool an agent knows by `name`, beside the plugin that answers it.
+    pub fn agent_tool(&self, name: &str) -> Option<(&str, &AgentTool)> {
+        self.agent_tools()
             .into_iter()
             .find(|(_, tool)| tool.name == name)
-            .map(|(plugin, tool)| (plugin.to_owned(), tool.method.clone()))
-            .ok_or_else(|| {
-                Failure::new(
-                    "sikemux",
-                    "other",
-                    format!("no plugin offers the tool `{name}`"),
-                )
-            })?;
+    }
+
+    /// Runs a tool by the name an agent knows it by. A plugin method that no
+    /// tool names cannot be reached this way, nor can one the person approves.
+    pub async fn call_agent_tool(&self, name: &str, arguments: Value) -> Result<Value, Failure> {
+        let (plugin, tool) = self.agent_tool(name).ok_or_else(|| {
+            Failure::new(
+                "sikemux",
+                "other",
+                format!("no plugin offers the tool `{name}`"),
+            )
+        })?;
+        if tool.approve.is_some() {
+            return Err(Failure::new(
+                plugin,
+                "other",
+                format!("`{name}` runs only once the person approves it"),
+            ));
+        }
+        let (plugin, method) = (plugin.to_owned(), tool.method.clone());
         self.call(&plugin, &method, arguments).await
     }
 
