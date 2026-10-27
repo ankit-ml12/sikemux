@@ -46,6 +46,8 @@ const MAP_WIDTH: f32 = 176.;
 const MAP_HEIGHT: f32 = 116.;
 const MAP_MARGIN: f32 = 12.;
 const GROUP_PAD: f32 = 26.;
+/// Room above a group's tables for its name.
+const GROUP_LABEL: f32 = 18.;
 /// How many measured widths a diagram keeps before it starts again.
 const MEASURED_MAX: usize = 4096;
 const EMBEDDED_HEIGHT: std::ops::Range<f32> = 240.0..560.0;
@@ -931,9 +933,9 @@ impl Frame {
             let frame = self.rect(
                 bounds,
                 left - GROUP_PAD,
-                top - GROUP_PAD - 18.,
+                top - GROUP_PAD - GROUP_LABEL,
                 right - left + GROUP_PAD * 2.,
-                bottom - top + GROUP_PAD * 2. + 18.,
+                bottom - top + GROUP_PAD * 2. + GROUP_LABEL,
             );
             window.paint_quad(quad(
                 frame,
@@ -943,8 +945,8 @@ impl Frame {
                 Hsla { a: 0.28, ..tint },
                 BorderStyle::Dashed,
             ));
-            if self.zoom >= 0.3 {
-                let size = 12. * self.zoom;
+            if self.zoom >= 0.2 {
+                let size = (12. * self.zoom).max(10.);
                 let origin = frame.origin + point(px(14. * self.zoom), px(10. * self.zoom));
                 text(
                     &group.name,
@@ -1558,24 +1560,97 @@ fn extent_of<'a>(cards: impl Iterator<Item = &'a Card>) -> Option<(f32, f32, f32
     })
 }
 
-/// Lays the tables out left to right, each table to the right of the tables it refers to,
-/// lining each up with its neighbours; tables that refer to nothing and nothing refers to
-/// sit in rows underneath.
+/// Lays the tables out: each table group as a block of its own, laid out by the references
+/// inside it, then the blocks and the tables in no group, each to the right of what it refers
+/// to, so a group's tables sit together and groups never overlap.
 fn arrange(schema: &Schema, cards: &mut [Card]) {
     let n = cards.len();
-    let mut parents: Vec<Vec<usize>> = vec![Vec::new(); n];
-    let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
     let keyed = |end: &dbml::End| {
         let columns = &schema.tables[end.table].columns;
         end.columns.iter().all(|&column| columns[column].pk)
     };
+    let mut links: Vec<(usize, usize)> = Vec::new();
     for reference in &schema.refs {
         let (from, to) = (&reference.from, &reference.to);
-        let (child, parent) = match (from.many, to.many) {
+        let link = match (from.many, to.many) {
             (false, true) => (to.table, from.table),
             (false, false) if keyed(from) && !keyed(to) => (to.table, from.table),
             _ => (from.table, to.table),
         };
+        if link.0 != link.1 && !links.contains(&link) {
+            links.push(link);
+        }
+    }
+    let mut cluster_of = vec![usize::MAX; n];
+    let mut clusters: Vec<(Vec<usize>, bool)> = Vec::new();
+    for group in &schema.groups {
+        let members: Vec<usize> = (group.tables.iter().copied())
+            .filter(|&table| table < n && cluster_of[table] == usize::MAX)
+            .collect();
+        if members.is_empty() {
+            continue;
+        }
+        for &table in &members {
+            cluster_of[table] = clusters.len();
+        }
+        clusters.push((members, true));
+    }
+    for (table, cluster) in cluster_of.iter_mut().enumerate() {
+        if *cluster == usize::MAX {
+            *cluster = clusters.len();
+            clusters.push((vec![table], false));
+        }
+    }
+    let mut boxes = Vec::with_capacity(clusters.len());
+    for (members, grouped) in &clusters {
+        let local = |table: usize| members.iter().position(|&member| member == table);
+        let inner: Vec<(usize, usize)> = (links.iter())
+            .filter_map(|&(child, parent)| Some((local(child)?, local(parent)?)))
+            .collect();
+        let sizes: Vec<(f32, f32)> = members.iter().map(|&t| (cards[t].w, cards[t].h)).collect();
+        let placed = layered(&sizes, &inner);
+        for (&table, &(x, y)) in members.iter().zip(&placed) {
+            cards[table].x = x;
+            cards[table].y = y;
+        }
+        let (_, _, right, bottom) =
+            extent_of(members.iter().map(|&t| &cards[t])).unwrap_or_default();
+        let (left, top, below) = match grouped {
+            true => (GROUP_PAD, GROUP_PAD + GROUP_LABEL, GROUP_PAD),
+            false => (0., 0., 0.),
+        };
+        boxes.push(((right + left * 2., bottom + top + below), (left, top)));
+    }
+    let mut between: Vec<(usize, usize)> = Vec::new();
+    for &(child, parent) in &links {
+        let link = (cluster_of[child], cluster_of[parent]);
+        if link.0 != link.1 && !between.contains(&link) {
+            between.push(link);
+        }
+    }
+    let sizes: Vec<(f32, f32)> = boxes.iter().map(|(size, _)| *size).collect();
+    let placed = layered(&sizes, &between);
+    for (cluster, (members, _)) in clusters.iter().enumerate() {
+        let ((x, y), (_, (left, top))) = (placed[cluster], boxes[cluster]);
+        for &table in members {
+            cards[table].x += x + left;
+            cards[table].y += y + top;
+        }
+    }
+    for card in cards.iter_mut() {
+        card.placed = true;
+    }
+}
+
+/// Places boxes of `sizes` left to right in columns, each to the right of the boxes it links
+/// to as `(child, parent)`, lined up with its neighbours; boxes with no links sit in rows
+/// underneath. Answers each box's top left corner, the whole starting at the origin.
+fn layered(sizes: &[(f32, f32)], links: &[(usize, usize)]) -> Vec<(f32, f32)> {
+    let n = sizes.len();
+    let mut at = vec![(0f32, 0f32); n];
+    let mut parents: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(child, parent) in links {
         if child != parent && !parents[child].contains(&parent) {
             parents[child].push(parent);
             children[parent].push(child);
@@ -1583,7 +1658,7 @@ fn arrange(schema: &Schema, cards: &mut [Card]) {
     }
     drop_cycles(&mut parents, &mut children);
     let linked: Vec<bool> = (0..n)
-        .map(|table| !parents[table].is_empty() || !children[table].is_empty())
+        .map(|node| !parents[node].is_empty() || !children[node].is_empty())
         .collect();
     let mut rank = vec![0usize; n];
     for _ in 0..n {
@@ -1600,40 +1675,36 @@ fn arrange(schema: &Schema, cards: &mut [Card]) {
             break;
         }
     }
-    for table in 0..n {
-        if parents[table].is_empty() && !children[table].is_empty() {
-            let nearest = children[table].iter().map(|&c| rank[c]).min().unwrap_or(1);
-            rank[table] = nearest.saturating_sub(1);
+    for node in 0..n {
+        if parents[node].is_empty() && !children[node].is_empty() {
+            let nearest = children[node].iter().map(|&c| rank[c]).min().unwrap_or(1);
+            rank[node] = nearest.saturating_sub(1);
         }
     }
-    let group_of: HashMap<usize, usize> = (schema.groups.iter().enumerate())
-        .flat_map(|(group, g)| g.tables.iter().map(move |&table| (table, group)))
-        .collect();
     let top = rank.iter().copied().max().unwrap_or(0);
     let mut columns: Vec<Vec<usize>> = Vec::new();
     for r in 0..=top {
-        let mut stack: Vec<usize> = (0..n).filter(|&t| linked[t] && rank[t] == r).collect();
+        let stack: Vec<usize> = (0..n).filter(|&t| linked[t] && rank[t] == r).collect();
         if stack.is_empty() {
             continue;
         }
-        stack.sort_by_key(|table| (group_of.get(table).copied().unwrap_or(usize::MAX), *table));
         let mut column: Vec<usize> = Vec::new();
         let mut height = 0.;
-        for table in stack {
-            if !column.is_empty() && height + cards[table].h > TALLEST_STACK {
+        for node in stack {
+            if !column.is_empty() && height + sizes[node].1 > TALLEST_STACK {
                 columns.push(std::mem::take(&mut column));
                 height = 0.;
             }
-            height += cards[table].h + GAP_Y;
-            column.push(table);
+            height += sizes[node].1 + GAP_Y;
+            column.push(node);
         }
         columns.push(column);
     }
     let neighbours: Vec<Vec<usize>> = (0..n)
-        .map(|table| {
-            parents[table]
+        .map(|node| {
+            parents[node]
                 .iter()
-                .chain(&children[table])
+                .chain(&children[node])
                 .copied()
                 .collect()
         })
@@ -1641,12 +1712,11 @@ fn arrange(schema: &Schema, cards: &mut [Card]) {
     let mut x = 0.;
     for column in &columns {
         let mut y = 0.;
-        for &table in column {
-            cards[table].x = x;
-            cards[table].y = y;
-            y += cards[table].h + GAP_Y;
+        for &node in column {
+            at[node] = (x, y);
+            y += sizes[node].1 + GAP_Y;
         }
-        x += column.iter().map(|&t| cards[t].w).fold(0., f32::max) + GAP_X;
+        x += column.iter().map(|&t| sizes[t].0).fold(0., f32::max) + GAP_X;
     }
     for sweep in 0..8 {
         let order: Vec<usize> = match sweep % 2 {
@@ -1657,43 +1727,27 @@ fn arrange(schema: &Schema, cards: &mut [Card]) {
             let column = &columns[index];
             let mut wanted: Vec<(f32, usize)> = column
                 .iter()
-                .map(|&table| {
-                    let card = cards[table];
-                    let others: Vec<f32> = neighbours[table]
+                .map(|&node| {
+                    let height = sizes[node].1;
+                    let others: Vec<f32> = neighbours[node]
                         .iter()
                         .filter(|other| !column.contains(other))
-                        .map(|&other| cards[other].y + cards[other].h / 2.)
+                        .map(|&other| at[other].1 + sizes[other].1 / 2.)
                         .collect();
                     let centre = match others.is_empty() {
-                        true => card.y + card.h / 2.,
+                        true => at[node].1 + height / 2.,
                         false => others.iter().sum::<f32>() / others.len() as f32,
                     };
-                    (centre - card.h / 2., table)
+                    (centre - height / 2., node)
                 })
                 .collect();
-            let mut gathered: HashMap<usize, (f32, f32)> = HashMap::new();
-            for (want, table) in &wanted {
-                if let Some(&group) = group_of.get(table) {
-                    let entry = gathered.entry(group).or_default();
-                    entry.0 += want;
-                    entry.1 += 1.;
-                }
-            }
-            let cluster = |want: f32, table: usize| {
-                group_of
-                    .get(&table)
-                    .and_then(|group| gathered.get(group))
-                    .map_or(want, |(sum, count)| sum / count)
-            };
-            wanted.sort_by(|a, b| {
-                (cluster(a.0, a.1).total_cmp(&cluster(b.0, b.1))).then(a.0.total_cmp(&b.0))
-            });
+            wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
             let mut placed = Vec::with_capacity(wanted.len());
             let mut floor = f32::MIN;
-            for &(want, table) in &wanted {
+            for &(want, node) in &wanted {
                 let y = want.max(floor);
                 placed.push(y);
-                floor = y + cards[table].h + GAP_Y;
+                floor = y + sizes[node].1 + GAP_Y;
             }
             let shift = wanted
                 .iter()
@@ -1701,42 +1755,43 @@ fn arrange(schema: &Schema, cards: &mut [Card]) {
                 .map(|((want, _), y)| want - y)
                 .sum::<f32>()
                 / wanted.len().max(1) as f32;
-            for ((_, table), y) in wanted.iter().zip(&placed) {
-                cards[*table].y = y + shift;
+            for ((_, node), y) in wanted.iter().zip(&placed) {
+                at[*node].1 = y + shift;
             }
-            columns[index] = wanted.iter().map(|(_, table)| *table).collect();
+            columns[index] = wanted.iter().map(|(_, node)| *node).collect();
         }
     }
     let lowest = (0..n)
         .filter(|&t| linked[t])
-        .map(|t| cards[t].y)
+        .map(|t| at[t].1)
         .fold(f32::MAX, f32::min);
     if lowest < f32::MAX {
-        for table in (0..n).filter(|&t| linked[t]) {
-            cards[table].y -= lowest;
+        for node in (0..n).filter(|&t| linked[t]) {
+            at[node].1 -= lowest;
         }
     }
-    let linked_extent = extent_of((0..n).filter(|&t| linked[t]).map(|t| &cards[t]));
-    let (width, mut y) = match linked_extent {
-        Some((left, _, right, bottom)) => ((right - left).max(1100.), bottom + GAP_Y * 2.),
-        None => (1100., 0.),
+    let (mut right, mut bottom) = (0f32, f32::MIN);
+    for node in (0..n).filter(|&t| linked[t]) {
+        right = right.max(at[node].0 + sizes[node].0);
+        bottom = bottom.max(at[node].1 + sizes[node].1);
+    }
+    let (width, mut y) = match bottom > f32::MIN {
+        true => (right.max(1100.), bottom + GAP_Y * 2.),
+        false => (1100., 0.),
     };
     let mut x = 0.;
     let mut tallest: f32 = 0.;
-    for table in (0..n).filter(|&t| !linked[t]) {
-        if x > 0. && x + cards[table].w > width {
+    for node in (0..n).filter(|&t| !linked[t]) {
+        if x > 0. && x + sizes[node].0 > width {
             x = 0.;
             y += tallest + GAP_Y;
             tallest = 0.;
         }
-        cards[table].x = x;
-        cards[table].y = y;
-        x += cards[table].w + GAP_Y;
-        tallest = tallest.max(cards[table].h);
+        at[node] = (x, y);
+        x += sizes[node].0 + GAP_Y;
+        tallest = tallest.max(sizes[node].1);
     }
-    for card in cards.iter_mut() {
-        card.placed = true;
-    }
+    at
 }
 
 /// Drops the references that lead back to a table that refers on to them, so every table
