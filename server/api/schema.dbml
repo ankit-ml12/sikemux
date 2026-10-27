@@ -90,7 +90,7 @@ Table update_channels {
 Table events {
   id bigint [pk, increment]
   user_id text [not null]
-  type text [not null, note: 'type = ANY (ARRAY[\'device.added\', \'device.changed\', \'device.revoked\', \'account.deleted\'])']
+  type text [not null, note: 'type = ANY (ARRAY[\'device.added\', \'device.changed\', \'device.revoked\', \'account.deleted\', \'stash.added\', \'stash.changed\', \'stash.removed\'])']
   subject text
   subject_role text [note: 'subject_role = ANY (ARRAY[\'host\', \'client\'])']
   reason text [note: 'reason = ANY (ARRAY[\'removed\', \'signed_out\', \'account_deleted\'])']

@@ -20,3 +20,12 @@ create table stash_items (
 
 create index stash_items_by_user on stash_items (user_id, created_at desc, id desc);
 create index stash_items_taken on stash_items (taken_at) where taken_at is not null;
+
+alter table events
+  drop constraint events_type_check,
+  add constraint events_type_check check (
+    type in (
+      'device.added', 'device.changed', 'device.revoked', 'account.deleted',
+      'stash.added', 'stash.changed', 'stash.removed'
+    )
+  );

@@ -11,23 +11,26 @@ import type { Tables } from "../db.ts";
 
 /**
  * Which of an account's events a connection may read. Hosts learn of phones only when one is
- * revoked; phones never learn of other phones; the web app sees the whole account.
+ * revoked; phones never learn of other phones; the web app sees the whole account. Everyone hears
+ * of the stash.
  */
 export function visibleTo(role: LiveRole, ownKey: string | null) {
   return (eb: ExpressionBuilder<Tables, "events">): Expression<SqlBool> => {
     if (role === "web") return eb.lit(true);
     const own = ownKey === null ? eb.lit(false) : eb("subject", "=", ownKey);
     const accountDeleted = eb("type", "=", "account.deleted");
+    const stash = eb("type", "like", "stash.%");
     if (role === "host")
       return eb.or([
         own,
         accountDeleted,
+        stash,
         eb.and([
           eb("type", "=", "device.revoked"),
           eb("subject_role", "=", "client"),
         ]),
       ]);
-    return eb.or([own, accountDeleted, eb("subject_role", "=", "host")]);
+    return eb.or([own, accountDeleted, stash, eb("subject_role", "=", "host")]);
   };
 }
 
@@ -59,7 +62,9 @@ export async function backlog(
       type: row.type as AccountEventType,
       at: row.at.toISOString(),
     };
-    if (row.subject) event.key = row.subject;
+    if (row.subject && row.type.startsWith("stash."))
+      event.stashId = row.subject;
+    else if (row.subject) event.key = row.subject;
     if (row.subject_role) event.role = row.subject_role as DeviceRole;
     if (row.reason) event.reason = row.reason as RevokeReason;
     return event;
