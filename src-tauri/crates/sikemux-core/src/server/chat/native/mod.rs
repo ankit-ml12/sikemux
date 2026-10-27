@@ -127,6 +127,7 @@ pub(crate) fn show_saved(chat: &Arc<Chat>) {
     {
         return;
     }
+    chat.saved_reading.send_replace(true);
     let chat = chat.clone();
     tokio::task::spawn_blocking(move || {
         let sink = session::Sink::showing(chat.clone());
@@ -142,6 +143,7 @@ pub(crate) fn show_saved(chat: &Arc<Chat>) {
                 chat.agent_id()
             );
         }
+        chat.saved_reading.send_replace(false);
     });
 }
 

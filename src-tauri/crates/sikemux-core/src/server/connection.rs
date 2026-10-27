@@ -836,7 +836,7 @@ async fn run_requests(
                     tokio::spawn(async move {
                         let mut context = context;
                         let result =
-                            match chat::wake_for_message(&core, &agent_id, &mut context).await {
+                            match chat::wake_for_prompt(&core, &agent_id, &mut context).await {
                                 Ok(()) => {
                                     chat::prompt(&core, &agent_id, message_id, text, paths, context)
                                 }

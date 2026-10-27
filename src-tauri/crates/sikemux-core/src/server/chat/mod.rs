@@ -241,6 +241,8 @@ pub(crate) struct Chat {
     /// The saved history of the session it resumes is shown already, so the agent's own
     /// replay of it as it starts stays quiet.
     pub(crate) saved_shown: AtomicBool,
+    /// The saved history is still being read into the chat.
+    pub(crate) saved_reading: watch::Sender<bool>,
 }
 
 impl Chat {
@@ -886,7 +888,17 @@ impl Chat {
 
     /// Whether the agent's first start brings no history the chat doesn't show already.
     pub(crate) fn history_in_place(&self) -> bool {
-        self.launch.resume_id.is_none() || self.saved_shown.load(Ordering::Acquire)
+        self.launch.resume_id.is_none()
+            || (self.saved_shown.load(Ordering::Acquire) && !*self.saved_reading.borrow())
+    }
+
+    /// Answers once the saved history being read into the chat is all there.
+    pub(crate) async fn until_saved_read(&self) {
+        let _ = self
+            .saved_reading
+            .subscribe()
+            .wait_for(|reading| !reading)
+            .await;
     }
 
     /// Sends the prompt a failed turn stopped again, as the person asked.
@@ -1550,6 +1562,7 @@ impl Chats {
             unstarted: AtomicBool::new(false),
             wanted: tokio::sync::Notify::new(),
             saved_shown: AtomicBool::new(history_shown),
+            saved_reading: watch::channel(false).0,
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -2062,8 +2075,11 @@ pub(crate) fn composing(core: &Arc<Core>, agent_id: &str) {
     } else if stopped(core, agent_id) {
         let (core, agent_id) = (core.clone(), agent_id.to_owned());
         tokio::spawn(async move {
-            if let Err(error) = super::launching::wake_chat(&core, agent_id).await {
-                eprintln!("sikemux core: a chat the person began writing in did not wake: {error}");
+            match wake_shown(&core, &agent_id).await {
+                Ok(chat) => chat.start_agent(),
+                Err(error) => eprintln!(
+                    "sikemux core: a chat the person began writing in did not wake: {error}"
+                ),
             }
         });
     }
@@ -2228,6 +2244,27 @@ pub(crate) fn detach(core: &Core, client: ClientId, agent_id: &str) {
 /// stopped, so a message to it must start it first on its saved conversation.
 pub(crate) fn stopped(core: &Core, agent_id: &str) -> bool {
     core.chats.get(agent_id).is_none() && core.workspaces.agent(agent_id).is_some()
+}
+
+/// Readies `agent_id`'s chat for the person's message. A sleeping chat shows its saved
+/// history and the message at once, its agent starting as the message is sent.
+pub(crate) async fn wake_for_prompt(
+    core: &Arc<Core>,
+    agent_id: &str,
+    context: &mut [ChatContext],
+) -> CoreResult<()> {
+    if stopped(core, agent_id) {
+        wake_shown(core, agent_id).await?;
+    }
+    mentions::wake(core, agent_id, context).await
+}
+
+/// Starts a sleeping chat waiting for the person, with its saved history in place.
+async fn wake_shown(core: &Arc<Core>, agent_id: &str) -> CoreResult<Arc<Chat>> {
+    super::lifecycle::ensure_running(core, agent_id, true).await?;
+    let chat = core.chats.running(agent_id)?;
+    chat.until_saved_read().await;
+    Ok(chat)
 }
 
 /// Readies `agent_id`'s chat for a message from any client: starts it when it isn't
