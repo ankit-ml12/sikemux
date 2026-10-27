@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { createWriteStream, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO } from './surface.mjs';
@@ -13,35 +13,52 @@ export const MODELS = {
   deepseek: { runner: 'omp', id: 'deepseek-ai/DeepSeek-V4.1-Flash-ultra-chat' },
 };
 
-export function mcpServers({ host, endpoint, repo, dir, rivals = [] }) {
-  const servers = {
-    'sikemux-tools': {
-      command: host,
-      args: ['--tools-mcp'],
-      env: { SIKEMUX_TOOLS_AGENT_ID: 'agent-eval-self', SIKEMUX_CLI_ENDPOINT: endpoint, SIKEMUX_PROJECT: repo },
-    },
-  };
+export function mcpServers({ tools, dir, rivals = [] }) {
+  const servers = { 'sikemux-tools': tools };
   for (const rival of rivals) {
     servers[rival] = { command: process.execPath, args: [join(EVAL, 'lib/rival.mjs'), join(EVAL, `rivals/${rival.toLowerCase()}.json`), dir] };
   }
   return { mcpServers: servers };
 }
 
+const groups = new Set();
+
+export function killAll() {
+  for (const group of groups) stopGroup(group, 'SIGKILL');
+}
+
+function stopGroup(group, signal) {
+  try {
+    process.kill(-group, signal);
+  } catch {
+    groups.delete(group);
+  }
+}
+
+// The Claude sign-in is read fresh for each run and handed over in the environment, so no sandbox ever touches the keychain.
+export function claudeToken() {
+  const stored = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'Claude Code-credentials', '-a', process.env.USER, '-w'], { encoding: 'utf8' });
+  return JSON.parse(stored).claudeAiOauth.accessToken;
+}
+
 export function run({ command, args, cwd, env, dir, timeoutMs, profile = join(dir, 'sandbox.sb') }) {
   return new Promise((resolve) => {
     const out = createWriteStream(join(dir, 'transcript.jsonl'));
     const err = createWriteStream(join(dir, 'stderr.log'));
-    const child = spawn('/usr/bin/sandbox-exec', ['-f', profile, command, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('/usr/bin/sandbox-exec', ['-f', profile, command, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    groups.add(child.pid);
     child.stdout.pipe(out);
     child.stderr.pipe(err);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGTERM');
-      setTimeout(() => child.kill('SIGKILL'), 5000);
+      stopGroup(child.pid, 'SIGTERM');
+      setTimeout(() => stopGroup(child.pid, 'SIGKILL'), 5000);
     }, timeoutMs);
     child.on('close', (code) => {
       clearTimeout(timer);
+      stopGroup(child.pid, 'SIGKILL');
+      groups.delete(child.pid);
       out.end(() => resolve({ code, timedOut }));
     });
   });
@@ -68,6 +85,7 @@ export async function runClaude({ model, search, dir, sandbox, servers, prompt, 
   ];
   const env = {
     ...sandbox.env,
+    CLAUDE_CODE_OAUTH_TOKEN: claudeToken(),
     ENABLE_TOOL_SEARCH: search ? 'true' : 'false',
     ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
     DISABLE_AUTOUPDATER: '1',

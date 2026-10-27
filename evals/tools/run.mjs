@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { loadSurface, REPO, SIGNED_IN_PLUGINS } from './lib/surface.mjs';
 import { startCore } from './lib/core.mjs';
 import { prepareCase } from './lib/sandbox.mjs';
-import { MODELS, mcpServers, runClaude, readClaude } from './lib/runners.mjs';
+import { MODELS, mcpServers, runClaude, readClaude, killAll } from './lib/runners.mjs';
+import { startTools } from './lib/tools.mjs';
 import { runOmp, readOmp } from './lib/omp.mjs';
 import { grade } from './lib/grade.mjs';
 import { judge, readVerdict } from './lib/judge.mjs';
@@ -63,6 +64,24 @@ if (options.list) {
   console.log(`${cases.length} cases`);
   process.exit(0);
 }
+
+const roots = new Set();
+const stopEverything = () => {
+  killAll();
+  for (const root of roots) sweep(root);
+};
+process.on('exit', stopEverything);
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => {
+    stopEverything();
+    process.exit(130);
+  });
+}
+process.on('uncaughtException', (error) => {
+  stopEverything();
+  console.error(error);
+  process.exit(1);
+});
 
 const at = options.at ? git('rev-parse', '--short=9', options.at) : null;
 const HOST = at ? savedHost(at) : ensureHost();
@@ -209,6 +228,12 @@ async function judgeOnce(testCase, outcome, dir, sandbox) {
   return verdict;
 }
 
+function sweep(root) {
+  try {
+    execFileSync('/usr/bin/pkill', ['-9', '-f', root], { stdio: 'ignore' });
+  } catch {}
+}
+
 function dropSandbox(dir) {
   const link = join(dir, 'sandbox');
   if (options.keep || !existsSync(link)) return;
@@ -223,7 +248,9 @@ async function runAgent(variant, testCase, dir) {
   const surface = loadSurface(fixture.plugins ?? SIGNED_IN_PLUGINS, at);
   const endpoint = join(dir, 'endpoint.json');
   const core = await startCore({ surface, fixture, project: sandbox.repo, endpointFile: endpoint, logFile: join(dir, 'core.jsonl') });
-  const servers = mcpServers({ host: HOST, endpoint, repo: sandbox.repo, dir, rivals: fixture.rivals });
+  roots.add(sandbox.root);
+  const tools = await startTools({ host: HOST, endpoint, sandbox, profile: join(dir, 'tools.sb') });
+  const servers = mcpServers({ tools: tools.config, dir, rivals: fixture.rivals });
   const limits = { maxTurns: testCase.maxTurns ?? Number(options.turns), timeoutMs: Number(options.timeout) * 1000 };
   let outcome;
   try {
@@ -232,7 +259,9 @@ async function runAgent(variant, testCase, dir) {
         ? await runClaude({ model: variant.id, search: variant.search, dir, sandbox, servers, prompt: testCase.prompt, ...limits })
         : await runOmp({ model: variant.id, dir, sandbox, servers, prompt: testCase.prompt, ...limits });
   } finally {
+    tools.close();
     core.close();
+    sweep(sandbox.root);
   }
   return { ...outcome, sandbox };
 }

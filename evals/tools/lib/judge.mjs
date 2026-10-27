@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { run } from './runners.mjs';
+import { run, claudeToken } from './runners.mjs';
 import { brief } from './grade.mjs';
 
 export const JUDGE_MODEL = 'claude-sonnet-5-5';
@@ -24,7 +24,7 @@ export async function judge({ testCase, outcome, dir, sandbox }) {
     command: join(process.env.HOME, '.local/bin/claude'),
     args: ['-p', prompt, '--system-prompt', ROLE, '--model', JUDGE_MODEL, '--output-format', 'json', '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--max-turns', '1'],
     cwd: sandbox.repo,
-    env: { ...sandbox.env, ENABLE_CLAUDEAI_MCP_SERVERS: 'false', DISABLE_AUTOUPDATER: '1' },
+    env: { ...sandbox.env, CLAUDE_CODE_OAUTH_TOKEN: claudeToken(), ENABLE_CLAUDEAI_MCP_SERVERS: 'false', DISABLE_AUTOUPDATER: '1' },
     dir: folder,
     profile: join(dir, 'sandbox.sb'),
     timeoutMs: 180_000,
