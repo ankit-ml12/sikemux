@@ -4,7 +4,7 @@
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
+use gpui_kit::component::input::{Editor, EditorState, InputEvent, RopeExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, uniform_list, AnyElement, App, AppContext, Context, Entity, FontWeight,
@@ -25,10 +25,12 @@ const ROW_LIMIT: u32 = 500;
 const COLUMN_WIDTH: f32 = 160.;
 const NUMBER_WIDTH: f32 = 44.;
 const ROW_HEIGHT: f32 = 24.;
+const SQL_LINE_HEIGHT: f32 = 18.;
+const SQL_ROWS: (usize, usize) = (6, 16);
 
 /// One console's SQL and what its last run gave.
 pub(super) struct Console {
-    sql: Entity<TextareaState>,
+    sql: Entity<EditorState>,
     limit: u32,
     /// Names the run going now, so Stop reaches it and not another console's.
     running: Option<String>,
@@ -43,19 +45,25 @@ pub(super) struct Console {
 impl Console {
     pub(super) fn new(key: String, window: &mut Window, cx: &mut Context<PluginPane>) -> Self {
         let sql = cx.new(|cx| {
-            TextareaState::new(window, cx)
-                .auto_grow(6, 16)
-                .placeholder("select * from …")
+            let mut state = EditorState::new(window, cx)
+                .language("sql")
+                .line_number(false)
+                .folding(false)
+                .indent_guides(false)
+                .placeholder("select * from …");
+            state.set_highlighter_factory(crate::syntax::highlighters(cx), cx);
+            state
         });
-        cx.subscribe(&sql, move |pane, _, event: &InputEvent, cx| {
-            if let InputEvent::PressEnter {
+        cx.subscribe(&sql, move |pane, _, event: &InputEvent, cx| match event {
+            InputEvent::PressEnter {
                 secondary: true, ..
-            } = event
-            {
+            } => {
                 if let Some((database, host)) = pane.parts::<Database>() {
                     run(database, host, &key, cx);
                 }
             }
+            InputEvent::Change => cx.notify(),
+            _ => {}
         })
         .detach();
         Self {
@@ -232,6 +240,8 @@ pub(super) fn page(
                 move |database, host, _, _, cx| run(database, host, &run_key, cx),
             )),
         );
+    let (fewest, most) = SQL_ROWS;
+    let rows = console.sql.read(cx).text().lines_len().clamp(fewest, most);
     let editor = div()
         .mx(px(12.))
         .px(px(10.))
@@ -241,10 +251,12 @@ pub(super) fn page(
         .border_color(t.border)
         .bg(t.surface)
         .font_family(theme::MONO)
+        .line_height(px(SQL_LINE_HEIGHT))
         .child(
-            Textarea::new(&console.sql)
+            Editor::new(&console.sql)
                 .appearance(false)
-                .text_size(theme::ui_text(12.5)),
+                .text_size(theme::ui_text(12.5))
+                .h(px(rows as f32 * SQL_LINE_HEIGHT)),
         );
     let below = match (&console.error, &console.outcome) {
         (Some(error), _) => div()
