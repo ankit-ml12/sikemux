@@ -487,14 +487,19 @@ async fn run(
         }
         "browser.evaluate" => {
             let script = text("script").ok_or("script is required")?;
+            let started = Instant::now();
+            let (tab_id, view) = active(manager, agent_id)?;
+            manager
+                .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
+                .await;
             let limit = Duration::from_millis(
                 params
                     .get("timeoutMs")
                     .and_then(Value::as_u64)
                     .unwrap_or(SCRIPT_TIMEOUT_MS)
                     .min(MAX_BLOCKING_MS),
-            );
-            let (_, view) = active(manager, agent_id)?;
+            )
+            .min(Duration::from_millis(MAX_BLOCKING_MS).saturating_sub(started.elapsed()));
             let body = match run_helper(&view, &shape_check(&script)).await?.as_str() {
                 "expression" => script_body(&format!("return ({script}\n);")),
                 "statements" => script_body(&script),

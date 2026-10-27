@@ -14,7 +14,7 @@ mod manifest;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -316,6 +316,7 @@ fn serve(offer: Arc<Offer>, agent_id: String) {
     let initialized = Arc::new(AtomicBool::new(false));
     let relays = Arc::new(Relays::new(agent_id));
     let calls = Arc::new(Calls::default());
+    let tab_turns = Arc::new(Turns::default());
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
@@ -373,9 +374,19 @@ fn serve(offer: Arc<Offer>, agent_id: String) {
                 let (offer, relays, calls) =
                     (Arc::clone(&offer), Arc::clone(&relays), Arc::clone(&calls));
                 calls.start(&id, &name);
+                let ticket = offer
+                    .manifest()
+                    .tool(&name)
+                    .is_some_and(|tool| acts_on_tab(&tool.method))
+                    .then(|| (Arc::clone(&tab_turns), tab_turns.take()));
                 // A call waits on the app, so it runs off the read loop; a host
                 // that pipelines a ping behind a navigation still gets answered.
                 std::thread::spawn(move || {
+                    let _turn = ticket.as_ref().map(|(turns, ticket)| turns.wait(*ticket));
+                    if calls.cancelled(&id) {
+                        calls.finish(&id);
+                        return;
+                    }
                     let mut answer =
                         call(&offer, &*relays.quick, &*relays.patient, &name, &arguments);
                     if calls.finish(&id) {
@@ -465,12 +476,60 @@ impl Calls {
         Some(name.clone())
     }
 
+    fn cancelled(&self, id: &Value) -> bool {
+        self.0
+            .locked()
+            .get(&id.to_string())
+            .is_some_and(|(_, cancelled)| *cancelled)
+    }
+
     /// Whether the finished call should still be answered.
     fn finish(&self, id: &Value) -> bool {
         self.0
             .locked()
             .remove(&id.to_string())
             .is_none_or(|(_, cancelled)| !cancelled)
+    }
+}
+
+/// Browser calls act on the agent's current tab, so they run one at a time in
+/// the order the agent sent them, even when it sent them all at once.
+fn acts_on_tab(method: &str) -> bool {
+    method.starts_with("browser.") && method != "browser.page"
+}
+
+#[derive(Default)]
+struct Turns {
+    /// The next ticket to hand out, and the ticket whose turn it is.
+    order: Mutex<(u64, u64)>,
+    turn: Condvar,
+}
+
+impl Turns {
+    fn take(&self) -> u64 {
+        let mut order = self.order.locked();
+        order.0 += 1;
+        order.0 - 1
+    }
+
+    fn wait(&self, ticket: u64) -> Turn<'_> {
+        let mut order = self.order.locked();
+        while order.1 != ticket {
+            order = self
+                .turn
+                .wait(order)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        Turn(self)
+    }
+}
+
+struct Turn<'a>(&'a Turns);
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        self.0.order.locked().1 += 1;
+        self.0.turn.notify_all();
     }
 }
 
