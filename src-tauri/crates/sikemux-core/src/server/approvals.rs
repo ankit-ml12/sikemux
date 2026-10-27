@@ -123,13 +123,12 @@ pub(crate) async fn propose(
     ))
 }
 
-/// Does what the person picked, answering what the agent is told. A typed answer turns the
-/// call down and passes their words on.
+/// Does what the person picked, answering what the agent is told was done. A typed answer
+/// turns the call down.
 pub(crate) async fn settle(
     core: &Arc<Core>,
     approval: &Approval,
     choice: Option<usize>,
-    answer: &str,
 ) -> Result<String, String> {
     let Gated { plugin, method, .. } = &approval.gated;
     match choice.and_then(|choice| approval.does.get(choice)) {
@@ -156,9 +155,6 @@ pub(crate) async fn settle(
             super::harness::answer_of(core, call, CORE_REPLY_TIMEOUT, late).await?;
             Ok("The person opened it in Sikemux to change it first; nothing is done until they save it there.".to_owned())
         }
-        Some(Does::Decline) => Ok("The person turned it down; nothing was done.".to_owned()),
-        None => Ok(format!(
-            "The person turned it down; nothing was done. They said: {answer}"
-        )),
+        Some(Does::Decline) | None => Ok("The person turned it down; nothing was done.".to_owned()),
     }
 }

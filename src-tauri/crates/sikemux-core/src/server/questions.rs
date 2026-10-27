@@ -1114,7 +1114,8 @@ pub(crate) async fn answer_all(core: &Arc<Core>, params: AnswersParams) -> Resul
         state.open.extend(questions);
         core.harness.questions.changed(&mut state);
     };
-    let mut letters: Vec<(Question, String)> = Vec::new();
+    // Each answer as the asker gets it, with what was done about it when that is not the answer itself.
+    let mut letters: Vec<(Question, String, Option<String>)> = Vec::new();
     for (question, given, text) in taken {
         if let Some(host) = &question.from_host {
             let params = serde_json::to_value(&given).map_err(|error| error.to_string())?;
@@ -1123,23 +1124,23 @@ pub(crate) async fn answer_all(core: &Arc<Core>, params: AnswersParams) -> Resul
         }
         let Some(text) = text else { continue };
         let told = match (&question.approval, question.secret) {
-            (Some(approval), _) => {
-                super::approvals::settle(core, approval, given.choice, &text).await
-            }
+            (Some(approval), _) => super::approvals::settle(core, approval, given.choice)
+                .await
+                .map(|done| (text, Some(done))),
             (None, true) => core
                 .harness
                 .questions
                 .keep_secret(&question, &text)
-                .map(|path| secret_note(&path)),
-            (None, false) => Ok(text),
+                .map(|path| (secret_note(&path), None)),
+            (None, false) => Ok((text, None)),
         };
         match told {
-            Ok(text) => letters.push((question, text)),
+            Ok((text, done)) => letters.push((question, text, done)),
             Err(error) => {
                 reopen(
                     letters
                         .into_iter()
-                        .map(|(question, _)| question)
+                        .map(|(question, ..)| question)
                         .chain([question])
                         .collect(),
                 );
@@ -1149,24 +1150,25 @@ pub(crate) async fn answer_all(core: &Arc<Core>, params: AnswersParams) -> Resul
     }
     let mut askers: Vec<&str> = letters
         .iter()
-        .map(|(question, _)| question.agent_id.as_str())
+        .map(|(question, ..)| question.agent_id.as_str())
         .collect();
     askers.sort_unstable();
     askers.dedup();
     let mut failed = None;
     for asker in askers {
-        let own: Vec<&(Question, String)> = letters
+        let own: Vec<&(Question, String, Option<String>)> = letters
             .iter()
-            .filter(|(question, _)| question.agent_id == asker)
+            .filter(|(question, ..)| question.agent_id == asker)
             .collect();
         let sent = own
             .iter()
-            .map(|(question, text)| {
-                let note = match &question.assumption {
-                    Some(assumption) => format!(
+            .map(|(question, text, done)| {
+                let note = match (done, &question.assumption) {
+                    (Some(done), _) => done.clone(),
+                    (None, Some(assumption)) => format!(
                         "The person answered the question you went on without. If that is not what you assumed ({assumption}), change course."
                     ),
-                    None => "The person answered the question you asked; go on with it.".to_owned(),
+                    (None, None) => "The person answered the question you asked; go on with it.".to_owned(),
                 };
                 (answered(question, &question.asked), text.clone(), note)
             })
@@ -1177,14 +1179,14 @@ pub(crate) async fn answer_all(core: &Arc<Core>, params: AnswersParams) -> Resul
             Err(error) => {
                 reopen(
                     own.into_iter()
-                        .map(|(question, _)| question.clone())
+                        .map(|(question, ..)| question.clone())
                         .collect(),
                 );
                 failed = Some(error);
                 continue;
             }
         }
-        for (question, text) in own {
+        for (question, text, _) in own {
             copy_to_lead(core, question, text).await;
         }
     }
