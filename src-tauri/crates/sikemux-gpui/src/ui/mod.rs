@@ -24,9 +24,10 @@ pub use dock::{DockMenu, DockRow, DockScope};
 pub use file_card::file_head;
 pub use find_bar::FindBar;
 pub use floats::{
-    card_tooltip, float, menu, menu_button, tooltip, MenuRow, FLOAT_INSET, PANEL_INSET,
+    card_tooltip, float, menu, menu_button, split_button, tooltip, MenuRow, SplitMenu, FLOAT_INSET,
+    PANEL_INSET,
 };
-pub use lists::{close_button, Group, Row, Tab, ROW};
+pub use lists::{close_button, page_tab, page_tabs, Group, Row, Tab, ROW};
 pub use pane::{pane, plain_pane, PaneHeader, AGENT_INSET};
 pub use select::{select, Pick};
 pub use state_mark::status_mark;

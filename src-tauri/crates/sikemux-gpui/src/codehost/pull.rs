@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use gpui_kit::base::Button as BaseButton;
+use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, AppContext, Context, Div, Entity, FontWeight, InteractiveElement,
@@ -461,16 +461,16 @@ fn page_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea
     let folding = (chosen == Section::Files)
         .then(|| fold_all(opened, cx))
         .flatten();
-    let tabs = strip(
+    let tabs = ui::page_tabs(
         sections.into_iter().map(|(section, glyph, label, mark)| {
-            tab(glyph, label, mark, chosen == section, cx).on_click(cx.listener(
-                move |area, _, _, cx| {
+            ui::page_tab("pull-tab", glyph, label, mark, chosen == section, cx).on_click(
+                cx.listener(move |area, _, _, cx| {
                     if let Some(opened) = &mut area.pull {
                         opened.section = section;
                     }
                     cx.notify();
-                },
-            ))
+                }),
+            )
         }),
         folding,
     );
@@ -574,7 +574,6 @@ fn merge_button(
     compact: bool,
     cx: &mut Context<HostArea>,
 ) -> AnyElement {
-    let t = Tokens::get(cx).clone();
     let blocked = !mergeable(view);
     let number = view.pull.number;
     let title = view.pull.title.clone();
@@ -595,98 +594,70 @@ fn merge_button(
     .to_owned();
     let (checking_out, _, can_check_out) = checkout_state(area, view);
     let off = opened.busy || blocked;
-    let merge = BaseButton::new("pull-merge")
-        .accessibility_label(says.clone())
-        .px(px(12.))
-        .h(px(28.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .gap(px(6.))
-        .text_size(crate::theme::ui_text(13.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.on_accent)
-        .when(!off, |button| {
-            button.on_click(cx.listener(move |area, _, _, cx| {
-                area.ask(
-                    super::Asking::new(
-                        format!("Merge #{number} into {base}?"),
-                        title.clone(),
-                        "Merge",
-                        false,
-                        |area, cx| area.merge(cx),
-                    ),
-                    cx,
-                );
-            }))
-        })
-        .child(ui::icon(Icon::Merge, 13.).text_color(t.on_accent))
-        .child(says);
-    let chevron = BaseButton::new("pull-merge-method-pill")
-        .accessibility_label("Merge method")
-        .w(px(28.))
-        .h(px(28.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .border_l_1()
-        .border_color(t.on_accent.opacity(0.25))
-        .child(
-            ui::icon(Icon::Chevron, 11.)
-                .with_transformation(gpui_kit::Transformation::rotate(gpui_kit::radians(
-                    std::f32::consts::FRAC_PI_2,
-                )))
-                .text_color(t.on_accent),
-        );
     let view = cx.entity().downgrade();
-    let picker = (methods.len() > 1 || compact).then(|| {
-        ui::menu_button(
-            "pull-merge-method",
-            gpui_kit::Anchor::BottomRight,
-            chevron,
-            move |mut popup, _, cx| {
+    let picked = view.clone();
+    let menu: Option<ui::SplitMenu> = (methods.len() > 1 || compact).then(|| {
+        std::rc::Rc::new(
+            move |mut popup: PopupMenu, _: &mut Window, cx: &mut Context<PopupMenu>| {
                 for (index, method) in methods.iter().enumerate() {
-                    let view = view.clone();
+                    let picked = picked.clone();
                     popup = popup.item(
                         ui::MenuRow::new(method_words(method).1.to_owned())
                             .item(cx)
                             .checked(index == chosen)
                             .on_click(move |_, _, cx| {
-                                view.update(cx, |area, cx| {
-                                    if let Some(opened) = &mut area.pull {
-                                        opened.method = index;
-                                    }
-                                    cx.notify();
-                                })
-                                .ok();
+                                picked
+                                    .update(cx, |area, cx| {
+                                        if let Some(opened) = &mut area.pull {
+                                            opened.method = index;
+                                        }
+                                        cx.notify();
+                                    })
+                                    .ok();
                             }),
                     );
                 }
                 if compact {
-                    let view = view.clone();
+                    let picked = picked.clone();
                     popup = popup.separator().item(
                         ui::MenuRow::new(checking_out)
                             .icon(Icon::Checkout)
                             .item(cx)
                             .disabled(!can_check_out)
                             .on_click(move |_, _, cx| {
-                                view.update(cx, |area, cx| area.checkout(cx)).ok();
+                                picked.update(cx, |area, cx| area.checkout(cx)).ok();
                             }),
                     );
                 }
                 popup
             },
-        )
+        ) as ui::SplitMenu
     });
-    div()
-        .flex()
-        .rounded(RADIUS_2)
-        .overflow_hidden()
-        .bg(t.accent)
-        .when(off, |button| button.opacity(0.5))
-        .child(merge)
-        .children(picker)
-        .into_any_element()
+    ui::split_button(
+        "pull-merge",
+        says,
+        Some(Icon::Merge),
+        off,
+        true,
+        move |_, _, cx| {
+            let (title, base) = (title.clone(), base.clone());
+            view.update(cx, |area, cx| {
+                area.ask(
+                    super::Asking::new(
+                        format!("Merge #{number} into {base}?"),
+                        title,
+                        "Merge",
+                        false,
+                        |area, cx| area.merge(cx),
+                    ),
+                    cx,
+                );
+            })
+            .ok();
+        },
+        menu,
+        cx,
+    )
 }
 
 /// What the reviews come to so far.
@@ -958,19 +929,6 @@ fn state_pill(state: PullState, cx: &App) -> Div {
         .child(word)
 }
 
-/// A row of tabs over a page, the chosen one underlined in ink, with what acts on the page
-/// at its end.
-fn strip(tabs: impl IntoIterator<Item = gpui_kit::Stateful<Div>>, end: Option<AnyElement>) -> Div {
-    div()
-        .flex_none()
-        .px(px(16.))
-        .flex()
-        .items_center()
-        .gap(px(18.))
-        .children(tabs)
-        .children(end.map(|end| div().ml_auto().child(end)))
-}
-
 /// Folds every changed file's diff to its header, or unfolds them all, while they show.
 fn fold_all(opened: &Opened, cx: &mut Context<HostArea>) -> Option<AnyElement> {
     let Some(Ok(diffs)) = &opened.files else {
@@ -994,38 +952,6 @@ fn fold_all(opened: &Opened, cx: &mut Context<HostArea>) -> Option<AnyElement> {
             }))
             .into_any_element(),
     )
-}
-
-/// One tab of a strip: its name, then how many it holds or how it stands.
-fn tab(
-    glyph: Icon,
-    label: &'static str,
-    mark: Option<AnyElement>,
-    on: bool,
-    cx: &App,
-) -> gpui_kit::Stateful<Div> {
-    let t = Tokens::get(cx).clone();
-    div()
-        .id(SharedString::from(format!("pull-tab-{label}")))
-        .h(px(34.))
-        .flex()
-        .items_center()
-        .gap(px(6.))
-        .border_b_2()
-        .border_color(if on {
-            t.text_primary
-        } else {
-            gpui_kit::transparent_black()
-        })
-        .text_size(crate::theme::ui_text(13.))
-        .text_color(if on { t.text_primary } else { t.text_secondary })
-        .cursor_pointer()
-        .when(!on, |tab| {
-            tab.hover(move |tab| tab.text_color(t.text_primary))
-        })
-        .child(ui::icon(glyph, 13.).text_color(if on { t.text_primary } else { t.text_tertiary }))
-        .child(label)
-        .children(mark)
 }
 
 /// A tab's count, quieter than its name.
