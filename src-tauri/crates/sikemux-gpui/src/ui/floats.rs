@@ -243,12 +243,9 @@ impl Render for CardTooltipView {
             .pt(px(10.))
             .pb(px(11.))
             .rounded(RADIUS_3)
-            .bg(t.surface_tooltip)
+            .bg(t.surface_overlay)
             .border_1()
-            .border_color(Hsla {
-                a: 0.72,
-                ..t.border_strong
-            })
+            .border_color(t.border)
             .shadow(t.shadow_float())
             .text_color(t.text_primary)
             .child((self.body)(cx))
