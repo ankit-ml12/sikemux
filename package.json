@@ -35,6 +35,7 @@
     "syntax:check": "node scripts/generate-syntax.mjs --check",
     "voice-models:generate": "node scripts/generate-voice-models.mjs",
     "agent-tools:report": "node scripts/report-agent-tools.mjs",
+    "eval:tools": "node evals/tools/run.mjs",
     "deps:audit": "node scripts/check-dependency-health.mjs",
     "audit:rust": "cargo audit --file src-tauri/Cargo.lock",
     "shell:lint": "shellcheck scripts/*.sh",

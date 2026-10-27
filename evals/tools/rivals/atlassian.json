@@ -1,0 +1,91 @@
+{
+  "name": "atlassian",
+  "instructions": "Atlassian Rovo MCP server for Jira and Confluence. Call getAccessibleAtlassianResources once to get the cloudId, then pass it to every tool.",
+  "tools": [
+    {
+      "name": "getAccessibleAtlassianResources",
+      "description": "Get the cloudId and URL of every Atlassian site the user can reach.",
+      "inputSchema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "getJiraIssue",
+      "description": "Get the details of a Jira issue by issue id or key.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "cloudId": { "type": "string" }, "issueIdOrKey": { "type": "string" }, "fields": { "type": "array", "items": { "type": "string" } } },
+        "required": ["cloudId", "issueIdOrKey"]
+      }
+    },
+    {
+      "name": "searchJiraIssuesUsingJql",
+      "description": "Search Jira issues with JQL.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "cloudId": { "type": "string" }, "jql": { "type": "string" }, "maxResults": { "type": "integer" } },
+        "required": ["cloudId", "jql"]
+      }
+    },
+    {
+      "name": "editJiraIssue",
+      "description": "Update the fields of a Jira issue, such as its summary or description.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "cloudId": { "type": "string" }, "issueIdOrKey": { "type": "string" }, "fields": { "type": "object" } },
+        "required": ["cloudId", "issueIdOrKey", "fields"]
+      }
+    },
+    {
+      "name": "addCommentToJiraIssue",
+      "description": "Add a comment to a Jira issue.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "cloudId": { "type": "string" }, "issueIdOrKey": { "type": "string" }, "commentBody": { "type": "string" } },
+        "required": ["cloudId", "issueIdOrKey", "commentBody"]
+      }
+    },
+    {
+      "name": "createJiraIssue",
+      "description": "Create a Jira issue in a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": { "type": "string" },
+          "projectKey": { "type": "string" },
+          "issueTypeName": { "type": "string" },
+          "summary": { "type": "string" },
+          "description": { "type": "string" },
+          "parent": { "type": "string" },
+          "assignee_account_id": { "type": "string" }
+        },
+        "required": ["cloudId", "projectKey", "issueTypeName", "summary"]
+      }
+    },
+    {
+      "name": "createIssueLink",
+      "description": "Link two Jira issues.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "cloudId": { "type": "string" }, "inwardIssue": { "type": "string" }, "outwardIssue": { "type": "string" }, "type": { "type": "string" } },
+        "required": ["cloudId", "inwardIssue", "outwardIssue", "type"]
+      }
+    },
+    {
+      "name": "getTransitionsForJiraIssue",
+      "description": "List the transitions a Jira issue can take.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "cloudId": { "type": "string" }, "issueIdOrKey": { "type": "string" } },
+        "required": ["cloudId", "issueIdOrKey"]
+      }
+    },
+    {
+      "name": "transitionJiraIssue",
+      "description": "Move a Jira issue to another status with a transition id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "cloudId": { "type": "string" }, "issueIdOrKey": { "type": "string" }, "transition": { "type": "object" } },
+        "required": ["cloudId", "issueIdOrKey", "transition"]
+      }
+    }
+  ]
+}

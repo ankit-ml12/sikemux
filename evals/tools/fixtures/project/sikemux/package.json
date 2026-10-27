@@ -1,0 +1,9 @@
+{
+  "name": "sikemux",
+  "private": true,
+  "scripts": {
+    "dev": "make dev",
+    "typecheck": "tsc --noEmit",
+    "showcase": "node scripts/showcase.mjs"
+  }
+}

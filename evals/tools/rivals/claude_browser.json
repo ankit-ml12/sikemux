@@ -1,0 +1,30 @@
+{
+  "name": "Claude_Browser",
+  "instructions": "Claude's built-in browser. preview_start opens a local dev server in a preview pane; navigate, computer and screenshot drive it.",
+  "tools": [
+    {
+      "name": "preview_start",
+      "description": "Start a preview of a local web app on a port and open it.",
+      "inputSchema": { "type": "object", "properties": { "port": { "type": "integer" }, "path": { "type": "string" } }, "required": ["port"] }
+    },
+    {
+      "name": "navigate",
+      "description": "Navigate the browser to a URL.",
+      "inputSchema": { "type": "object", "properties": { "url": { "type": "string" } }, "required": ["url"] }
+    },
+    {
+      "name": "computer",
+      "description": "Click, type, scroll or press keys in the browser.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "action": { "type": "string" }, "coordinate": { "type": "array", "items": { "type": "number" } }, "text": { "type": "string" } },
+        "required": ["action"]
+      }
+    },
+    {
+      "name": "screenshot",
+      "description": "Take a screenshot of the browser.",
+      "inputSchema": { "type": "object", "properties": {} }
+    }
+  ]
+}
