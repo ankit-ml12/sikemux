@@ -237,6 +237,7 @@ fn greeting(
     div()
         .flex()
         .items_center()
+        .justify_center()
         .gap(px(12.))
         .child(div().flex().child(match agent {
             Some(agent) => ui::agent_mark(agent, 32., cx),
