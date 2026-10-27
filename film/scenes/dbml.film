@@ -1,0 +1,70 @@
+# The DBML viewer in one take: Claude answers with a ```dbml block that draws itself as a
+# diagram in the chat, then the schema file opens full size to be pinched, dragged and panned.
+replies replies.json
+project shop shop
+chat Wren
+settle 6
+cursor 1200,700
+record
+wait 0.2
+zoom 760,800 1.9 0.8 &
+move 600,768 0.8
+click
+type "draw the shop's schema so I can see how orders connect" 26
+key enter
+hold 0.5
+zoom 760,520 1.25 0.8 &
+wait 6.5
+move 318,600 0.6
+scroll 220 0.8
+zoom 360,230,760,480 0.8 &
+move 696,552 0.8
+wait 0.8
+still card-hover
+move 712,598 0.4
+wait 0.8
+still card-tip
+move 760,560 0.4
+pinch 1.45 0.8
+pan -120,-60 0.8
+wait 0.3
+still card-pinched
+zoom out 0.7 &
+key cmd-p
+wait 0.4
+type "schema" 20
+wait 0.3
+key enter
+hold 1
+wait 0.6
+still opened
+zoom 310,330,860,300 0.9 &
+move 850,452 1.0
+wait 0.7
+still hover-orders
+pinch 1.9 0.8
+wait 0.3
+zoom 700,380,500,320 0.8 &
+move 861,494 0.5
+wait 0.9
+still column-tip
+zoom 300,180,900,680 0.8 &
+move 578,582 0.7
+drag 600,700 0.8
+wait 0.3
+still dragged
+click 1155,827
+wait 0.7
+still arranged
+move 640,470 0.6
+pinch 1.7 0.8
+pan -300,-60 1.0
+pan 220,40 0.8
+wait 0.2
+still panned
+click 1111,827
+wait 0.6
+still fitted
+zoom out 0.8 &
+move 1300,700 0.8
+end 1.6
