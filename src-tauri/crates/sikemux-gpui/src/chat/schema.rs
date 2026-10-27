@@ -8,19 +8,20 @@ use std::sync::Arc;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, AppContext, Div, ElementId, Entity, Hsla, InteractiveElement,
-    IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
+    IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    WeakEntity, Window,
 };
 use gpui_transcript::{Fence, Fences};
 
 use crate::editor::diagram::Diagram;
-use crate::editor::OpenAt;
 use crate::theme::{self, Tokens};
+use crate::workbench::Workbench;
 
-/// Draws the chat's ```dbml blocks.
-pub(super) fn fences() -> Fences {
+/// Draws the ```dbml blocks of `agent`'s chat.
+pub(super) fn fences(bench: WeakEntity<Workbench>, agent: String) -> Fences {
     Fences {
         langs: Rc::from(["dbml"]),
-        draw: Rc::new(block),
+        draw: Rc::new(move |fence, window, cx| block(fence, &bench, &agent, window, cx)),
     }
 }
 
@@ -32,7 +33,13 @@ struct Block {
     source: bool,
 }
 
-fn block(fence: Fence, window: &mut Window, cx: &mut App) -> AnyElement {
+fn block(
+    fence: Fence,
+    bench: &WeakEntity<Workbench>,
+    agent: &str,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
     let key = ElementId::NamedChild(Arc::new(fence.id.clone()), "dbml".into());
     let code = fence.code.clone();
     let block = window.use_keyed_state(key, cx, |_, cx| Block {
@@ -73,13 +80,15 @@ fn block(fence: Fence, window: &mut Window, cx: &mut App) -> AnyElement {
             .child(label)
     };
     let open = {
-        let code = fence.code.clone();
+        let (code, bench, agent) = (fence.code.clone(), bench.clone(), agent.to_owned());
         chip("dbml-open")
             .text_color(t.text_disabled)
             .hover(|open| open.bg(t.surface_hover).text_color(t.text_primary))
-            .tooltip(crate::ui::tooltip("Open in an editor tab"))
-            .on_click(move |_, window, cx| open_in_editor(&code, window, cx))
-            .child("Open")
+            .tooltip(crate::ui::tooltip(
+                "Open on the desk, with room to spread out",
+            ))
+            .on_click(move |_, _, cx| open_on_desk(&code, &bench, &agent, cx))
+            .child("Open on desk")
     };
     let title = div()
         .h(px(23.))
@@ -133,9 +142,9 @@ fn chip(id: &'static str) -> Stateful<Div> {
         .cursor_pointer()
 }
 
-/// Writes the schema to a file of its own and opens it in the editor, where it has the
-/// whole tab to spread out in and its text can be edited.
-fn open_in_editor(code: &SharedString, window: &mut Window, cx: &mut App) {
+/// Writes the schema to a file of its own and opens it on the agent's desk, where it has
+/// room to spread out and its text can be edited.
+fn open_on_desk(code: &SharedString, bench: &WeakEntity<Workbench>, agent: &str, cx: &mut App) {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     code.hash(&mut hasher);
     let folder = std::env::temp_dir().join("sikemux-schemas");
@@ -144,10 +153,8 @@ fn open_in_editor(code: &SharedString, window: &mut Window, cx: &mut App) {
     if written.is_err() {
         return;
     }
-    let at = OpenAt {
-        path,
-        line: 0,
-        column: None,
-    };
-    window.dispatch_action(Box::new(at), cx);
+    let _ = bench.update(cx, |bench, cx| {
+        bench.open_file_on_desk(agent, path, None, None);
+        bench.parts.redraw(&bench.parts.stage, cx);
+    });
 }

@@ -1524,7 +1524,9 @@ fn place_cursor(
     let Some(document) = bench.editors.open.get_mut(key) else {
         return;
     };
-    document.mode = preview::Mode::Source;
+    if at.line > 0 || at.column.is_some() {
+        document.mode = preview::Mode::Source;
+    }
     document.state.update(cx, |state, cx| {
         let column = at.column.unwrap_or_else(|| {
             let text = state.value();
@@ -1578,7 +1580,12 @@ fn show_rendered(document: &mut Document, key: &FileKey, text: &str, cx: &mut Co
                     line,
                     column: None,
                 };
-                let _ = bench.update(cx, |bench, cx| place_cursor(bench, &key, &at, window, cx));
+                let _ = bench.update(cx, |bench, cx| {
+                    if let Some(document) = bench.editors.open.get_mut(&key) {
+                        document.mode = preview::Mode::Source;
+                    }
+                    place_cursor(bench, &key, &at, window, cx)
+                });
             });
             let diagram = cx.new(|_| diagram::Diagram::new(text, open));
             document.rendered = Some(Rendered::Diagram(diagram));

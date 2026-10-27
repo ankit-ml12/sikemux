@@ -590,18 +590,35 @@ impl Render for Diagram {
                     )
                     .child(div().w(px(1.)).h(px(14.)).mx(px(3.)).bg(t.border))
                     .child(
-                        IconButton::new("diagram-fit", Icon::Focus, "Fit to view")
-                            .compact()
+                        text_button("diagram-fit", "Fit", "Show every table", &t)
                             .on_click(cx.listener(|diagram, _, _, cx| diagram.fit(cx))),
                     )
                     .child(
-                        IconButton::new("diagram-arrange", Icon::Workflow, "Arrange tables")
-                            .compact()
+                        text_button("diagram-arrange", "Arrange", "Lay the tables out again", &t)
                             .on_click(cx.listener(|diagram, _, _, cx| diagram.rearrange(cx))),
                     ),
             )
             .into_any_element()
     }
+}
+
+fn text_button(
+    id: &'static str,
+    label: &'static str,
+    tip: &'static str,
+    t: &Tokens,
+) -> gpui_kit::Stateful<gpui_kit::Div> {
+    div()
+        .id(id)
+        .px(px(8.))
+        .h(px(24.))
+        .flex()
+        .items_center()
+        .rounded(theme::RADIUS_2)
+        .cursor_pointer()
+        .hover(|button| button.bg(t.surface_hover).text_color(t.text_primary))
+        .tooltip(crate::ui::tooltip(tip))
+        .child(label)
 }
 
 /// Hears the pointer over the canvas `hitbox`: dragging pans or moves a table, scrolling
