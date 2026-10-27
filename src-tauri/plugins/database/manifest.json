@@ -37,7 +37,7 @@
       "properties": {
         "database": {
           "type": "string",
-          "description": "A saved database's name, from db_databases."
+          "description": "A saved database's name, from db_databases. A PostgreSQL server saved without a database holds every database on it: name one as <server>/<database>."
         },
         "schema": {
           "type": "string",

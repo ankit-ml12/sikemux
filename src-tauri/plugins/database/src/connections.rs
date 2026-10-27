@@ -110,7 +110,7 @@ impl Pool {
         let dir = data_dir.to_path_buf();
         let wanted = id.to_string();
         let (profile, password) = profiles::blocking(move || {
-            let profile = profiles::load(&dir)?.get(&wanted)?.clone();
+            let profile = profiles::load(&dir)?.open(&wanted)?;
             let password = profiles::saved_password(&profile)?;
             Ok((profile, password))
         })
@@ -177,13 +177,15 @@ impl Pool {
         })
     }
 
-    /// Closes the person's and the agents' connections, as after the profile is edited or removed.
+    /// Closes the person's and the agents' connections, and those to each database on it, as after
+    /// the profile is edited or removed.
     pub async fn forget(&self, id: &str) {
-        self.open.lock().await.retain(|(kept, _), _| kept != id);
+        let other = |kept: &String| kept != id && profiles::split_id(kept).0 != id;
+        self.open.lock().await.retain(|(kept, _), _| other(kept));
         self.lanes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .retain(|(kept, _), _| kept != id);
+            .retain(|(kept, _), _| other(kept));
     }
 
     pub async fn connected(&self) -> Vec<Connected> {

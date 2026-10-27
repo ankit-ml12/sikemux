@@ -60,11 +60,9 @@ pub async fn explorer_view(
         .into_iter()
         .map(|each| (each.id, each.version))
         .collect();
-    let connections = saved.iter().map(|profile| {
-        let version = connected.get(&profile.id).cloned();
-        let opened = ask.open.iter().find(|opened| opened.id == profile.id);
-        connection(pool, &data_dir, profile, version, opened)
-    });
+    let connections = saved
+        .iter()
+        .map(|profile| connection(pool, &data_dir, profile, &connected, &ask.open));
     Ok(Explorer {
         connections: join_all(connections).await,
     })
@@ -74,16 +72,25 @@ async fn connection(
     pool: &Pool,
     data_dir: &Path,
     profile: &Profile,
-    version: Option<String>,
-    opened: Option<&Opened>,
+    connected: &HashMap<String, String>,
+    open: &[Opened],
 ) -> Connection {
-    let (schemas, failed) = match (&version, opened) {
-        (Some(_), Some(opened)) => match schemas(pool, data_dir, profile, opened).await {
-            Ok(schemas) => (Some(schemas), None),
-            Err(error) => (None, Some(error.to_string())),
-        },
-        _ => (None, None),
+    let version = connected.get(&profile.id).cloned();
+    let opened = open.iter().find(|opened| opened.id == profile.id);
+    let (mut schemas, mut databases) = (None, None);
+    let read = match (&version, opened) {
+        (None, _) => Ok(()),
+        (Some(_), _) if whole_server(profile) => {
+            databases_on(pool, data_dir, profile, connected, open)
+                .await
+                .map(|each| databases = Some(each))
+        }
+        (Some(_), Some(opened)) => schemas_of(pool, data_dir, profile, opened)
+            .await
+            .map(|each| schemas = Some(each)),
+        (Some(_), None) => Ok(()),
     };
+    let failed = read.err().map(|error| error.to_string());
     Connection {
         id: profile.id.clone(),
         name: profile.name.clone(),
@@ -95,11 +102,40 @@ async fn connection(
         connected: version,
         default_schema: default_schema(&profile.target),
         schemas,
+        databases,
         failed,
     }
 }
 
-async fn schemas(
+/// A PostgreSQL server saved without a database, which the explorer shows every database of.
+fn whole_server(profile: &Profile) -> bool {
+    matches!(&profile.target, Target::Postgres(server) if server.database.is_empty())
+}
+
+/// Each database on the server, as a connection of its own.
+async fn databases_on(
+    pool: &Pool,
+    data_dir: &Path,
+    profile: &Profile,
+    connected: &HashMap<String, String>,
+    open: &[Opened],
+) -> DatabaseResult<Vec<Connection>> {
+    let session = pool.session(data_dir, &profile.id, Access::Browse).await?;
+    let saved = profiles::blocking({
+        let data_dir = data_dir.to_path_buf();
+        move || profiles::load(&data_dir)
+    })
+    .await?;
+    let mut each = Vec::new();
+    for name in session.databases().await? {
+        let mut database = saved.open(&format!("{}/{name}", profile.id))?;
+        database.name = name;
+        each.push(Box::pin(connection(pool, data_dir, &database, connected, open)).await);
+    }
+    Ok(each)
+}
+
+async fn schemas_of(
     pool: &Pool,
     data_dir: &Path,
     profile: &Profile,
@@ -189,7 +225,7 @@ pub async fn table_view(
     let saved = profiles::blocking({
         let data_dir = data_dir.clone();
         let id = ask.id.clone();
-        move || Ok(profiles::load(&data_dir)?.get(&id)?.clone())
+        move || profiles::load(&data_dir)?.open(&id)
     })
     .await?;
     let info = pool
@@ -311,6 +347,7 @@ fn address(target: &Target) -> String {
 
 fn default_schema(target: &Target) -> String {
     match target {
+        Target::Postgres(server) if server.database.is_empty() => String::new(),
         Target::Postgres(_) => "public".into(),
         Target::Mysql(server) => server.database.clone(),
         Target::Sqlite { .. } => "main".into(),
@@ -328,7 +365,7 @@ fn facts(profile: &Profile, connected: Option<&str>) -> Vec<Fact> {
         Target::Postgres(server) | Target::Mysql(server) => {
             let port = server.port.unwrap_or(default_port(&profile.target));
             let database = match server.database.is_empty() {
-                true => server.user.clone(),
+                true => "All databases".into(),
                 false => server.database.clone(),
             };
             let password = match profile.has_password {

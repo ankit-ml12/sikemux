@@ -46,6 +46,9 @@ pub struct Connection {
     pub facts: Vec<Fact>,
     /// Its schemas, while it is connected and open in the explorer.
     pub schemas: Option<Vec<Schema>>,
+    /// Each database on a PostgreSQL server saved without one, as a connection of its own, while
+    /// it is connected and open in the explorer.
+    pub databases: Option<Vec<Connection>>,
     /// Why its schemas could not be read.
     pub failed: Option<String>,
 }

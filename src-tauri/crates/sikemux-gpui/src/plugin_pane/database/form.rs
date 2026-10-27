@@ -163,6 +163,37 @@ impl Form {
         form
     }
 
+    /// Picks another engine, moving the port and user to its usual ones unless they were typed.
+    fn switch(&mut self, engine: Engine, window: &mut Window, cx: &mut App) {
+        let choice = |engine: Engine| {
+            self.choices
+                .engines
+                .iter()
+                .find(|each| each.engine == engine)
+                .cloned()
+        };
+        if let (Some(was), Some(now)) = (choice(self.engine), choice(engine)) {
+            let port = |choice: &sikemux_wire::database::EngineChoice| {
+                choice.default_port.map(|port| port.to_string())
+            };
+            for (input, was, now) in [
+                (&self.port, port(&was), port(&now)),
+                (&self.user, Some(was.user_hint), Some(now.user_hint)),
+            ] {
+                let typed = input.read(cx).value().to_string();
+                let (Some(was), Some(now)) = (was, now) else {
+                    continue;
+                };
+                if (typed.is_empty() || typed == was) && !now.is_empty() {
+                    input.update(cx, |input, cx| input.set_value(now, window, cx));
+                }
+            }
+        }
+        self.engine = engine;
+        self.said = None;
+        self.hint(window, cx);
+    }
+
     /// The fields' hints for the engine picked.
     fn hint(&self, window: &mut Window, cx: &mut App) {
         let Some(engine) = self
@@ -467,9 +498,7 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                     move |database, _, _, window, cx| {
                         if let Some(form) = &mut database.form {
                             if form.engine != engine {
-                                form.engine = engine;
-                                form.said = None;
-                                form.hint(window, cx);
+                                form.switch(engine, window, cx);
                             }
                         }
                         cx.notify();

@@ -91,8 +91,17 @@ pub fn databases(data_dir: &Path) -> DatabaseResult<Vec<AgentDatabase>> {
         .collect())
 }
 
+/// The saved database an agent names, or `<server>/<database>` for one database on a saved server
+/// that names none.
 fn id_of(data_dir: &Path, database: &str) -> DatabaseResult<String> {
-    Ok(profiles::load(data_dir)?.find(database)?.id.clone())
+    let saved = profiles::load(data_dir)?;
+    let found = saved.find(database);
+    let (Err(_), Some((server, name))) = (&found, database.split_once('/')) else {
+        return Ok(found?.id.clone());
+    };
+    let id = format!("{}/{name}", saved.find(server)?.id);
+    saved.open(&id)?;
+    Ok(id)
 }
 
 pub async fn tables(

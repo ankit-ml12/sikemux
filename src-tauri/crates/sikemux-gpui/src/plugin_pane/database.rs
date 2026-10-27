@@ -431,7 +431,7 @@ impl Database {
             .unwrap_or_default();
         let mut rows = Vec::new();
         for connection in &explorer.connections {
-            self.connection_rows(connection, &words, &mut rows, cx);
+            self.connection_rows(connection, &words, false, &mut rows, cx);
         }
         let head = div()
             .h(px(32.))
@@ -491,10 +491,13 @@ impl Database {
             .into_any_element()
     }
 
+    /// The connection's row and, while it is open, its schemas or, on a whole server, its
+    /// databases.
     fn connection_rows(
         &self,
         connection: &Connection,
         words: &str,
+        nested: bool,
         rows: &mut Vec<AnyElement>,
         cx: &mut Context<PluginPane>,
     ) {
@@ -509,10 +512,9 @@ impl Database {
         };
         let count = open
             .then(|| {
-                connection
-                    .schemas
-                    .as_ref()
-                    .map(|schemas| schemas.len().to_string())
+                (connection.schemas.as_ref().map(Vec::len))
+                    .or(connection.databases.as_ref().map(Vec::len))
+                    .map(|count| count.to_string())
             })
             .flatten();
         let picked = connection.clone();
@@ -541,7 +543,7 @@ impl Database {
                 cx.notify();
             },
         ))
-        .context_menu(ui::menu(connection_menu(connection, cx.weak_entity())));
+        .context_menu(ui::menu(connection_menu(connection, nested, cx.weak_entity())));
         rows.push(row.into_any_element());
         if let Some(failed) = self.failed.get(&id) {
             rows.push(note(1, failed.clone(), true, &t));
@@ -549,14 +551,24 @@ impl Database {
         if !open {
             return;
         }
-        match (&connection.failed, &connection.schemas) {
-            (Some(failed), _) => rows.push(note(1, failed.clone().into(), true, &t)),
-            (None, None) => rows.push(note(1, "Loading schemas…".into(), false, &t)),
-            (None, Some(schemas)) => {
+        match (&connection.failed, &connection.schemas, &connection.databases) {
+            (Some(failed), _, _) => rows.push(note(1, failed.clone().into(), true, &t)),
+            (None, Some(schemas), _) => {
                 for schema in schemas {
                     self.schema_rows(&id, schema, words, rows, cx);
                 }
             }
+            (None, None, Some(databases)) => {
+                let mut nested = Vec::new();
+                for database in databases {
+                    self.connection_rows(database, words, true, &mut nested, cx);
+                }
+                rows.extend(
+                    (nested.into_iter())
+                        .map(|row| div().pl(px(14.)).child(row).into_any_element()),
+                );
+            }
+            (None, None, None) => rows.push(note(1, "Loading…".into(), false, &t)),
         }
     }
 
@@ -797,10 +809,7 @@ impl Database {
     fn strip(&self, explorer: &Explorer, cx: &mut Context<PluginPane>) -> AnyElement {
         let t = Tokens::get(cx).clone();
         let name_of = |id: &str| {
-            explorer
-                .connections
-                .iter()
-                .find(|connection| connection.id == id)
+            connection_of(&explorer.connections, id)
                 .map_or("removed".to_owned(), |connection| connection.name.clone())
         };
         div()
@@ -851,11 +860,7 @@ impl Database {
                 cx,
             );
         };
-        let Some(connection) = explorer
-            .connections
-            .iter()
-            .find(|connection| connection.id == tab.connection())
-        else {
+        let Some(connection) = connection_of(&explorer.connections, tab.connection()) else {
             return super::empty("This connection was removed.", cx);
         };
         match &tab {
@@ -1377,8 +1382,18 @@ fn note(depth: usize, text: SharedString, error: bool, t: &Tokens) -> AnyElement
         .into_any_element()
 }
 
+/// The connection `id` names, or a database on a whole server.
+fn connection_of<'a>(connections: &'a [Connection], id: &str) -> Option<&'a Connection> {
+    connections.iter().find_map(|connection| match connection.id == id {
+        true => Some(connection),
+        false => connection_of(connection.databases.as_deref().unwrap_or_default(), id),
+    })
+}
+
+/// A connection's menu; a database on a whole server is edited with the server.
 fn connection_menu(
     connection: &Connection,
+    nested: bool,
     pane: WeakEntity<PluginPane>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
     let connection = connection.clone();
@@ -1437,13 +1452,15 @@ fn connection_menu(
                         })
                     })),
             )
-            .item(
-                PopupMenuItem::new("Edit connection…")
-                    .icon(Icon::Pencil)
-                    .on_click(on(&pane, move |database, host, _, cx| {
-                        form::open(database, host, Some(editing.clone()), cx)
-                    })),
-            )
+            .when(!nested, |popup| {
+                popup.item(
+                    PopupMenuItem::new("Edit connection…")
+                        .icon(Icon::Pencil)
+                        .on_click(on(&pane, move |database, host, _, cx| {
+                            form::open(database, host, Some(editing.clone()), cx)
+                        })),
+                )
+            })
             .item(copy_item(
                 "Copy name",
                 connection.name.clone(),

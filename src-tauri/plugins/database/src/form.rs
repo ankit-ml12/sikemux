@@ -101,15 +101,9 @@ fn engines() -> Vec<EngineChoice> {
             "PostgreSQL",
             POSTGRES_PORT,
             "postgres",
-            "Same as the user name",
+            "All databases",
         ),
-        server(
-            Engine::Mysql,
-            "MySQL",
-            MYSQL_PORT,
-            "root",
-            "Optional; pick a schema once connected",
-        ),
+        server(Engine::Mysql, "MySQL", MYSQL_PORT, "root", "All databases"),
         EngineChoice {
             engine: Engine::Sqlite,
             label: "SQLite".into(),
@@ -122,16 +116,17 @@ fn engines() -> Vec<EngineChoice> {
     ]
 }
 
-/// A new PostgreSQL connection on this host, encrypted when the server offers it.
+/// A new PostgreSQL connection to every database on this host, as its usual user on its usual
+/// port, encrypted when the server offers it.
 fn blank() -> ProfileDraft {
     ProfileDraft {
         id: None,
         name: String::new(),
         engine: Engine::Postgres,
         host: "localhost".into(),
-        port: String::new(),
+        port: POSTGRES_PORT.to_string(),
         database: String::new(),
-        user: String::new(),
+        user: "postgres".into(),
         tls: "prefer".into(),
         path: String::new(),
         read_only: false,
@@ -211,7 +206,7 @@ pub fn from_url(ask: UrlAsk) -> DatabaseResult<FromUrl> {
     let (user, password) = match login.map(|login| login.split_once(':')) {
         Some(Some((user, password))) => (decoded(user), Some(decoded(password))),
         Some(None) => (decoded(login.unwrap_or_default()), None),
-        None => (String::new(), None),
+        None => (profile.user.clone(), None),
     };
     let (host, port) = match address.strip_prefix('[') {
         Some(bracketed) => {
@@ -224,7 +219,11 @@ pub fn from_url(ask: UrlAsk) -> DatabaseResult<FromUrl> {
         return Err(DatabaseError::BadArg("The URL names no host.".into()));
     }
     profile.host = decoded(host);
-    profile.port = port.into();
+    profile.port = match (port, engine) {
+        ("", Engine::Mysql) => MYSQL_PORT.to_string(),
+        ("", _) => POSTGRES_PORT.to_string(),
+        (port, _) => port.into(),
+    };
     profile.user = user;
     profile.database = decoded(database.trim_end_matches('/'));
     for (key, value) in query.split('&').filter_map(|pair| pair.split_once('=')) {
@@ -351,6 +350,7 @@ mod tests {
         ProfileDraft {
             name: "Shop".into(),
             host: "db.internal".into(),
+            port: String::new(),
             database: "shop".into(),
             user: "app".into(),
             ..blank()

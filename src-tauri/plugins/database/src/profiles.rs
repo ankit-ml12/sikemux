@@ -150,7 +150,38 @@ pub struct Profiles {
     pub profiles: Vec<Profile>,
 }
 
+/// A saved server that names no database holds every database on it, each reached as
+/// `<server id>/<database>`.
+pub fn split_id(id: &str) -> (&str, Option<&str>) {
+    match id.split_once('/') {
+        Some((server, database)) => (server, Some(database)),
+        None => (id, None),
+    }
+}
+
 impl Profiles {
+    /// The saved database `id` names, or one database on a saved server that names none.
+    pub fn open(&self, id: &str) -> DatabaseResult<Profile> {
+        let (server_id, database) = split_id(id);
+        let mut profile = self.get(server_id)?.clone();
+        let Some(database) = database else {
+            return Ok(profile);
+        };
+        match &mut profile.target {
+            Target::Postgres(server) if server.database.is_empty() => {
+                server.database = database.into();
+            }
+            _ => {
+                return Err(DatabaseError::NotFound(format!(
+                    "no saved database with id {id}"
+                )))
+            }
+        }
+        profile.name = format!("{}/{database}", profile.name);
+        profile.id = id.into();
+        Ok(profile)
+    }
+
     pub fn get(&self, id: &str) -> DatabaseResult<&Profile> {
         self.profiles
             .iter()
@@ -363,7 +394,7 @@ pub fn password_read(id: &str) -> DatabaseResult<Option<String>> {
 
 pub fn saved_password(profile: &Profile) -> DatabaseResult<Option<String>> {
     if profile.has_password {
-        password_read(&profile.id)
+        password_read(split_id(&profile.id).0)
     } else {
         Ok(None)
     }

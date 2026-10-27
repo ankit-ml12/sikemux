@@ -54,14 +54,20 @@ pub fn now_millis() -> u64 {
         })
 }
 
+/// A database on a saved server keeps its runs beside the server's, its name written in hex.
 fn file(data_dir: &Path, id: &str) -> DatabaseResult<PathBuf> {
+    let (id, database) = crate::profiles::split_id(id);
     let safe = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !safe {
         return Err(DatabaseError::BadArg(format!(
             "{id} is not a saved database's id"
         )));
     }
-    Ok(data_dir.join("history").join(format!("{id}.jsonl")))
+    let name = match database {
+        Some(database) => format!("{id}.{}.jsonl", hex::encode(database)),
+        None => format!("{id}.jsonl"),
+    };
+    Ok(data_dir.join("history").join(name))
 }
 
 /// Oldest first, as the file holds them. A line that does not parse is skipped rather than losing the rest.
@@ -137,6 +143,21 @@ pub fn clear(data_dir: &Path, id: &str) -> DatabaseResult<()> {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
         _ => Ok(()),
     }
+}
+
+/// Forgets the runs of a removed server and of every database on it.
+pub fn forget(data_dir: &Path, id: &str) -> DatabaseResult<()> {
+    clear(data_dir, id)?;
+    let Ok(kept) = std::fs::read_dir(data_dir.join("history")) else {
+        return Ok(());
+    };
+    let prefix = format!("{id}.");
+    for file in kept.flatten() {
+        if file.file_name().to_string_lossy().starts_with(&prefix) {
+            std::fs::remove_file(file.path())?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

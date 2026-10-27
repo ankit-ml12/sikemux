@@ -53,6 +53,10 @@ fn query_error(error: tokio_postgres::Error) -> DatabaseError {
     DatabaseError::Query(describe(&error))
 }
 
+const DATABASES: &str = "select datname::text from pg_database \
+     where datallowconn and not datistemplate and has_database_privilege(datname, 'CONNECT') \
+     order by datname";
+
 const SCHEMAS: &str = "select nspname::text from pg_namespace \
      where nspname not in ('pg_catalog', 'information_schema', 'pg_toast') \
        and nspname not like 'pg_temp_%' and nspname not like 'pg_toast_temp_%' \
@@ -255,9 +259,10 @@ impl Session {
             .application_name("Sikemux")
             .connect_timeout(CONNECT_TIMEOUT)
             .ssl_mode(ssl_mode(address.tls));
-        if !address.database.is_empty() {
-            config.dbname(&address.database);
-        }
+        config.dbname(match address.database.is_empty() {
+            true => "postgres",
+            false => &address.database,
+        });
         if let Some(password) = password.filter(|password| !password.is_empty()) {
             config.password(password);
         }
@@ -386,6 +391,15 @@ impl Session {
             .cancel_query(connector)
             .await
             .map_err(|error| DatabaseError::Connect(describe(&error)))
+    }
+
+    pub async fn databases(&self) -> DatabaseResult<Vec<String>> {
+        let rows = self
+            .client
+            .query(DATABASES, &[])
+            .await
+            .map_err(query_error)?;
+        Ok(rows.iter().map(|row| row.get(0)).collect())
     }
 
     /// The schemas this user may look into, `public` first.

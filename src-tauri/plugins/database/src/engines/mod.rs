@@ -89,6 +89,14 @@ impl Session {
         }
     }
 
+    /// The databases on a PostgreSQL server this user may connect to; the others hold one each.
+    pub async fn databases(&self) -> DatabaseResult<Vec<String>> {
+        match self {
+            Self::Postgres(session) => session.databases().await,
+            Self::Mysql(_) | Self::Sqlite(_) => Ok(Vec::new()),
+        }
+    }
+
     pub async fn schemas(&self) -> DatabaseResult<Vec<String>> {
         match self {
             Self::Mysql(session) => session.schemas().await,

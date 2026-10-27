@@ -76,7 +76,7 @@ impl Plugin for Database {
                     self.pool.forget(&id).await;
                     answer(profiles::blocking(move || {
                         profiles::remove(&data_dir, &id)?;
-                        history::clear(&data_dir, &id)
+                        history::forget(&data_dir, &id)
                     }))
                     .await
                 }
@@ -103,7 +103,7 @@ impl Plugin for Database {
                     let outcome =
                         queries::run(&self.pool, &data_dir, request, history::Source::Person)
                             .await?;
-                    let saved = profiles::load(&data_dir)?.get(&id)?.clone();
+                    let saved = profiles::load(&data_dir)?.open(&id)?;
                     let ran = results::Ran {
                         database: &saved.name,
                         engine: views::engine_name(&saved.target),
