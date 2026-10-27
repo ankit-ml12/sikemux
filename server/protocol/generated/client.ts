@@ -24,9 +24,15 @@ import type {
   PendingHost,
   PushTokenRegistration,
   PushTokenState,
+  StashAdd,
+  StashItem,
+  StashList,
+  StashListCursor,
+  StashTaken,
+  StashUpdate,
 } from "./types.ts";
 
-export type Method = "GET" | "POST" | "PUT" | "DELETE";
+export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /** Makes one request and answers its JSON body, or nothing for a route that answers none. */
 export type Send = <Answer>(
@@ -119,6 +125,20 @@ export function apiClient(send: Send) {
     restoreAccount: () => send<Account>("POST", `/v1/account/restore`),
     /** The name, email and picture of the account a host is on. */
     getAccountProfile: () => send<AccountProfile>("GET", `/v1/account/profile`),
+    /** Stash a link, text or file on your account. */
+    addStash: (body: StashAdd) => send<StashItem>("POST", `/v1/stash`, body),
+    /** Your stash, newest first. */
+    listStash: (query: { taken?: StashTaken; cursor?: StashListCursor } = {}) =>
+      send<StashList>("GET", `/v1/stash${search(query)}`),
+    /** One stashed item. */
+    getStash: (id: string) =>
+      send<StashItem>("GET", `/v1/stash/${encodeURIComponent(id)}`),
+    /** Change an item's note, or mark it taken. */
+    updateStash: (id: string, body: StashUpdate) =>
+      send<StashItem>("PATCH", `/v1/stash/${encodeURIComponent(id)}`, body),
+    /** Delete a stashed item and its file. */
+    deleteStash: (id: string) =>
+      send<void>("DELETE", `/v1/stash/${encodeURIComponent(id)}`),
   };
 }
 

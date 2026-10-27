@@ -1,0 +1,13 @@
+{
+  "description": "A stash request signed by a phone whose secret is 32 bytes of 7. The server and the phone check it. The header is `Authorization: SikemuxDevice <key>.<time>.<signature>`.",
+  "secretKey": "0707070707070707070707070707070707070707070707070707070707070707",
+  "key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "method": "POST",
+  "path": "/v1/stash",
+  "time": 1760000000,
+  "body": "{\"kind\":\"link\",\"url\":\"https://example.com/post\"}",
+  "bodySha256": "9f54e204ff0668a10f9dcb733ff309505f0eb0ff325b659022e30dafd54089ad",
+  "message": "sikemux-device-request|POST|/v1/stash|1760000000|9f54e204ff0668a10f9dcb733ff309505f0eb0ff325b659022e30dafd54089ad",
+  "signature": "34a029ecbdd056ad198636ce0507a61f02494fce710d48fa22fcb241e24173aec065a52605742d817ba3cad5ef937ce14f05486ee1ed08dd3051dc8133707c01",
+  "authorization": "SikemuxDevice ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c.1760000000.34a029ecbdd056ad198636ce0507a61f02494fce710d48fa22fcb241e24173aec065a52605742d817ba3cad5ef937ce14f05486ee1ed08dd3051dc8133707c01"
+}

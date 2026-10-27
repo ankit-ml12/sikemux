@@ -18,7 +18,10 @@
         "device.added",
         "device.changed",
         "device.revoked",
-        "account.deleted"
+        "account.deleted",
+        "stash.added",
+        "stash.changed",
+        "stash.removed"
       ]
     },
     "RevokeReason": {
@@ -27,23 +30,27 @@
       "enum": ["removed", "signed_out", "account_deleted"]
     },
     "AccountEvent": {
-      "description": "Something changed on the account. Events carry keys, never names: a device rereads the lists it shows over HTTP.",
+      "description": "Something changed on the account. Events carry keys and ids, never names or content: a device rereads what it shows over HTTP.",
       "type": "object",
       "properties": {
         "id": { "$ref": "#/$defs/EventId" },
         "type": { "$ref": "#/$defs/AccountEventType" },
         "at": { "type": "string", "format": "date-time" },
         "key": {
-          "description": "The device the event is about. Absent from account.deleted.",
+          "description": "The device the event is about. Only on device events.",
           "$ref": "devices.json#/$defs/DeviceKey"
         },
         "role": {
-          "description": "That device's role. Absent from account.deleted.",
+          "description": "That device's role. Only on device events.",
           "$ref": "devices.json#/$defs/DeviceRole"
         },
         "reason": {
           "description": "Only on device.revoked.",
           "$ref": "#/$defs/RevokeReason"
+        },
+        "stashId": {
+          "description": "The stash item the event is about. Only on stash events.",
+          "$ref": "stash.json#/$defs/StashItemId"
         }
       },
       "required": ["id", "type", "at"],

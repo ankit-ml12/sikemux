@@ -31,26 +31,37 @@ export const accountDeletionStatusValues: readonly AccountDeletionStatus[] = [
   "deleted",
 ];
 
-/** Something changed on the account. Events carry keys, never names: a device rereads the lists it shows over HTTP. */
+/** Something changed on the account. Events carry keys and ids, never names or content: a device rereads what it shows over HTTP. */
 export interface AccountEvent {
   id: EventId;
   type: AccountEventType;
   at: string;
-  /** The device the event is about. Absent from account.deleted. */
+  /** The device the event is about. Only on device events. */
   key?: DeviceKey;
-  /** That device's role. Absent from account.deleted. */
+  /** That device's role. Only on device events. */
   role?: DeviceRole;
   /** Only on device.revoked. */
   reason?: RevokeReason;
+  /** The stash item the event is about. Only on stash events. */
+  stashId?: StashItemId;
 }
 
 export type AccountEventType =
-  "device.added" | "device.changed" | "device.revoked" | "account.deleted";
+  | "device.added"
+  | "device.changed"
+  | "device.revoked"
+  | "account.deleted"
+  | "stash.added"
+  | "stash.changed"
+  | "stash.removed";
 export const accountEventTypeValues: readonly AccountEventType[] = [
   "device.added",
   "device.changed",
   "device.revoked",
   "account.deleted",
+  "stash.added",
+  "stash.changed",
+  "stash.removed",
 ];
 
 /** The name, email and picture the account signed in with, for a host to show who it belongs to. */
@@ -771,6 +782,95 @@ export interface ShareWantsSnapshot {
   share: ShareId;
 }
 
+/** A link or text to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget). */
+export interface StashAdd {
+  kind: StashKind;
+  /** An http or https link, with kind link. */
+  url?: string;
+  /** With kind text. */
+  text?: string;
+  note?: StashNote;
+  target?: StashTarget;
+}
+
+/** Something the person shared into Sikemux, kept on their account until they use it. */
+export interface StashItem {
+  id: StashItemId;
+  kind: StashKind;
+  /** Only on links. */
+  url?: string;
+  /** Only on text. */
+  text?: string;
+  note?: StashNote;
+  /** The file's name. Only on items with a file. */
+  name?: string;
+  /** The file's media type. Only on items with a file. */
+  mime?: string;
+  /** The file's size in bytes. Only on items with a file. */
+  size?: number;
+  /** Only links get one, and only once the server has read the page; null until then, or when it could not. */
+  preview: StashPreview | null;
+  target: StashTarget | null;
+  createdAt: string;
+  /** When the item was attached to a prompt or delivered to its target; null until then. Taken items are deleted 30 days later. */
+  takenAt: string | null;
+  /** The device that stashed the item, or null when the web app did. */
+  fromDevice: DeviceKey | null;
+}
+
+/** A stash item's id: 16 random bytes the server picks, in unpadded base64url. */
+export type StashItemId = string;
+
+/** What was shared. A link or text arrives as JSON; an image, video or file as its bytes. */
+export type StashKind = "link" | "text" | "image" | "video" | "file";
+export const stashKindValues: readonly StashKind[] = [
+  "link",
+  "text",
+  "image",
+  "video",
+  "file",
+];
+
+/** A page of the stash, newest first. */
+export interface StashList {
+  items: StashItem[];
+  /** Send as cursor for the next page. Absent on the last page. */
+  cursor?: StashListCursor;
+}
+
+/** Where the next page of a list starts. Opaque to apps. */
+export type StashListCursor = string;
+
+/** What the person wrote beside the item when they shared it. */
+export type StashNote = string;
+
+/** What a link's page says about itself, read by the server from its meta tags after the link was stashed. */
+export interface StashPreview {
+  title: string;
+  /** The site's name, or its host name when the page names none. */
+  site: string;
+  description: string;
+  imageUrl?: string;
+}
+
+/** Which items a list holds: those not used yet, those used, or both. */
+export type StashTaken = "false" | "true" | "all";
+export const stashTakenValues: readonly StashTaken[] = ["false", "true", "all"];
+
+/** Where the person sent the item from the share sheet: a chat on a host (chatId), or a new chat in a project on it (projectPath with newChat true). That host puts it in the chat's draft and marks it taken. */
+export interface StashTarget {
+  hostKey: DeviceKey;
+  chatId?: string;
+  projectPath?: string;
+  newChat?: boolean;
+}
+
+/** A change to an item: a new note, or taken true once it is used. A taken item cannot be untaken. */
+export interface StashUpdate {
+  note?: StashNote;
+  taken?: boolean;
+}
+
 /** Every definition by name, so code can look a type up from the name it validates against. */
 export interface Definitions {
   Account: Account;
@@ -875,4 +975,15 @@ export interface Definitions {
   ShareViewerProof: ShareViewerProof;
   ShareViewers: ShareViewers;
   ShareWantsSnapshot: ShareWantsSnapshot;
+  StashAdd: StashAdd;
+  StashItem: StashItem;
+  StashItemId: StashItemId;
+  StashKind: StashKind;
+  StashList: StashList;
+  StashListCursor: StashListCursor;
+  StashNote: StashNote;
+  StashPreview: StashPreview;
+  StashTaken: StashTaken;
+  StashTarget: StashTarget;
+  StashUpdate: StashUpdate;
 }

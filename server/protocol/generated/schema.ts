@@ -66,24 +66,28 @@ export const schema = {
     },
     AccountEvent: {
       description:
-        "Something changed on the account. Events carry keys, never names: a device rereads the lists it shows over HTTP.",
+        "Something changed on the account. Events carry keys and ids, never names or content: a device rereads what it shows over HTTP.",
       type: "object",
       properties: {
         id: { $ref: "#/$defs/EventId" },
         type: { $ref: "#/$defs/AccountEventType" },
         at: { type: "string", format: "date-time" },
         key: {
-          description:
-            "The device the event is about. Absent from account.deleted.",
+          description: "The device the event is about. Only on device events.",
           $ref: "#/$defs/DeviceKey",
         },
         role: {
-          description: "That device's role. Absent from account.deleted.",
+          description: "That device's role. Only on device events.",
           $ref: "#/$defs/DeviceRole",
         },
         reason: {
           description: "Only on device.revoked.",
           $ref: "#/$defs/RevokeReason",
+        },
+        stashId: {
+          description:
+            "The stash item the event is about. Only on stash events.",
+          $ref: "#/$defs/StashItemId",
         },
       },
       required: ["id", "type", "at"],
@@ -96,6 +100,9 @@ export const schema = {
         "device.changed",
         "device.revoked",
         "account.deleted",
+        "stash.added",
+        "stash.changed",
+        "stash.removed",
       ],
     },
     AccountProfile: {
@@ -1353,6 +1360,177 @@ export const schema = {
         share: { $ref: "#/$defs/ShareId" },
       },
       required: ["type", "share"],
+      additionalProperties: false,
+    },
+    StashAdd: {
+      description:
+        "A link or text to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget).",
+      type: "object",
+      properties: {
+        kind: { $ref: "#/$defs/StashKind" },
+        url: {
+          description: "An http or https link, with kind link.",
+          type: "string",
+          minLength: 1,
+          maxLength: 8192,
+        },
+        text: {
+          description: "With kind text.",
+          type: "string",
+          minLength: 1,
+          maxLength: 16000,
+        },
+        note: { $ref: "#/$defs/StashNote" },
+        target: { $ref: "#/$defs/StashTarget" },
+      },
+      required: ["kind"],
+      additionalProperties: false,
+    },
+    StashItem: {
+      description:
+        "Something the person shared into Sikemux, kept on their account until they use it.",
+      type: "object",
+      properties: {
+        id: { $ref: "#/$defs/StashItemId" },
+        kind: { $ref: "#/$defs/StashKind" },
+        url: { description: "Only on links.", type: "string", maxLength: 8192 },
+        text: {
+          description: "Only on text.",
+          type: "string",
+          maxLength: 16000,
+        },
+        note: { $ref: "#/$defs/StashNote" },
+        name: {
+          description: "The file's name. Only on items with a file.",
+          type: "string",
+          maxLength: 255,
+        },
+        mime: {
+          description: "The file's media type. Only on items with a file.",
+          type: "string",
+          maxLength: 255,
+        },
+        size: {
+          description: "The file's size in bytes. Only on items with a file.",
+          type: "integer",
+          minimum: 0,
+        },
+        preview: {
+          description:
+            "Only links get one, and only once the server has read the page; null until then, or when it could not.",
+          anyOf: [{ $ref: "#/$defs/StashPreview" }, { type: "null" }],
+        },
+        target: { anyOf: [{ $ref: "#/$defs/StashTarget" }, { type: "null" }] },
+        createdAt: { type: "string", format: "date-time" },
+        takenAt: {
+          description:
+            "When the item was attached to a prompt or delivered to its target; null until then. Taken items are deleted 30 days later.",
+          type: ["string", "null"],
+          format: "date-time",
+        },
+        fromDevice: {
+          description:
+            "The device that stashed the item, or null when the web app did.",
+          anyOf: [{ $ref: "#/$defs/DeviceKey" }, { type: "null" }],
+        },
+      },
+      required: [
+        "id",
+        "kind",
+        "preview",
+        "target",
+        "createdAt",
+        "takenAt",
+        "fromDevice",
+      ],
+      additionalProperties: false,
+    },
+    StashItemId: {
+      description:
+        "A stash item's id: 16 random bytes the server picks, in unpadded base64url.",
+      type: "string",
+      pattern: "^[A-Za-z0-9_-]{22}$",
+    },
+    StashKind: {
+      description:
+        "What was shared. A link or text arrives as JSON; an image, video or file as its bytes.",
+      type: "string",
+      enum: ["link", "text", "image", "video", "file"],
+    },
+    StashList: {
+      description: "A page of the stash, newest first.",
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          items: { $ref: "#/$defs/StashItem" },
+          maxItems: 100,
+        },
+        cursor: {
+          description:
+            "Send as cursor for the next page. Absent on the last page.",
+          $ref: "#/$defs/StashListCursor",
+        },
+      },
+      required: ["items"],
+      additionalProperties: false,
+    },
+    StashListCursor: {
+      description: "Where the next page of a list starts. Opaque to apps.",
+      type: "string",
+      minLength: 1,
+      maxLength: 200,
+    },
+    StashNote: {
+      description: "What the person wrote beside the item when they shared it.",
+      type: "string",
+      maxLength: 2000,
+    },
+    StashPreview: {
+      description:
+        "What a link's page says about itself, read by the server from its meta tags after the link was stashed.",
+      type: "object",
+      properties: {
+        title: { type: "string", maxLength: 300 },
+        site: {
+          description:
+            "The site's name, or its host name when the page names none.",
+          type: "string",
+          maxLength: 300,
+        },
+        description: { type: "string", maxLength: 1000 },
+        imageUrl: { type: "string", format: "uri", maxLength: 2048 },
+      },
+      required: ["title", "site", "description"],
+      additionalProperties: false,
+    },
+    StashTaken: {
+      description:
+        "Which items a list holds: those not used yet, those used, or both.",
+      type: "string",
+      enum: ["false", "true", "all"],
+    },
+    StashTarget: {
+      description:
+        "Where the person sent the item from the share sheet: a chat on a host (chatId), or a new chat in a project on it (projectPath with newChat true). That host puts it in the chat's draft and marks it taken.",
+      type: "object",
+      properties: {
+        hostKey: { $ref: "#/$defs/DeviceKey" },
+        chatId: { type: "string", minLength: 1, maxLength: 200 },
+        projectPath: { type: "string", minLength: 1, maxLength: 4096 },
+        newChat: { type: "boolean" },
+      },
+      required: ["hostKey"],
+      additionalProperties: false,
+    },
+    StashUpdate: {
+      description:
+        "A change to an item: a new note, or taken true once it is used. A taken item cannot be untaken.",
+      type: "object",
+      properties: {
+        note: { $ref: "#/$defs/StashNote" },
+        taken: { type: "boolean" },
+      },
       additionalProperties: false,
     },
   },

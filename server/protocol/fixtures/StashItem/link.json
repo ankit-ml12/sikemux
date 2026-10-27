@@ -1,0 +1,16 @@
+{
+  "id": "q3Xh0bJ7S1ePbn0w2c9VZA",
+  "kind": "link",
+  "url": "https://example.com/post",
+  "note": "read before the call",
+  "preview": {
+    "title": "A post",
+    "site": "Example",
+    "description": "What the post is about.",
+    "imageUrl": "https://example.com/cover.png"
+  },
+  "target": null,
+  "createdAt": "2026-10-27T09:30:00.000Z",
+  "takenAt": null,
+  "fromDevice": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29"
+}

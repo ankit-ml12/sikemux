@@ -46,22 +46,25 @@ pub enum AccountDeletionStatus {
     Unknown,
 }
 
-/// Something changed on the account. Events carry keys, never names: a device rereads the lists it shows over HTTP.
+/// Something changed on the account. Events carry keys and ids, never names or content: a device rereads what it shows over HTTP.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountEvent {
     pub id: EventId,
     pub r#type: AccountEventType,
     pub at: String,
-    /// The device the event is about. Absent from account.deleted.
+    /// The device the event is about. Only on device events.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<DeviceKey>,
-    /// That device's role. Absent from account.deleted.
+    /// That device's role. Only on device events.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<DeviceRole>,
     /// Only on device.revoked.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<RevokeReason>,
+    /// The stash item the event is about. Only on stash events.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stash_id: Option<StashItemId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -74,6 +77,12 @@ pub enum AccountEventType {
     DeviceRevoked,
     #[serde(rename = "account.deleted")]
     AccountDeleted,
+    #[serde(rename = "stash.added")]
+    StashAdded,
+    #[serde(rename = "stash.changed")]
+    StashChanged,
+    #[serde(rename = "stash.removed")]
+    StashRemoved,
     /// A value added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,
@@ -699,6 +708,142 @@ pub enum RevokeReason {
     Unknown,
 }
 
+/// A link or text to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashAdd {
+    pub kind: StashKind,
+    /// An http or https link, with kind link.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// With kind text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<StashNote>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<StashTarget>,
+}
+
+/// Something the person shared into Sikemux, kept on their account until they use it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashItem {
+    pub id: StashItemId,
+    pub kind: StashKind,
+    /// Only on links.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Only on text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<StashNote>,
+    /// The file's name. Only on items with a file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The file's media type. Only on items with a file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    /// The file's size in bytes. Only on items with a file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<i64>,
+    /// Only links get one, and only once the server has read the page; null until then, or when it could not.
+    pub preview: Option<StashPreview>,
+    pub target: Option<StashTarget>,
+    pub created_at: String,
+    /// When the item was attached to a prompt or delivered to its target; null until then. Taken items are deleted 30 days later.
+    pub taken_at: Option<String>,
+    /// The device that stashed the item, or null when the web app did.
+    pub from_device: Option<DeviceKey>,
+}
+
+/// A stash item's id: 16 random bytes the server picks, in unpadded base64url.
+pub type StashItemId = String;
+
+/// What was shared. A link or text arrives as JSON; an image, video or file as its bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum StashKind {
+    #[serde(rename = "link")]
+    Link,
+    #[serde(rename = "text")]
+    Text,
+    #[serde(rename = "image")]
+    Image,
+    #[serde(rename = "video")]
+    Video,
+    #[serde(rename = "file")]
+    File,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A page of the stash, newest first.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashList {
+    pub items: Vec<StashItem>,
+    /// Send as cursor for the next page. Absent on the last page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<StashListCursor>,
+}
+
+/// Where the next page of a list starts. Opaque to apps.
+pub type StashListCursor = String;
+
+/// What the person wrote beside the item when they shared it.
+pub type StashNote = String;
+
+/// What a link's page says about itself, read by the server from its meta tags after the link was stashed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashPreview {
+    pub title: String,
+    /// The site's name, or its host name when the page names none.
+    pub site: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
+}
+
+/// Which items a list holds: those not used yet, those used, or both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum StashTaken {
+    #[serde(rename = "false")]
+    False,
+    #[serde(rename = "true")]
+    True,
+    #[serde(rename = "all")]
+    All,
+    /// A value added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Where the person sent the item from the share sheet: a chat on a host (chatId), or a new chat in a project on it (projectPath with newChat true). That host puts it in the chat's draft and marks it taken.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashTarget {
+    pub host_key: DeviceKey,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_chat: Option<bool>,
+}
+
+/// A change to an item: a new note, or taken true once it is used. A taken item cannot be untaken.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashUpdate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<StashNote>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub taken: Option<bool>,
+}
+
 /// Reads `json` as the named type and writes it back, for the contract tests.
 #[cfg(test)]
 pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
@@ -762,6 +907,17 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "PushTokenState" => through::<PushTokenState>(json),
         "Relay" => through::<Relay>(json),
         "RevokeReason" => through::<RevokeReason>(json),
+        "StashAdd" => through::<StashAdd>(json),
+        "StashItem" => through::<StashItem>(json),
+        "StashItemId" => through::<StashItemId>(json),
+        "StashKind" => through::<StashKind>(json),
+        "StashList" => through::<StashList>(json),
+        "StashListCursor" => through::<StashListCursor>(json),
+        "StashNote" => through::<StashNote>(json),
+        "StashPreview" => through::<StashPreview>(json),
+        "StashTaken" => through::<StashTaken>(json),
+        "StashTarget" => through::<StashTarget>(json),
+        "StashUpdate" => through::<StashUpdate>(json),
         _ => return None,
     })
 }

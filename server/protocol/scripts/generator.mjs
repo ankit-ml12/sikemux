@@ -584,6 +584,7 @@ const AUTH = new Set([
   "signedIn",
   "session",
   "sessionOrHost",
+  "sessionOrDevice",
   "host",
   "device",
   "webhook",
@@ -592,6 +593,7 @@ const SECURITY = {
   signedIn: [{ session: [] }],
   session: [{ session: [] }],
   sessionOrHost: [{ session: [] }, { host: [] }],
+  sessionOrDevice: [{ session: [] }, { host: [] }, { device: [] }],
   host: [{ host: [] }],
 };
 const AUTH_NOTES = {
@@ -601,6 +603,8 @@ const AUTH_NOTES = {
     "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
   sessionOrHost:
     "The phone's or the web app's sign-in, or a request signed by a host on the account.",
+  sessionOrDevice:
+    "The phone's or the web app's sign-in, or a request signed by a host or a phone on the account.",
   host: "Only a request signed by a host on the account.",
   device:
     "A WebSocket. The device proves who it is in its first message, since browsers cannot set headers on one. `send` is what the device sends; `receive` is what the server sends.",
@@ -637,6 +641,7 @@ export function openapi(definitions, routes) {
         "responses",
         "upgrade",
         "messages",
+        "bytes",
       ]),
     );
     if (!["get", "post", "put", "patch", "delete"].includes(route.method))
@@ -658,6 +663,13 @@ export function openapi(definitions, routes) {
     } else if (route.messages) {
       fail(where, "only WebSocket routes have messages");
     }
+    if (
+      route.bytes !== undefined &&
+      !["request", "response"].includes(route.bytes)
+    )
+      fail(where, `bytes is "request" or "response"`);
+    if (route.bytes === "request" && !route.request)
+      fail(where, "a route taking bytes also names its JSON request");
     if (route.requestOptional !== undefined && !route.request)
       fail(where, "requestOptional needs a request");
     if (seen.has(route.operationId))
@@ -672,10 +684,17 @@ export function openapi(definitions, routes) {
       };
     };
     const responses = {};
+    const binary = {
+      "application/octet-stream": {
+        schema: { type: "string", format: "binary" },
+      },
+    };
     for (const [status, response] of Object.entries(route.responses)) {
+      const bytes = route.bytes === "response" && status.startsWith("2");
       responses[status] = {
         description: response.description,
         ...(response.body ? { content: named(response.body) } : {}),
+        ...(bytes ? { content: binary } : {}),
       };
     }
     responses.default = {
@@ -726,7 +745,10 @@ export function openapi(definitions, routes) {
         ? {
             requestBody: {
               required: route.requestOptional !== true,
-              content: named(route.request),
+              content: {
+                ...named(route.request),
+                ...(route.bytes === "request" ? binary : {}),
+              },
             },
           }
         : {}),
@@ -747,6 +769,12 @@ export function openapi(definitions, routes) {
           description:
             "A Clerk sign-in: a session token from the phone or the web app, or the Mac app's OAuth access token.",
         },
+        device: {
+          type: "http",
+          scheme: "SikemuxDevice",
+          description:
+            "`Authorization: SikemuxDevice <key>.<time>.<signature>`: as SikemuxHost, signed by a phone on the account over `sikemux-device-request|<METHOD>|<path and query>|<time>|<lowercase hex SHA-256 of the body>`. Only the stash takes it.",
+        },
         host: {
           type: "http",
           scheme: "SikemuxHost",
@@ -763,7 +791,8 @@ export function client(routes) {
   const types = new Set();
   const calls = [];
   for (const route of routes.routes) {
-    if (route.upgrade || route.auth === "webhook") continue;
+    if (route.upgrade || route.auth === "webhook" || route.bytes === "response")
+      continue;
     const params = [...route.path.matchAll(/\{([a-z][A-Za-z]*)\}/g)].map(
       ([, param]) => param,
     );
@@ -803,7 +832,7 @@ export function client(routes) {
   return (
     HEADER +
     `import type { ${[...types].sort().join(", ")} } from "./types.ts";\n\n` +
-    `export type Method = "GET" | "POST" | "PUT" | "DELETE";\n\n` +
+    `export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";\n\n` +
     `/** Makes one request and answers its JSON body, or nothing for a route that answers none. */\n` +
     `export type Send = <Answer>(method: Method, path: string, body?: unknown) => Promise<Answer>;\n\n` +
     `function search(query: Record<string, string | undefined>): string {\n` +

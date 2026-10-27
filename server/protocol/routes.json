@@ -408,6 +408,114 @@
     },
     {
       "method": "post",
+      "path": "/v1/stash",
+      "operationId": "addStash",
+      "summary": "Stash a link, text or file on your account",
+      "auth": "sessionOrDevice",
+      "request": "StashAdd",
+      "bytes": "request",
+      "responses": {
+        "201": {
+          "description": "Stashed. A link's preview follows in a stash.changed event once the server has read the page.",
+          "body": "StashItem"
+        },
+        "400": {
+          "description": "The body is not a valid StashAdd, or a file's headers are missing or malformed.",
+          "body": "ApiError"
+        },
+        "413": {
+          "description": "The file is over 25 MB, or the account's stash would be over 1 GB (message names which).",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "get",
+      "path": "/v1/stash",
+      "operationId": "listStash",
+      "summary": "Your stash, newest first",
+      "auth": "sessionOrDevice",
+      "query": {
+        "taken": "StashTaken",
+        "cursor": "StashListCursor"
+      },
+      "responses": {
+        "200": {
+          "description": "A page of up to 100 items; taken defaults to false.",
+          "body": "StashList"
+        }
+      }
+    },
+    {
+      "method": "get",
+      "path": "/v1/stash/{id}",
+      "operationId": "getStash",
+      "summary": "One stashed item",
+      "auth": "sessionOrDevice",
+      "responses": {
+        "200": {
+          "description": "The item.",
+          "body": "StashItem"
+        },
+        "404": {
+          "description": "No item with that id is on your account.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "get",
+      "path": "/v1/stash/{id}/file",
+      "operationId": "getStashFile",
+      "summary": "A stashed item's file",
+      "auth": "sessionOrDevice",
+      "bytes": "response",
+      "responses": {
+        "200": {
+          "description": "The file's bytes, with its Content-Type and its name in Content-Disposition."
+        },
+        "404": {
+          "description": "No item with a file has that id on your account.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "patch",
+      "path": "/v1/stash/{id}",
+      "operationId": "updateStash",
+      "summary": "Change an item's note, or mark it taken",
+      "auth": "sessionOrDevice",
+      "request": "StashUpdate",
+      "responses": {
+        "200": {
+          "description": "The item as it is now. Marking a taken item taken again keeps its first takenAt.",
+          "body": "StashItem"
+        },
+        "400": {
+          "description": "The body is not a valid StashUpdate, or asks to untake an item.",
+          "body": "ApiError"
+        },
+        "404": {
+          "description": "No item with that id is on your account.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "delete",
+      "path": "/v1/stash/{id}",
+      "operationId": "deleteStash",
+      "summary": "Delete a stashed item and its file",
+      "auth": "sessionOrDevice",
+      "responses": {
+        "204": {
+          "description": "Deleted, or it was already gone."
+        }
+      }
+    },
+    {
+      "method": "post",
       "path": "/v1/webhooks/clerk",
       "operationId": "receiveClerkWebhook",
       "summary": "Clerk telling the API a user was deleted in its dashboard",
