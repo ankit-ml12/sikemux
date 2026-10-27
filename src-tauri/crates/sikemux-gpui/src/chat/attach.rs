@@ -838,6 +838,7 @@ pub fn tiles(
     remove: impl Fn(usize, &mut Window, &mut App) + Clone + 'static,
     forget: impl Fn(usize, &mut Window, &mut App) + Clone + 'static,
     open: impl Fn(PathBuf, &mut Window, &mut App) + Clone + 'static,
+    asks: Option<&tokio::sync::mpsc::UnboundedSender<crate::core::Ask>>,
     cx: &App,
 ) -> Option<impl IntoElement> {
     if attachments.is_empty() && context.is_empty() {
@@ -864,7 +865,7 @@ pub fn tiles(
     });
     let chips = context.iter().enumerate().map(|(index, item)| {
         let forget = forget.clone();
-        context_chip(format!("context-{index}"), &item.uri, &item.title, &t)
+        context_chip(format!("context-{index}"), &item.uri, &item.title, asks, &t)
             .on_remove(move |_, window, cx| forget(index, window, cx))
     });
     Some(
@@ -953,7 +954,14 @@ fn tracked(uri: &str) -> Option<(Icon, &str)> {
 
 /// A context item's chip: `#12 Title` for an issue or pull request, its title for an
 /// earlier chat or anything else.
-fn context_chip(id: String, uri: &str, title: &str, t: &Tokens) -> Attachment {
+fn context_chip(
+    id: String,
+    uri: &str,
+    title: &str,
+    asks: Option<&tokio::sync::mpsc::UnboundedSender<crate::core::Ask>>,
+    t: &Tokens,
+) -> Attachment {
+    let web = uri.starts_with("https://") || uri.starts_with("http://");
     let (icon, title) = match tracked(uri) {
         Some((icon, number)) => (
             icon,
@@ -962,6 +970,11 @@ fn context_chip(id: String, uri: &str, title: &str, t: &Tokens) -> Attachment {
                 .to_owned(),
         ),
         None if uri.starts_with("sikemux://earlier/") => (Icon::Message, title.to_owned()),
+        None if uri.starts_with("sikemux://stash/") => (Icon::Text, title.to_owned()),
+        None if web => (
+            Icon::Globe,
+            if title.is_empty() { uri } else { title }.to_owned(),
+        ),
         None if title.is_empty() => (Icon::File, uri.to_owned()),
         None => (Icon::File, title.to_owned()),
     };
@@ -969,8 +982,47 @@ fn context_chip(id: String, uri: &str, title: &str, t: &Tokens) -> Attachment {
         .id(SharedString::from(id))
         .with_size(gpui_kit::component::Size::Small)
         .tooltip(uri.to_owned())
-        .media(AttachmentMedia::new().child(ui::icon(icon, 13.).text_color(t.text_tertiary)))
+        .media(AttachmentMedia::new().child(site_icon(uri, web, icon, asks, t)))
         .content(AttachmentContent::new().title(AttachmentTitle::new(title)))
+}
+
+/// A link's site icon, which the core fetches, else `icon`.
+fn site_icon(
+    uri: &str,
+    web: bool,
+    icon: Icon,
+    asks: Option<&tokio::sync::mpsc::UnboundedSender<crate::core::Ask>>,
+    t: &Tokens,
+) -> gpui_kit::AnyElement {
+    let glyph = ui::icon(icon, 13.).text_color(t.text_tertiary);
+    let favicon = url::Url::parse(uri)
+        .ok()
+        .filter(|_| web && tracked(uri).is_none())
+        .and_then(|url| {
+            Some(format!(
+                "{}://{}/favicon.ico",
+                url.scheme(),
+                url.host_str()?
+            ))
+        });
+    match (favicon, asks) {
+        (Some(favicon), Some(asks)) => {
+            let shown =
+                crate::picture::Picture::Remote(crate::picture::Remote::new(favicon, asks.clone()));
+            let fallback = std::cell::RefCell::new(Some(glyph.into_any_element()));
+            gpui_kit::img(shown.source_at(px(14.)))
+                .size(px(14.))
+                .object_fit(gpui_kit::ObjectFit::Contain)
+                .with_fallback(move || {
+                    fallback
+                        .borrow_mut()
+                        .take()
+                        .unwrap_or_else(|| div().into_any_element())
+                })
+                .into_any_element()
+        }
+        _ => glyph.into_any_element(),
+    }
 }
 
 /// What a sent message carried, inside its bubble over the text: its pictures, which open
@@ -1054,6 +1106,7 @@ pub fn sent(
                 format!("sent-context-{}-{index}", message.id),
                 &item.uri,
                 &item.title,
+                None,
                 &t,
             )
         })

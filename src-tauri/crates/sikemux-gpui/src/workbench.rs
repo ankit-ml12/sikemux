@@ -1502,6 +1502,7 @@ impl Workbench {
             tracked: None,
             tracked_context: HashMap::new(),
             refusal: None,
+            stashed: None,
             preparing: None,
             send_when_ready: false,
             install: None,

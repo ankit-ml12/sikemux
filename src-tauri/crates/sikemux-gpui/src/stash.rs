@@ -18,6 +18,8 @@ use crate::ui::{self, IconButton, Row};
 use crate::workbench::Workbench;
 use sikemux_wire::protocol::PaneKind;
 
+/// How long a stashed prompt can be put back from its composer.
+const UNDO_FOR: std::time::Duration = std::time::Duration::from_secs(10);
 /// The narrowest a card gets before the grid drops a column, and the gap between cards.
 const MIN_CARD: f32 = 260.;
 const GAP: f32 = 14.;
@@ -64,6 +66,18 @@ impl<'a> Stash<'a> {
             .collect()
     }
 
+    /// How many items are new and still unused, for the count on the composer's button.
+    pub fn fresh_count(&self) -> usize {
+        match self.signed_in {
+            true => self
+                .new_items()
+                .iter()
+                .filter(|item| item["takenAt"].is_null())
+                .count(),
+            false => 0,
+        }
+    }
+
     /// When the newest item was stashed, as the server wrote it.
     fn newest(&self) -> Option<&'a str> {
         self.items
@@ -101,7 +115,9 @@ pub fn title(item: &Value) -> String {
                 })
                 .to_owned()
         }),
-        Some("text") => text("text").map(|text| text.lines().next().unwrap_or(text).to_owned()),
+        Some("text" | "prompt") => {
+            text("text").map(|text| text.lines().next().unwrap_or(text).to_owned())
+        }
         _ => text("name").map(str::to_owned),
     }
     .unwrap_or_else(|| "Untitled".to_owned())
@@ -115,6 +131,11 @@ pub fn place(item: &Value) -> String {
             .map(str::to_owned)
             .or_else(|| site_of(item["url"].as_str()?)),
         Some("text") => Some("Text".to_owned()),
+        Some("prompt") => Some(match item["attachments"].as_array().map_or(0, Vec::len) {
+            0 => "Prompt".to_owned(),
+            1 => "Prompt · 1 file".to_owned(),
+            files => format!("Prompt · {files} files"),
+        }),
         _ => item["size"].as_u64().map(crate::codehost::bytes),
     };
     let ago = item["createdAt"].as_str().map(crate::codehost::ago);
@@ -162,6 +183,7 @@ pub fn glyph(item: &Value, size: f32, cx: &App) -> AnyElement {
     let icon = match item["kind"].as_str() {
         Some("link") => Icon::Globe,
         Some("text") => Icon::Text,
+        Some("prompt") => Icon::Message,
         Some("image") => Icon::Image,
         Some("video") => Icon::Camera,
         _ => Icon::File,
@@ -240,6 +262,87 @@ impl Workbench {
         }
     }
 
+    /// Keeps what is written in `agent`'s draft, and its files, as one prompt in the Stash, and
+    /// empties the draft; the composer offers to put it back for a while.
+    pub fn stash_prompt(&mut self, agent: &str, cx: &mut Context<Self>) {
+        self.keep_draft(agent, cx);
+        let asked = self
+            .chat_target(agent)
+            .request("stashPrompt", json!({ "agentId": agent }));
+        let agent = agent.to_owned();
+        cx.spawn(async move |bench, cx| {
+            let answer = asked.await;
+            bench
+                .update(cx, |bench, cx| match answer {
+                    Ok(kept) => {
+                        let id = kept["id"].as_str().map(str::to_owned);
+                        if let Some(composing) = bench
+                            .chats
+                            .get_mut(&agent)
+                            .and_then(|chat| chat.composer.as_mut())
+                        {
+                            composing.stashed = id.clone();
+                        }
+                        cx.notify();
+                        let agent = agent.clone();
+                        cx.spawn(async move |bench, cx| {
+                            cx.background_executor().timer(UNDO_FOR).await;
+                            bench
+                                .update(cx, |bench, cx| {
+                                    if let Some(composing) = bench
+                                        .chats
+                                        .get_mut(&agent)
+                                        .and_then(|chat| chat.composer.as_mut())
+                                        .filter(|composing| composing.stashed == id)
+                                    {
+                                        composing.stashed = None;
+                                        cx.notify();
+                                    }
+                                })
+                                .ok();
+                        })
+                        .detach();
+                    }
+                    Err(error) => {
+                        let words = format!("Couldn't stash this prompt: {error}");
+                        bench.notify(crate::toast::error(words), cx)
+                    }
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// Puts the prompt just stashed from `agent`'s draft back, and takes it off the Stash.
+    pub fn unstash_prompt(&mut self, agent: &str, id: &str, cx: &mut Context<Self>) {
+        if let Some(composing) = self
+            .chats
+            .get_mut(agent)
+            .and_then(|chat| chat.composer.as_mut())
+        {
+            composing.stashed = None;
+        }
+        let target = self.chat_target(agent);
+        let back = target.request("attachStash", json!({ "id": id, "agentId": agent }));
+        let removed = json!({ "id": id });
+        cx.spawn(async move |bench, cx| {
+            let answer = match back.await {
+                Ok(_) => target.request("removeStash", removed).await,
+                Err(error) => Err(error),
+            };
+            if let Err(error) = answer {
+                bench
+                    .update(cx, |bench, cx| {
+                        let words = format!("Couldn't put the prompt back: {error}");
+                        bench.notify(crate::toast::error(words), cx)
+                    })
+                    .ok();
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+
     /// Takes stash item `id` off the account, on every device.
     pub fn remove_from_stash(&self, id: &str, cx: &mut Context<Self>) {
         let asked = crate::core::request(&self.asks, "removeStash", json!({ "id": id }));
@@ -265,7 +368,7 @@ impl Workbench {
                     cx.open_url(url);
                 }
             }
-            Some("text") => {
+            Some("text" | "prompt") => {
                 let text = item["text"].as_str().unwrap_or_default().to_owned();
                 cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
                 self.notify(crate::toast::success("Copied"), cx);
@@ -349,89 +452,299 @@ pub fn rail_row(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .into_any_element()
 }
 
-/// Over a chat's composer while items came into the stash since the person last looked:
-/// how many, Add to put them all in this chat's draft, and × to leave them.
-pub fn chip(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let stash = Stash::of(bench);
-    let offering = bench
-        .chats
-        .get(agent)
-        .and_then(|chat| chat.composer.as_ref())
-        .is_some_and(|composing| composing.menu.is_some());
-    if !stash.signed_in || offering {
-        return None;
-    }
-    let fresh: Vec<String> = stash
-        .new_items()
-        .iter()
-        .filter(|item| item["takenAt"].is_null())
-        .filter_map(|item| item["id"].as_str().map(str::to_owned))
-        .collect();
-    if fresh.is_empty() {
-        return None;
-    }
+/// Over a chat's composer, opened by its Stash button or by `&`: the newest items first as small
+/// cards, the new ones tagged, to attach with a click or the keys; everything new at once; the
+/// whole Stash; and stashing the prompt being written.
+pub fn tray(
+    bench: &Workbench,
+    agent: &str,
+    tray: &crate::chat::Tray,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let words = match fresh.len() {
-        1 => "1 new in Stash".to_owned(),
-        count => format!("{count} new in Stash"),
-    };
-    let add = {
-        let agent = agent.to_owned();
-        cx.listener(move |bench, _, _, cx| {
-            bench.add_from_stash(&agent, fresh.clone(), cx);
-            bench.see_stash();
+    let stash = Stash::of(bench);
+    let fresh: Vec<String> = tray
+        .fresh
+        .iter()
+        .filter(|id| {
+            stash
+                .items
+                .iter()
+                .any(|item| item["id"].as_str() == Some(id.as_str()))
         })
-    };
-    let dot = || div().text_color(t.text_disabled).child("·");
-    Some(
+        .cloned()
+        .collect();
+    let link = |id: &'static str, words: String| {
         div()
-            .w_full()
-            .px(px(16.))
+            .id(id)
+            .cursor_pointer()
+            .text_size(theme::ui_text(12.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(t.text_secondary)
+            .hover(move |link| link.text_color(t.text_primary))
+            .child(words)
+    };
+    let add_new = (!fresh.is_empty() && tray.needle.is_empty()).then(|| {
+        let (agent, ids) = (agent.to_owned(), fresh.clone());
+        link("stash-tray-add-new", format!("Add {} new", ids.len())).on_click(cx.listener(
+            move |bench, _, _, cx| {
+                bench.add_from_stash(&agent, ids.clone(), cx);
+                bench.dismiss_menu(&agent, cx);
+            },
+        ))
+    });
+    let open = {
+        let agent = agent.to_owned();
+        link("stash-tray-open", "Open Stash ↗".to_owned()).on_click(cx.listener(
+            move |bench, _, _, cx| {
+                bench.dismiss_menu(&agent, cx);
+                bench.open_stash();
+            },
+        ))
+    };
+    let head = div()
+        .px(px(2.))
+        .pb(px(10.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .child(ui::icon(Icon::Stack, 13.).text_color(t.text_tertiary))
+        .child(
+            ui::text("STASH", 10.5, FontWeight::SEMIBOLD)
+                .letter_spacing(0.1)
+                .text_color(t.text_tertiary),
+        )
+        .when(!tray.needle.is_empty(), |head| {
+            head.child(
+                ui::text(
+                    format!("matching “{}”", tray.needle),
+                    11.5,
+                    FontWeight::NORMAL,
+                )
+                .text_color(t.text_tertiary),
+            )
+        })
+        .child(div().flex_1())
+        .children(add_new)
+        .child(open);
+    let body = if tray.items.is_empty() {
+        let words = match (stash.signed_in, tray.needle.is_empty()) {
+            (false, _) => "Sign in to Sikemux to keep what you share from your phone here.",
+            (true, true) => "Nothing in your Stash yet. Share a link, a picture or a file to Sikemux from any app on your phone.",
+            (true, false) => "Nothing in your Stash matches.",
+        };
+        div()
+            .py(px(14.))
+            .text_size(theme::ui_text(12.))
+            .text_color(t.text_tertiary)
+            .text_center()
+            .child(words)
+            .into_any_element()
+    } else {
+        let cards = tray.items.iter().enumerate().map(|(index, item)| {
+            let new = item["id"]
+                .as_str()
+                .is_some_and(|id| fresh.iter().any(|fresh| fresh == id));
+            tray_card(bench, agent, index, item, index == tray.selected, new, cx)
+        });
+        div()
+            .grid()
+            .grid_cols(4)
+            .gap(px(10.))
+            .children(cards)
+            .into_any_element()
+    };
+    let stash_prompt = {
+        let agent = agent.to_owned();
+        div()
+            .id("stash-tray-prompt")
+            .mt(px(10.))
+            .pt(px(9.))
+            .px(px(2.))
+            .border_t_1()
+            .border_color(t.line)
             .flex()
-            .justify_center()
-            .child(
-                div().w_full().max_w(px(820.)).pb(px(8.)).flex().child(
-                    div()
-                        .h(px(26.))
-                        .pl(px(9.))
-                        .pr(px(3.))
-                        .flex()
-                        .items_center()
-                        .gap(px(7.))
-                        .rounded_full()
-                        .border_1()
-                        .border_color(t.line)
-                        .bg(t.surface_raised)
-                        .text_size(theme::ui_text(12.))
-                        .text_color(t.text_secondary)
-                        .child(ui::icon(Icon::Stack, 12.).text_color(t.text_tertiary))
-                        .child(
-                            div()
-                                .id("stash-chip-open")
-                                .cursor_pointer()
-                                .hover(move |words| words.text_color(t.text_primary))
-                                .on_click(cx.listener(|bench, _, _, _| bench.open_stash()))
-                                .child(words),
-                        )
-                        .child(dot())
-                        .child(
-                            div()
-                                .id("stash-chip-add")
-                                .cursor_pointer()
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(t.accent)
-                                .on_click(add)
-                                .child("Add"),
-                        )
-                        .child(
-                            IconButton::new("stash-chip-leave", Icon::Close, "Not now")
-                                .small()
-                                .on_click(cx.listener(|bench, _, _, _| bench.see_stash())),
-                        ),
+            .items_center()
+            .gap(px(8.))
+            .cursor_pointer()
+            .text_size(theme::ui_text(12.))
+            .text_color(t.text_secondary)
+            .hover(move |row| row.text_color(t.text_primary))
+            .on_click(cx.listener(move |bench, _, _, cx| {
+                bench.dismiss_menu(&agent, cx);
+                bench.stash_prompt(&agent, cx);
+            }))
+            .child(ui::icon(Icon::Download, 13.).text_color(t.text_tertiary))
+            .child("Stash this prompt")
+            .child(div().flex_1())
+            .child(ui::kbd("⌘S", cx))
+    };
+    ui::float(cx)
+        .w_full()
+        .p(px(12.))
+        .flex()
+        .flex_col()
+        .occlude()
+        .child(head)
+        .child(body)
+        .child(stash_prompt)
+        .into_any_element()
+}
+
+/// One item in the tray: its picture, a text's opening words, or its glyph over its title and
+/// where it is from, tagged when it is new.
+fn tray_card(
+    bench: &Workbench,
+    agent: &str,
+    index: usize,
+    item: &Value,
+    selected: bool,
+    new: bool,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let thumb = div()
+        .h(px(72.))
+        .w_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .overflow_hidden()
+        .bg(t.surface_sunken);
+    let words_of = |text: &str| {
+        div()
+            .size_full()
+            .p(px(9.))
+            .overflow_hidden()
+            .text_size(theme::ui_text(11.))
+            .line_height(theme::ui_text(15.))
+            .text_color(t.text_secondary)
+            .child(text.trim().to_owned())
+    };
+    let thumb = match item["kind"].as_str() {
+        Some("text") => thumb.child(words_of(item["text"].as_str().unwrap_or_default())),
+        Some("prompt") => thumb.child(prompt_preview(bench, item, 9., 11., 20., &t, cx)),
+        _ => match picture(bench, item) {
+            Some(shown) => {
+                let fallback = std::cell::RefCell::new(Some(glyph(item, 20., cx)));
+                thumb.child(
+                    img(shown.source_at(px(220.)))
+                        .size_full()
+                        .object_fit(ObjectFit::Cover)
+                        .with_fallback(move || {
+                            fallback
+                                .borrow_mut()
+                                .take()
+                                .unwrap_or_else(|| div().into_any_element())
+                        }),
+                )
+            }
+            None if item["kind"].as_str() == Some("link") => {
+                thumb.child(favicon(bench, item, &t, cx))
+            }
+            None => thumb.child(glyph(item, 22., cx)),
+        },
+    };
+    let worded = !matches!(item["kind"].as_str(), Some("text" | "prompt"));
+    let agent = agent.to_owned();
+    div()
+        .id(("stash-tray-card", index))
+        .relative()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .rounded(theme::RADIUS_3)
+        .overflow_hidden()
+        .border_1()
+        .border_color(if selected { t.border_strong } else { t.line })
+        .bg(if selected {
+            t.surface_chosen
+        } else {
+            t.surface_raised
+        })
+        .cursor_pointer()
+        .hover(move |card| card.border_color(t.border_strong))
+        .on_click(cx.listener(move |bench, _, window, cx| {
+            bench.take_choice(&agent, Some(index), window, cx)
+        }))
+        .child(thumb)
+        .child(
+            div()
+                .px(px(9.))
+                .py(px(7.))
+                .flex()
+                .flex_col()
+                .gap(px(1.))
+                .when(worded, |meta| {
+                    meta.child(
+                        ui::text(title(item), 12., FontWeight::MEDIUM)
+                            .text_color(t.text_primary)
+                            .truncate(),
+                    )
+                })
+                .child(
+                    ui::text(place(item), 10.5, FontWeight::NORMAL)
+                        .text_color(t.text_tertiary)
+                        .truncate(),
+                ),
+        )
+        .when(new, |card| {
+            card.child(
+                div()
+                    .absolute()
+                    .top(px(6.))
+                    .left(px(6.))
+                    .px(px(5.))
+                    .rounded(theme::RADIUS_1)
+                    .bg(t.accent)
+                    .text_size(theme::ui_text(9.))
+                    .font_weight(FontWeight::BOLD)
+                    .letter_spacing(0.08)
+                    .text_color(t.on_accent)
+                    .child("NEW"),
+            )
+        })
+        .into_any_element()
+}
+
+/// A prompt's opening words over a row of its files' thumbnails.
+fn prompt_preview(
+    bench: &Workbench,
+    item: &Value,
+    inset: f32,
+    size: f32,
+    thumb: f32,
+    t: &Tokens,
+    cx: &App,
+) -> AnyElement {
+    let files = item["attachments"].as_array().cloned().unwrap_or_default();
+    div()
+        .size_full()
+        .p(px(inset))
+        .flex()
+        .flex_col()
+        .gap(px(6.))
+        .child(
+            div()
+                .flex_1()
+                .min_h_0()
+                .overflow_hidden()
+                .text_size(theme::ui_text(size))
+                .line_height(theme::ui_text(size * 1.4))
+                .text_color(t.text_secondary)
+                .child(item["text"].as_str().unwrap_or_default().trim().to_owned()),
+        )
+        .when(!files.is_empty(), |preview| {
+            preview.child(
+                div().flex_none().flex().gap(px(4.)).children(
+                    files
+                        .iter()
+                        .take(6)
+                        .map(|file| mark(bench, file, thumb, cx)),
                 ),
             )
-            .into_any_element(),
-    )
+        })
+        .into_any_element()
 }
 
 /// The Stash's pane: every item as a card with its preview, to add to a chat, open or remove,
@@ -519,7 +832,7 @@ fn tall(item: &Value) -> f32 {
     match (compact, noted) {
         (true, true) => 128.,
         (true, false) => 106.,
-        (false, _) if item["kind"].as_str() == Some("text") => 352.,
+        (false, _) if matches!(item["kind"].as_str(), Some("text" | "prompt")) => 352.,
         (false, _) => 372.,
     }
 }
@@ -628,13 +941,16 @@ fn card(bench: &Workbench, at: usize, item: &Value, cx: &mut Context<Workbench>)
         .flex()
         .flex_col()
         .gap(px(2.))
-        .when(item["kind"].as_str() != Some("text"), |words| {
-            words.child(
-                ui::text(label, 12.5, FontWeight::MEDIUM)
-                    .text_color(t.text_primary)
-                    .truncate(),
-            )
-        })
+        .when(
+            !matches!(item["kind"].as_str(), Some("text" | "prompt")),
+            |words| {
+                words.child(
+                    ui::text(label, 12.5, FontWeight::MEDIUM)
+                        .text_color(t.text_primary)
+                        .truncate(),
+                )
+            },
+        )
         .child(
             ui::text(place(item), 10.5, FontWeight::NORMAL)
                 .text_color(t.text_tertiary)
@@ -762,6 +1078,11 @@ fn preview(bench: &Workbench, item: &Value, t: &Tokens, cx: &App) -> AnyElement 
             }))
             .into_any_element()
     };
+    if item["kind"].as_str() == Some("prompt") {
+        return frame
+            .child(prompt_preview(bench, item, 12., 12., 30., t, cx))
+            .into_any_element();
+    }
     if item["kind"].as_str() == Some("text") {
         let text = item["text"].as_str().unwrap_or_default().trim().to_owned();
         return frame
@@ -898,11 +1219,11 @@ fn actions(
     let (opened, removed) = (item.clone(), id.to_owned());
     let open_label = match item["kind"].as_str() {
         Some("link") => "Open in browser",
-        Some("text") => "Copy",
+        Some("text" | "prompt") => "Copy",
         _ => "Open",
     };
     let open_icon = match item["kind"].as_str() {
-        Some("text") => Icon::Copy,
+        Some("text" | "prompt") => Icon::Copy,
         Some("link") => Icon::Globe,
         _ => Icon::Eye,
     };

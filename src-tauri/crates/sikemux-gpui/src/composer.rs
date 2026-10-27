@@ -29,6 +29,8 @@ pub type Act = Rc<dyn Fn(&mut Window, &mut App)>;
 pub enum Notice {
     Refused(SharedString, Option<(SharedString, Act)>),
     Waiting(SharedString),
+    /// Something just done to the draft, and how to take it back.
+    Done(SharedString, (SharedString, Act)),
 }
 type Pick = Rc<dyn Fn(&str, &str, &mut Window, &mut App)>;
 type Paste = Rc<dyn Fn(&ClipboardItem, &mut Window, &mut App) -> bool>;
@@ -76,6 +78,10 @@ pub struct Composer {
     attachments: Option<(Option<AnyElement>, Act, Paste, Chip)>,
     /// What the word at the caret is offered, docked over the top edge.
     menu: Option<DockMenu>,
+    /// The Stash's button: how many items are new, whether its tray is open, and what opens it.
+    stash: Option<(usize, bool, Act)>,
+    /// The Stash's tray, floating over the composer.
+    tray: Option<AnyElement>,
     notice: Option<Notice>,
     /// The mic, and what it has heard so far.
     dictation: Option<AnyView>,
@@ -109,6 +115,8 @@ impl Composer {
             usage: None,
             attachments: None,
             menu: None,
+            stash: None,
+            tray: None,
             notice: None,
             dictation: None,
             heard: None,
@@ -196,6 +204,16 @@ impl Composer {
         self
     }
 
+    pub fn stash(mut self, fresh: usize, open: bool, toggle: Act) -> Self {
+        self.stash = Some((fresh, open, toggle));
+        self
+    }
+
+    pub fn tray(mut self, tray: Option<AnyElement>) -> Self {
+        self.tray = tray;
+        self
+    }
+
     pub fn menu(mut self, menu: Option<DockMenu>) -> Self {
         self.menu = menu;
         self
@@ -250,7 +268,11 @@ impl RenderOnce for Composer {
             .flex()
             .items_center()
             .gap(px(5.))
-            .child(attach);
+            .child(attach)
+            .children(
+                self.stash
+                    .map(|(fresh, open, toggle)| stash_button(fresh, open, toggle, cx)),
+            );
         if let Some((on, held, toggle)) = self.yolo {
             bar = bar.child(yolo(on, settable && !held, &self.agent_label, toggle, cx));
         }
@@ -370,7 +392,16 @@ impl RenderOnce for Composer {
                             .child(heard)
                     }))
                     .child(bar)
-                    .children(self.menu),
+                    .children(self.menu)
+                    .children(self.tray.map(|tray| {
+                        div()
+                            .absolute()
+                            .left_0()
+                            .right_0()
+                            .bottom(gpui_kit::relative(1.))
+                            .mb(px(10.))
+                            .child(tray)
+                    })),
             )
             .children(self.notice.map(|notice| {
                 let line = div()
@@ -393,6 +424,15 @@ impl RenderOnce for Composer {
                     Notice::Waiting(words) => {
                         line.child(ui::shimmer::shimmer("composer-notice-waiting", words))
                     }
+                    Notice::Done(words, (label, act)) => line
+                        .text_color(t.text_secondary)
+                        .child(ui::icon(Icon::Check, 12.).text_color(t.live))
+                        .child(words)
+                        .child(div().text_color(t.text_disabled).child("·"))
+                        .child(
+                            ui::sign_in::link("composer-notice-undo", label, cx)
+                                .on_click(move |_, window, cx| act(window, cx)),
+                        ),
                 }
             }))
     }
@@ -562,6 +602,54 @@ impl Drawn {
             cx.set_global(next);
         }
     }
+}
+
+/// The Stash's button beside +: its mark and name, and how many items are new in an accent pill.
+fn stash_button(fresh: usize, open: bool, toggle: Act, cx: &App) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    BaseButton::new("composer-stash")
+        .accessibility_label("Stash")
+        .h(px(28.))
+        .px(px(8.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .rounded(theme::RADIUS_2)
+        .text_size(crate::theme::ui_text(12.5))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(if open {
+            t.text_primary
+        } else {
+            t.text_secondary
+        })
+        .when(open, |button| button.bg(t.surface_chosen))
+        .hover(move |button| button.bg(t.surface_hover).text_color(t.text_primary))
+        .tooltip(ui::tooltip("Stash · &"))
+        .on_click(move |_, window, cx| toggle(window, cx))
+        .child(ui::icon(Icon::Stack, 14.).text_color(if open {
+            t.text_primary
+        } else {
+            t.text_secondary
+        }))
+        .child("Stash")
+        .when(fresh > 0, |button| {
+            button.child(
+                div()
+                    .h(px(16.))
+                    .min_w(px(16.))
+                    .px(px(5.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(t.accent)
+                    .text_size(crate::theme::ui_text(10.5))
+                    .font_weight(FontWeight::BOLD)
+                    .font_features(theme::tabular())
+                    .text_color(t.on_accent)
+                    .child(fresh.to_string()),
+            )
+        })
 }
 
 /// How far the strip over the composer steps in from either side of it.

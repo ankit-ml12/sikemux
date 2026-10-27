@@ -34,7 +34,7 @@ use sikemux_wire::protocol::{
 };
 
 use crate::agent_setup::Installing;
-use crate::composer::{Composer, Notice, Strip};
+use crate::composer::{Act, Composer, Notice, Strip};
 use crate::core::{Ask, ChatAsk, Target};
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
@@ -58,6 +58,7 @@ mod installing;
 mod link;
 mod live;
 mod mention;
+pub use mention::Tray;
 mod meta;
 mod page;
 mod schema;
@@ -341,7 +342,8 @@ actions!(
         MenuDown,
         MenuPick,
         MenuClose,
-        CancelEdit
+        CancelEdit,
+        StashPrompt
     ]
 );
 
@@ -366,6 +368,15 @@ pub fn install(cx: &mut App) {
         KeyBinding::new("up", OlderPrompt, Some("ChatComposer > Input")),
         KeyBinding::new("down", NewerPrompt, Some("ChatComposer > Input")),
         KeyBinding::new("escape", StopTurn, Some("ChatComposer > Input")),
+        KeyBinding::new(
+            if cfg!(target_os = "macos") {
+                "cmd-s"
+            } else {
+                "ctrl-s"
+            },
+            StashPrompt,
+            Some("ChatComposer"),
+        ),
     ];
     for context in ["QuestionDock > Input", "QuestionDock"] {
         bindings.extend(
@@ -535,6 +546,8 @@ pub struct Composing {
     pub tracked_context: HashMap<String, ChatContext>,
     /// Why the core turned down the last message, until the next is sent.
     pub refusal: Option<SharedString>,
+    /// The stash item the draft was just stashed as, while it can still be put back.
+    pub stashed: Option<String>,
     /// What the core is doing to start the chat in a worktree, while it does.
     pub preparing: Option<String>,
     /// The message waits for the chat to be ready in its new worktree.
@@ -1916,11 +1929,6 @@ pub fn pane(
         .children(status::trouble(bench, agent, chat, cx))
         .children(permissions)
         .children(stack)
-        .children(
-            chat.composer
-                .as_ref()
-                .and_then(|_| crate::stash::chip(bench, id, cx)),
-        )
         .children(chat.composer.as_ref().map(|composing| {
             composing.view.update(cx, |view, cx| {
                 view.agent = Some(agent.clone());
@@ -2951,6 +2959,13 @@ fn mounted_composer(
                 .on_action(recall::<OlderPrompt>(id, true, cx))
                 .on_action(recall::<NewerPrompt>(id, false, cx))
                 .on_action(stop_turn(id, cx))
+                .on_action({
+                    let (agent, this) = (id.clone(), cx.weak_entity());
+                    move |_: &StashPrompt, _: &mut Window, cx: &mut App| {
+                        this.update(cx, |bench, cx| bench.stash_prompt(&agent, cx))
+                            .ok();
+                    }
+                })
                 .child(
                     div()
                         .when(offering, |menu| {
@@ -2991,17 +3006,21 @@ fn composer(
     cx: &mut Context<Workbench>,
 ) -> Option<(Composer, bool)> {
     let composing = chat.composer.as_ref()?;
-    let dock = composing
+    let shown = composing
         .menu
         .as_ref()
-        .filter(|menu| menu.answers(composing.draft.read(cx)))
-        .and_then(|menu| {
-            let repo = (bench.project())
-                .and_then(|project| project.code_host.as_ref())
-                .map(|host| host.repo.clone());
-            mention::dock(bench, &agent.id, menu, repo.as_deref(), cx)
-        });
-    let offering = dock.is_some();
+        .filter(|menu| menu.answers(composing.draft.read(cx)));
+    let dock = shown.and_then(|menu| {
+        let repo = (bench.project())
+            .and_then(|project| project.code_host.as_ref())
+            .map(|host| host.repo.clone());
+        mention::dock(bench, &agent.id, menu, repo.as_deref(), cx)
+    });
+    let tray = shown
+        .and_then(|menu| menu.tray())
+        .map(|tray| crate::stash::tray(bench, &agent.id, &tray, cx));
+    let tray_open = tray.is_some();
+    let offering = dock.is_some() || tray_open;
     let head = chat.state.as_ref();
     let kinds = bench.read("catalog").and_then(Value::as_array);
     let kind = kinds.and_then(|kinds| {
@@ -3071,17 +3090,38 @@ fn composer(
         remove,
         forget,
         open,
+        Some(&bench.asks),
         cx,
     )
     .map(IntoElement::into_any_element);
     let mut composer = Composer::new(&composing.draft, &agent.provider, label, on_send, on_stop)
-        .notice(installing::notice(bench, composing, &this).or_else(|| {
-            composing
-                .refusal
-                .clone()
-                .map(|refusal| Notice::Refused(refusal, None))
-        }))
+        .notice(
+            installing::notice(bench, composing, &this)
+                .or_else(|| {
+                    composing
+                        .refusal
+                        .clone()
+                        .map(|refusal| Notice::Refused(refusal, None))
+                })
+                .or_else(|| {
+                    let id = composing.stashed.clone()?;
+                    let (this, agent) = (this.clone(), agent.id.clone());
+                    let undo: Act = Rc::new(move |_: &mut Window, cx: &mut App| {
+                        this.update(cx, |bench, cx| bench.unstash_prompt(&agent, &id, cx))
+                            .ok();
+                    });
+                    Some(Notice::Done("Stashed".into(), ("Undo".into(), undo)))
+                }),
+        )
         .text_scale(chat.scale)
+        .stash(crate::stash::Stash::of(bench).fresh_count(), tray_open, {
+            let (this, agent) = (this.clone(), agent.id.clone());
+            Rc::new(move |window: &mut Window, cx: &mut App| {
+                this.update(cx, |bench, cx| bench.toggle_stash_tray(&agent, window, cx))
+                    .ok();
+            })
+        })
+        .tray(tray)
         .attachments(
             tiles,
             on_add,

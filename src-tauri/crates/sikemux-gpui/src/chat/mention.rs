@@ -11,7 +11,9 @@ use std::time::Duration;
 
 use gpui_kit::base::input::InlineToken;
 use gpui_kit::component::input::TextareaState;
-use gpui_kit::{px, App, AppContext, Context, IntoElement, SharedString, Styled, Task, Window};
+use gpui_kit::{
+    px, App, AppContext, Context, Focusable, IntoElement, SharedString, Styled, Task, Window,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{ChatContext, ProjectInfo};
@@ -22,7 +24,8 @@ use crate::ui::{self, DockMenu, DockRow, DockScope};
 use crate::workbench::Workbench;
 
 const SHOWN: usize = 8;
-const STASH_SHOWN: usize = 4;
+/// How many stash items the tray over the draft shows.
+const STASH_SHOWN: usize = 8;
 const AGENT: &str = "agent:";
 const FILE: &str = "file:";
 const FOLDER: &str = "folder:";
@@ -185,13 +188,43 @@ pub struct Menu {
     selected: usize,
     /// What the menu says while it has no choices, where that depends on more than the trigger.
     empty: Option<SharedString>,
+    /// The Stash's tray, opened by its button rather than by a word typed in the draft.
+    pinned: bool,
+    /// The stash items that were new when the tray opened.
+    fresh: Rc<[String]>,
     _ranking: Option<Task<()>>,
+}
+
+/// The Stash's tray as the menu holds it: its items, the one picked, those new when it opened,
+/// and what was typed after `&`.
+pub struct Tray<'a> {
+    pub items: Vec<&'a Value>,
+    pub selected: usize,
+    pub fresh: &'a [String],
+    pub needle: &'a str,
 }
 
 impl Menu {
     /// Whether the caret is still at the end of the word the menu was made for.
     pub fn answers(&self, draft: &TextareaState) -> bool {
-        typed(&draft.value(), draft.cursor()).as_ref() == Some(&self.typed)
+        self.pinned || typed(&draft.value(), draft.cursor()).as_ref() == Some(&self.typed)
+    }
+
+    /// The Stash's tray, when the menu is it.
+    pub fn tray(&self) -> Option<Tray<'_>> {
+        (self.typed.trigger == '&').then(|| Tray {
+            items: self
+                .choices
+                .iter()
+                .filter_map(|choice| match choice {
+                    Choice::Stashed(item) => Some(item),
+                    _ => None,
+                })
+                .collect(),
+            selected: self.selected,
+            fresh: &self.fresh,
+            needle: &self.typed.needle,
+        })
     }
 }
 
@@ -266,7 +299,8 @@ impl Workbench {
         let draft = composing.draft.read(cx);
         let typed = typed(&draft.value(), draft.cursor());
         let kept = composing.menu.as_ref().map(|menu| &menu.typed);
-        if typed.as_ref() == kept {
+        let pinned = composing.menu.as_ref().is_some_and(|menu| menu.pinned);
+        if typed.as_ref() == kept && !pinned {
             return;
         }
         let menu = typed.map(|typed| self.menu(agent, typed, cx));
@@ -305,14 +339,21 @@ impl Workbench {
                 let tracked = self.tracked_of(agent);
                 tracked_choices(tracked, typed.trigger, &typed.needle).into()
             }
-            '&' => crate::stash::Stash::of(self)
-                .items
-                .into_iter()
-                .filter(|item| crate::stash::matches(item, &typed.needle))
-                .take(STASH_SHOWN)
-                .map(|item| Choice::Stashed(item.clone()))
-                .collect::<Vec<_>>()
-                .into(),
+            '&' => {
+                let stash = crate::stash::Stash::of(self);
+                let fresh = stash.new_items();
+                let (mut new, old): (Vec<&Value>, Vec<&Value>) = stash
+                    .items
+                    .into_iter()
+                    .filter(|item| crate::stash::matches(item, &typed.needle))
+                    .partition(|item| fresh.contains(item));
+                new.extend(old);
+                new.into_iter()
+                    .take(STASH_SHOWN)
+                    .map(|item| Choice::Stashed(item.clone()))
+                    .collect::<Vec<_>>()
+                    .into()
+            }
             _ => Rc::from(Vec::new()),
         };
         let ranking = match typed.trigger {
@@ -325,13 +366,60 @@ impl Workbench {
             .then(|| tracked_empty(self.project(), self.tracked_of(agent), typed.trigger))
             .flatten()
             .map(SharedString::from);
+        let fresh: Rc<[String]> = match typed.trigger {
+            '&' => {
+                let fresh = crate::stash::Stash::of(self)
+                    .new_items()
+                    .iter()
+                    .filter_map(|item| item["id"].as_str().map(str::to_owned))
+                    .collect();
+                self.see_stash();
+                fresh
+            }
+            _ => Rc::from(Vec::new()),
+        };
         Menu {
             typed,
             choices,
             selected: 0,
             empty,
+            pinned: false,
+            fresh,
             _ranking: ranking,
         }
+    }
+
+    /// Opens the Stash's tray over the draft of `agent`'s chat, with the keys in the draft so the
+    /// arrows, Return and Escape work in it, or closes it.
+    pub fn toggle_stash_tray(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(composing) = self
+            .chats
+            .get_mut(agent)
+            .and_then(|chat| chat.composer.as_mut())
+        else {
+            return;
+        };
+        composing.draft.read(cx).focus_handle(cx).focus(window, cx);
+        if composing.menu.as_ref().is_some_and(|menu| menu.pinned) {
+            composing.menu = None;
+            return cx.notify();
+        }
+        let start = composing.draft.read(cx).cursor();
+        let typed = Typed {
+            trigger: '&',
+            start,
+            needle: String::new(),
+        };
+        let mut menu = self.menu(agent, typed, cx);
+        menu.pinned = true;
+        if let Some(composing) = self
+            .chats
+            .get_mut(agent)
+            .and_then(|chat| chat.composer.as_mut())
+        {
+            composing.menu = Some(menu);
+        }
+        cx.notify();
     }
 
     fn tracked_of(&self, agent: &str) -> Option<&Tracked> {
@@ -684,6 +772,10 @@ impl Workbench {
             Choice::Stashed(item) => item["id"].as_str().map(str::to_owned),
             _ => None,
         };
+        if let Some(id) = stashed.clone().filter(|_| menu.pinned) {
+            self.add_from_stash(agent, vec![id], cx);
+            return cx.notify();
+        }
         if let (Choice::Tracked(item), Some(project)) = (&choice, &project) {
             let id = tracked_id(item);
             let answer = target.request(
@@ -859,6 +951,9 @@ pub fn dock(
 ) -> Option<DockMenu> {
     let files = &bench.project_files;
     let trigger = menu.typed.trigger;
+    if trigger == '&' {
+        return None;
+    }
     let headed = |dock: DockMenu| {
         if trigger == '/' {
             return dock.titled("Session commands", "ACP");
@@ -879,7 +974,7 @@ pub fn dock(
             })
             .collect();
         let aside = match trigger {
-            '+' | '&' => "attach",
+            '+' => "attach",
             '#' | '!' => repo.unwrap_or_default(),
             _ => "mention",
         };
@@ -900,13 +995,6 @@ pub fn dock(
                     .clone()
                     .map_or_else(DockMenu::loading, DockMenu::empty),
             ),
-            '&' if !crate::stash::Stash::of(bench).signed_in => {
-                Some(DockMenu::empty("Sign in to use your Stash"))
-            }
-            '&' if blank => Some(DockMenu::empty(
-                "Nothing in your Stash. Share to Sikemux from any app on your phone.",
-            )),
-            '&' => Some(DockMenu::empty("Nothing in your Stash matches")),
             _ => menu.empty.clone().map(DockMenu::empty),
         };
         return empty.map(headed);
