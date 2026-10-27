@@ -12,11 +12,12 @@ export const BANNED = {
   'sleep-poll': { ...bash('/(?:^|[;&|]\\s*)sleep\\s+\\d+(?:\\.\\d+)?\\s*(?:;|&&|$)/m'), why: 'waited by sleeping' },
 };
 
+const FILE_TOOLS = ['Read', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+
 const PARALLEL = [
-  { tool: 'browser_*', key: (call) => call.args.tabId ?? 'current tab' },
-  { tool: 'sim_*', key: () => 'simulator' },
-  { tool: 'git_commit', key: () => 'commit' },
-  { tool: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'], key: (call) => call.args.file_path ?? call.args.notebook_path },
+  { tool: 'sim_*', key: () => 'the simulator' },
+  { tool: 'git_commit', key: () => 'the checkout' },
+  { tool: FILE_TOOLS, key: (call) => call.args.file_path ?? call.args.notebook_path, writes: true },
 ];
 
 export function grade(testCase, outcome) {
@@ -38,11 +39,12 @@ export function grade(testCase, outcome) {
         const seen = new Map();
         for (const call of batch.filter((one) => toolMatches(rule.tool, one.tool))) {
           const key = rule.key(call);
-          if (seen.has(key)) {
-            failures.push({ check: 'parallel', why: `called ${seen.get(key).tool} and ${call.tool} at once on ${key}` });
+          const earlier = seen.get(key);
+          if (earlier && !(rule.writes && earlier.tool === 'Read' && call.tool === 'Read')) {
+            failures.push({ check: 'parallel', why: `called ${earlier.tool} and ${call.tool} at once on ${key}` });
             break;
           }
-          seen.set(key, call);
+          if (!earlier || earlier.tool === 'Read') seen.set(key, call);
         }
       }
     }

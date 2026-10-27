@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { SHIMMED } from './shims.mjs';
-import { REPO } from './surface.mjs';
+import { REPO, readRepo } from './surface.mjs';
 
 const EVAL = join(REPO, 'evals/tools');
 const HOME = homedir();
@@ -22,7 +22,7 @@ export const BASE_PATH = [
   '/sbin',
 ].join(':');
 
-export function prepareCase(dir, testCase) {
+export function prepareCase(dir, testCase, at = null) {
   const fixture = testCase.fixture ?? {};
   const home = join(dir, 'home');
   const repo = join(dir, fixture.project === 'work' ? 'work/app' : 'proj/app');
@@ -40,7 +40,7 @@ export function prepareCase(dir, testCase) {
 
   const work = fixture.project === 'work';
   cpSync(join(EVAL, 'fixtures/project', work ? 'work' : 'sikemux'), repo, { recursive: true });
-  if (!work) for (const real of ['AGENTS.md', 'sikemux.json']) cpSync(join(REPO, real), join(repo, real));
+  if (!work) for (const real of ['AGENTS.md', 'sikemux.json']) writeFileSync(join(repo, real), readRepo(real, at));
   const instructions = [readFileSync(join(repo, 'AGENTS.md'), 'utf8'), fixture.instructions].filter(Boolean).join('\n');
   writeFileSync(join(repo, 'AGENTS.md'), instructions);
   writeFileSync(join(repo, 'CLAUDE.md'), instructions);

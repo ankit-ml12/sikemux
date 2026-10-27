@@ -4,6 +4,8 @@ import { run } from './runners.mjs';
 import { brief } from './grade.mjs';
 
 export const JUDGE_MODEL = 'claude-sonnet-5-5';
+const ROLE =
+  'You grade one run of a coding agent in a tool-use eval. Read the rubric, the task the agent was given, every tool call it made with a short piece of each result, and its final reply, then give a verdict.';
 
 export async function judge({ testCase, outcome, dir, sandbox }) {
   const folder = join(dir, 'judge');
@@ -12,7 +14,6 @@ export async function judge({ testCase, outcome, dir, sandbox }) {
     .map((call, index) => `${index + 1}. ${brief(call)}${call.error ? '  -> ERROR' : ''}${call.result ? `\n   -> ${call.result.slice(0, 300).replace(/\n/g, ' ')}` : ''}`)
     .join('\n');
   const prompt = [
-    'You grade one run of a coding agent in a tool-use eval. Read the rubric, the task the agent was given, every tool call it made with a short piece of each result, and its final reply.',
     `Rubric:\n${testCase.judge}`,
     `Task given to the agent:\n${testCase.prompt}`,
     `Tool calls:\n${steps || '(none)'}`,
@@ -21,7 +22,7 @@ export async function judge({ testCase, outcome, dir, sandbox }) {
   ].join('\n\n');
   await run({
     command: join(process.env.HOME, '.local/bin/claude'),
-    args: ['-p', prompt, '--model', JUDGE_MODEL, '--output-format', 'json', '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--max-turns', '1'],
+    args: ['-p', prompt, '--system-prompt', ROLE, '--model', JUDGE_MODEL, '--output-format', 'json', '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--max-turns', '1'],
     cwd: sandbox.repo,
     env: { ...sandbox.env, ENABLE_CLAUDEAI_MCP_SERVERS: 'false', DISABLE_AUTOUPDATER: '1' },
     dir: folder,

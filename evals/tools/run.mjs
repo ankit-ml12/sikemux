@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { readFileSync, readdirSync, mkdirSync, writeFileSync, realpathSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync, writeFileSync, realpathSync, statSync, existsSync, copyFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { loadSurface, REPO, SIGNED_IN_PLUGINS } from './lib/surface.mjs';
@@ -13,7 +13,9 @@ import { judge } from './lib/judge.mjs';
 import { report } from './lib/report.mjs';
 
 const EVAL = join(REPO, 'evals/tools');
-const HOST = join(REPO, 'src-tauri/target/debug/sikemux-host');
+const SURFACE = ['browser', 'src-tauri/crates/sikemux-host/src/tools_mcp', 'src-tauri/plugins', 'AGENTS.md'];
+const BUILT_HOST = join(REPO, 'src-tauri/target/debug/sikemux-host');
+const HOSTS = '/tmp/sikemux-tool-eval/hosts';
 
 const { values: options } = parseArgs({
   options: {
@@ -25,6 +27,7 @@ const { values: options } = parseArgs({
     turns: { type: 'string', default: '16' },
     timeout: { type: 'string', default: '420' },
     build: { type: 'boolean', default: false },
+    at: { type: 'string' },
     record: { type: 'string' },
     list: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
@@ -40,6 +43,7 @@ if (options.help) {
   --concurrency 4                 cases at once per model
   --turns 16 --timeout 420        limits per case (turns, seconds)
   --build                         rebuild sikemux-host first
+  --at <commit>                   run the tools as they were at a commit, with its host saved by an earlier build
   --record <label>                also save the result under evals/tools/results/
   --list                          list the cases that would run, and stop`);
   process.exit(0);
@@ -52,7 +56,8 @@ if (options.list) {
   process.exit(0);
 }
 
-ensureHost();
+const at = options.at ? git('rev-parse', '--short=9', options.at) : null;
+const HOST = at ? savedHost(at) : ensureHost();
 const variants = options.models.split(',').flatMap((alias) => {
   const model = MODELS[alias];
   if (!model) throw new Error(`no model called ${alias}; pick from ${Object.keys(MODELS).join(', ')}`);
@@ -71,8 +76,8 @@ const started = Date.now();
 const results = await Promise.all(variants.map((variant) => runVariant(variant)));
 const summary = {
   date: new Date().toISOString(),
-  commit: git('rev-parse', 'HEAD'),
-  dirty: git('status', '--porcelain', '--', 'browser', 'src-tauri/crates/sikemux-host/src/tools_mcp', 'src-tauri/plugins') !== '',
+  commit: at ? git('rev-parse', at) : git('rev-parse', 'HEAD'),
+  dirty: !at && git('status', '--porcelain', '--', ...SURFACE) !== '',
   claude: execFileSync(join(process.env.HOME, '.local/bin/claude'), ['--version'], { encoding: 'utf8' }).trim(),
   seconds: Math.round((Date.now() - started) / 1000),
   variants: results,
@@ -110,12 +115,25 @@ function loadCases() {
 function ensureHost() {
   const sources = join(REPO, 'src-tauri/crates/sikemux-host/src/tools_mcp');
   const newest = Math.max(...readdirSync(sources).map((name) => statSync(join(sources, name)).mtimeMs));
-  if (!options.build && existsSync(HOST) && statSync(HOST).mtimeMs > newest) return;
-  console.log('building sikemux-host…');
-  execFileSync('cargo', ['build', '--manifest-path', join(REPO, 'src-tauri/Cargo.toml'), '-p', 'sikemux-host', '--bin', 'sikemux-host'], {
-    stdio: 'inherit',
-    env: { ...process.env, PATH: `${join(process.env.HOME, '.cargo/bin')}:${process.env.PATH}` },
-  });
+  if (options.build || !existsSync(BUILT_HOST) || statSync(BUILT_HOST).mtimeMs < newest) {
+    console.log('building sikemux-host…');
+    execFileSync('cargo', ['build', '--manifest-path', join(REPO, 'src-tauri/Cargo.toml'), '-p', 'sikemux-host', '--bin', 'sikemux-host'], {
+      stdio: 'inherit',
+      env: { ...process.env, PATH: `${join(process.env.HOME, '.cargo/bin')}:${process.env.PATH}` },
+    });
+  }
+  if (git('status', '--porcelain', '--', 'src-tauri') === '') {
+    const saved = join(HOSTS, git('rev-parse', '--short=9', 'HEAD'));
+    mkdirSync(saved, { recursive: true });
+    copyFileSync(BUILT_HOST, join(saved, 'sikemux-host'));
+  }
+  return BUILT_HOST;
+}
+
+function savedHost(commit) {
+  const path = join(HOSTS, commit, 'sikemux-host');
+  if (!existsSync(path)) throw new Error(`no host saved for ${commit}: check it out and run once to build and save it`);
+  return path;
 }
 
 async function runVariant(variant) {
@@ -138,9 +156,9 @@ async function runVariant(variant) {
 async function runCase(variant, testCase) {
   const dir = join(runDir, variant.label.replace(/\W+/g, '-'), testCase.id);
   mkdirSync(dir, { recursive: true });
-  const sandbox = prepareCase(dir, testCase);
+  const sandbox = prepareCase(dir, testCase, at);
   const fixture = testCase.fixture ?? {};
-  const surface = loadSurface(fixture.plugins ?? SIGNED_IN_PLUGINS);
+  const surface = loadSurface(fixture.plugins ?? SIGNED_IN_PLUGINS, at);
   const endpoint = join(dir, 'endpoint.json');
   const core = await startCore({ surface, fixture, project: sandbox.repo, endpointFile: endpoint, logFile: join(dir, 'core.jsonl') });
   const servers = mcpServers({ host: HOST, endpoint, repo: sandbox.repo, dir, rivals: fixture.rivals });
