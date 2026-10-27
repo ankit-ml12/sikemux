@@ -211,7 +211,11 @@ impl Linear {
         let issue = &words.of;
         let t = Tokens::get(cx).clone();
         let busy = picked.read(cx).busy;
-        let pen = Pen::new(Rc::new(crate::editor::preview::reading_style(13., cx)));
+        let pen = Pen::new(Rc::new(crate::editor::preview::reading_linked(
+            13.,
+            host.bench(),
+            cx,
+        )));
         let description = match &words.description {
             Some(description) => pen.markdown("linear-description", description, window, cx),
             None => note("No description.", cx),

@@ -923,6 +923,7 @@ fn detail(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) 
             &Default::default(),
             None,
             &faces,
+            &area.bench,
             window,
             cx,
         ));

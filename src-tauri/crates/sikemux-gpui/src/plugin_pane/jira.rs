@@ -1498,7 +1498,7 @@ impl Jira {
                     .whitespace_normal(),
             )
             .context_menu(ui::menu(issue_menu(issue, host.bench().clone())));
-        let mut style = crate::editor::preview::reading_style(13., cx);
+        let mut style = crate::editor::preview::reading_linked(13., host.bench(), cx);
         let pane = cx.weak_entity();
         let (task_key, task_site) = (issue.key.clone(), site.to_owned());
         style.on_task = Some(Rc::new(move |index, text, done, _, cx| {

@@ -136,16 +136,20 @@ pub fn said(blocks: &[Block]) -> usize {
         .count()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn thread(
     opening: Option<&Post>,
     blocks: &[Block],
     pushers: &Pushers,
     base: Option<&str>,
     faces: Faces,
+    bench: &gpui_kit::WeakEntity<crate::workbench::Workbench>,
     window: &mut Window,
     cx: &mut App,
 ) -> Div {
-    let pen = Pen::new(Rc::new(crate::editor::preview::reading_style(TEXT, cx)));
+    let pen = Pen::new(Rc::new(crate::editor::preview::reading_linked(
+        TEXT, bench, cx,
+    )));
     let mut items: Vec<Item> = Vec::new();
     if let Some(opening) = opening {
         let opened = post(&pen, "post-opening", opening, faces, window, cx);

@@ -239,7 +239,11 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
             let host = super::host_label(&area.host.host);
             let author = release.author.clone().unwrap_or_else(|| "someone".into());
             let url = release.url.clone();
-            let pen = Pen::new(Rc::new(crate::editor::preview::reading_style(13., cx)));
+            let pen = Pen::new(Rc::new(crate::editor::preview::reading_linked(
+                13.,
+                &area.bench,
+                cx,
+            )));
             let notes = releases.notes.get(&release.id).cloned();
             let folded = releases.assets_folded;
             let assets = (!release.assets.is_empty()).then(|| {

@@ -1715,6 +1715,7 @@ fn conversation(
         &pushers,
         base.as_deref(),
         &faces,
+        &area.bench,
         window,
         cx,
     ));

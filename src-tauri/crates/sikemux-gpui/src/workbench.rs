@@ -4014,6 +4014,62 @@ impl Workbench {
         self.open_area(area, cx);
     }
 
+    /// Opens what a web link in a page names in the app: a pull request or issue of one of
+    /// the projects' repositories in that project's Git tab, anything else in the browser.
+    pub(crate) fn follow_web_link(&mut self, href: &str, cx: &mut Context<Self>) {
+        let asked = self
+            .target()
+            .request("codeHostLink", json!({ "url": href }));
+        let href = href.to_owned();
+        cx.spawn(async move |bench, cx| {
+            let found = asked.await.ok();
+            bench
+                .update(cx, |bench, cx| {
+                    let opened = found.is_some_and(|found| bench.open_linked_item(&found, cx));
+                    if !opened {
+                        cx.open_url(&href);
+                    }
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// Brings forward the project whose repository `found` names, its Git tab showing the pull
+    /// request or issue it names, and says whether one of the projects holds it.
+    fn open_linked_item(&mut self, found: &Value, cx: &mut Context<Self>) -> bool {
+        let Ok(host) = serde_json::from_value::<ProjectCodeHost>(found["codeHost"].clone()) else {
+            return false;
+        };
+        let item = &found["item"];
+        let area = match item["kind"].as_str() {
+            Some("pull") => Area::Pulls,
+            Some("issue") => Area::Issues,
+            _ => return false,
+        };
+        let Some(number) = item["number"].as_u64() else {
+            return false;
+        };
+        let holds = |project: &&ProjectInfo| {
+            project
+                .code_host
+                .as_ref()
+                .is_some_and(|held| held.host == host.host && held.repo == host.repo)
+        };
+        let Some(project) = self.projects().iter().find(holds).cloned() else {
+            return false;
+        };
+        self.opening = Some((area, number, host.repo.clone()));
+        self.area = area;
+        self.activate_project(&project.id);
+        self.call_in_front(
+            "openTab",
+            json!({ "project": project.id, "kind": "git", "target": project.path.to_string_lossy() }),
+        );
+        cx.notify();
+        true
+    }
+
     /// Brings the project's Git tab to the front, opening one when it has none.
     fn open_git(&mut self, cx: &mut App) {
         self.take_keys_when_shown(TakesKeys::Git, cx);
