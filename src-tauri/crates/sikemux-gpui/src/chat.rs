@@ -531,7 +531,7 @@ pub struct Chat {
 #[derive(Clone)]
 enum Waiting {
     Questions(Vec<Question>),
-    Permission(PermissionAsk),
+    Permission(Box<PermissionAsk>),
 }
 
 /// The draft, the masked field a secret answer is typed into, and what the draft last said while empty.
@@ -1901,7 +1901,7 @@ pub fn pane(
         .iter()
         .map(|ask| {
             let key = format!("permission:{}", ask.request_id);
-            (key, Waiting::Permission(ask.clone()))
+            (key, Waiting::Permission(Box::new(ask.clone())))
         })
         .collect();
     if chat.current(&open).is_some() {
