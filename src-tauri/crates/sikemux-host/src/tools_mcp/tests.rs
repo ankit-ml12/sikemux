@@ -146,6 +146,16 @@ fn schemas_stay_lean_so_prose_lives_in_the_guide() {
     );
 }
 
+#[test]
+fn server_instructions_fit_before_agents_cut_them_off() {
+    let instructions = Manifest::load().offering(true, true).instructions();
+    assert!(
+        instructions.len() <= 3900,
+        "OMP cuts server instructions after 4,000 characters and Claude Code after about 4,096, so the end of a longer text never reaches the agent; move detail into SIKEMUX_GUIDE.md ({} characters)",
+        instructions.len()
+    );
+}
+
 /// The simulator tools reach only agents on a Mac that can run them, so like a
 /// plugin they answer to their own budget rather than the one every agent pays.
 #[test]

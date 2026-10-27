@@ -1898,7 +1898,7 @@
       "description": "Commit only the lines you wrote.",
       "properties": {
         "message": {
-          "description": "Omit to only land or push",
+          "description": "Omit to only land or push; no Co-Authored-By trailer naming yourself",
           "type": "string",
           "minLength": 1,
           "maxLength": 65536

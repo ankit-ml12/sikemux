@@ -152,7 +152,7 @@
         "title": { "type": "string" },
         "head": { "type": "string", "description": "The branch with the changes." },
         "base": { "type": "string", "description": "The branch to merge into." },
-        "body": { "type": "string" },
+        "body": { "type": "string", "description": "No footer naming yourself." },
         "draft": { "type": "boolean" },
         "closeBranch": { "type": "boolean", "description": "Delete head once merged." }
       },

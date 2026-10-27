@@ -97,7 +97,7 @@
       "name": "signoz_logs",
       "row": {"verb": "logs", "kind": "read", "icon": "log-lines", "target": ["{service}", "trace {traceId}", "all services"], "detail": ["“{text}”", "{expression}", "{severities}"]},
       "method": "searchLogs",
-      "description": "Search logs, newest first. Fields every line shares are listed once in `shared`. Bodies over 1000 characters are clipped; pass id to read one whole.",
+      "description": "Search logs, newest first. Shared fields come once in `shared`; bodies clip at 1000 characters, and id reads one whole. None for a service? Try aws_logs.",
       "properties": {
         "service": {
           "type": "string"
