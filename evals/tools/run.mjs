@@ -122,7 +122,7 @@ function ensureHost() {
       env: { ...process.env, PATH: `${join(process.env.HOME, '.cargo/bin')}:${process.env.PATH}` },
     });
   }
-  if (git('status', '--porcelain', '--', 'src-tauri') === '') {
+  if (git('status', '--porcelain', '--untracked-files=no', '--', 'src-tauri') === '') {
     const saved = join(HOSTS, git('rev-parse', '--short=9', 'HEAD'));
     mkdirSync(saved, { recursive: true });
     copyFileSync(BUILT_HOST, join(saved, 'sikemux-host'));
