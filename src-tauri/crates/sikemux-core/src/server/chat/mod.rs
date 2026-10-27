@@ -1269,6 +1269,18 @@ impl Chats {
         self.get(agent_id).ok_or_else(|| NOT_RUNNING.into())
     }
 
+    /// The feed clients hear the agent's chat on, running or asleep, without counting as a read.
+    pub(crate) fn heard(&self, agent_id: &str) -> Option<Arc<Feed>> {
+        if let Some(chat) = self.get(agent_id) {
+            return Some(chat.feed.clone());
+        }
+        let resting = self.resting.locked();
+        resting
+            .iter()
+            .find(|resting| resting.agent_id == agent_id)
+            .map(|resting| resting.feed.clone())
+    }
+
     /// The feed a client reads the agent's chat from: the running chat's, else the one it
     /// kept when it went to sleep. Reading a sleeping chat starts nothing.
     pub(crate) fn readable(&self, agent_id: &str) -> CoreResult<Arc<Feed>> {
@@ -2091,6 +2103,7 @@ pub(crate) async fn attach(
                 let standing = Standing {
                     running: false,
                     turned: false,
+                    draft: core.drafts.chat_draft(agent_id),
                 };
                 feed.attach(client, request_id, standing, since);
                 return;
@@ -2129,6 +2142,7 @@ pub(crate) async fn attach(
         Standing {
             running: chat.turn_running(),
             turned: chat.turned.load(Ordering::Acquire),
+            draft: core.drafts.chat_draft(agent_id),
         },
         since,
     );

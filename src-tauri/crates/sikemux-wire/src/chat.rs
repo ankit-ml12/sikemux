@@ -153,6 +153,20 @@ pub struct ChatHead {
     /// The tool part still running at the end of the last row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_tool: Option<String>,
+    /// What the person has written and not sent, as the host keeps it for every app.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft: Option<ChatDraft>,
+}
+
+/// A chat's unsent draft: its text, what the apps keep beside it, such as its files as
+/// `attachments`, and its revision, which a `setDraft` names as the one it was written over.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatDraft {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra: Option<Value>,
+    pub rev: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

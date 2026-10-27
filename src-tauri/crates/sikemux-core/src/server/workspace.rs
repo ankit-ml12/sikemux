@@ -2252,11 +2252,12 @@ fn agents_closed(core: &Core, before: HashSet<String>) {
         core.chats.stop(agent_id);
         core.chats.forget_rest(agent_id);
     }
-    let forgotten = core
-        .drafts
-        .forget(gone.iter().map(|agent_id| format!("chat:{agent_id}")));
+    let forgotten = core.drafts.forget(
+        gone.iter()
+            .map(|agent_id| super::drafts::chat_key(agent_id)),
+    );
     if !forgotten.is_empty() {
-        core.changes.changed(Topic::Drafts, None, Some(forgotten));
+        super::drafts::changed(&core, forgotten);
     }
     core.names.settle(core.open_agents());
 }

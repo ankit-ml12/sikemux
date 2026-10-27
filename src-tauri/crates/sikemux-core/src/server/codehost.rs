@@ -1165,12 +1165,12 @@ pub(crate) async fn work_on(core: &Arc<Core>, params: WorkOnParams) -> Answer {
     if let Err(error) = super::launching::start(core, None, chosen).await {
         return failed(&error.to_string());
     }
-    let key = format!("chat:{agent_id}");
+    let key = super::drafts::chat_key(&agent_id);
     let extra = json!({ "context": [context] });
     if let Err(error) = core.drafts.set(&key, String::new(), Some(extra)) {
         return failed(&error.to_string());
     }
-    core.changes.changed(Topic::Drafts, None, Some(vec![key]));
+    super::drafts::changed(&core, vec![key]);
     let tab = json!({ "project": project.id, "kind": "agent", "target": agent_id });
     if let Ok(tab) = serde_json::from_value(tab) {
         let _ = super::layout::open_tab(core, tab);

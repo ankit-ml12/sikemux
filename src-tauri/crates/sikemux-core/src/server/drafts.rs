@@ -13,8 +13,11 @@ use serde_json::Value;
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
+use sikemux_wire::chat::ChatDraft;
+
+use super::changed::Topic;
 use super::kept::Kept;
-use super::{CoreError, CoreResult};
+use super::{Core, CoreError, CoreResult};
 
 const FILE: &str = "drafts.json";
 /// The longest draft kept, in bytes.
@@ -84,6 +87,22 @@ impl Delivery {
     }
 }
 
+/// The key a chat's draft is kept under.
+pub(crate) fn chat_key(agent: &str) -> String {
+    format!("chat:{agent}")
+}
+
+/// The drafts under `keys` changed: every app reads them again, and a chat's clients hear its
+/// draft with the chat.
+pub(crate) fn changed(core: &Core, keys: Vec<String>) {
+    for agent in keys.iter().filter_map(|key| key.strip_prefix("chat:")) {
+        if let Some(feed) = core.chats.heard(agent) {
+            feed.set_draft(core.drafts.chat_draft(agent));
+        }
+    }
+    core.changes.changed(Topic::Drafts, None, Some(keys));
+}
+
 pub(crate) struct Drafts(Arc<Held>);
 
 struct Held {
@@ -120,6 +139,17 @@ impl Drafts {
         };
         self.set(key, String::new(), draft.extra)?;
         Ok(draft.text)
+    }
+
+    /// The draft of `agent`'s chat, as the chat's clients are told it.
+    pub(crate) fn chat_draft(&self, agent: &str) -> Option<ChatDraft> {
+        let drafts = self.0.drafts.locked();
+        let draft = &drafts.get(&chat_key(agent))?.shown;
+        Some(ChatDraft {
+            text: draft.text.clone(),
+            extra: draft.extra.clone(),
+            rev: draft.rev,
+        })
     }
 
     /// The drafts under `keys`, else every one, by key.

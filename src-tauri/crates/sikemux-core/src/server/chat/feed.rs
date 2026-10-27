@@ -18,7 +18,7 @@ use crate::protocol::{
     Response, ServerMessage,
 };
 use sikemux_process::clock::epoch_ms;
-use sikemux_wire::chat::{ChatChange, ChatPage, QueuedMessage, SentContext, ToolDetail};
+use sikemux_wire::chat::{ChatChange, ChatDraft, ChatPage, QueuedMessage, SentContext, ToolDetail};
 
 use super::super::connection::{ClientConn, ClientId};
 use super::history::{History, HistoryState, Page, Reader, Recovered, MAX_HISTORY_BYTES};
@@ -1427,6 +1427,7 @@ pub(crate) type Earlier = Box<dyn FnMut() -> Result<Option<Vec<(String, Value)>>
 pub(crate) struct Standing {
     pub running: bool,
     pub turned: bool,
+    pub draft: Option<ChatDraft>,
 }
 
 /// A client hearing the chat, and the last change it was sent when it fell
@@ -2121,6 +2122,15 @@ impl Feed {
         }
     }
 
+    /// The chat's unsent draft changed; clients already hearing the chat are told.
+    pub(crate) fn set_draft(&self, draft: Option<ChatDraft>) {
+        let mut inner = self.inner.locked();
+        if let Some(fold) = inner.fold.as_mut() {
+            fold.set_draft(draft);
+            self.flush_locked(&mut inner);
+        }
+    }
+
     fn queue_changed(&self, inner: &mut Inner) {
         let queued = queued_view(&inner.queued);
         if let Some(fold) = inner.fold.as_mut() {
@@ -2177,6 +2187,7 @@ impl Feed {
         let fold = self.fold(&mut inner);
         fold.set_running(standing.running);
         fold.set_turned(standing.turned);
+        fold.set_draft(standing.draft);
         self.flush_locked(&mut inner);
         let resumed = since
             .filter(|since| since.feed == self.id && since.seq <= inner.seq)

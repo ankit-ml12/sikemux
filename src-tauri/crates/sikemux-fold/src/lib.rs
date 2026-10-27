@@ -23,11 +23,11 @@ use serde_json::{Map, Value};
 use sikemux_markdown::Doc;
 
 use sikemux_wire::chat::{
-    AccountMove, AgentNotice, AsyncTask, ChatCommandInfo, ChatConnection, ChatFailure, ChatHead,
-    ChatMessage, ChatPart, ChatRole, ContextUsage, FailureKind, MoveReason, NoticeSeverity,
-    NoticeState, PermissionAsk, PermissionOption, QueuedMessage, Retrying, SentContext,
-    SessionEnded, SubagentCard, SubagentState, TaskNotice, TaskState, TaskUsage, ToolDetail,
-    TurnStart, UsageCost, WorkflowAgent,
+    AccountMove, AgentNotice, AsyncTask, ChatCommandInfo, ChatConnection, ChatDraft, ChatFailure,
+    ChatHead, ChatMessage, ChatPart, ChatRole, ContextUsage, FailureKind, MoveReason,
+    NoticeSeverity, NoticeState, PermissionAsk, PermissionOption, QueuedMessage, Retrying,
+    SentContext, SessionEnded, SubagentCard, SubagentState, TaskNotice, TaskState, TaskUsage,
+    ToolDetail, TurnStart, UsageCost, WorkflowAgent,
 };
 use tools::WithRow;
 
@@ -639,6 +639,13 @@ impl Fold {
     pub fn set_queued(&mut self, queued: Vec<QueuedMessage>) {
         self.head.queued = queued;
         self.set_head("queued");
+    }
+
+    pub fn set_draft(&mut self, draft: Option<ChatDraft>) {
+        if self.head.draft != draft {
+            self.head.draft = draft;
+            self.set_head("draft");
+        }
     }
 
     pub fn set_earlier_lost(&mut self) {

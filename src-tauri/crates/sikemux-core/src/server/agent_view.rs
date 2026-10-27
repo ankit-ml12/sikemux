@@ -8,7 +8,6 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use super::agent::AgentActivity;
-use super::changed::Topic;
 use super::{launching, session, Core, CoreError, CoreResult};
 
 const AT_WORK: &str = "Wait for the agent to finish";
@@ -28,7 +27,7 @@ pub(crate) struct SwitchParams {
 }
 
 fn draft_key(agent_id: &str) -> String {
-    format!("chat:{agent_id}")
+    super::drafts::chat_key(agent_id)
 }
 
 /// Answers `{ptyId}` once the agent runs in a terminal, or null once it runs
@@ -63,7 +62,7 @@ async fn to_terminal(core: &Arc<Core>, agent_id: &str) -> CoreResult<Value> {
         launching::start_terminal(core, agent_id, super::spare::opening_size(core), None).await?;
     let key = draft_key(agent_id);
     let draft = core.drafts.take_text(&key)?;
-    core.changes.changed(Topic::Drafts, None, Some(vec![key]));
+    super::drafts::changed(&core, vec![key]);
     if let (Some(terminal), Some(draft)) = (core.session(pty), session::typable(&draft)) {
         session::type_when_ready(&terminal, draft, session::Typist::Other);
     }
@@ -88,7 +87,7 @@ async fn to_chat(
         if !draft.trim().is_empty() {
             let key = draft_key(agent_id);
             core.drafts.set(&key, draft, None)?;
-            core.changes.changed(Topic::Drafts, None, Some(vec![key]));
+            super::drafts::changed(&core, vec![key]);
         }
         core.view_changed();
     }

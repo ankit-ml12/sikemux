@@ -379,7 +379,7 @@ calls! { core, client, params;
     "setDraft": Person => {
         let params: SetDraftParams = parse(params)?;
         core.drafts.save(&params.key, params.text, params.extra, params.rev)?;
-        core.changes.changed(Topic::Drafts, None, Some(vec![params.key]));
+        super::drafts::changed(&core, vec![params.key]);
         answer(json!({}))
     },
     "setPreference": Person => {

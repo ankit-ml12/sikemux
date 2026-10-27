@@ -190,7 +190,7 @@ async fn into_draft(core: &Core, item: &StashItem, agent_id: &str) -> CoreResult
         true => Some(download(core, item).await?),
         false => None,
     };
-    let key = format!("chat:{agent_id}");
+    let key = super::drafts::chat_key(agent_id);
     let delivery = Delivery {
         path: path
             .as_ref()
@@ -198,7 +198,7 @@ async fn into_draft(core: &Core, item: &StashItem, agent_id: &str) -> CoreResult
         words: words(item),
     };
     core.drafts.deliver(&key, delivery)?;
-    core.changes.changed(Topic::Drafts, None, Some(vec![key]));
+    super::drafts::changed(&core, vec![key]);
     Ok(path)
 }
 

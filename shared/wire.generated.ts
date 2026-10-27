@@ -908,6 +908,8 @@ export interface ChatHead {
     ended?: SessionEnded;
     /** The tool part still running at the end of the last row. */
     activeTool?: string;
+    /** What the person has written and not sent, as the host keeps it for every app. */
+    draft?: ChatDraft;
 }
 
 export type ChatConnection = "connecting" | "starting" | "initializing" | "ready" | "stopped" | "error";
@@ -1099,6 +1101,16 @@ export interface SessionEnded {
     /** `requested`, `exited` after it was up, or `failed` before it got there. */
     reason: string;
     message?: string;
+}
+
+/**
+ * A chat's unsent draft: its text, what the apps keep beside it, such as its files as
+ * `attachments`, and its revision, which a `setDraft` names as the one it was written over.
+ */
+export interface ChatDraft {
+    text: string;
+    extra?: unknown;
+    rev: number;
 }
 
 /** One message of a chat. */
@@ -1421,7 +1433,8 @@ export type CoreChangeTopic =
     | "codeHost"
     | "pluginView"
     | "files"
-    | "update";
+    | "update"
+    | "stash";
 
 /**
  * How the person wants Sikemux to behave, the same in every app. A field
@@ -2317,6 +2330,8 @@ export type DiffKind = "add" | "mod" | "del";
 export interface Draft {
     text: string;
     extra?: unknown;
+    /** Moves on with every change, so an app saving the draft says which one it last read. */
+    rev: number;
 }
 
 /** What the core's `Preferences::default()` serializes to. */
