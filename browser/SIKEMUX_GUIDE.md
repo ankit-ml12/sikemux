@@ -281,9 +281,12 @@ chart library from a CDN, load as they are. Pass absolute paths to the tools.
 1. Write the file anywhere, such as the system temp folder.
 2. `page_preview` draws it off screen at the reply's width (756 px; pass
    `width: 390` to check a phone), opening no tab, and returns a screenshot, the
-   `contentHeight` it needs and its console, errors included. Fix and preview
-   again until it is right. Editing the file and previewing again is cheaper
-   than writing it anew.
+   `contentHeight` it needs and its console, errors included. A `script` runs
+   in the page first, with the real theme, as `browser_evaluate` does: click its
+   buttons or read what it drew, and its result comes back under `script`.
+   `picture: false` leaves the screenshot out. This is the way to test your own
+   page; never open it in a tab. Fix and preview again until it is right.
+   Editing the file and previewing again is cheaper than writing it anew.
 3. `page_show` with the path, a short `title` and `height` set to the last
    `contentHeight`. In a chat the page appears in your reply, above the text
    you write next; that text should add only what the page does not say. An

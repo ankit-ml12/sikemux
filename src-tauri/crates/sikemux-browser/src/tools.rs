@@ -35,6 +35,7 @@ const NARROW_VIEWPORT: u64 = 700;
 /// The width of a chat's reply column, where `page_show` puts a page.
 const PAGE_WIDTH: u64 = 756;
 const PAGE_VIEWPORT_HEIGHT: u64 = 600;
+const PAGE_SCRIPT_LIMIT: Duration = Duration::from_secs(20);
 /// How long a page may take to answer before WebKit is asked whether it hangs.
 const SLOW_ANSWER: Duration = Duration::from_secs(1);
 
@@ -521,29 +522,7 @@ async fn run(
                     .min(MAX_BLOCKING_MS),
             )
             .min(Duration::from_millis(MAX_BLOCKING_MS).saturating_sub(started.elapsed()));
-            let body = match run_helper(&view, &shape_check(&script)).await?.as_str() {
-                "expression" => script_body(&format!("return ({script}\n);")),
-                "statements" => script_body(&script),
-                error => return Err(error.to_owned()),
-            };
-            let answer = native::run_script(&view, &body, limit)
-                .await
-                .map_err(|error| script_failure(&error, limit))?;
-            if answer.len() > MAX_SCRIPT_RESULT {
-                let cut = (0..=MAX_SCRIPT_RESULT)
-                    .rev()
-                    .find(|at| answer.is_char_boundary(*at))
-                    .unwrap_or(0);
-                return Ok(json!({ "result": answer.get(..cut), "truncated": true }));
-            }
-            let result = serde_json::from_str::<Value>(&answer).unwrap_or(Value::String(answer));
-            let mut answer = json!({ "result": result });
-            if answer["result"].is_null() && !script.contains("return") && script.contains(';') {
-                answer["note"] = json!(
-                    "a script of several statements returns nothing unless it ends with return"
-                );
-            }
-            Ok(answer)
+            run_agent_script(&view, &script, limit).await
         }
         "browser.console" => {
             let (_, view) = active(manager, agent_id)?;
@@ -734,20 +713,34 @@ async fn run(
             preview.loaded(LOAD_TIMEOUT).await?;
             tokio::time::sleep(SETTLE).await;
             let view = preview.view();
+            let ran = match text("script") {
+                Some(script) => {
+                    let ran = run_agent_script(view, &script, PAGE_SCRIPT_LIMIT).await?;
+                    tokio::time::sleep(SETTLE).await;
+                    Some(ran)
+                }
+                None => None,
+            };
             let content_height = call(view, "contentHeight", &[]).await?;
             let console = read_records(view, "console", &[Value::Null, json!(false)]).await?;
+            let mut result = json!({
+                "width": width,
+                "contentHeight": content_height,
+                "console": console,
+            });
+            if let Some(ran) = ran {
+                result["script"] = ran;
+            }
+            if params.get("picture").and_then(Value::as_bool) == Some(false) {
+                return Ok(result);
+            }
             let page_height = call(view, "pageHeight", &[])
                 .await?
                 .as_f64()
                 .ok_or("the page did not report its height")?;
             let image = screenshot(view, Some(page_height), None).await?;
-            let mut result = json!({
-                "width": width,
-                "contentHeight": content_height,
-                "console": console,
-                "mimeType": "image/jpeg",
-                "data": base64_encode(&image),
-            });
+            result["mimeType"] = json!("image/jpeg");
+            result["data"] = json!(base64_encode(&image));
             if page_height > MAX_PAGE_HEIGHT {
                 result["cutAt"] = json!(MAX_PAGE_HEIGHT);
             }
@@ -755,6 +748,33 @@ async fn run(
         }
         _ => Err("unknown browser method".into()),
     }
+}
+
+/// Runs an agent's script in `view`, an expression or statements ending in
+/// return, and answers with what it returned as JSON.
+async fn run_agent_script(view: &Tab, script: &str, limit: Duration) -> Result<Value, String> {
+    let body = match run_helper(view, &shape_check(script)).await?.as_str() {
+        "expression" => script_body(&format!("return ({script}\n);")),
+        "statements" => script_body(script),
+        error => return Err(error.to_owned()),
+    };
+    let answer = native::run_script(view, &body, limit)
+        .await
+        .map_err(|error| script_failure(&error, limit))?;
+    if answer.len() > MAX_SCRIPT_RESULT {
+        let cut = (0..=MAX_SCRIPT_RESULT)
+            .rev()
+            .find(|at| answer.is_char_boundary(*at))
+            .unwrap_or(0);
+        return Ok(json!({ "result": answer.get(..cut), "truncated": true }));
+    }
+    let result = serde_json::from_str::<Value>(&answer).unwrap_or(Value::String(answer));
+    let mut answer = json!({ "result": result });
+    if answer["result"].is_null() && !script.contains("return") && script.contains(';') {
+        answer["note"] =
+            json!("a script of several statements returns nothing unless it ends with return");
+    }
+    Ok(answer)
 }
 
 /// Back, forward or reload in the current tab, then the page as it arrives.
