@@ -275,16 +275,26 @@ impl Panel for Jira {
                     .border_color(t.border)
                     .child(sidebar),
             )
-            .child(div().flex_1().min_w_0().h_full().child(middle))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(LIST_MIN))
+                    .h_full()
+                    .overflow_hidden()
+                    .child(middle),
+            )
             .when_some(detail, |columns, detail| {
                 columns
                     .child(crate::panes::handle("jira-detail-edge", DetailEdge, true))
                     .child(
                         div()
                             .map(|column| match width {
-                                Some(width) => column.w(px(width)).flex_none(),
+                                Some(width) => {
+                                    column.w(px(width)).flex_shrink(1.).min_w(px(DETAIL_MIN))
+                                }
                                 None => column.flex_1().min_w(px(DETAIL_MIN)).max_w(px(560.)),
                             })
+                            .overflow_hidden()
                             .h_full()
                             .border_l_1()
                             .border_color(t.border)
