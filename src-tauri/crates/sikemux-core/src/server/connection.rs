@@ -1281,6 +1281,13 @@ async fn shutdown(core: Arc<Core>, client: Arc<ClientConn>, request_id: RequestI
             return;
         }
     }
+    eprintln!(
+        "sikemux core: stopping{}, as the client with pid {} asked",
+        if stop_all { " everything it runs" } else { "" },
+        client
+            .pid
+            .map_or_else(|| "unknown".to_owned(), |pid| pid.to_string())
+    );
     client.respond(request_id, Ok(Response::Done));
     client.wait_flushed(SHUTDOWN_FLUSH).await;
     core.begin_shutdown();

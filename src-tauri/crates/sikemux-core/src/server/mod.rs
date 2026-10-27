@@ -1535,12 +1535,22 @@ pub(crate) async fn run_core(
             },
             _ = frozen.changed() => {}
             _ = shutdown.changed() => break,
-            _ = terminate.recv() => break,
-            _ = interrupt.recv() => break,
+            _ = terminate.recv() => {
+                eprintln!("sikemux core: stopping, as something sent it SIGTERM");
+                break;
+            }
+            _ = interrupt.recv() => {
+                eprintln!("sikemux core: stopping, as something sent it SIGINT");
+                break;
+            }
             _ = ticker.tick() => {
                 if core.is_idle() && !core.is_frozen() {
                     let since = *idle_since.get_or_insert_with(Instant::now);
                     if since.elapsed() >= config.idle_exit {
+                        eprintln!(
+                            "sikemux core: stopping, as nothing used it for {}s",
+                            config.idle_exit.as_secs()
+                        );
                         break;
                     }
                 } else {
