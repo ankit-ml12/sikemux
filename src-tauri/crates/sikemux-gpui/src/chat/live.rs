@@ -736,7 +736,7 @@ pub fn triggers(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option
         folds: true,
         folded,
         icon: ui::icon(Icon::Timer, 11.)
-            .text_color(t.text_disabled)
+            .text_color(t.cmd)
             .into_any_element(),
         peek: set.iter().map(next_fire).take(1).collect(),
         action: None,
@@ -745,58 +745,16 @@ pub fn triggers(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option
     let rows: Vec<AnyElement> = set
         .iter()
         .map(|trigger| {
-            let (agent, id, danger) = (agent.to_owned(), trigger.id, t.danger);
-            let remove = BaseButton::new(SharedString::from(format!("trigger-remove:{id}")))
-                .accessibility_label(format!("Remove trigger {}", trigger.title))
-                .size(px(18.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(theme::RADIUS_1)
-                .text_color(t.text_disabled)
-                .hover(move |remove| remove.bg(Hsla { a: 0.16, ..danger }).text_color(danger))
-                .on_click(cx.listener(move |bench, _, _, _| {
+            let (agent, id) = (agent.to_owned(), trigger.id);
+            trigger_row(
+                trigger,
+                &t,
+                cx.listener(move |bench, _, _, _| {
                     bench
                         .chat_target(&agent)
-                        .call("removeTrigger", json!({ "agentId": agent, "trigger": id }));
-                }))
-                .child(ui::icon(Icon::Close, 10.).text_color(t.text_disabled));
-            let when = match repeats(&trigger.when) {
-                Some(repeats) => format!("{repeats} · next {}", next_fire(trigger)),
-                None => next_fire(trigger),
-            };
-            div()
-                .min_w_0()
-                .py(px(4.))
-                .pl(px(11.))
-                .pr(px(8.))
-                .flex()
-                .items_center()
-                .gap(px(7.))
-                .child(
-                    ui::icon(Icon::Timer, 12.)
-                        .flex_none()
-                        .text_color(t.text_tertiary),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(crate::theme::ui_text(12.))
-                        .text_color(t.text_secondary)
-                        .child(trigger.title.clone()),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .font_family(theme::MONO)
-                        .text_size(crate::theme::ui_text(10.))
-                        .text_color(t.text_disabled)
-                        .child(when),
-                )
-                .child(remove)
-                .into_any_element()
+                        .call("removeTrigger", json!({ "trigger": id }));
+                }),
+            )
         })
         .collect();
     Some(
@@ -808,4 +766,56 @@ pub fn triggers(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option
             .child(folding("triggers", folded, rows))
             .into_any_element(),
     )
+}
+
+/// One trigger: what it is for, when it next fires, and a button that removes it.
+pub fn trigger_row(
+    trigger: &ChatTrigger,
+    t: &Tokens,
+    remove: impl Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static,
+) -> AnyElement {
+    let danger = t.danger;
+    let remove = BaseButton::new(SharedString::from(format!("trigger-remove:{}", trigger.id)))
+        .accessibility_label(format!("Remove trigger {}", trigger.title))
+        .size(px(18.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(theme::RADIUS_1)
+        .text_color(t.text_disabled)
+        .hover(move |remove| remove.bg(Hsla { a: 0.16, ..danger }).text_color(danger))
+        .on_click(remove)
+        .child(ui::icon(Icon::Close, 10.).text_color(t.text_disabled));
+    let when = match repeats(&trigger.when) {
+        Some(repeats) => format!("{repeats} · next {}", next_fire(trigger)),
+        None => next_fire(trigger),
+    };
+    div()
+        .min_w_0()
+        .py(px(4.))
+        .pl(px(11.))
+        .pr(px(8.))
+        .flex()
+        .items_center()
+        .gap(px(7.))
+        .child(ui::icon(Icon::Timer, 12.).flex_none().text_color(t.cmd))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_size(crate::theme::ui_text(12.))
+                .text_color(t.text_secondary)
+                .child(trigger.title.clone()),
+        )
+        .child(
+            div()
+                .flex_none()
+                .font_family(theme::MONO)
+                .text_size(crate::theme::ui_text(10.))
+                .text_color(t.text_disabled)
+                .child(when),
+        )
+        .child(remove)
+        .into_any_element()
 }

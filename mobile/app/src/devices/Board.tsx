@@ -12,6 +12,7 @@ import {
   type BoardColumn,
   type ProjectBoard,
 } from '@shared/agents/agentBoard';
+import type { ChatTrigger } from '@shared/wire.generated';
 import { kindLabel, outcomeLabel, rowKeys, whoLabel, type AgentMessageRows } from '@shared/agents/agentMessages';
 import { formatAge } from '@shared/lib/format';
 import type { AgentQuestion, ProjectInfo, Snapshot } from '@/core/protocol';
@@ -87,9 +88,11 @@ function OneBoard({
   if (!read.data) return null;
   const cards = [...read.data.cards].sort((a, b) => b.updatedAt - a.updatedAt);
   const byId = new Map(cards.map((card) => [card.id, card]));
+  const { triggers } = read.data;
   return (
     <>
-      {cards.length ? null : <EmptyState icon="IconBoard" text={`No cards on ${scope.name}'s board.`} />}
+      {triggers.length ? <Triggers triggers={triggers} /> : null}
+      {cards.length || triggers.length ? null : <EmptyState icon="IconBoard" text={`No cards on ${scope.name}'s board.`} />}
       {COLUMNS.map((column) => {
         const shown = cards.filter((card) => card.column === column);
         if (!shown.length) return null;
@@ -106,6 +109,50 @@ function OneBoard({
       })}
       <BetweenAgents connection={connection} snapshot={snapshot} project={scope.path} />
     </>
+  );
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** How often a trigger fires and when next, as the Mac's board says it. */
+function triggerWhen(trigger: ChatTrigger): string {
+  const at = new Date(Number(trigger.nextAt));
+  const today = at.toDateString() === new Date().toDateString();
+  const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const next = today ? `today ${time}` : `${WEEKDAYS[at.getDay()]} ${time}`;
+  const { when } = trigger;
+  if (when.kind === 'once') return next;
+  if (when.kind === 'every') {
+    const minutes = Math.ceil(when.seconds / 60);
+    const every = minutes % 1440 === 0 ? `${minutes / 1440} d` : minutes % 60 === 0 ? `${minutes / 60} h` : `${minutes} min`;
+    return `every ${every} · next ${next}`;
+  }
+  const days =
+    when.weekdays.join(',') === '1,2,3,4,5'
+      ? 'weekdays'
+      : when.weekdays.length
+        ? when.weekdays.map((day) => WEEKDAYS[day]).join(' ')
+        : 'daily';
+  return `${days} · next ${next}`;
+}
+
+/** The triggers that add a card to this board each time they fire. */
+function Triggers({ triggers }: { triggers: readonly ChatTrigger[] }) {
+  const colors = useColors();
+  return (
+    <View>
+      <SectionLabel count={triggers.length}>Triggers</SectionLabel>
+      <Rows>
+        {triggers.map((trigger) => (
+          <Row
+            key={trigger.id}
+            mark={<Icon name="IconTimer" size={18} color={colors.cmd} />}
+            title={trigger.title}
+            detail={triggerWhen(trigger)}
+          />
+        ))}
+      </Rows>
+    </View>
   );
 }
 

@@ -56,7 +56,7 @@ mod files;
 mod find;
 mod installing;
 mod link;
-mod live;
+pub(crate) mod live;
 mod mention;
 pub use mention::Tray;
 mod meta;
@@ -1847,14 +1847,11 @@ pub fn pane(
         .min_h_0()
         .relative()
         .child(
-            div()
-                .size_full()
-                .fade_edges(px(TOP_FADE), px(0.))
-                .child(
-                    chat.transcript
-                        .clone()
-                        .cached(StyleRefinement::default().size_full()),
-                ),
+            div().size_full().fade_edges(px(TOP_FADE), px(0.)).child(
+                chat.transcript
+                    .clone()
+                    .cached(StyleRefinement::default().size_full()),
+            ),
         )
         .children(scrollbar)
         .children(chat.finding.as_ref().map(|finding| {

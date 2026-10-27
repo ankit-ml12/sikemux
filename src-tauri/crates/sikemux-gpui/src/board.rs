@@ -112,6 +112,8 @@ pub(crate) struct Board {
     pub settings: Settings,
     pub running: usize,
     pub auto_note: Option<String>,
+    #[serde(default)]
+    pub triggers: Vec<sikemux_wire::chat::ChatTrigger>,
 }
 
 /// One message between the project's agents, as the core folds its log.
@@ -601,6 +603,7 @@ impl Render for BoardPane {
                     .flex()
                     .flex_col()
                     .child(head(self, cx))
+                    .children(triggers(self, cx))
                     .child(body(self, cx)),
             )
             .when_some(panel, |pane, panel| {
@@ -731,6 +734,58 @@ fn head(pane: &BoardPane, cx: &mut Context<BoardPane>) -> impl IntoElement {
             pane.open == Some(Open::New),
             Open::New,
         ))
+}
+
+/// The triggers that add cards to this board when their time comes, each of which the person
+/// can remove.
+fn triggers(pane: &BoardPane, cx: &mut Context<BoardPane>) -> Option<AnyElement> {
+    let set = &pane.board.as_ref()?.triggers;
+    if set.is_empty() {
+        return None;
+    }
+    let t = Tokens::get(cx).clone();
+    let rows: Vec<AnyElement> = set
+        .iter()
+        .map(|trigger| {
+            let id = trigger.id;
+            crate::chat::live::trigger_row(
+                trigger,
+                &t,
+                cx.listener(move |pane, _, _, cx| {
+                    let asked =
+                        core::request(&pane.asks, "removeTrigger", json!({ "trigger": id }));
+                    cx.spawn(async move |_, _| drop(asked.await)).detach();
+                }),
+            )
+        })
+        .collect();
+    Some(
+        div()
+            .flex_none()
+            .pt(px(6.))
+            .pb(px(4.))
+            .px(px(4.))
+            .border_b_1()
+            .border_color(t.border)
+            .child(
+                div()
+                    .pl(px(11.))
+                    .pb(px(2.))
+                    .flex()
+                    .gap(px(6.))
+                    .text_size(crate::theme::ui_text(10.))
+                    .text_color(t.text_disabled)
+                    .child("TRIGGERS")
+                    .child(
+                        div()
+                            .font_family(crate::theme::MONO)
+                            .text_color(t.text_tertiary)
+                            .child(set.len().to_string()),
+                    ),
+            )
+            .children(rows)
+            .into_any_element(),
+    )
 }
 
 fn body(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
