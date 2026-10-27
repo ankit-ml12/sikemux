@@ -128,7 +128,13 @@ jobs:
         uses: ./.github/actions/setup-rust
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked --version 0.22.2
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/cargo-audit.tgz" https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-gnu-v0.22.2.tgz
+          echo "ab28a1bdb54db4d5d8ad5981cf1f959410370b3d28250dbd35f6a44248620e39  $RUNNER_TEMP/cargo-audit.tgz" | shasum -a 256 -c -
+          bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          mkdir -p "$bin"
+          tar -xzf "$RUNNER_TEMP/cargo-audit.tgz" -C "$bin" --strip-components 1 cargo-audit-x86_64-unknown-linux-gnu-v0.22.2/cargo-audit
+          echo "$bin" >>"$GITHUB_PATH"
 
       - name: Audit the dependencies
         run: pnpm deps:audit
