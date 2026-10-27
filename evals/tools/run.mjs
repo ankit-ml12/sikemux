@@ -185,6 +185,7 @@ async function runCase(variant, testCase) {
     failures,
     judge: verdict,
     cost: outcome.cost + (verdict?.cost ?? 0),
+    ...(outcome.costEstimated ? { costEstimated: true } : {}),
     tokens: outcome.tokens,
     turns: outcome.turns,
     calls: outcome.calls.map((call) => ({ tool: call.tool, args: call.args, error: call.error ?? false, batch: call.batch, sub: call.sub || undefined })),

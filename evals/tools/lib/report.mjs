@@ -16,8 +16,12 @@ export function report(summary) {
     const cost = variant.cases.reduce((sum, row) => sum + row.cost, 0);
     const input = variant.cases.reduce((sum, row) => sum + row.tokens.input, 0);
     const output = variant.cases.reduce((sum, row) => sum + row.tokens.output, 0);
-    const each = variant.cases.length ? `$${(cost / variant.cases.length).toFixed(3)}, ${Math.round(input / variant.cases.length / 1000)}k in` : '-';
-    console.log(`${variant.label.padEnd(26)}${rate(variant.cases).padEnd(14)}${`$${cost.toFixed(2)}`.padEnd(10)}${input.toLocaleString().padEnd(14)}${output.toLocaleString().padEnd(10)}${each}`);
+    const mark = variant.cases.some((row) => row.costEstimated) ? '~' : '';
+    const each = variant.cases.length ? `${mark}$${(cost / variant.cases.length).toFixed(3)}, ${Math.round(input / variant.cases.length / 1000)}k in` : '-';
+    console.log(`${variant.label.padEnd(26)}${rate(variant.cases).padEnd(14)}${`${mark}$${cost.toFixed(2)}`.padEnd(10)}${input.toLocaleString().padEnd(14)}${output.toLocaleString().padEnd(10)}${each}`);
+  }
+  if (variants.some((variant) => variant.cases.some((row) => row.costEstimated))) {
+    console.log('~ estimated from tokens at the provider price in lib/omp.mjs; the judge is counted at its real cost');
   }
   table('category', (row) => [row.category]);
   table('tool', (row) => row.tools);

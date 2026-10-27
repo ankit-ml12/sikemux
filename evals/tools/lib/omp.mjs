@@ -5,6 +5,8 @@ import { run } from './runners.mjs';
 const PROVIDER = 'sikemux-lithosai';
 const KEY_ENV = 'SIKEMUX_MODEL_PROVIDER_KEY';
 const BASE_URL = process.env.TOOL_EVAL_LITHOS_URL ?? 'https://api.lithosai.cloud/v1';
+// LithosAI's blended price for DeepSeek V4.1 Flash, in dollars per million tokens. OMP reports no cost for a provider the person adds.
+export const LITHOS_PRICE_PER_MILLION = 0.09;
 const EXTENSION = `export default function (pi) {
   const provider = process.env.SIKEMUX_OMP_PROVIDER;
   if (provider) {
@@ -57,7 +59,6 @@ export function readOmp(path, servers) {
   let ended = false;
   let turns = 0;
   const tokens = { input: 0, cached: 0, output: 0 };
-  let cost = 0;
   for (const line of readFileSync(path, 'utf8').split('\n')) {
     if (!line.trim().startsWith('{')) continue;
     let event;
@@ -75,7 +76,6 @@ export function readOmp(path, servers) {
       tokens.input += (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
       tokens.cached += usage.cacheRead ?? 0;
       tokens.output += usage.output ?? 0;
-      cost += usage.cost?.total ?? 0;
       for (const block of message.content ?? []) {
         if (block.type === 'toolCall') {
           const call = { id: block.id, ...canonicalCall(block.name, block.arguments ?? {}, servers), batch: message.responseId ?? message.timestamp, sub: false };
@@ -92,5 +92,6 @@ export function readOmp(path, servers) {
       call.result = (message.content ?? []).map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join('\n').slice(0, 1500);
     }
   }
-  return { calls, reply, failed: !ended, stop: ended ? 'end' : 'no end', turns, cost, tokens };
+  const cost = ((tokens.input + tokens.output) / 1_000_000) * LITHOS_PRICE_PER_MILLION;
+  return { calls, reply, failed: !ended, stop: ended ? 'end' : 'no end', turns, cost, costEstimated: true, tokens };
 }
