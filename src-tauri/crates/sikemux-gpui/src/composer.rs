@@ -22,7 +22,7 @@ use crate::theme::{self, Tokens};
 use crate::ui::{self, DockMenu, IconButton};
 use crate::workbench::Workbench;
 
-type Act = Rc<dyn Fn(&mut Window, &mut App)>;
+pub type Act = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// The line under the composer: why the last message did not go, with what to do about it, or
 /// what it waits for.
@@ -70,6 +70,9 @@ pub struct Composer {
     /// The model menu, which before the chat starts also moves it to another agent or paying
     /// provider; the strip picks the account.
     model_menu: Option<(Picked, Entity<Workbench>)>,
+    /// The chat whose attach button opens the menu of files and the Stash, rather than the
+    /// system's picker of files straight away.
+    attach_menu: Option<(String, Entity<Workbench>)>,
     usage: Option<ContextUsage>,
     /// The files going with the message, the button that picks more, what a paste of
     /// files or pictures does, and how the draft draws the tags that name them.
@@ -106,6 +109,7 @@ impl Composer {
             yolo: None,
             pickers: None,
             model_menu: None,
+            attach_menu: None,
             usage: None,
             attachments: None,
             menu: None,
@@ -165,6 +169,11 @@ impl Composer {
 
     pub fn model_menu(mut self, picked: Picked, bench: Entity<Workbench>) -> Self {
         self.model_menu = Some((picked, bench));
+        self
+    }
+
+    pub fn attach_menu(mut self, agent: &str, bench: Entity<Workbench>) -> Self {
+        self.attach_menu = Some((agent.to_owned(), bench));
         self
     }
 
@@ -236,6 +245,21 @@ impl RenderOnce for Composer {
             cx,
         );
         let settable = self.ready && !self.running;
+        let attach = match (self.attach_menu, on_add) {
+            (Some((agent, bench)), Some(on_add)) => {
+                let button = IconButton::new("composer-attach", Icon::Plus, "Attach")
+                    .glyph(17.)
+                    .width(31.);
+                crate::chat::stash::around(button, &agent, on_add, &bench).into_any_element()
+            }
+            (_, on_add) => IconButton::new("composer-attach", Icon::Plus, "Add files")
+                .glyph(17.)
+                .width(31.)
+                .when_some(on_add, |button, on_add| {
+                    button.on_click(move |_, window, cx| on_add(window, cx))
+                })
+                .into_any_element(),
+        };
         let mut bar = div()
             .min_h(px(34.))
             .pt(px(8.))
@@ -244,14 +268,7 @@ impl RenderOnce for Composer {
             .flex()
             .items_center()
             .gap(px(5.))
-            .child(
-                IconButton::new("composer-attach", Icon::Plus, "Add files")
-                    .glyph(17.)
-                    .width(31.)
-                    .when_some(on_add, |button, on_add| {
-                        button.on_click(move |_, window, cx| on_add(window, cx))
-                    }),
-            );
+            .child(attach);
         if let Some((on, held, toggle)) = self.yolo {
             bar = bar.child(yolo(on, settable && !held, &self.agent_label, toggle, cx));
         }

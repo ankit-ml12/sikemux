@@ -11,6 +11,7 @@ mod pull;
 mod pulls;
 mod releases;
 mod run_actions;
+pub(crate) use run_actions::bytes;
 mod runs;
 pub(crate) mod shell;
 mod thread;

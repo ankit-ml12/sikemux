@@ -1006,7 +1006,7 @@ pub fn artifacts(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
         )
 }
 
-pub(super) fn bytes(size: u64) -> String {
+pub(crate) fn bytes(size: u64) -> String {
     const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
     let mut value = size as f64;
     let mut unit = 0;

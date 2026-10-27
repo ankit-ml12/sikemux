@@ -61,6 +61,7 @@ mod mention;
 mod meta;
 mod page;
 mod schema;
+pub mod stash;
 mod status;
 mod tools;
 
@@ -3078,6 +3079,7 @@ fn composer(
             Rc::new(attach::on_paste(&agent.id, cx)),
             attach::chip(cx.weak_entity()),
         )
+        .attach_menu(&agent.id, cx.entity())
         .strip(strip)
         .dictation(
             composing.mic.clone(),

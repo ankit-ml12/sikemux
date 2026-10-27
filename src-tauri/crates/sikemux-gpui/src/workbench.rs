@@ -550,6 +550,10 @@ impl Workbench {
             Watch::new("shares", json!({}), &["shares"]),
         ));
         let _ = asks.send(Ask::Watch(
+            "stash",
+            Watch::new("stash", json!({}), &["stash", "account"]),
+        ));
+        let _ = asks.send(Ask::Watch(
             "catalog",
             Watch::new("agentCatalog", json!({}), &[]),
         ));
@@ -2287,7 +2291,8 @@ impl Workbench {
         match update {
             Update::Read(
                 key @ ("hosts" | "plugins" | "catalog" | "preferences" | "tasks" | "usage" | "ci"
-                | "ci-head" | "shares" | "update" | "runs" | "ports" | "trust" | "drafts"),
+                | "ci-head" | "shares" | "stash" | "update" | "runs" | "ports" | "trust"
+                | "drafts"),
                 value,
             ) => self.reads.get(key) == Some(value),
             Update::HostView(host, view) => self.host_views.get(host) == Some(&**view),

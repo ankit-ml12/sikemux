@@ -33,11 +33,12 @@ pub enum Picture {
     Remote(Remote),
 }
 
-/// A picture on the web, which the core fetches, since only it knows which addresses are
-/// safe to reach.
+/// A picture the core fetches: one on the web, since only it knows which addresses are safe
+/// to reach, or one in the account's Stash.
 #[derive(Clone)]
 pub struct Remote {
     url: SharedString,
+    stashed: bool,
     asks: mpsc::UnboundedSender<Ask>,
 }
 
@@ -45,12 +46,25 @@ impl Remote {
     pub fn new(url: impl Into<SharedString>, asks: mpsc::UnboundedSender<Ask>) -> Self {
         Remote {
             url: url.into(),
+            stashed: false,
+            asks,
+        }
+    }
+
+    /// The picture stash item `id` holds.
+    pub fn stashed(id: impl Into<SharedString>, asks: mpsc::UnboundedSender<Ask>) -> Self {
+        Remote {
+            url: id.into(),
+            stashed: true,
             asks,
         }
     }
 
     fn fetch(&self) -> impl std::future::Future<Output = Result<Value, String>> {
-        crate::core::request(&self.asks, "remoteImage", json!({ "url": self.url }))
+        match self.stashed {
+            true => crate::core::request(&self.asks, "stashPicture", json!({ "id": self.url })),
+            false => crate::core::request(&self.asks, "remoteImage", json!({ "url": self.url })),
+        }
     }
 
     fn image(&self) -> impl std::future::Future<Output = Result<Arc<Image>, ImageCacheError>> {
@@ -71,6 +85,7 @@ impl Remote {
 impl Hash for Remote {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.url.hash(state);
+        self.stashed.hash(state);
     }
 }
 
