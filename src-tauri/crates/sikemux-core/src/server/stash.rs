@@ -138,6 +138,10 @@ pub(crate) async fn picture(core: &Core, params: ItemParams) -> CoreResult<Value
 pub(crate) struct AttachParams {
     id: String,
     agent_id: String,
+    /// False when the app keeps its own draft: the item's file is only kept here, and the app
+    /// adds it to its message and marks the item used once it is sent.
+    #[serde(default)]
+    draft: Option<bool>,
 }
 
 /// What attaching an item put in the chat's draft.
@@ -150,12 +154,23 @@ pub(crate) struct Attached {
     path: Option<PathBuf>,
 }
 
-/// Puts a stash item in the draft of one of this host's chats, unsent, and marks it used.
+/// Puts a stash item in the draft of one of this host's chats, unsent, and marks it used; or
+/// with `draft` false only keeps its file where the chat's agent can read it.
 pub(crate) async fn attach(core: &Core, params: AttachParams) -> CoreResult<Attached> {
     if core.workspaces.agent(&params.agent_id).is_none() {
         return Err(CoreError::from("that chat is no longer on this host"));
     }
     let item = item(core, &params.id).await?;
+    if params.draft == Some(false) {
+        let path = match has_file(&item) {
+            true => Some(download(core, &item).await?),
+            false => None,
+        };
+        return Ok(Attached {
+            agent_id: params.agent_id,
+            path,
+        });
+    }
     let _delivering = Delivering::start(&item.id)
         .ok_or_else(|| CoreError::from("that item is already on its way to a chat"))?;
     let path = into_draft(core, &item, &params.agent_id).await?;
@@ -170,9 +185,9 @@ pub(crate) async fn attach(core: &Core, params: AttachParams) -> CoreResult<Atta
 /// Downloads the item's file, when it has one, and adds it with the item's words to the
 /// draft of `agent_id`'s chat.
 async fn into_draft(core: &Core, item: &StashItem, agent_id: &str) -> CoreResult<Option<PathBuf>> {
-    let path = match item.kind {
-        StashKind::Image | StashKind::Video | StashKind::File => Some(download(core, item).await?),
-        _ => None,
+    let path = match has_file(item) {
+        true => Some(download(core, item).await?),
+        false => None,
     };
     let key = format!("chat:{agent_id}");
     let held = core
@@ -195,6 +210,13 @@ async fn into_draft(core: &Core, item: &StashItem, agent_id: &str) -> CoreResult
     core.drafts.set(&key, text, extra)?;
     core.changes.changed(Topic::Drafts, None, Some(vec![key]));
     Ok(path)
+}
+
+fn has_file(item: &StashItem) -> bool {
+    matches!(
+        item.kind,
+        StashKind::Image | StashKind::Video | StashKind::File
+    )
 }
 
 /// The draft's text with the item's note, and its link or text, after what was written.
