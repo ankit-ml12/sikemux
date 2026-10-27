@@ -8,44 +8,38 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use super::commit::{in_checkout, names};
-use super::owners::traced;
+use super::owners::{git, traced};
 use crate::cli::protocol::HarnessRequest;
 use crate::server::connection::blocking;
 use crate::server::messages::{listed, Reach};
+use crate::server::names::project_of;
 use crate::server::Core;
 
 /// The other agents than `agent_id` with uncommitted lines in `paths`, as
 /// given in `dir`, leaving out any outside its checkout. Lines it may have
 /// written among others at work then count as its own. With no paths, those
-/// with lines anywhere in the checkout, and those working in it.
+/// with lines anywhere in the checkout, and those working in it. A checkout
+/// in no project, such as a scratch repository, has no lines on record, so
+/// only the agents working in it are looked for.
 pub(crate) fn others(
     core: &Core,
     agent_id: &str,
     dir: &Path,
     paths: &[String],
 ) -> Result<Vec<String>, String> {
-    let (owners, diff) = traced(core, dir, false)?;
-    let named: Vec<String> = paths
-        .iter()
-        .filter_map(|path| in_checkout(&diff.top, dir, path).ok())
-        .collect();
-    if named.is_empty() && !paths.is_empty() {
-        return Ok(Vec::new());
+    let top = git(dir, &["rev-parse", "--show-toplevel"])?;
+    let top = PathBuf::from(top.trim());
+    let top = std::fs::canonicalize(&top).unwrap_or(top);
+    let projects = core.workspaces.project_paths();
+    let project = project_of(&top, &projects);
+    let in_project = projects.iter().any(|known| {
+        std::fs::canonicalize(known).unwrap_or_else(|_| known.clone()) == Path::new(&project)
+    });
+    let mut others = BTreeSet::new();
+    if in_project {
+        others.extend(recorded(core, agent_id, dir, paths)?);
     }
-    let mine = owners.standing_for(core, agent_id);
-    let mut others: BTreeSet<String> = owners
-        .files
-        .iter()
-        .filter(|file| named.is_empty() || names(&named, &file.path))
-        .flat_map(|file| {
-            let lines = file.lines.iter().map(|run| run.author);
-            lines.chain(file.removed.iter().map(|removal| removal.author))
-        })
-        .filter(|at| !mine.contains(at))
-        .map(|at| owners.authors[at].name.clone())
-        .collect();
     if paths.is_empty() {
-        let top = std::fs::canonicalize(&diff.top).unwrap_or(diff.top);
         others.extend(
             listed(core)
                 .into_iter()
@@ -58,6 +52,36 @@ pub(crate) fn others(
         );
     }
     Ok(others.into_iter().collect())
+}
+
+/// The other agents than `agent_id` the edit record has uncommitted lines of
+/// in `paths`, or anywhere in the checkout with none.
+fn recorded(
+    core: &Core,
+    agent_id: &str,
+    dir: &Path,
+    paths: &[String],
+) -> Result<BTreeSet<String>, String> {
+    let (owners, diff) = traced(core, dir, false)?;
+    let named: Vec<String> = paths
+        .iter()
+        .filter_map(|path| in_checkout(&diff.top, dir, path).ok())
+        .collect();
+    if named.is_empty() && !paths.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    let mine = owners.standing_for(core, agent_id);
+    Ok(owners
+        .files
+        .iter()
+        .filter(|file| named.is_empty() || names(&named, &file.path))
+        .flat_map(|file| {
+            let lines = file.lines.iter().map(|run| run.author);
+            lines.chain(file.removed.iter().map(|removal| removal.author))
+        })
+        .filter(|at| !mine.contains(at))
+        .map(|at| owners.authors[at].name.clone())
+        .collect())
 }
 
 /// What the git shim asks before a command that could take in or throw away
