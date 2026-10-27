@@ -931,6 +931,7 @@ async fn run_requests(
                 }
             }
             Request::Call { method, params } => {
+                core.activity_log.call_used(&method, &params, &client.peer);
                 let device = client.peer.device_id();
                 tokio::spawn(super::layout::asked_by(device, async move {
                     let result = calls::call(core, &client, &method, params).await;

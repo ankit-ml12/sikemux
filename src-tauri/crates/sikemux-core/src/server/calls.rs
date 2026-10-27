@@ -106,6 +106,11 @@ calls! { core, client, params;
         let pty = super::launching::start_terminal(&core, &params.agent_id, size, None).await?;
         answer(json!({ "ptyId": pty }))
     },
+    "commandUsed": Local => {
+        let used: CommandUsed = parse(params)?;
+        core.activity_log.command_used(&used.id);
+        answer(())
+    },
     "composing": Person => {
         let params: AgentParams = parse(params)?;
         super::chat::composing(&core, &params.agent_id);
@@ -684,6 +689,11 @@ fn search_stream(
 pub(super) fn parse<T: for<'de> Deserialize<'de>>(params: Value) -> CoreResult<T> {
     serde_json::from_value(params)
         .map_err(|error| CoreError::from(format!("the call's params do not fit: {error}")))
+}
+
+#[derive(Deserialize)]
+struct CommandUsed {
+    id: String,
 }
 
 /// The name of the device the person acted from, when it was not this host's own window.

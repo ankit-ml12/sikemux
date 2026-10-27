@@ -336,6 +336,7 @@ fn activity_events(
             "commits": day.commits,
             "agent_commits": day.agent_commits,
             "tokens": day.tokens.iter().map(total).sum::<i64>(),
+            "features": features(&day.features),
             "cost_usd": priced.iter().sum::<f64>(),
         }),
     )];
@@ -356,6 +357,17 @@ fn activity_events(
         )
     }));
     events
+}
+
+/// Uses by feature, named with who asked when it was not the app: `startChat`,
+/// `startChat@device`, `git.commit@local`.
+fn features(used: &[(String, String, i64)]) -> serde_json::Map<String, Value> {
+    used.iter()
+        .map(|(feature, via, count)| match via.as_str() {
+            "app" => (feature.clone(), json!(count)),
+            via => (format!("{feature}@{via}"), json!(count)),
+        })
+        .collect()
 }
 
 /// The same day's event from the same install keeps its id, so PostHog drops

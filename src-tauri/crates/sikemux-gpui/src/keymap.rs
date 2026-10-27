@@ -13,6 +13,10 @@ use gpui_kit::{
     SystemMenuType, Window,
 };
 use serde::Deserialize;
+use serde_json::json;
+use tokio::sync::mpsc;
+
+use crate::core::Ask;
 
 static TABLE: &str = include_str!("../../sikemux-core/src/assets/keybindings.json");
 
@@ -183,6 +187,8 @@ pub struct Keymap {
     bound: BTreeMap<String, String>,
     actions: BTreeMap<String, String>,
     overrides: Option<BTreeMap<String, Option<String>>>,
+    /// Where each command the person runs is told, for the usage report.
+    used: Option<mpsc::UnboundedSender<Ask>>,
 }
 
 /// One of the project in front's sikemux.json actions, run by the shortcut it gives itself.
@@ -256,6 +262,7 @@ pub fn install(cx: &mut App) {
         bound: BTreeMap::new(),
         actions: BTreeMap::new(),
         overrides: None,
+        used: None,
     });
     cx.on_action(|_: &About, _| show_about());
     cx.on_action(|_: &Quit, cx| cx.quit());
@@ -335,7 +342,39 @@ pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
 /// Does what command `id` does, as its shortcut would; nothing while no part of the app has it.
 pub fn dispatch(id: &str, window: &mut Window, cx: &mut App) {
     if let Ok(action) = cx.build_action(id, None) {
+        used(id, cx);
         window.dispatch_action(action, cx);
+    }
+}
+
+/// Tells the core through `asks` each command the person runs, by its keys, the deck or a
+/// click, for the usage report. The core keeps count of only some of them.
+pub fn report_use(asks: mpsc::UnboundedSender<Ask>, cx: &mut App) {
+    let keymap = cx.global_mut::<Keymap>();
+    if keymap.used.is_some() {
+        return;
+    }
+    keymap.used = Some(asks);
+    cx.observe_keystrokes(|event, _, cx| {
+        if let Some(action) = &event.action {
+            used(action.name(), cx);
+        }
+    })
+    .detach();
+}
+
+fn used(id: &str, cx: &App) {
+    let Some(asks) = cx
+        .try_global::<Keymap>()
+        .and_then(|keymap| keymap.used.as_ref())
+    else {
+        return;
+    };
+    if shortcuts().iter().any(|shortcut| shortcut.id == id) {
+        let _ = asks.send(Ask::Call {
+            method: "commandUsed",
+            params: json!({ "id": id }),
+        });
     }
 }
 

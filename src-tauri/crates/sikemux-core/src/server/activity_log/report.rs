@@ -25,6 +25,8 @@ pub(crate) struct ReportedDay {
     pub commits: i64,
     pub agent_commits: i64,
     pub tokens: Vec<ReportedTokens>,
+    /// How often each feature was used, by name and who asked for it.
+    pub features: Vec<(String, String, i64)>,
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -45,6 +47,7 @@ impl ActivityLog {
     pub(crate) fn reported_days(&self, first: i64, end: i64) -> Vec<ReportedDay> {
         let feed = self.feed.as_ref().map(Feed::current).unwrap_or_default();
         let prices = Prices::new(&feed, &self.price_overrides());
+        self.write_uses();
         self.with_database(|db| days_between(db, first, end, &prices))
             .unwrap_or_default()
     }
@@ -125,6 +128,14 @@ fn days_between(
         entry.output += output;
         entry.cache_read += cache_read;
         entry.cache_write += cache_write;
+    }
+
+    let mut statement =
+        db.prepare("SELECT day, feature, via, count FROM features WHERE day >= ?1 AND day < ?2")?;
+    let mut rows = statement.query(params![first, end])?;
+    while let Some(row) = rows.next()? {
+        let day = day_at(&mut days, row.get::<_, i64>(0)? * DAY_MS);
+        day.features.push((row.get(1)?, row.get(2)?, row.get(3)?));
     }
 
     let mut days: Vec<ReportedDay> = days.into_values().collect();

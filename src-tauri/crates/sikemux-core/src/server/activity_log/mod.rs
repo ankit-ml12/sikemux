@@ -3,6 +3,7 @@
 //! transcripts or answers report, kept in one database in the core's data folder and
 //! priced from the model feed and the person's own prices.
 
+mod features;
 mod pricing;
 mod report;
 
@@ -145,6 +146,7 @@ pub(crate) struct ActivityLog {
     prices_path: Option<PathBuf>,
     database: Mutex<Option<Connection>>,
     turns: Mutex<HashMap<String, OpenTurn>>,
+    uses: Mutex<features::Uses>,
     feed: Option<Feed>,
 }
 
@@ -175,6 +177,7 @@ impl ActivityLog {
             prices_path: data_dir.map(|dir| dir.join(PRICES)),
             database: Mutex::new(None),
             turns: Mutex::new(HashMap::new()),
+            uses: Mutex::default(),
             feed: data_dir.map(Feed::new),
         }
     }
@@ -422,6 +425,13 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE tokens ADD COLUMN speed TEXT NOT NULL DEFAULT 'standard';
      ALTER TABLE transcripts ADD COLUMN model TEXT NOT NULL DEFAULT '';
      ALTER TABLE transcripts ADD COLUMN speed TEXT NOT NULL DEFAULT 'standard';",
+    "CREATE TABLE features (
+         day INTEGER NOT NULL,
+         feature TEXT NOT NULL,
+         via TEXT NOT NULL,
+         count INTEGER NOT NULL,
+         PRIMARY KEY (day, feature, via)
+     );",
 ];
 
 fn migrate(connection: &Connection) -> rusqlite::Result<()> {
