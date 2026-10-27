@@ -10,6 +10,8 @@ import { ImageViewer } from './ImageViewer';
 import { sizeLabel } from './pick';
 import type { Attachment } from './uploads';
 
+/** The picture a composer tile asks the host for: enough pixels for its 58 points at 3x, and a little more. */
+const TILE_PIXELS = 240;
 const IMAGE_PATH = /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i;
 
 function FileChip({ name, size, image, tall }: { name: string; size?: number; image?: boolean; tall?: boolean }) {
@@ -36,7 +38,7 @@ function TileImage({ attachment }: { attachment: Attachment }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const hostOnly = onHostOnly(attachment);
-  const fetched = useHostFile(attachment.path ?? '', hostOnly);
+  const fetched = useHostFile(attachment.path ?? '', hostOnly, TILE_PIXELS);
   const uri = hostOnly ? fetched : attachment.uri;
   if (!uri) {
     return (

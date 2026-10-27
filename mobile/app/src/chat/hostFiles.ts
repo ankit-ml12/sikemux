@@ -15,15 +15,19 @@ const fetching = new Map<string, Promise<string>>();
 /** Rows are drawn again as the transcript scrolls, and asking for a file that just failed each time would not help. */
 const failed = failures();
 
-function saved(core: string, path: string): File {
-  return new File(hostFolder(Paths.cache, 'chat-files', core), path.slice(path.lastIndexOf('/') + 1));
+function saved(core: string, path: string, maxEdge?: number): File {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  return new File(hostFolder(Paths.cache, 'chat-files', core), maxEdge ? `${maxEdge}-${name}` : name);
 }
 
-/** A file on the host, copied to this phone once and answered with where it is here. */
-export function useHostFile(path: string, wanted: boolean): string | undefined {
+/**
+ * A file on the host, copied to this phone once and answered with where it is here. With `maxEdge`, a
+ * picture comes as a JPEG scaled to fit that many pixels, from a host that can scale it.
+ */
+export function useHostFile(path: string, wanted: boolean, maxEdge?: number): string | undefined {
   const shared = useContext(SharedFilesContext);
   const fromShare = useSharedFile(shared, path, wanted);
-  const fromHost = useFileOnHost(shared ? '' : path, wanted && !shared);
+  const fromHost = useFileOnHost(shared ? '' : path, wanted && !shared, maxEdge);
   return shared ? fromShare : fromHost;
 }
 
@@ -42,13 +46,13 @@ function useSharedFile(read: ((path: string) => Promise<string | null>) | null, 
   return uri;
 }
 
-function useFileOnHost(path: string, wanted: boolean): string | undefined {
+function useFileOnHost(path: string, wanted: boolean, maxEdge?: number): string | undefined {
   const core = useContext(HostContext);
   const live = useLive(core);
   const connection = connectionOf(live);
-  const key = `${core}/${path}`;
+  const key = `${core}/${maxEdge ?? 'full'}/${path}`;
   const [uri, setUri] = useState(() => {
-    const file = core ? saved(core, path) : undefined;
+    const file = core ? saved(core, path, maxEdge) : undefined;
     return file?.exists ? file.uri : undefined;
   });
 
@@ -58,10 +62,10 @@ function useFileOnHost(path: string, wanted: boolean): string | undefined {
     let current = true;
     let fetch = fetching.get(key);
     if (!fetch) {
-      const file = saved(core, path);
+      const file = saved(core, path, maxEdge);
       // The Rust client decodes and writes the file, so its bytes never pass through JavaScript.
       fetch = connection
-        .callToFile('chatFile', JSON.stringify({ path }), 'data', pathOf(file.uri))
+        .callToFile('chatFile', JSON.stringify(maxEdge ? { path, maxEdge } : { path }), 'data', pathOf(file.uri))
         .then(() => file.uri)
         .finally(() => fetching.delete(key));
       fetching.set(key, fetch);
@@ -76,7 +80,7 @@ function useFileOnHost(path: string, wanted: boolean): string | undefined {
     return () => {
       current = false;
     };
-  }, [wanted, uri, core, connection, key, path]);
+  }, [wanted, uri, core, connection, key, path, maxEdge]);
 
   return uri;
 }
