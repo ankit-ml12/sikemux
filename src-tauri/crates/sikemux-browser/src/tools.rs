@@ -28,6 +28,10 @@ const MAX_SCRIPT_RESULT: usize = 100_000;
 /// A full-page capture goes through a PDF page, and PDF stops at 14,400 points.
 const MAX_PAGE_HEIGHT: f64 = 14_400.0;
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(3);
+const UPLOAD_LANDING: Duration = Duration::from_secs(2);
+/// How long a click waits for the element it names to show up.
+const APPEAR_WAIT: Duration = Duration::from_secs(3);
+const UPLOAD_POLL: Duration = Duration::from_millis(50);
 const MAX_UPLOAD_FILES: usize = 20;
 const DRAG_STEPS: u32 = 12;
 const DRAG_STEP_DELAY: Duration = Duration::from_millis(16);
@@ -311,6 +315,7 @@ async fn run(
                 .filter_map(|path| path.file_name())
                 .map(|name| name.to_string_lossy().into_owned())
                 .collect();
+            call(&view, "uploadLanded", &[json!(true)]).await?;
             manager.offer_upload(&tab_id, paths);
             show_pointer(&view, x, y, true).await;
             native::mouse(&view, Mouse::Down, x, y, 1).await?;
@@ -319,17 +324,26 @@ async fn run(
             let mut opened = true;
             while manager.upload_pending(&tab_id) {
                 if started.elapsed() >= UPLOAD_TIMEOUT {
-                    manager.take_upload(&tab_id);
                     opened = false;
                     break;
                 }
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                tokio::time::sleep(UPLOAD_POLL).await;
             }
+            let landed_by = Instant::now() + UPLOAD_LANDING;
+            let mut landed = false;
+            while opened && !landed && Instant::now() < landed_by {
+                tokio::time::sleep(UPLOAD_POLL).await;
+                landed = call(&view, "uploadLanded", &[json!(false)]).await? == json!(true);
+            }
+            manager.withdraw_upload(&tab_id);
             if placed {
                 call(&view, "unplaceFileInput", &[]).await?;
             }
             if !opened {
                 return Err("that did not open a file chooser; pass the selector or number of a file input, or of the button that opens one".into());
+            }
+            if !landed {
+                return Err("a file chooser took the files, but no file input on the page changed, so the page did not get them; pass the selector or number of the button or drop zone that opens its chooser instead".into());
             }
             result["uploaded"] = json!(names);
             settle(manager, agent_id, &tab_id).await;
@@ -1164,9 +1178,22 @@ fn element_target(params: &Value, index_key: &str) -> Value {
 }
 
 /// The centre of the element `named` picks out, refused when `expected` no
-/// longer matches its label.
+/// longer matches its label. Text or a selector nothing matches yet is given
+/// a moment to appear, as a page still drawing would show it.
 async fn point(view: &Tab, named: Value, expected: Value) -> Result<(f64, f64, Value), String> {
-    let point = call(view, "point", &[named, expected]).await?;
+    let started = Instant::now();
+    let point = loop {
+        match call(view, "point", &[named.clone(), expected.clone()]).await {
+            Err(error)
+                if started.elapsed() < APPEAR_WAIT
+                    && (error.starts_with("nothing shows or is labelled")
+                        || error.starts_with("nothing shown matches")) =>
+            {
+                tokio::time::sleep(CONDITION_POLL).await;
+            }
+            answer => break answer?,
+        }
+    };
     let coordinate = |key: &str| {
         point
             .get(key)

@@ -400,7 +400,8 @@ the text both respond to them.
 element by its visible text or accessible name, or a CSS `selector`, or `x`
 and `y` in CSS pixels from the top left of the viewport, which is where a
 screenshot's pixels sit too. `text` names a control first, else the heading, caption or other element
-showing those words. `text` and `selector` must pick out one element: when
+showing those words; text or a selector nothing matches yet gets three
+seconds to appear. `text` and `selector` must pick out one element: when
 several match, nothing is clicked and the error lists them, so pass a `role`,
 a narrower selector, or one of their numbers as `index`, alone or beside them. `expectLabel` makes the click
 fail rather than land on an element whose label does not contain it, with
@@ -451,7 +452,8 @@ events.
 absolute `paths` and the number, `selector` (or `x`, `y`) of the file input or
 of the button that opens its chooser; with none, the page's only file input.
 A file input hidden behind a styled drop zone works too. The chooser never
-shows; the page gets the files and its change events. Only one file is given
+shows; the page gets the files and its change events, and the call fails
+when no file input on the page took them. Only one file is given
 when the input takes one.
 
 Your clicks, typing and keys never take the person's keyboard, so they can

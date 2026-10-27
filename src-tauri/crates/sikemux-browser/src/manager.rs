@@ -237,7 +237,8 @@ pub struct BrowserManager {
     pub(crate) icons: Mutex<favicon::IconCache>,
     pub(crate) history: history::History,
     pub(crate) dialogs: Mutex<HashMap<String, PageDialog>>,
-    pub(crate) uploads: Mutex<HashMap<String, Vec<PathBuf>>>,
+    /// Files offered to a tab's file choosers, and whether one took them yet.
+    pub(crate) uploads: Mutex<HashMap<String, (Vec<PathBuf>, bool)>>,
     pub(crate) documents: Mutex<HashMap<String, documents::DocumentLog>>,
     pub(crate) stalls: Mutex<HashMap<String, TabStall>>,
     pub(crate) local_files: local_files::LocalFiles,
@@ -553,18 +554,34 @@ impl BrowserManager {
         self.dialogs.locked().get(tab_id).cloned()
     }
 
-    /// Files for the tab's next file chooser, answered in place of the person.
+    /// Files for the tab's file choosers, answered in place of the person
+    /// until [`Self::withdraw_upload`]. Every chooser one click opens gets
+    /// them, since a page that opens its own on top of the input's would
+    /// otherwise have the input's files dropped for an empty answer.
     pub fn offer_upload(&self, tab_id: &str, paths: Vec<PathBuf>) {
-        self.uploads.locked().insert(tab_id.to_owned(), paths);
+        self.uploads
+            .locked()
+            .insert(tab_id.to_owned(), (paths, false));
     }
 
+    /// Whether no chooser has taken the offered files yet.
     pub fn upload_pending(&self, tab_id: &str) -> bool {
-        self.uploads.locked().contains_key(tab_id)
+        self.uploads
+            .locked()
+            .get(tab_id)
+            .is_some_and(|(_, taken)| !taken)
     }
 
-    /// `None` once the chooser took the files or the offer was withdrawn.
+    /// `None` when nothing is offered.
     pub fn take_upload(&self, tab_id: &str) -> Option<Vec<PathBuf>> {
-        self.uploads.locked().remove(tab_id)
+        let mut uploads = self.uploads.locked();
+        let (paths, taken) = uploads.get_mut(tab_id)?;
+        *taken = true;
+        Some(paths.clone())
+    }
+
+    pub fn withdraw_upload(&self, tab_id: &str) {
+        self.uploads.locked().remove(tab_id);
     }
 
     /// The tab's top-level loads, oldest first; with `since_current`, only

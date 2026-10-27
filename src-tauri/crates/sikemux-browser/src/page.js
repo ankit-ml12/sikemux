@@ -247,14 +247,16 @@
         for (let part = walker.nextNode(); part && text.length < budget; part = walker.nextNode()) text += ` ${part.data}`;
         return compact(text).slice(0, budget);
     };
-    // A typed value is left out, so a field is still itself once filled in.
+    // A typed value is left out, so a field is still itself once filled in,
+    // and so are numbers around it, which counters and clocks change on every
+    // render.
     const identity = (element) => {
         const typed = currentValue(element) != null ? compact(element.value).toLowerCase() : null;
         const own = briefText(element, CONTEXT_TEXT);
         let context = "";
         for (let node = parentAcross(element), hops = 0; node && hops < 3 && !context; node = parentAcross(node), hops++) {
             const text = briefText(node, CONTEXT_TEXT);
-            if (text !== own) context = text;
+            if (text !== own) context = text.replace(/\d+/g, "#");
         }
         return JSON.stringify([element.tagName, element.type || "", roleOf(element), ...names(element).filter((name) => name !== typed), context]);
     };
@@ -504,6 +506,8 @@
         '<path d="M2.4 3.3 Q1.8 1.8 3.3 2.4 L15.8 7.3 Q18.2 8.3 15.6 8.8 L11.6 9.7 Q10 10 9.7 11.6 L8.8 15.6 Q8.3 18.2 7.3 15.8 Z" fill="url(#fill)" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>';
     let overlay = null;
     let placedInput = null;
+    let uploadLanded = false;
+    let watchingUploads = false;
     const layer = () => {
         if (overlay && overlay.host.isConnected) return overlay;
         const host = document.createElement("sikemux-overlay");
@@ -842,6 +846,21 @@
                 throw new Error("the file input sits inside something hidden; pass the number or selector of the button that opens its chooser");
             }
             return { index: numberFor(element), label: describe(element), x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        },
+        // Whether a file input on the page took files since the last call,
+        // which says the page really got them.
+        uploadLanded(reset) {
+            if (!watchingUploads) {
+                watchingUploads = true;
+                const landed = (event) => {
+                    if (event.target && event.target.type === "file") uploadLanded = true;
+                };
+                addEventListener("change", landed, true);
+                addEventListener("input", landed, true);
+            }
+            const landed = uploadLanded;
+            if (reset) uploadLanded = false;
+            return landed;
         },
         unplaceFileInput() {
             if (placedInput) {
