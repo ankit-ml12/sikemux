@@ -17,6 +17,7 @@ use gpui_kit::{
 };
 use gpui_transcript::FilePress;
 use sikemux_core::acp::MAX_ATTACHMENTS;
+use sikemux_core::protocol::MAX_ATTACHMENT_BYTES;
 use sikemux_wire::chat::ChatMessage;
 use sikemux_wire::protocol::ChatContext;
 use tokio::sync::oneshot;
@@ -72,8 +73,8 @@ pub fn lasting(path: &Path) -> PathBuf {
 
 const IMAGE: &str = "image:";
 
-/// The largest file sent to another host for a chat there.
-const MAX_KEPT: u64 = 50_000_000;
+/// The largest file a chat's core keeps for it.
+const MAX_KEPT: u64 = MAX_ATTACHMENT_BYTES as u64;
 
 /// The glyph a tag in the draft wears: the picture itself, a named agent's face or mark, or a
 /// file's or folder's.
@@ -345,8 +346,8 @@ impl Workbench {
                     }
                     None => {
                         let note = format!(
-                            "{name} is over {} MB, too large to send to the host the chat runs on",
-                            MAX_KEPT / 1_000_000
+                            "{name} is over {} MB, too large to send to the chat",
+                            MAX_KEPT / (1024 * 1024)
                         );
                         cx.update(|window, cx| window.push_notification(note, cx))
                             .ok();
@@ -385,7 +386,11 @@ impl Workbench {
                 })
                 .ok();
             }
-            Ok(Err(error)) => eprintln!("sikemux: the core did not keep a pasted file: {error}"),
+            Ok(Err(error)) => {
+                let note = format!("The picture or file could not be attached: {error}");
+                cx.update(|window, cx| window.push_notification(note, cx))
+                    .ok();
+            }
             Err(_) => {}
         })
         .detach();
