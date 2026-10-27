@@ -17,7 +17,7 @@ use crate::trailers::{self, Agent};
 use super::board::codehost;
 use super::connection::blocking;
 use super::edits::note::{self, Note, Wrote};
-use super::edits::{commit_lines, CommitLines};
+use super::edits::{commit_lines, owners_at, CommitLines};
 use super::edits::{footer, git};
 use super::messages::{self, Listed, Reach};
 use super::{saved, Core, CoreResult};
@@ -33,6 +33,8 @@ const MAX_COMMITS: usize = 8;
 const LATEST_PER_FILE: usize = 3;
 const MAX_TEST_FILES: usize = 3;
 const MAX_BLAMED_LINES: u64 = 5000;
+/// Lines from where a test's name appears taken as its body.
+const TEST_BODY_LINES: u64 = 30;
 const PULL_BUDGET: Duration = Duration::from_secs(5);
 const UNCOMMITTED: &str = "0000000000000000000000000000000000000000";
 
@@ -369,7 +371,40 @@ fn resolve(dir: &Path, top: &Path, target: &str) -> Result<Found, String> {
             return Ok(found);
         }
     }
+    if let Some((path, name)) = target.split_once(char::is_whitespace) {
+        if let Some(file) = file_in(top, dir, path) {
+            return test_in(top, file, name.trim().trim_matches(['"', '\'', '`']));
+        }
+    }
     test(top, target)
+}
+
+/// The lines of a test named in `file`, from where its name appears, else
+/// the file's latest commits.
+fn test_in(top: &Path, file: String, name: &str) -> Result<Found, String> {
+    let text = std::fs::read_to_string(top.join(&file)).unwrap_or_default();
+    let at = text
+        .lines()
+        .position(|line| !name.is_empty() && line.contains(name))
+        .map(|index| index as u64 + 1);
+    let mut found = match at {
+        Some(at) => {
+            let last = (at + TEST_BODY_LINES - 1).min(text.lines().count() as u64);
+            let mut found = blame(top, &file, (at, last))?;
+            found.guess = Some(format!(
+                "took lines {at}-{last} of {file}, from where {name} appears, as the test"
+            ));
+            found
+        }
+        None => {
+            let mut found = Found::new("file");
+            found.commits = latest(top, &file, MAX_COMMITS)?;
+            found.notes.push(format!("{file} does not mention {name}."));
+            found
+        }
+    };
+    found.path = Some(file);
+    Ok(found)
 }
 
 /// The commits that last changed lines `start` to `end` of `path`.
@@ -463,7 +498,7 @@ fn test(top: &Path, target: &str) -> Result<Found, String> {
     files.truncate(MAX_TEST_FILES);
     if files.is_empty() {
         return Err(format!(
-            "{target} is not a commit or a file here, and no file mentions {name}"
+            "{target} is not a commit or a file here, and no file mentions {name}. Pass a commit, a path or path:line, a path and a test's name, a test's name, a CI run's address or id, or ci"
         ));
     }
     let mut found = Found::new("test");
@@ -528,6 +563,65 @@ fn ranges(lines: &[(u64, u64)]) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The checkout a target that is an absolute path lies in, which may not be
+/// the project's own, else the project.
+fn checkout_dir(project: &Path, target: &str) -> PathBuf {
+    let path = target.split(char::is_whitespace).next().unwrap_or(target);
+    let path = path
+        .rsplit_once(':')
+        .filter(|(_, spec)| line_range(spec).is_some())
+        .map_or(path, |(path, _)| path);
+    let path = Path::new(path);
+    if !path.is_absolute() {
+        return project.to_owned();
+    }
+    path.ancestors()
+        .find(|folder| folder.is_dir())
+        .map_or_else(|| project.to_owned(), Path::to_owned)
+}
+
+/// The agents the edit record has uncommitted lines of in `path`, among
+/// `asked` lines when lines were asked about, and how to reach each.
+fn uncommitted_by(core: &Core, top: &Path, path: &str, asked: Option<&Lines>) -> Vec<Value> {
+    let Ok(owners) = owners_at(core, top, false) else {
+        return Vec::new();
+    };
+    let Some(file) = owners.files.iter().find(|file| file.path == path) else {
+        return Vec::new();
+    };
+    let listed = messages::listed(core);
+    let mut by: BTreeMap<usize, Vec<u64>> = BTreeMap::new();
+    for run in &file.lines {
+        let lines = (run.start..run.start + run.count).filter(|line| {
+            asked.is_none_or(|asked| {
+                asked
+                    .iter()
+                    .any(|(first, last)| (first..=last).contains(&line))
+            })
+        });
+        by.entry(run.author).or_default().extend(lines);
+    }
+    by.into_iter()
+        .filter(|(_, lines)| !lines.is_empty())
+        .map(|(author, lines)| {
+            let writer = &owners.authors[author];
+            let open = writer.open
+                && listed
+                    .iter()
+                    .any(|agent| agent.agent_id == writer.agent_id && agent.reach != Reach::Stopped);
+            json!({
+                "kind": "agent",
+                "name": writer.name,
+                "cli": writer.cli,
+                "openNow": open.then_some(&writer.agent_id),
+                "lines": ranges(&runs(lines.into_iter())),
+                "action": if open { "message" } else { "ask the person" },
+                "how": if open { format!("agent_send to {}", writer.name) } else { "it is no longer open".to_owned() },
+            })
+        })
+        .collect()
 }
 
 fn agent_value(owner: &AgentOwner) -> Value {
@@ -637,8 +731,9 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         .filter(|target| !target.is_empty())
         .ok_or("target must be a CI run, a commit, a file, file:line, file:start-end, or a test")?
         .to_owned();
-    let dir = PathBuf::from(&request.project);
-    let (top, origin, asked) = blocking(move || {
+    let dir = checkout_dir(Path::new(&request.project), &target);
+    let core_for_owners = core.clone();
+    let (top, origin, asked, uncommitted) = blocking(move || {
         let top = PathBuf::from(git(&dir, &["rev-parse", "--show-toplevel"])?.trim());
         let origin = git(&top, &["remote", "get-url", "origin"])
             .ok()
@@ -647,7 +742,18 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             Some(run) => Asked::Ci(run),
             None => Asked::Found(resolve(&dir, &top, &target)?),
         };
-        Ok((top, origin, asked))
+        let uncommitted = match &asked {
+            Asked::Found(found) => found
+                .path
+                .as_deref()
+                .map(|path| {
+                    let asked = (found.kind == "lines").then_some(&found.uncommitted);
+                    uncommitted_by(&core_for_owners, &top, path, asked)
+                })
+                .unwrap_or_default(),
+            Asked::Ci(_) => Vec::new(),
+        };
+        Ok((top, origin, asked, uncommitted))
     })
     .await
     .map_err(|error| error.to_string())?;
@@ -805,7 +911,7 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             ranges(&found.uncommitted)
         ));
     }
-    if answered.is_empty() && found.uncommitted.is_empty() {
+    if answered.is_empty() && found.uncommitted.is_empty() && uncommitted.is_empty() {
         note.push_str("No commit touched it. ");
     }
     let mut answer = json!({
@@ -815,6 +921,9 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         "commits": answered,
         "note": note.trim_end(),
     });
+    if !uncommitted.is_empty() {
+        answer["uncommitted"] = json!(uncommitted);
+    }
     if let Some(ci) = &ci {
         ci.describe(&mut answer);
     }

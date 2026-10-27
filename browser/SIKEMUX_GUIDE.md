@@ -1082,8 +1082,11 @@ find who did before you change it:
    for main's). It reads the run on GitHub or Bitbucket, finds the last run of
    that workflow that passed and where it first failed, and lists the commits
    between them, those the failing job's `error` points at first, each with
-   `why`. Otherwise give a failing test's name or file, a commit, a file, or
-   `file:line` and `file:start-end` for the lines that fail.
+   `why`. Otherwise give a failing test's name or file, a file and the test's
+   name after it, a commit, a file, or `file:line` and `file:start-end` for the
+   lines that fail. An absolute path is looked up in the checkout holding it.
+   A file with lines nobody committed yet, untracked ones too, comes with
+   `uncommitted`: the agents whose lines they are, and how to reach each.
 2. Each commit comes with its `owners`. An agent of this host comes with its
    `title`, `cli` and `action`: `message` means it is open now, so send it what
    failed with `agent_send` to `openNow`; `resume` means it closed, so call
