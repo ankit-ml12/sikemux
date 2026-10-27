@@ -1877,15 +1877,20 @@ impl Workspaces {
                 ));
             }
             let launcher = lead_own.or_else(|| offered.first()).ok_or_else(|| {
-                let known: Vec<&str> = launchers
+                let mut known: Vec<&str> = launchers
                     .iter()
                     .map(|launcher| launcher.agent.provider.as_str())
                     .collect();
+                known.sort_unstable();
+                known.dedup();
                 if known.is_empty() {
                     "Sikemux has not said which agents it can start; open Sikemux once so it can"
                         .to_owned()
                 } else {
-                    format!("cli must be one of {}", known.join(", "))
+                    format!(
+                        "{provider} is not set up on this host, so ask the person to install it or sign in to it; Sikemux can start {}",
+                        known.join(", ")
+                    )
                 }
             })?;
             (*launcher).clone()
