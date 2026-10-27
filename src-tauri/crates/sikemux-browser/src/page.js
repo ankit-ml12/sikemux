@@ -503,6 +503,7 @@
         '<svg viewBox="0 0 20 20" width="18" height="18"><defs><linearGradient id="fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c3a3ff"/><stop offset="1" stop-color="#7c4dff"/></linearGradient></defs>' +
         '<path d="M2.4 3.3 Q1.8 1.8 3.3 2.4 L15.8 7.3 Q18.2 8.3 15.6 8.8 L11.6 9.7 Q10 10 9.7 11.6 L8.8 15.6 Q8.3 18.2 7.3 15.8 Z" fill="url(#fill)" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>';
     let overlay = null;
+    let placedInput = null;
     const layer = () => {
         if (overlay && overlay.host.isConnected) return overlay;
         const host = document.createElement("sikemux-overlay");
@@ -603,6 +604,7 @@
             if (condition.selector != null && !selected(condition.selector).some(shown)) failing.push(`nothing shown matches "${condition.selector}"`);
             if (condition.selectorGone != null && selected(condition.selectorGone).some(shown)) failing.push(`"${condition.selectorGone}" is still shown`);
             if (condition.url != null && !location.href.includes(condition.url)) failing.push(`the url is ${location.href}, which does not contain "${condition.url}"`);
+            if (condition.urlGone != null && location.href.includes(condition.urlGone)) failing.push(`the url is still ${location.href}`);
             return { met: failing.length === 0, failing };
         },
         // The number of the element a call names by `index`, `text` (with an
@@ -805,6 +807,50 @@
             const kept = seen.length > 1 ? seen.filter((mark) => mark.rect.width * mark.rect.height <= most) : seen;
             layer().marks = kept.map((mark) => box(mark.element, null, String(mark.id), "box marks"));
             return { marked: kept.map((mark) => mark.id) };
+        },
+        viewportSize() {
+            return { width: innerWidth, height: innerHeight };
+        },
+        // The file input an upload names, shown or hidden behind a styled drop
+        // zone, or the page's only one when it names none, laid under the
+        // pointer until `unplaceFileInput` so a real click opens its chooser.
+        // Null when the target is something else to click, such as a button.
+        fileInput(target) {
+            const isFileInput = (element) => element.tagName === "INPUT" && element.type === "file";
+            let element = null;
+            if (target == null || target.selector != null) {
+                let inputs = (target == null ? selected('input[type="file"]') : selected(target.selector)).filter(isFileInput);
+                const chosen = target && target.index != null && inputs.find((input) => numberOf(input) === target.index);
+                if (chosen) inputs = [chosen];
+                if (inputs.length > 1) {
+                    const lines = inputs.slice(0, 10).map((input) => entry(numberFor(input), input).line);
+                    throw new Error(`${inputs.length} file inputs match; nothing was done. Pass one of these numbers as index:\n${lines.join("\n")}`);
+                }
+                if (target == null && !inputs.length) throw new Error("the page has no file input; pass the number or selector of the button that opens a chooser");
+                element = inputs[0] || null;
+            } else if (target.index != null && target.text == null) {
+                const picked = pick(target.index);
+                element = isFileInput(picked) ? picked : null;
+            }
+            if (!element) return null;
+            const style = element.getAttribute("style");
+            placedInput = { element, style };
+            element.style.cssText += ";position:fixed!important;left:0!important;top:0!important;width:24px!important;height:24px!important;margin:0!important;display:block!important;visibility:visible!important;opacity:0.01!important;pointer-events:auto!important;transform:none!important;z-index:2147483647!important";
+            const rect = rectOf(element);
+            if (rect.width < 1 || rect.height < 1) {
+                this.unplaceFileInput();
+                throw new Error("the file input sits inside something hidden; pass the number or selector of the button that opens its chooser");
+            }
+            return { index: numberFor(element), label: describe(element), x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        },
+        unplaceFileInput() {
+            if (placedInput) {
+                const { element, style } = placedInput;
+                if (style == null) element.removeAttribute("style");
+                else element.setAttribute("style", style);
+            }
+            placedInput = null;
+            return {};
         },
         pageHeight() {
             return Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);

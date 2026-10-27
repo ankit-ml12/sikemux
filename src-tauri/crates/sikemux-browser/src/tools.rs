@@ -182,6 +182,7 @@ async fn run(
                 .and_then(|(tab_id, _)| manager.page(agent_id, &tab_id))
                 .map(|page| page.url);
             let new_tab = params.get("newTab").and_then(Value::as_bool) == Some(true);
+            let started = Instant::now();
             let mut note = None;
             let tab_id = if new_tab || current.is_none() {
                 manager
@@ -189,6 +190,9 @@ async fn run(
                     .await
                     .map_err(|error| error.to_string())?
             } else {
+                if let Ok((tab_id, _)) = manager.active_view(agent_id) {
+                    crate::person::leave_be(&tab_id)?;
+                }
                 let current = current.unwrap_or_default();
                 if current == wanted {
                     manager
@@ -212,7 +216,7 @@ async fn run(
             let _ = manager
                 .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
                 .await;
-            let mut result = arrived(manager, agent_id, &tab_id, params).await?;
+            let mut result = arrived(manager, agent_id, &tab_id, params, started).await?;
             if let Some(note) = note {
                 result["note"] = json!(note);
             }
@@ -291,7 +295,16 @@ async fn run(
                 return Err(format!("pass between 1 and {MAX_UPLOAD_FILES} files"));
             }
             let (tab_id, view) = active(manager, agent_id)?;
-            let (x, y, mut result) = target(&view, params, "index", "x", "y").await?;
+            let by_point = params.get("x").is_some() || params.get("y").is_some();
+            let input = match by_point {
+                true => Value::Null,
+                false => call(&view, "fileInput", &[element_target(params, "index")]).await?,
+            };
+            let placed = input.is_object();
+            let (x, y, mut result) = match input.get("x").and_then(Value::as_f64) {
+                Some(x) => (x, input["y"].as_f64().unwrap_or_default(), input),
+                None => target(&view, params, "index", "x", "y").await?,
+            };
             let names: Vec<String> = paths
                 .iter()
                 .filter_map(|path| path.file_name())
@@ -302,12 +315,20 @@ async fn run(
             native::mouse(&view, Mouse::Down, x, y, 1).await?;
             native::mouse(&view, Mouse::Up, x, y, 1).await?;
             let started = Instant::now();
+            let mut opened = true;
             while manager.upload_pending(&tab_id) {
                 if started.elapsed() >= UPLOAD_TIMEOUT {
                     manager.take_upload(&tab_id);
-                    return Err("that did not open a file chooser; pass the number of a file input, or of the button that opens one".into());
+                    opened = false;
+                    break;
                 }
                 tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            if placed {
+                call(&view, "unplaceFileInput", &[]).await?;
+            }
+            if !opened {
+                return Err("that did not open a file chooser; pass the selector or number of a file input, or of the button that opens one".into());
             }
             result["uploaded"] = json!(names);
             settle(manager, agent_id, &tab_id).await;
@@ -643,7 +664,9 @@ async fn run(
                 let _ = manager
                     .wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT)
                     .await;
-                return report(manager, agent_id, params).await;
+                let mut result = report(manager, agent_id, params).await?;
+                result["note"] = json!("a fixed wait; text, textGone, selector, url, urlGone or networkIdle wait only as long as it takes");
+                return Ok(result);
             };
             let limit = params
                 .get("timeoutMs")
@@ -684,7 +707,10 @@ async fn run(
                     .await;
                 manager.settle_viewport(agent_id, &tab_id).await?;
             }
-            state(manager, agent_id).await
+            let (_, view) = active(manager, agent_id)?;
+            let mut size = call(&view, "viewportSize", &[]).await?;
+            size["tabId"] = json!(tab_id);
+            Ok(size)
         }
         "browser.page" => {
             let source = std::path::PathBuf::from(text("path").ok_or("path is required")?);
@@ -739,6 +765,8 @@ async fn step(
     params: &Value,
 ) -> Result<Value, String> {
     let (tab_id, view) = active_tab(manager, agent_id)?;
+    crate::person::leave_be(&tab_id)?;
+    let started = Instant::now();
     let hard = params.get("hard").and_then(Value::as_bool) == Some(true);
     match go {
         "back" => manager
@@ -754,7 +782,7 @@ async fn step(
         other => return Err(format!("go must be back, forward or reload, not {other}")),
     }
     settle(manager, agent_id, &tab_id).await;
-    arrived(manager, agent_id, &tab_id, params).await
+    arrived(manager, agent_id, &tab_id, params, started).await
 }
 
 /// Plays the steps in order and stops at the first that fails or that takes
@@ -866,7 +894,14 @@ fn same_document(current: &str, wanted: &str) -> bool {
 /// The conditions a wait names, or None when it names only a time.
 fn wait_condition(source: &Value) -> Option<Value> {
     let mut condition = serde_json::Map::new();
-    for key in ["text", "textGone", "selector", "selectorGone", "url"] {
+    for key in [
+        "text",
+        "textGone",
+        "selector",
+        "selectorGone",
+        "url",
+        "urlGone",
+    ] {
         if let Some(value) = source.get(key).and_then(Value::as_str) {
             condition.insert(key.into(), json!(value));
         }
@@ -956,15 +991,21 @@ async fn arrived(
     agent_id: &str,
     tab_id: &str,
     params: &Value,
+    started: Instant,
 ) -> Result<Value, String> {
     let waited = match params.get("waitFor").and_then(wait_condition) {
         Some(condition) => {
-            let limit = params["waitFor"]
+            let asked = params["waitFor"]
                 .get("timeoutMs")
                 .and_then(Value::as_u64)
-                .unwrap_or(DEFAULT_CONDITION_WAIT_MS)
-                .min(MAX_BLOCKING_MS);
-            Some(wait_for(manager, agent_id, &condition, Duration::from_millis(limit)).await)
+                .unwrap_or(DEFAULT_CONDITION_WAIT_MS);
+            let limit = Duration::from_millis(asked.min(MAX_BLOCKING_MS))
+                .min(Duration::from_millis(MAX_BLOCKING_MS).saturating_sub(started.elapsed()));
+            let mut waited = wait_for(manager, agent_id, &condition, limit).await;
+            if limit < Duration::from_millis(asked) && waited["met"] == json!(false) {
+                waited["note"] = json!(format!("the load took part of the {asked} ms, so the wait gave up after {} ms; wait again with browser_wait", limit.as_millis()));
+            }
+            Some(waited)
         }
         None => None,
     };

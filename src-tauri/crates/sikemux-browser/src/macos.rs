@@ -1897,6 +1897,9 @@ pub fn install_shortcuts(shortcut: impl Fn(BrowserShortcut) + 'static) {
             return std::ptr::null_mut();
         }
         crate::input::note_person(event);
+        if let Some((tab_id, _)) = focused_tab(event, mtm) {
+            crate::person::typed_in(&tab_id);
+        }
         let flags = event.modifierFlags();
         if !flags.contains(NSEventModifierFlags::Command) {
             return pass;

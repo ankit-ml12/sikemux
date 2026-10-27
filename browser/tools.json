@@ -354,7 +354,7 @@
     },
     {
       "name": "browser_upload",
-      "row": {"verb": "upload", "kind": "edit", "icon": "upload", "target": ["{paths}"], "detail": ["into element {index}"]},
+      "row": {"verb": "upload", "kind": "edit", "icon": "upload", "target": ["{paths}"], "detail": ["into element {index}", "into {selector}"]},
       "method": "browser.upload",
       "description": "Give files to a file input.",
       "properties": {
@@ -373,6 +373,11 @@
           "description": "The file input, or the button opening a chooser",
           "type": "integer",
           "minimum": 0
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
         },
         "x": {
           "description": "Point of that button, with y",
@@ -660,7 +665,7 @@
     },
     {
       "name": "browser_wait",
-      "row": {"verb": "wait", "kind": "think", "icon": "hourglass", "target": ["for “{text}”", "for “{textGone}” to go", "for {selector}", "for {selectorGone} to go", "for {url}", "{ms}"]},
+      "row": {"verb": "wait", "kind": "think", "icon": "hourglass", "target": ["for “{text}”", "for “{textGone}” to go", "for {selector}", "for {selectorGone} to go", "for {url}", "for {urlGone} to go", "{ms}"]},
       "method": "browser.wait",
       "description": "Wait for text, a selector, a url or a quiet network.",
       "properties": {
@@ -686,6 +691,12 @@
         },
         "url": {
           "description": "Until the URL contains this",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "urlGone": {
+          "description": "Until the URL no longer contains this",
           "type": "string",
           "minLength": 1,
           "maxLength": 2048

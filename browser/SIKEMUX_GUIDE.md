@@ -437,9 +437,11 @@ see a real pointer; items marked draggable get the page's own drag and drop
 events.
 
 `browser_upload` attaches files the way a person picking them would. Pass
-absolute `paths` and the number (or `x`, `y`) of the file input or of the
-button that opens its chooser. The chooser never shows; the page gets the
-files and its change events. Only one file is given when the input takes one.
+absolute `paths` and the number, `selector` (or `x`, `y`) of the file input or
+of the button that opens its chooser; with none, the page's only file input.
+A file input hidden behind a styled drop zone works too. The chooser never
+shows; the page gets the files and its change events. Only one file is given
+when the input takes one.
 
 Your clicks, typing and keys never take the person's keyboard, so they can
 keep typing in Sikemux while you drive a page. The tab only gets the keyboard
@@ -464,7 +466,8 @@ around it. It returns the scroll position and `atBottom`.
 
 `browser_wait` waits for the page to reach a state. `text` or `textGone`
 waits for words to show or go, `selector` or `selectorGone` for an element,
-`url` for the address to contain a string, and `networkIdle: true` for the
+`url` or `urlGone` for the address to contain a string or stop containing it,
+and `networkIdle: true` for the
 page's fetch and XHR calls to have been quiet for half a second. Give several
 and all must hold. It checks every 200 ms for up to `timeoutMs` (10 seconds by
 default, 60 at most) and returns `met`, `waitedMs` and, when it ran out, the
@@ -473,11 +476,14 @@ for `ms` (default 1000, max 30000) and then waits for any load to finish.
 Prefer a condition over a guessed sleep, and over screenshots taken to see
 whether something has finished.
 
-`browser_navigate` takes the same conditions as `waitFor`, to arrive at a
-page that has finished drawing. Navigating to the url the tab is already on
+`browser_navigate` takes the same conditions as `waitFor`, but `urlGone`, to
+arrive at a page that has finished drawing. The load and the wait share one
+minute, so a slow load shortens the wait, and the result says so. Navigating to the url the tab is already on
 reloads it; `go: "reload"` does so directly, and with it `hard: true` skips
 the cache so a changed script or stylesheet is fetched
-again. When the load failed, as when nothing listens on that port, the result
+again. A tab the person typed in during the last minute, such as one they are
+paying or signing in on, is never moved: navigating or reloading it is
+refused, so open the page in a new tab instead. When the load failed, as when nothing listens on that port, the result
 says so in `loadError`, and a page that loaded without any text or controls
 yet comes with a note to wait for it.
 
@@ -501,7 +507,8 @@ The full state reports `viewport` with the page's `width` and `height`, and
 `fixed` holding the size you set or `false`, with a note when the pane is
 narrow enough that the page may be showing its phone layout. A fixed size is
 the page's real window size, so `vw` units, media queries and `innerWidth`
-all see it, and the call returns once the page has laid out at it.
+all see it, and the call returns the page's `width` and `height` once it has
+laid out at them.
 
 Every state carries `visible`: whether the person can see this tab in the
 pane right now. A tab that is not visible still lays out at a real size and
