@@ -69,6 +69,7 @@ import {
   IconWindow,
   IconWorkflow,
   IconWrench,
+  Logo,
 } from "@shared/ui/Icons";
 import { ChatFileRef, useFileRef } from "./FileRef";
 import { ChatAgentContext, openLink, ToolDetailContext } from "./chatAgent";
@@ -122,6 +123,7 @@ const TOOL_ICONS: Record<ToolIconName, ComponentType<{ size?: number }>> = {
   keyboard: IconKeyboard,
   link: IconLink,
   "log-lines": IconLogLines,
+  logo: Logo,
   message: IconMessage,
   mouse: IconMouse,
   move: IconMove,
