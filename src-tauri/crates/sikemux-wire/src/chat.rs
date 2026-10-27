@@ -472,6 +472,8 @@ pub enum LetterKind {
     Message,
     /// The person's answer to a question an agent asked.
     Answer,
+    /// The prompt of a trigger the chat set, sent when its time came.
+    Trigger,
 }
 
 /// A message from another agent, or an answer to an agent's question, as the

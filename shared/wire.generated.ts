@@ -1305,7 +1305,7 @@ export interface AgentLetter {
     tree?: PartTree;
 }
 
-export type LetterKind = "message" | "answer";
+export type LetterKind = "message" | "answer" | "trigger";
 
 /** The line under a prompt, or under the last message of an answer. */
 export interface RowMeta {

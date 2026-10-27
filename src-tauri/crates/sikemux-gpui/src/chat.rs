@@ -182,7 +182,7 @@ impl ChatRow {
             .letters
             .iter()
             .enumerate()
-            .filter(|(_, letter)| letter.kind == LetterKind::Message);
+            .filter(|(_, letter)| letter.kind != LetterKind::Answer);
         self.docs =
             parts
                 .chain(letters.map(|(ix, letter)| {
@@ -4078,7 +4078,14 @@ fn row(
         return div().children(lost).children(worktree).into_any_element();
     }
     let lettered = !message.letters.is_empty();
-    let content = if lettered {
+    let triggered = lettered
+        && message
+            .letters
+            .iter()
+            .all(|letter| letter.kind == LetterKind::Trigger);
+    let content = if triggered {
+        fired(row, pen, looks, window, cx)
+    } else if lettered {
         letters(row, pen, looks, window, cx)
     } else if user {
         let editing = looks
@@ -4141,7 +4148,7 @@ fn row(
             )
             .children(meta::line(rows, ix, &group, looks, cx))
     };
-    let user = user && !lettered;
+    let user = user && (!lettered || triggered);
     let drawn = div()
         .w_full()
         .flex()
@@ -4312,6 +4319,54 @@ fn answered_question(
         )
 }
 
+/// The prompts of the chat's triggers that came due, drawn where the person's own messages
+/// sit, under a line saying a trigger sent them.
+fn fired(
+    row: &ChatRow,
+    pen: &Pen,
+    looks: &Drawn,
+    window: &mut Window,
+    cx: &mut App,
+) -> gpui_kit::Div {
+    let texts = (0..row.message.letters.len()).filter_map(|ix| {
+        let id = SharedString::from(format!("{}:{}", row.message.id, letter_doc(ix)));
+        row.doc(&letter_doc(ix)).map(|doc| {
+            let look = looks.styles.borrow().text.clone();
+            pen.markdown_with(&look, id, &doc.markdown, window, cx)
+        })
+    });
+    div()
+        .max_w(relative(0.8))
+        .flex()
+        .flex_col()
+        .items_end()
+        .gap(px(5.))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(5.))
+                .text_size(crate::theme::ui_text(11.5))
+                .text_color(looks.quiet)
+                .child(ui::icon(Icon::Timer, 11.).text_color(looks.quiet))
+                .child("Trigger"),
+        )
+        .child(
+            div()
+                .max_w_full()
+                .px(px(12.))
+                .py(px(8.))
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .border_1()
+                .border_color(looks.line)
+                .rounded(theme::RADIUS_3)
+                .bg(looks.bubble)
+                .children(texts),
+        )
+}
+
 /// Messages other agents sent and the person's answers to questions, which the core hands
 /// the agent as one message: each drawn as what it is rather than as the text the agent reads.
 fn letters(
@@ -4336,7 +4391,7 @@ fn letters(
                 Tokens::get(cx),
             )
             .into_any_element(),
-            LetterKind::Message => {
+            LetterKind::Message | LetterKind::Trigger => {
                 let (bench, agent) = (looks.bench.clone(), letter.agent_id.clone());
                 let name = div()
                     .id(SharedString::from(format!(

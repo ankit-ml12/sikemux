@@ -23,6 +23,8 @@ const HARNESS_TAGS: [&str; 8] = [
 ];
 
 const LETTER_TAGS: [&str; 2] = ["agent-message", "question-answer"];
+/// The sender the core names on the prompts of a chat's triggers.
+const TRIGGER: &str = "trigger";
 
 pub(super) fn is_agent_letter(text: &str) -> bool {
     let text = text.trim_start();
@@ -183,10 +185,14 @@ pub(super) fn agent_letters(text: &str) -> Option<Vec<AgentLetter>> {
                 tree: None,
             }
         } else {
+            let agent_id = attribute("agent-id");
             AgentLetter {
-                kind: LetterKind::Message,
+                kind: match agent_id.as_str() {
+                    TRIGGER => LetterKind::Trigger,
+                    _ => LetterKind::Message,
+                },
                 name: attribute("from"),
-                agent_id: attribute("agent-id"),
+                agent_id,
                 cli: attribute("cli"),
                 question: String::new(),
                 tree: Some(super::send::read(&body)),
