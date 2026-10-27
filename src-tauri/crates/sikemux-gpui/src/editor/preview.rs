@@ -7,17 +7,21 @@ use std::rc::Rc;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, div, point, px, App, AppContext, Context, Entity, FocusHandle, Focusable, Hsla,
-    InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, RenderOnce,
-    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
+    actions, div, img, point, px, AnyElement, App, AppContext, Context, Entity, FocusHandle,
+    Focusable, FontWeight, Hsla, InteractiveElement, IntoElement, KeyBinding, MouseButton,
+    ParentElement, Pixels, RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement,
+    Styled, StyledImage, Subscription, Window,
 };
 use gpui_transcript::{DocFind, Markdown, Pen, Query, Style};
 use serde_json::Value;
 use sikemux_markdown::{Doc, Op, Options};
+use tokio::sync::mpsc::UnboundedSender;
 
 use super::{Document, FileKey, OpenAt};
+use crate::core::Ask;
+use crate::picture::{Picture, Remote};
 use crate::theme::{self, Tokens};
-use crate::ui::FindBar;
+use crate::ui::{self, FindBar};
 use crate::workbench::Workbench;
 
 actions!(markdown_preview, [FindInPreview]);
@@ -26,6 +30,8 @@ pub(super) const CONTEXT: &str = "MarkdownPreview";
 /// The room above the preview's text, where a place found is brought to rest below.
 const PAD_Y: f32 = 24.;
 const TEXT_SIZE: f32 = 15.;
+/// The widest the preview's text runs, as GitHub keeps a README's.
+const WIDTH: f32 = 860.;
 /// Frames spent bringing a place found into view: one from its block's top, one from its line.
 const REVEAL_FRAMES: u8 = 2;
 
@@ -42,7 +48,8 @@ const OPTIONS: Options = Options {
     gfm: true,
     html_as_text: false,
     file_links: true,
-    html_images: false,
+    html_images: true,
+    html_layout: true,
     file_paths: false,
 };
 
@@ -150,6 +157,9 @@ pub(super) struct Body {
     pub(super) found: Option<Rc<DocFind>>,
     pub(super) scroll: ScrollHandle,
     pub(super) focus: FocusHandle,
+    /// How pictures on the web are fetched; none while the file is on another host, whose
+    /// pictures beside it this one cannot read.
+    pub(super) asks: Option<UnboundedSender<Ask>>,
 }
 
 impl RenderOnce for Body {
@@ -159,12 +169,21 @@ impl RenderOnce for Body {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_default();
+        let quiet = Tokens::get(cx).text_tertiary;
+        let (pictures, asks) = (folder.clone(), self.asks);
         let style = Rc::new(Style {
             on_link: Some(Rc::new(
                 move |link: &str, window: &mut Window, cx: &mut App| {
                     follow(&folder, link, window, cx)
                 },
             )),
+            image: Some(Rc::new(
+                move |src: &str, alt: &str, _: &mut Window, _: &mut App| {
+                    picture(src, alt, &pictures, asks.as_ref(), quiet)
+                },
+            )),
+            gap: px(14.),
+            ruled_headings: true,
             ..reading_style(TEXT_SIZE, cx)
         });
         let pen = match &self.found {
@@ -185,7 +204,7 @@ impl RenderOnce for Body {
             .child(
                 div()
                     .mx_auto()
-                    .max_w(px(860.))
+                    .max_w(px(WIDTH))
                     .px(px(28.))
                     .py(px(PAD_Y))
                     .child(pen.markdown(id, &self.markdown, window, cx)),
@@ -431,6 +450,37 @@ pub(crate) fn reading_style(text_size: f32, cx: &App) -> Style {
             ..t.surface_sunken
         },
         ..Style::default()
+    }
+}
+
+/// A picture the markdown shows at its own size, no wider than the text: a file beside the
+/// one being read, or one on the web, which the core fetches.
+fn picture(
+    src: &str,
+    alt: &str,
+    folder: &Path,
+    asks: Option<&UnboundedSender<Ask>>,
+    quiet: Hsla,
+) -> AnyElement {
+    let picture = if src.starts_with("http://") || src.starts_with("https://") {
+        asks.map(|asks| Picture::Remote(Remote::new(src.to_owned(), asks.clone())))
+    } else {
+        let local = src.strip_prefix("file://").unwrap_or(src);
+        let local = local.split(['#', '?']).next().unwrap_or(local);
+        asks.map(|_| Picture::File(folder.join(local)))
+    };
+    let alt = SharedString::from(alt.to_owned());
+    let unloaded = move || {
+        ui::text(alt.clone(), 12., FontWeight::NORMAL)
+            .text_color(quiet)
+            .into_any_element()
+    };
+    match picture {
+        Some(picture) => img(picture.source_at(px(WIDTH)))
+            .max_w_full()
+            .with_fallback(unloaded)
+            .into_any_element(),
+        None => unloaded(),
     }
 }
 

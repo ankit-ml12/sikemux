@@ -31,6 +31,10 @@ pub struct Options {
     /// uploaded image, while the rest of the markup is still dropped.
     #[serde(default)]
     pub html_images: bool,
+    /// Keeps what GitHub draws of embedded markup besides pictures: the alignment `<div>` and
+    /// `<p>` give the blocks inside them, and `<h1>` to `<h6>` headings.
+    #[serde(default)]
+    pub html_layout: bool,
     /// Marks the names in prose and between backticks that could be files, for a reader to
     /// check and draw as files when they are.
     #[serde(default)]
@@ -134,6 +138,11 @@ pub enum Element {
         code: bool,
         c: Vec<Node>,
     },
+    /// Blocks embedded HTML lines up to one side, as `<div align="center">` does.
+    Div {
+        align: Align,
+        c: Vec<Node>,
+    },
     /// A `<details>` fold from embedded HTML, open or not as it was written.
     Details {
         summary: String,
@@ -207,15 +216,7 @@ fn read(text: &str, options: Options, skip: usize) -> (Vec<Element>, Vec<usize>)
             builder.opening = None;
         }
     }
-    while matches!(
-        builder.stack.last(),
-        Some(Frame {
-            kind: Kind::Details { .. },
-            ..
-        })
-    ) {
-        builder.close_details();
-    }
+    while builder.closes_html() {}
     (builder.blocks, builder.starts)
 }
 
@@ -260,6 +261,8 @@ enum Kind {
         summary: String,
         open: bool,
     },
+    /// A `<div>` or `<p>` from embedded HTML, and the side it lines its blocks up to.
+    Aligned(Option<Align>),
     Unsupported,
 }
 
@@ -320,6 +323,26 @@ fn strip_tags(html: &str) -> String {
         }
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A tag's name, with `/` before it for a closing tag: `div` for `<div align="center">`.
+fn tag_name(tag: &str) -> &str {
+    let inside = tag.trim_start_matches('<');
+    let end = inside
+        .char_indices()
+        .skip(1)
+        .find(|(_, c)| c.is_whitespace() || matches!(c, '>' | '/'))
+        .map_or(inside.len(), |(at, _)| at);
+    inside.get(..end).unwrap_or_default()
+}
+
+fn aligned(side: &str) -> Option<Align> {
+    match side.trim().to_ascii_lowercase().as_str() {
+        "left" => Some(Align::Left),
+        "center" => Some(Align::Center),
+        "right" => Some(Align::Right),
+        _ => None,
+    }
 }
 
 fn nonempty(text: &str) -> Option<String> {
@@ -458,35 +481,44 @@ impl Builder {
         url::sanitize(url, self.options.file_links)
     }
 
-    /// Opens and closes `<details>` folds and names them from `<summary>`, in
-    /// the order the HTML block writes them; the blocks between land inside.
-    fn html_folds(&mut self, html: &str) {
+    /// Reads a block of HTML the way GitHub draws it, in the order it writes things: folds,
+    /// aligned blocks, headings and pictures, each picture inside the link around it. The rest
+    /// of the markup is dropped.
+    fn html_block(&mut self, html: &str) {
         let lower = html.to_ascii_lowercase();
+        let mut pictures = Vec::new();
+        let mut link: Option<String> = None;
         let mut from = 0;
-        loop {
-            let rest = lower.get(from..).unwrap_or_default();
-            let next = ["<details", "<summary", "</details"]
-                .into_iter()
-                .filter_map(|tag| rest.find(tag).map(|at| (at, tag)))
-                .min_by_key(|(at, _)| *at);
-            let Some((at, tag)) = next else { break };
+        while let Some(at) = lower.get(from..).and_then(|rest| rest.find('<')) {
             let start = from + at;
             let close = lower
                 .get(start..)
                 .and_then(|tail| tail.find('>'))
                 .map_or(html.len(), |end| start + end + 1);
-            match tag {
-                "<details" => {
-                    let open = attribute(html.get(start..close).unwrap_or_default(), "open")
-                        .is_some()
+            let tag = html.get(start..close).unwrap_or_default();
+            let name = tag_name(lower.get(start..close).unwrap_or_default());
+            from = close.max(start + 1);
+            let folds = self.options.gfm;
+            let layout = self.options.html_layout;
+            match name {
+                "details" | "summary" | "/details" | "div" | "p" | "/div" | "/p" | "h1" | "h2"
+                | "h3" | "h4" | "h5" | "h6"
+                    if folds || layout =>
+                {
+                    self.flush_pictures(&mut pictures);
+                }
+                _ => {}
+            }
+            match name {
+                "details" if folds => {
+                    let open = attribute(tag, "open").is_some()
                         || lower.get(start..close).is_some_and(|t| t.contains(" open"));
                     self.open(Kind::Details {
                         summary: String::new(),
                         open,
                     });
-                    from = close;
                 }
-                "<summary" => {
+                "summary" if folds => {
                     let end = lower
                         .get(close..)
                         .and_then(|tail| tail.find("</summary"))
@@ -501,32 +533,112 @@ impl Builder {
                     }
                     from = end.max(close);
                 }
-                _ => {
-                    if matches!(
-                        self.stack.last(),
-                        Some(Frame {
-                            kind: Kind::Details { .. },
-                            ..
-                        })
-                    ) {
-                        self.close_details();
+                "/details" if folds => {
+                    if self.top_is(|kind| matches!(kind, Kind::Details { .. })) {
+                        self.closes_html();
                     }
-                    from = close;
+                }
+                "div" | "p" if layout => {
+                    let side = attribute(tag, "align").and_then(|side| aligned(&side));
+                    self.open(Kind::Aligned(side));
+                }
+                "/div" | "/p" if layout => {
+                    if self.top_is(|kind| matches!(kind, Kind::Aligned(_))) {
+                        self.closes_html();
+                    }
+                }
+                "h1" | "h2" | "h3" | "h4" | "h5" | "h6" if layout => {
+                    let level = name.as_bytes().get(1).map_or(1, |digit| digit - b'0');
+                    let end = lower
+                        .get(close..)
+                        .and_then(|tail| tail.find(&format!("</{name}")))
+                        .map_or(html.len(), |at| close + at);
+                    let inner = html.get(close..end).unwrap_or_default();
+                    let mut c = Vec::new();
+                    if self.options.html_images {
+                        for image in self.html_images(inner) {
+                            c.push(Node::Element(image));
+                        }
+                    }
+                    let words = strip_tags(inner);
+                    if !words.is_empty() {
+                        c.push(Node::Text(words));
+                    }
+                    let heading = Element::H { l: level, c };
+                    match attribute(tag, "align").and_then(|side| aligned(&side)) {
+                        Some(align) => self.push_element(Element::Div {
+                            align,
+                            c: vec![Node::Element(heading)],
+                        }),
+                        None => self.push_element(heading),
+                    }
+                    from = end.max(close);
+                }
+                "a" if self.options.html_images => {
+                    link = attribute(tag, "href")
+                        .map(|href| self.url(&href))
+                        .filter(|href| !href.is_empty());
+                }
+                "/a" => link = None,
+                "img" if self.options.html_images => {
+                    for image in self.html_images(tag) {
+                        pictures.push(match &link {
+                            Some(href) => Element::A {
+                                href: href.clone(),
+                                title: None,
+                                c: vec![Node::Element(image)],
+                            },
+                            None => image,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.flush_pictures(&mut pictures);
+    }
+
+    /// Puts the pictures read so far in a paragraph of their own.
+    fn flush_pictures(&mut self, pictures: &mut Vec<Element>) {
+        if pictures.is_empty() {
+            return;
+        }
+        self.open(Kind::Paragraph);
+        for picture in pictures.drain(..) {
+            self.push_element(picture);
+        }
+        self.end(TagEnd::Paragraph);
+    }
+
+    fn top_is(&self, kind: impl Fn(&Kind) -> bool) -> bool {
+        self.stack.last().is_some_and(|frame| kind(&frame.kind))
+    }
+
+    /// Closes the fold or aligned block HTML opened last, if it is the one open; says
+    /// whether it was.
+    fn closes_html(&mut self) -> bool {
+        if !self.top_is(|kind| matches!(kind, Kind::Details { .. } | Kind::Aligned(_))) {
+            return false;
+        }
+        let Some(frame) = self.stack.pop() else {
+            return false;
+        };
+        match frame.kind {
+            Kind::Details { summary, open } => {
+                let c = self.children(frame.children);
+                self.push_element(Element::Details { summary, open, c });
+            }
+            Kind::Aligned(Some(align)) => {
+                let c = self.children(frame.children);
+                self.push_element(Element::Div { align, c });
+            }
+            _ => {
+                for piece in frame.children {
+                    self.push(piece);
                 }
             }
         }
-    }
-
-    fn close_details(&mut self) {
-        let Some(Frame {
-            kind: Kind::Details { summary, open },
-            children,
-        }) = self.stack.pop()
-        else {
-            return;
-        };
-        let c = self.children(children);
-        self.push_element(Element::Details { summary, open, c });
+        true
     }
 
     fn html_images(&self, html: &str) -> Vec<Element> {
@@ -575,6 +687,8 @@ impl Builder {
             Event::InlineHtml(html) => {
                 if self.options.html_as_text {
                     self.push(Piece::Typed(html.into_string()));
+                } else if self.options.html_layout && tag_name(&html.to_ascii_lowercase()) == "br" {
+                    self.push_element(Element::Br);
                 } else if self.options.html_images {
                     for image in self.html_images(&html) {
                         self.push_element(image);
@@ -723,22 +837,7 @@ impl Builder {
             }
             Kind::Html(html) => {
                 if !self.options.html_as_text {
-                    if self.options.gfm {
-                        self.html_folds(&html);
-                    }
-                    let images = if self.options.html_images {
-                        self.html_images(&html)
-                    } else {
-                        Vec::new()
-                    };
-                    if images.is_empty() {
-                        return;
-                    }
-                    self.open(Kind::Paragraph);
-                    for image in images {
-                        self.push_element(image);
-                    }
-                    return self.end(TagEnd::Paragraph);
+                    return self.html_block(&html);
                 }
                 self.open(Kind::Paragraph);
                 self.push(Piece::Typed(html.trim_end_matches(['\n', '\r']).to_owned()));
@@ -771,7 +870,7 @@ impl Builder {
                 return;
             }
             Kind::Table { align, head, rows } => Element::Table { align, head, rows },
-            Kind::Details { .. } => return,
+            Kind::Details { .. } | Kind::Aligned(_) => return,
             Kind::Unsupported => {
                 for piece in frame.children {
                     self.push(piece);

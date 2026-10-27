@@ -8,6 +8,7 @@ const CHAT: Options = Options {
     html_as_text: false,
     file_links: true,
     html_images: false,
+    html_layout: false,
     file_paths: false,
 };
 

@@ -12,10 +12,10 @@ use gpui::{
     AvailableSpace, Bounds, ClipboardItem, Div, Element, ElementId, Font, FontStyle, FontWeight,
     GlobalElementId, HighlightStyle, Hsla, InspectorElementId, InteractiveElement, InteractiveText,
     IntoElement, LayoutId, MouseButton, ParentElement, Pixels, Point, SharedString, Stateful,
-    StatefulInteractiveElement, StrikethroughStyle, Styled, StyledText, Window,
+    StatefulInteractiveElement, StrikethroughStyle, Styled, StyledText, TextAlign, Window,
 };
 
-use crate::markdown::{superscript, Kind, Markdown, Marks, Node, Piece, Rich};
+use crate::markdown::{superscript, Kind, Markdown, Marks, Node, Picture, Piece, Rich};
 use crate::select::{Key, Selecting, Shown};
 
 /// A fenced code block, for a host that draws its own.
@@ -137,6 +137,8 @@ pub struct Style {
     pub chips: Rc<[Chip]>,
     /// Level-two headings lead with their number, `01` and on, in the accent's mono face.
     pub numbered_sections: bool,
+    /// Level-one and level-two headings are larger and sit on a rule, as GitHub draws a README.
+    pub ruled_headings: bool,
     pub italic: bool,
 }
 
@@ -190,6 +192,7 @@ impl Default for Style {
             image: None,
             chips: Rc::from(Vec::new()),
             numbered_sections: false,
+            ruled_headings: false,
             italic: false,
         }
     }
@@ -330,6 +333,7 @@ impl Blocks {
             folds: 0,
             depth: 0,
             tasks,
+            align: TextAlign::Left,
         };
         draw.block(&self.blocks[ix], ix, window, cx)
     }
@@ -711,6 +715,8 @@ struct Draw<'a> {
     depth: usize,
     /// Task boxes drawn before the next, in the whole text.
     tasks: usize,
+    /// The side the blocks being drawn line up to.
+    align: TextAlign,
 }
 
 impl Draw<'_> {
@@ -724,7 +730,12 @@ impl Draw<'_> {
         let style = &*self.on.style;
         match &node.kind {
             Kind::Heading(level) => {
-                let scale = [1.4, 1.2, 1.07, 1., 1., 1.][usize::from(level.clamp(&1, &6) - 1)];
+                let ruled = style.ruled_headings && *level <= 2;
+                let scales = match style.ruled_headings {
+                    true => [1.8, 1.4, 1.2, 1., 0.9, 0.85],
+                    false => [1.4, 1.2, 1.07, 1., 1., 1.],
+                };
+                let scale = scales[usize::from(level.clamp(&1, &6) - 1)];
                 let blocks = &self.on.blocks;
                 let top_level = blocks
                     .get(ix)
@@ -744,6 +755,9 @@ impl Draw<'_> {
                     .line_height(relative(1.3))
                     .font_weight(FontWeight::SEMIBOLD)
                     .when(*level >= 5, |heading| heading.text_color(style.ink_dim))
+                    .when(ruled, |heading| {
+                        heading.pb(px(6.)).border_b_1().border_color(style.line)
+                    })
                     .when_some(number, |heading, number| {
                         heading.flex().items_baseline().gap(px(10.)).child(
                             div()
@@ -777,9 +791,28 @@ impl Draw<'_> {
                 .child(self.flow(node, window, cx))
                 .into_any_element(),
             Kind::Details { summary, open } => self.details(node, summary, *open, window, cx),
-            Kind::Image { src, alt } => match &style.image {
-                Some(image) => image(src, alt, window, cx),
-                None => img(src.clone()).max_w_full().into_any_element(),
+            Kind::Image { src, alt } => self.pictures(
+                vec![Picture {
+                    src: src.clone(),
+                    alt: alt.clone(),
+                    link: None,
+                }],
+                window,
+                cx,
+            ),
+            Kind::Aligned(align) => {
+                let outer = std::mem::replace(&mut self.align, *align);
+                let drawn = self.flow(node, window, cx);
+                self.align = outer;
+                div()
+                    .w_full()
+                    .text_align(*align)
+                    .child(drawn)
+                    .into_any_element()
+            }
+            Kind::Paragraph => match node.pictures() {
+                Some(pictures) => self.pictures(pictures, window, cx),
+                None => self.flow(node, window, cx),
             },
             _ => self.flow(node, window, cx),
         }
@@ -805,6 +838,52 @@ impl Draw<'_> {
             .gap(gap)
             .min_w_0()
             .children(children)
+            .into_any_element()
+    }
+
+    /// Pictures side by side, wrapping onto more rows as they need, each opening its link.
+    fn pictures(
+        &mut self,
+        pictures: Vec<Picture>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        let style = self.on.style.clone();
+        let drawn: Vec<_> = pictures
+            .into_iter()
+            .map(|picture| {
+                let image = match &style.image {
+                    Some(image) => image(&picture.src, &picture.alt, window, cx),
+                    None => img(picture.src.clone()).max_w_full().into_any_element(),
+                };
+                let Some(href) = picture.link else {
+                    return image;
+                };
+                let on_link = style.on_link.clone();
+                div()
+                    .id(self.id("picture"))
+                    .max_w_full()
+                    .cursor_pointer()
+                    .on_click(move |_, window, cx| match &on_link {
+                        Some(on_link) => on_link(&href, window, cx),
+                        None => cx.open_url(&href),
+                    })
+                    .child(image)
+                    .into_any_element()
+            })
+            .collect();
+        div()
+            .flex()
+            .flex_wrap()
+            .items_end()
+            .gap(px(4.))
+            .min_w_0()
+            .map(|row| match self.align {
+                TextAlign::Left => row,
+                TextAlign::Center => row.justify_center(),
+                TextAlign::Right => row.justify_end(),
+            })
+            .children(drawn)
             .into_any_element()
     }
 

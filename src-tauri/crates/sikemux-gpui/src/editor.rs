@@ -447,6 +447,8 @@ pub fn pane(
                             found: finding.and_then(preview::Finding::found),
                             scroll: document.preview_scroll.clone(),
                             focus: document.preview_focus.clone(),
+                            asks: (bench.place() == crate::hosts::Place::This)
+                                .then(|| bench.asks.clone()),
                         })
                         .children(finding.map(|finding| preview::bar(&this, &key, finding, cx))),
                 )

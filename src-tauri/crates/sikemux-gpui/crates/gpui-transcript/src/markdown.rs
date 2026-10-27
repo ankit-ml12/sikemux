@@ -30,6 +30,8 @@ pub enum Kind {
         summary: SharedString,
         open: bool,
     },
+    /// Blocks lined up to one side, as embedded HTML asked.
+    Aligned(TextAlign),
     Emphasis,
     Strong,
     Strike,
@@ -107,6 +109,14 @@ pub struct Rich {
     pub paths: Vec<(Range<usize>, SharedString)>,
 }
 
+/// A picture drawn on its own, and where a click on it leads.
+#[derive(Clone, Debug)]
+pub struct Picture {
+    pub src: SharedString,
+    pub alt: SharedString,
+    pub link: Option<SharedString>,
+}
+
 /// An element's content in reading order: runs of inline text, and the
 /// children that stand as blocks of their own.
 #[derive(Clone, Debug)]
@@ -166,6 +176,40 @@ impl Node {
 }
 
 impl Node {
+    /// The pictures of a paragraph that holds only pictures, linked or not, with nothing but
+    /// space between them, as a README's row of badges does; none for one with words.
+    pub fn pictures(&self) -> Option<Vec<Picture>> {
+        if !matches!(self.kind, Kind::Paragraph) {
+            return None;
+        }
+        let mut pictures = Vec::new();
+        for child in &self.children {
+            match &child.kind {
+                Kind::Image { src, alt } => pictures.push(Picture {
+                    src: src.clone(),
+                    alt: alt.clone(),
+                    link: None,
+                }),
+                Kind::Link(href) => {
+                    for inner in &child.children {
+                        let Kind::Image { src, alt } = &inner.kind else {
+                            return None;
+                        };
+                        pictures.push(Picture {
+                            src: src.clone(),
+                            alt: alt.clone(),
+                            link: Some(href.clone()),
+                        });
+                    }
+                }
+                Kind::Text if child.text.trim().is_empty() => {}
+                Kind::Break => {}
+                _ => return None,
+            }
+        }
+        (!pictures.is_empty()).then_some(pictures)
+    }
+
     /// The node's content as it is drawn, worked out once until a patch reaches inside it.
     pub fn flow(&self) -> &[Piece] {
         self.flow.get_or_init(|| {
@@ -203,6 +247,7 @@ impl Node {
                 }
             }
             Kind::Details { open: written, .. } if !open(*written) => {}
+            Kind::Paragraph if self.pictures().is_some() => {}
             _ => {
                 for piece in self.flow() {
                     match piece {
@@ -337,7 +382,8 @@ struct Element {
     start: Option<u64>,
     checked: Option<bool>,
     lang: Option<SharedString>,
-    align: Vec<Option<String>>,
+    /// A table's side for each column, or the one side of an aligned block.
+    align: Value,
     summary: SharedString,
     open: bool,
     href: SharedString,
@@ -373,15 +419,12 @@ impl From<Wire> for Node {
             "pre" => Kind::Code(element.lang),
             "hr" => Kind::Rule,
             "table" => Kind::Table(Box::new(Table {
-                align: (element.align.iter())
-                    .map(|align| match align.as_deref() {
-                        Some("center") => TextAlign::Center,
-                        Some("right") => TextAlign::Right,
-                        _ => TextAlign::Left,
-                    })
+                align: (element.align.as_array().into_iter().flatten())
+                    .map(side)
                     .collect(),
                 head: element.head,
             })),
+            "div" => Kind::Aligned(side(&element.align)),
             "fndef" => Kind::Footnote(element.n),
             "details" => Kind::Details {
                 summary: element.summary,
@@ -412,6 +455,14 @@ impl From<Wire> for Node {
             children,
             ..Node::default()
         }
+    }
+}
+
+fn side(align: &Value) -> TextAlign {
+    match align.as_str() {
+        Some("center") => TextAlign::Center,
+        Some("right") => TextAlign::Right,
+        _ => TextAlign::Left,
     }
 }
 

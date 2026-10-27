@@ -45,9 +45,11 @@ transcript, `Pen::new(style)` draws markdown without selection.
 ## The tree and its patches
 
 Blocks arrive as JSON. Each block is an object tagged by `t` (`p`, `h`,
-`quote`, `ul`, `ol`, `li`, `pre`, `hr`, `table`, `fndef`, `details`), and
-inline content uses `em`, `strong`, `del`, `code`, `a`, `img`, `br`,
-`fnref` and `path`, with a bare string for text. A `path` holds a name that
+`quote`, `ul`, `ol`, `li`, `pre`, `hr`, `table`, `fndef`, `details`, and
+`div`, whose `align` lines its blocks up to one side), and inline content uses
+`em`, `strong`, `del`, `code`, `a`, `img`, `br`, `fnref` and `path`, with a
+bare string for text. A paragraph of nothing but pictures, linked or not, draws
+them side by side, as a README's badges sit. A `path` holds a name that
 could be a file, as written; `Style::file_of` says whether it is one, and
 `Style::on_file` opens it. A patch is `{ "n": units, "o": [op…] }`.
 `n` is the text's length in UTF-16 units after the patch. Each op has a path

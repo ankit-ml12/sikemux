@@ -21,5 +21,5 @@ pub use draw::{
     FilePress, LinkIcon, OnFile, OnLink, OnTask, Pen, Style,
 };
 pub use find::{DocFind, FoundChanged, Query};
-pub use markdown::{Kind, Markdown, Marks, Node, Piece, Rich, Table};
+pub use markdown::{Kind, Markdown, Marks, Node, Picture, Piece, Rich, Table};
 pub use transcript::{init, AwayChanged, Change, Copy, EmptyChanged, Row, RowsChanged, Transcript};
