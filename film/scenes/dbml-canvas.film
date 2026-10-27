@@ -1,43 +1,38 @@
-# The DBML viewer full size: a schema file opened as a diagram, then hovered, a table dragged,
-# laid out again, pinched in, panned and pinched back out.
+# The DBML viewer full size: a schema file opened as a diagram, then hovered, pinched in, a
+# column's tip read, a table dragged, laid out again, panned and fitted.
 project shop shop
 open db/schema.dbml
 settle 5
 cursor 1300,700
 record
-wait 0.6
-zoom 300,170,880,520 1.1 &
-move 700,500 1.2
 wait 0.3
-move 694,488 0.6
-wait 1.4
+zoom 310,330,860,300 0.9 &
+move 850,452 1.0
+wait 0.7
 still hover-orders
-move 1058,378 0.9
-wait 0.6
-drag 1080,215 1.1
-wait 0.6
+pinch 1.9 0.8
+wait 0.3
+zoom 700,380,500,320 0.8 &
+move 861,494 0.5
+wait 0.9
+still column-tip
+zoom 300,180,900,680 0.8 &
+move 578,582 0.7
+drag 600,700 0.8
+wait 0.3
 still dragged
 click 1155,827
-wait 1.2
+wait 0.7
 still arranged
-move 694,488 1.0
-wait 0.3
-pinch 1.9 1.1
-wait 0.5
-move 734,541 0.7
-wait 1.6
-still column-tip
-move 800,560 0.5
-pan -260,-160 1.2
-wait 0.8
-pan 200,120 1.0
-wait 0.4
-pinch 0.55 1.0
-wait 0.6
-still pinched-out
+move 640,470 0.6
+pinch 1.7 0.8
+pan -300,-60 1.0
+pan 220,40 0.8
+wait 0.2
+still panned
 click 1111,827
-wait 1.0
+wait 0.6
 still fitted
-zoom out 0.9 &
-move 1300,700 1.0
-end 2.2
+zoom out 0.8 &
+move 1300,700 0.8
+end 1.6

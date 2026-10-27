@@ -2,10 +2,10 @@
   {
     "when": "schema",
     "steps": [
-      { "think": "The orders code and the migrations should tell me the tables. I'll read them and draw the relationships.", "perSecond": 40 },
-      { "tool": "Glob", "input": { "pattern": "**/*.{sql,ts}" }, "result": "src/orders.ts\ndb/migrations/0001_init.sql", "ms": 500 },
-      { "tool": "Read", "input": { "file_path": "src/orders.ts" }, "result": "export type OrderStatus = \"cart\" | \"placed\" | \"paid\" | \"shipped\";", "ms": 600 },
-      { "say_file": "reply-schema.md", "perSecond": 24 }
+      { "think": "The orders code and the migrations should tell me the tables. I'll read them and draw the relationships.", "perSecond": 60 },
+      { "tool": "Glob", "input": { "pattern": "**/*.{sql,ts}" }, "result": "src/orders.ts\ndb/migrations/0001_init.sql", "ms": 350 },
+      { "tool": "Read", "input": { "file_path": "src/orders.ts" }, "result": "export type OrderStatus = \"cart\" | \"placed\" | \"paid\" | \"shipped\";", "ms": 400 },
+      { "say_file": "reply-schema.md", "perSecond": 45 }
     ]
   }
 ]
