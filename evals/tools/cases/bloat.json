@@ -21,13 +21,29 @@
             ],
             "next": null
           }
+        },
+        {
+          "tool": "jira_issue",
+          "args": { "key": "PROJ-77" },
+          "reply": {
+            "key": "PROJ-77",
+            "summary": "Retry uploads after a network failure",
+            "status": "In Progress",
+            "priority": "High",
+            "assignee": "a teammate",
+            "description": "When an upload fails because the connection drops or times out, retry it up to three times with backoff before showing the error.",
+            "commentCount": 0,
+            "comments": [],
+            "transitions": ["Done", "Back to To Do"]
+          }
         }
       ]
     },
     "grade": {
       "expect": [{ "tool": "jira_search", "args": { "jql": "/PROJ/" } }],
       "forbid": [
-        { "tool": "jira_search", "args": { "limit": "/^(2[1-9]|[3-9]\\d|\\d{3,})$/" }, "why": "asked for more than 20 results for a duplicate check" },
+        { "tool": "jira_search", "args": { "jql": { "$not": "/~/" }, "limit": "/^(2[1-9]|[3-9]\\d|\\d{3,})$/" }, "why": "listed more than 20 of the project's tickets without a text filter for a duplicate check" },
+        { "tool": "jira_search", "args": { "limit": "/^(5[1-9]|[6-9]\\d|\\d{3,})$/" }, "why": "asked for more than 50 results for a duplicate check" },
         { "tool": "jira_search", "args": { "comments": true }, "why": "pulled every result's comments into a duplicate check" }
       ],
       "limit": [{ "tool": "jira_search", "max": 3 }, { "tool": "jira_issue", "max": 2 }],

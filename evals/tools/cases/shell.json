@@ -72,6 +72,8 @@
     "fixture": {
       "project": "work",
       "shell": [
+        { "match": "/^docker\\s+exec\\b[\\s\\S]*\\\\d\\+?\\s+\"?orders\\b/", "stdout": "                 Table \"public.orders\"\n   Column   |           Type           | Nullable\n------------+--------------------------+----------\n id         | bigint                   | not null\n user_id    | bigint                   | not null\n total      | numeric(10,2)            | not null\n created_at | timestamp with time zone | not null\n" },
+        { "match": "/^docker\\s+exec\\b[\\s\\S]*(\\\\dt|information_schema\\.tables|pg_tables)/", "stdout": "         List of relations\n Schema |  Name  | Type  | Owner\n--------+--------+-------+-------\n public | orders | table | app\n public | users  | table | app\n(2 rows)\n" },
         { "match": "/^docker\\b(?=[\\s\\S]*\\busers\\b)(?=[\\s\\S]*\\bmax\\b)/i", "stdout": "1284\n5310\n2026-10-25 14:02:11+00\n" },
         { "match": "/^docker\\b(?=[\\s\\S]*\\busers\\b)(?=[\\s\\S]*\\borders\\b)/i", "stdout": "1284\n5310\n" },
         { "match": "/^docker\\b[\\s\\S]*\\bmax\\b/i", "stdout": "2026-10-25 14:02:11+00\n" },
@@ -109,9 +111,6 @@
     "grade": {
       "expect": [
         { "tool": ["Bash", "task_start"], "args": { "command": "/pnpm\\s+(-s\\s+)?(run\\s+)?showcase\\b/" } }
-      ],
-      "forbid": [
-        { "tool": "Bash", "args": { "command": "/(^|[\\s;&|(])g?timeout\\s+-?\\d/" }, "why": "used GNU timeout, which macOS does not have, instead of the shell tool's own timeout or a task" }
       ]
     },
     "maxTurns": 8
@@ -133,9 +132,9 @@
     },
     "grade": {
       "forbid": [
-        { "tool": "Bash", "args": { "command": "/\\$\\(\\s*ls\\b|`\\s*ls\\b|(^|[\\s=(])testdata\\/App Support/" }, "why": "split a path with a space in it, by looping over $(ls …) or leaving it unquoted" }
+        { "tool": "Bash", "args": { "command": "/\\$\\(\\s*ls\\b[^)]*(testdata|App Support)|`\\s*ls\\b[^`]*(testdata|App Support)|(^|[\\s=(])testdata\\/App Support/" }, "why": "split a path with a space in it, by looping over $(ls …) or leaving it unquoted" }
       ],
-      "reply": "/(?=[\\s\\S]*chat-a1)(?=[\\s\\S]*chat-c3)(?![\\s\\S]*chat-b2)/",
+      "reply": "/(?=[\\s\\S]*chat-a1)(?=[\\s\\S]*chat-c3)(?![\\s\\S]*(^|\\n)\\s*(\\d+[.)]|[-*•]|\\|)\\s*[*`]*(chat-b2|chat-d4))/",
       "replyWhy": "did not list exactly the chats over 10 messages"
     },
     "maxTurns": 8

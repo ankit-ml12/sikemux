@@ -15,6 +15,10 @@
         "mobile/app/app.json": "{\n  \"expo\": {\n    \"name\": \"Sikemux Dev\",\n    \"slug\": \"sikemux\",\n    \"ios\": { \"bundleIdentifier\": \"com.nodelike.sikemux.dev\" }\n  }\n}\n"
       },
       "taskOutput": "Build settings from command line:\n    SDK = iphonesimulator\n\n** BUILD SUCCEEDED **\n",
+      "shell": [
+        { "match": "/^xcodebuild\\s+-version\\b/", "stdout": "Xcode 27.1\nBuild version 27A9275\n" },
+        { "match": "/^cargo\\s+(--version|-V)\\b/", "stdout": "cargo 1.99.0 (1d3cd6b0a 2026-09-18)\n" }
+      ],
       "answers": [
         {
           "tool": "sim_install",

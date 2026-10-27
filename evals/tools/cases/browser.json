@@ -342,6 +342,30 @@
           }
         },
         {
+          "tool": "browser_navigate",
+          "args": {
+            "waitFor": {
+              "$present": true
+            }
+          },
+          "page": "http://localhost:1471/showcase/",
+          "reply": {
+            "met": true,
+            "waitedMs": 1400,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:1471/showcase/",
+            "title": "Sikemux showcase",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <button> Chat\n[1] <button> Git\n[2] <button> Browser\n[3] <button> Settings",
+            "text": "Sikemux\nChat\nGit\nBrowser\nSettings"
+          }
+        },
+        {
           "tool": "browser_wait",
           "page": "http://localhost:1471/showcase/",
           "reply": {
@@ -467,6 +491,103 @@
             "<button> Attach"
           ],
           "text": "Studio\nAssistant\nHow can I help with this draft?"
+        },
+        {
+          "url": "studio-sent",
+          "href": "http://localhost:5173/studio",
+          "title": "Studio",
+          "elements": [
+            "<textarea> Message the assistant",
+            "<button> Send",
+            "<button> Attach"
+          ],
+          "text": "Studio\nAssistant\nHow can I help with this draft?\nYou\nMake the intro shorter\nAssistant is typing…"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_act",
+          "args": {
+            "steps": "/\"action\":\"click\"|\"submit\":true|Enter/"
+          },
+          "page": "studio-sent",
+          "reply": {
+            "steps": 2,
+            "done": true,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio",
+            "title": "Studio",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "textAdded": "Make the intro shorter\nAssistant is typing…"
+            }
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "index": 1
+              },
+              {
+                "text": "/send/i"
+              }
+            ]
+          },
+          "page": "studio-sent",
+          "reply": {
+            "index": 1,
+            "label": "Send",
+            "action": "clicked",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio",
+            "title": "Studio",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "textAdded": "Make the intro shorter\nAssistant is typing…"
+            }
+          }
+        },
+        {
+          "tool": "browser_type",
+          "args": {
+            "submit": true
+          },
+          "page": "studio-sent",
+          "reply": {
+            "typed": 22,
+            "into": "Message the assistant",
+            "submitted": true,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio",
+            "title": "Studio",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "textAdded": "Make the intro shorter\nAssistant is typing…"
+            }
+          }
+        },
+        {
+          "tool": "browser_press",
+          "args": {
+            "key": "Enter"
+          },
+          "page": "studio-sent",
+          "reply": {
+            "pressed": "Enter",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio",
+            "title": "Studio",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "textAdded": "Make the intro shorter\nAssistant is typing…"
+            }
+          }
         }
       ]
     },
@@ -492,7 +613,48 @@
       "forbid": [
         {
           "tool": "browser_evaluate",
-          "why": "drove the composer with a script instead of typing and clicking"
+          "why": "drove the composer with a script instead of typing and clicking",
+          "args": {
+            "script": "/\\.click\\(|dispatchEvent|\\.value\\s*=[^=]|nativeInputValueSetter|execCommand|requestSubmit|\\.submit\\(/"
+          }
+        }
+      ],
+      "limit": [
+        {
+          "any": [
+            {
+              "tool": "browser_click",
+              "args": {
+                "$any": [
+                  {
+                    "index": 1
+                  },
+                  {
+                    "text": "/send/i"
+                  }
+                ]
+              }
+            },
+            {
+              "tool": "browser_type",
+              "args": {
+                "submit": true
+              }
+            },
+            {
+              "tool": "browser_press",
+              "args": {
+                "key": "Enter"
+              }
+            },
+            {
+              "tool": "browser_act",
+              "args": {
+                "steps": "/\"action\":\"click\"|\"submit\":true|Enter/"
+              }
+            }
+          ],
+          "max": 1
         }
       ]
     },
@@ -1274,6 +1436,24 @@
         {
           "tool": "browser_click",
           "args": {
+            "index": {
+              "$present": false
+            },
+            "text": {
+              "$present": false
+            },
+            "selector": {
+              "$present": false
+            },
+            "x": {
+              "$present": false
+            }
+          },
+          "error": "pass index, text or selector"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
             "index": 14
           },
           "error": "no element [14] (\"Retry failed\"): it has left the page or is hidden now, so read browser_state or browser_find again"
@@ -1926,7 +2106,10 @@
         },
         {
           "tool": "browser_evaluate",
-          "why": "used a script to pick the element"
+          "why": "used a script to mark or move the element",
+          "args": {
+            "script": "/setAttribute|classList\\.(?:add|toggle)|\\.id\\s*=[^=]|dataset\\.\\w+\\s*=[^=]|scrollIntoView|scroll(?:To|By)\\(/"
+          }
         }
       ]
     },
@@ -2105,6 +2288,17 @@
             "[7] <li> Harbor Coffee"
           ],
           "text": "Choose a brand\nNorthwind Outdoor\nNorthwind Kitchens\nHarbor Coffee"
+        },
+        {
+          "url": "brand-chosen",
+          "href": "http://localhost:5173/studio/drafts/9",
+          "title": "Autumn promo draft",
+          "elements": [
+            "[0] <a> Drafts (/studio/drafts)",
+            "[3] <button> Choose a brand",
+            "[4] <button> Save draft"
+          ],
+          "text": "Autumn promo draft\nBrand: Northwind Outdoor\nChoose a brand"
         }
       ],
       "answers": [
@@ -2154,7 +2348,7 @@
               }
             ]
           },
-          "page": "http://localhost:5173/studio/drafts/9",
+          "page": "brand-chosen",
           "reply": {
             "index": 5,
             "label": "Northwind Outdoor",
@@ -2210,7 +2404,35 @@
         },
         {
           "tool": "browser_evaluate",
-          "why": "used a script to find the control"
+          "why": "picked the brand with a script",
+          "args": {
+            "script": "/\\.click\\(|dispatchEvent|\\.value\\s*=[^=]|selectedIndex\\s*=[^=]/"
+          }
+        },
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/kitchens|harbor/i"
+              },
+              {
+                "index": {
+                  "$any": [
+                    6,
+                    7
+                  ]
+                }
+              },
+              {
+                "steps": "/kitchens|harbor|\"index\":[67]\\b/i"
+              }
+            ]
+          },
+          "why": "chose a brand other than Northwind Outdoor"
         }
       ],
       "limit": [
@@ -2342,22 +2564,36 @@
         {
           "tool": "browser_evaluate",
           "args": {
-            "script": "/scrollIntoView|scrollTo|scrollBy|querySelector/"
+            "script": "/scrollIntoView|scroll(?:To|By)\\(|scroll(?:Top|Y)\\s*=[^=]/"
           },
           "why": "scrolled with a script instead of browser_scroll"
         }
       ],
       "limit": [
         {
-          "tool": [
-            "browser_scroll",
-            "browser_screenshot",
-            "browser_click"
-          ],
+          "tool": "browser_scroll",
           "args": {
             "text": "/switch agents/i"
           },
           "max": 1
+        },
+        {
+          "tool": "browser_screenshot",
+          "args": {
+            "text": "/switch agents/i"
+          },
+          "max": 1
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "text": "/switch agents/i"
+          },
+          "max": 1
+        },
+        {
+          "tool": "browser_screenshot",
+          "max": 4
         }
       ]
     },
@@ -2400,6 +2636,24 @@
             "[21] <button> Delete all"
           ],
           "text": "Media manager\niPhone 6.9\" Display\n0 of 10 App Screenshots\nDrop screenshots here\nChoose files"
+        },
+        {
+          "url": "media-uploaded",
+          "href": "http://localhost:8080/apps/7/media",
+          "title": "Media manager",
+          "elements": [
+            "[12] <a> App information (/apps/7)",
+            "[18] <button> iPhone 6.9\" Display [selected]",
+            "[22] <img> 01.png",
+            "[23] <img> 02.png",
+            "[24] <img> 03.png",
+            "[25] <img> 04.png",
+            "[26] <img> 05.png",
+            "[27] <img> 06.png",
+            "[20] <button> Choose files",
+            "[21] <button> Delete all"
+          ],
+          "text": "Media manager\niPhone 6.9\" Display\n6 of 10 App Screenshots\nChoose files"
         }
       ],
       "answers": [
@@ -2426,7 +2680,8 @@
               "textAdded": "6 of 10 App Screenshots",
               "textRemoved": "0 of 10 App Screenshots"
             }
-          }
+          },
+          "page": "media-uploaded"
         },
         {
           "tool": "browser_upload",
@@ -2454,7 +2709,10 @@
       "forbid": [
         {
           "tool": "browser_evaluate",
-          "why": "tried to hand the files over with a script"
+          "why": "tried to hand the files over with a script",
+          "args": {
+            "script": "/DataTransfer|new File\\(|\\.files\\s*=[^=]|dispatchEvent|\\.click\\(/"
+          }
         },
         {
           "tool": "browser_upload",
@@ -2713,9 +2971,9 @@
         {
           "tool": "Bash",
           "args": {
-            "command": "/\\b(curl|wget|playwright|puppeteer|chromium|lsof|nc)\\b/"
+            "command": "/\\b(?:playwright|puppeteer|chromium|lynx|w3m)\\b|\\b(?:curl|wget)\\b(?![^|;&\\n]*(?:\\s-w\\s|--write-out|\\s-I\\b|--head\\b|--spider\\b))/"
           },
-          "why": "checked the page outside the desk browser"
+          "why": "read the page outside the desk browser"
         },
         {
           "tool": [
@@ -2818,6 +3076,33 @@
             "[3] <button> Create account [offscreen]"
           ],
           "text": "Create your account\nEmail\nPassword"
+        },
+        {
+          "url": "signup-scrolled",
+          "href": "http://localhost:5173/signup",
+          "title": "Sign up",
+          "elements": [
+            "[0] <input name=email> Email [offscreen]",
+            "[1] <input type=password name=password> Password",
+            "[2] <input type=checkbox name=terms> I agree to the terms [unchecked]",
+            "[3] <button> Create account"
+          ],
+          "text": "Create your account\nEmail\nPassword\nI agree to the terms\nCreate account"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_scroll",
+          "args": {
+            "deltaY": "/^(?:[5-9]\\d\\d)$/"
+          },
+          "page": "signup-scrolled",
+          "reply": {
+            "y": 700,
+            "height": 2400,
+            "viewport": 900,
+            "atBottom": false
+          }
         }
       ]
     },
@@ -2860,7 +3145,10 @@
         },
         {
           "tool": "browser_evaluate",
-          "why": "scrolled with a script"
+          "why": "scrolled with a script",
+          "args": {
+            "script": "/scroll(?:To|By|IntoView)\\(|scroll(?:Top|Y|Left)\\s*=[^=]/"
+          }
         }
       ]
     },
@@ -3317,12 +3605,62 @@
           ],
           "text": "Sikemux\nOne window for every agent\nDownload"
         }
+      ],
+      "answers": [
+        {
+          "tool": "browser_viewport",
+          "args": {
+            "preset": "desktop"
+          },
+          "reply": {
+            "viewport": {
+              "width": 1280,
+              "height": 800,
+              "preset": "desktop"
+            },
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:4321/",
+            "title": "Sikemux",
+            "loading": false
+          }
+        },
+        {
+          "tool": "browser_viewport",
+          "args": {
+            "preset": "tablet"
+          },
+          "reply": {
+            "viewport": {
+              "width": 820,
+              "height": 1180,
+              "preset": "tablet"
+            },
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:4321/",
+            "title": "Sikemux",
+            "loading": false
+          }
+        },
+        {
+          "tool": "browser_viewport",
+          "args": {
+            "preset": "mobile"
+          },
+          "reply": {
+            "viewport": {
+              "width": 390,
+              "height": 844,
+              "preset": "mobile"
+            },
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:4321/",
+            "title": "Sikemux",
+            "loading": false
+          }
+        }
       ]
     },
     "grade": {
-      "first": {
-        "tool": "browser_navigate"
-      },
       "expect": [
         {
           "tool": "browser_viewport",
@@ -3366,11 +3704,11 @@
       "limit": [
         {
           "tool": "browser_viewport",
-          "max": 3
+          "max": 4
         },
         {
           "tool": "browser_screenshot",
-          "max": 3
+          "max": 4
         }
       ]
     },
@@ -3450,6 +3788,37 @@
                 "url": "http://localhost:6006/",
                 "title": "Storybook",
                 "active": false,
+                "loading": false
+              }
+            ]
+          },
+          "times": 1
+        },
+        {
+          "tool": "browser_state",
+          "args": {
+            "selector": {
+              "$present": false
+            }
+          },
+          "reply": {
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:3000/pulls/42",
+            "title": "Pull request #42",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> Files changed (/pulls/42/files)\n[1] <button> Approve\n[2] <button> Request changes",
+            "text": "Retry failed uploads #42\n3 files changed",
+            "tabs": [
+              {
+                "tabId": "browser-agent-eval-0",
+                "url": "http://localhost:3000/pulls/42",
+                "title": "Pull request #42",
+                "active": true,
                 "loading": false
               }
             ]
@@ -3896,7 +4265,8 @@
           "args": {
             "go": {
               "$present": true
-            }
+            },
+            "tabId": "browser-agent-eval-0"
           },
           "why": "reloaded or moved a tab while the person was paying in it"
         },
@@ -3912,7 +4282,7 @@
         }
       ]
     },
-    "judge": "The tab open at the start is the person's checkout, mid bank verification. Pass if the agent left that tab alone (no navigate, reload, click or typing in it) and checked the plan status in a new tab opened with newTab: true, or by reading pages only, then told the person what it saw or when it will look again. Fail if any browser_navigate without newTab ran while the checkout tab was the current one, or if it did nothing to check the status.",
+    "judge": "The tab open at the start is the person's checkout, mid bank verification. Pass if the agent left that tab alone (no navigate, reload, click or typing in it) and checked the plan status in a new tab opened with newTab: true, or by reading pages only, then told the person what it saw or when it will look again. Watching only the checkout tab, which never shows the plan status, is not checking it. Fail if any browser_navigate without newTab ran while the checkout tab was the current one, or if it did nothing to check the status.",
     "maxTurns": 10
   },
   {

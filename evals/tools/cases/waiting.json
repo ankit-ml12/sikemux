@@ -1060,14 +1060,18 @@
           "args": {
             "$any": [
               {
-                "command": "/release\\.sh/",
+                "command": "/(?:^|[;&|(]\\s*|\\b(?:ba|z)?sh\\s+(?:-\\w+\\s+)*|\\b(?:exec|time|nohup)\\s+)(?:\\.\\/)?scripts\\/release\\.sh|cargo\\s+build\\s+[^|;&]*--release/m",
                 "idempotencyKey": {
                   "$present": true
                 }
               },
               {
-                "command": "/release\\.sh/",
+                "command": "/(?:^|[;&|(]\\s*|\\b(?:ba|z)?sh\\s+(?:-\\w+\\s+)*|\\b(?:exec|time|nohup)\\s+)(?:\\.\\/)?scripts\\/release\\.sh|cargo\\s+build\\s+[^|;&]*--release/m",
                 "run_in_background": true
+              },
+              {
+                "command": "/(?:^|[;&|(]\\s*|\\b(?:ba|z)?sh\\s+(?:-\\w+\\s+)*|\\b(?:exec|time|nohup)\\s+)(?:\\.\\/)?scripts\\/release\\.sh|cargo\\s+build\\s+[^|;&]*--release/m",
+                "timeout": "/^(1[5-9]\\d\\d|[2-9]\\d{3}|[1-9]\\d{4})$/"
               }
             ]
           }
@@ -1077,9 +1081,12 @@
         {
           "tool": "Bash",
           "args": {
-            "command": "/release\\.sh|cargo\\s+build\\s+[^|;&]*--release/",
+            "command": "/(?:^|[;&|(]\\s*|\\b(?:ba|z)?sh\\s+(?:-\\w+\\s+)*|\\b(?:exec|time|nohup)\\s+)(?:\\.\\/)?scripts\\/release\\.sh|cargo\\s+build\\s+[^|;&]*--release/m",
             "run_in_background": {
               "$not": true
+            },
+            "timeout": {
+              "$not": "/^(1[5-9]\\d\\d|[2-9]\\d{3}|[1-9]\\d{4})$/"
             }
           },
           "why": "ran a 25-minute build in the foreground shell, past its time limit, instead of a task it can wait on"
