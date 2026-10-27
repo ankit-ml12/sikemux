@@ -1,13 +1,13 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    actions, div, list, px, Animation, AnimationExt, AnyElement, AnyView, App, ClipboardItem,
-    Context, ElementId, EventEmitter, FocusHandle, FollowMode, InteractiveElement, IntoElement,
-    KeyBinding, ListAlignment, ListOffset, ListState, MouseButton, MouseDownEvent, MouseMoveEvent,
+    actions, div, list, px, AnyElement, AnyView, App, ClipboardItem, Context, ElementId,
+    EventEmitter, FocusHandle, FollowMode, InteractiveElement, IntoElement, KeyBinding,
+    ListAlignment, ListOffset, ListState, MouseButton, MouseDownEvent, MouseMoveEvent,
     ParentElement, Pixels, Point, Render, SharedString, Styled, Window,
 };
 
@@ -434,7 +434,8 @@ impl<R: Row> Transcript<R> {
         }
     }
 
-    /// Has a row that just arrived, one or two at a time, fade and rise into place on `easing`.
+    /// Has a row that just arrived, one or two at a time, open its place and fade and rise into
+    /// it on `easing`, so the rows above it glide up rather than jump.
     pub fn rise_in(mut self, easing: impl Fn(f32) -> f32 + 'static) -> Self {
         self.rise = Some(Rc::new(easing));
         self
@@ -845,10 +846,11 @@ impl<R: Row> Render for Transcript<R> {
                     return drawn;
                 };
                 let id: SharedString = row.id().to_owned().into();
-                let rise = this
-                    .rise
-                    .clone()
-                    .filter(|_| this.arrived.iter().any(|(arrived, _)| *arrived == id));
+                let rise = this.rise.clone().and_then(|easing| {
+                    let (_, at) = this.arrived.iter().find(|(arrived, _)| *arrived == id)?;
+                    let through = at.elapsed().as_secs_f32() / RISE.as_secs_f32();
+                    (through < 1.).then(|| easing(through))
+                });
                 let rising =
                     ElementId::NamedChild(std::sync::Arc::new(id.clone().into()), "rise".into());
                 let row = div()
@@ -861,18 +863,32 @@ impl<R: Row> Render for Transcript<R> {
                             tops.borrow_mut().insert(id.clone(), row.top());
                         }
                     });
-                match rise {
-                    Some(easing) => row
-                        .with_animation(
-                            rising,
-                            Animation::new(RISE).with_easing(move |t| easing(t)),
-                            |row, risen| {
-                                row.opacity(risen).relative().top(RISE_FROM * (1. - risen))
-                            },
-                        )
-                        .into_any_element(),
-                    None => row.into_any_element(),
-                }
+                let Some(risen) = rise else {
+                    return row.into_any_element();
+                };
+                window.request_animation_frame();
+                let measured = window
+                    .use_keyed_state(rising, cx, |_, _| Rc::new(Cell::new(Pixels::ZERO)))
+                    .read(cx)
+                    .clone();
+                let row = row
+                    .flex_none()
+                    .opacity(risen)
+                    .relative()
+                    .top(RISE_FROM * (1. - risen));
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .overflow_hidden()
+                    .h(measured.get() * risen)
+                    .child(row)
+                    .on_children_prepainted(move |bounds, _, _| {
+                        if let Some(row) = bounds.first() {
+                            measured.set(row.size.height);
+                        }
+                    })
+                    .into_any_element()
             })
         });
         div()

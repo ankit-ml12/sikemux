@@ -4123,7 +4123,6 @@ fn row(
                 .when(ix == 0 && !looks.reading.earlier_lost && !noted, |row| {
                     row.pt(px(12.))
                 })
-                .when(ix + 1 == rows.len(), |row| row.pb(px(32.)))
                 .child(content),
         );
     if !whole_row_tucked {

@@ -73,7 +73,7 @@ impl Activity {
 impl Render for Activity {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(label) = self.label.clone() else {
-            return div().into_any_element();
+            return div().h(px(END_SPACE)).into_any_element();
         };
         ui::clock::second(window, cx);
         let t = Tokens::get(cx).clone();
@@ -124,9 +124,14 @@ impl Render for Activity {
                     line.child(ui::mono(elapsed(seconds), 10.5, cx).text_color(t.text_disabled))
                 }),
         )
+        .pt(px(END_SPACE))
         .into_any_element()
     }
 }
+
+/// The room after the chat's last row, kept here rather than on the row so a row arriving
+/// does not take it from the one before.
+const END_SPACE: f32 = 27.;
 
 fn elapsed(seconds: u64) -> String {
     match seconds {
