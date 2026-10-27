@@ -755,7 +755,7 @@ impl Draw<'_> {
             Kind::Bullets | Kind::Numbers(_) => self.list(node, window, cx),
             Kind::Code(lang) => self.fence(node, lang.clone(), window, cx),
             Kind::Rule => div().h(px(1.)).my(px(4.)).bg(style.line).into_any_element(),
-            Kind::Table(_) => self.table(node, cx),
+            Kind::Table(_) => self.table(node, window, cx),
             Kind::Footnote(n) => div()
                 .flex()
                 .gap(px(4.))
@@ -1177,7 +1177,7 @@ impl Draw<'_> {
             .text_size(px(10.))
             .text_color(style.ink_faint)
             .child(div().flex_1().min_w_0().truncate().children(lang))
-            .child(self.copy(code.text.clone()));
+            .child(self.copy(code.text.clone(), window, cx));
         let body = div()
             .id(id)
             .max_h(px(420.))
@@ -1201,21 +1201,42 @@ impl Draw<'_> {
             .into_any_element()
     }
 
-    fn copy(&mut self, text: SharedString) -> Stateful<Div> {
+    fn copy(&mut self, text: SharedString, window: &mut Window, cx: &mut App) -> Stateful<Div> {
         let ink = self.on.style.ink;
+        let id = self.id("copy");
+        let copied = window.use_keyed_state(id.clone(), cx, |_, _| false);
+        let shown = *copied.read(cx);
         div()
-            .id(self.id("copy"))
+            .id(id)
             .cursor_pointer()
             .hover(move |copy| copy.text_color(ink))
-            .child("Copy")
+            .when(shown, |copy| copy.text_color(ink))
+            .child(if shown { "Copied" } else { "Copy" })
             .on_click(move |_, _, cx| {
-                cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()))
+                cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
+                copied.update(cx, |shown, cx| {
+                    *shown = true;
+                    cx.notify();
+                });
+                let copied = copied.downgrade();
+                cx.spawn(async move |cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(1500))
+                        .await;
+                    copied
+                        .update(cx, |shown, cx| {
+                            *shown = false;
+                            cx.notify();
+                        })
+                        .ok();
+                })
+                .detach();
             })
     }
 
     /// A table as rows of cells. A column is as wide as its longest text,
     /// shared out when they do not all fit, so long cells wrap and every row lines up.
-    fn table(&mut self, node: &Node, cx: &mut App) -> AnyElement {
+    fn table(&mut self, node: &Node, window: &mut Window, cx: &mut App) -> AnyElement {
         let style = &*self.on.style;
         let Kind::Table(table) = &node.kind else {
             return div().into_any_element();
@@ -1246,7 +1267,7 @@ impl Draw<'_> {
             })
             .collect();
         let copy = self
-            .copy(node.table_source().unwrap_or_default().into())
+            .copy(node.table_source().unwrap_or_default().into(), window, cx)
             .absolute()
             .top(px(4.))
             .right(px(8.));
