@@ -5,6 +5,8 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui_kit::component::input::{Editor, EditorState, InputEvent, RopeExt};
+use gpui_kit::component::menu::PopupMenu;
+use gpui_kit::component::{Sizable, Size};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, uniform_list, AnyElement, App, AppContext, Context, Entity, FontWeight,
@@ -15,17 +17,27 @@ use serde_json::json;
 use sikemux_wire::database::{Connection, CopyFormat, QueryOutcome, ResultSet};
 
 use super::{Database, Host, PluginPane};
+use crate::icons::Icon;
 use crate::plugin_pane::{after, listen};
 use crate::theme::{self, Tokens, RADIUS_2};
-use crate::ui::{self, Button, Pick, Variant};
+use crate::ui::{self, Button, MenuRow, Pick, Variant};
 
 /// The most rows kept from each statement, as the person can pick it.
 const ROW_LIMITS: [u32; 4] = [100, 500, 1000, 5000];
 const ROW_LIMIT: u32 = 500;
-const COLUMN_WIDTH: f32 = 160.;
-const NUMBER_WIDTH: f32 = 44.;
-const ROW_HEIGHT: f32 = 24.;
-const SQL_LINE_HEIGHT: f32 = 18.;
+const ROW_HEIGHT: f32 = 26.;
+const HEADER_HEIGHT: f32 = 30.;
+/// A column is as wide as its longest value in the first rows, within these bounds.
+const COLUMN_WIDTHS: (f32, f32) = (56., 340.);
+const MEASURED_ROWS: usize = 200;
+const CELL_PADDING: f32 = 10.;
+/// Roughly how wide a character is in the grid's mono face, and in its headers' names.
+const CELL_CHARACTER: f32 = 7.;
+const NAME_CHARACTER: f32 = 6.6;
+const TYPE_CHARACTER: f32 = 6.;
+const SQL_TEXT: f32 = 12.;
+/// The editor's lines are one and a half times its text high.
+const SQL_LINE: f32 = SQL_TEXT * 1.5;
 const SQL_ROWS: (usize, usize) = (6, 16);
 /// A table's data needs room for rows more than for SQL, so its query starts one line high.
 const TABLE_SQL_ROWS: (usize, usize) = (1, 16);
@@ -40,6 +52,8 @@ pub(super) struct Console {
     running: Option<String>,
     outcome: Option<Rc<QueryOutcome>>,
     error: Option<SharedString>,
+    /// How wide each result's columns are drawn, measured once when the results arrive.
+    widths: Vec<Rc<[f32]>>,
     /// The result in front, when a run gave several.
     picked: usize,
     /// The cell picked in the grid, by row and column.
@@ -84,6 +98,7 @@ impl Console {
             running: None,
             outcome: None,
             error: None,
+            widths: Vec::new(),
             picked: 0,
             selected: None,
         }
@@ -135,6 +150,7 @@ pub(super) fn run(
             match done.map(serde_json::from_value::<QueryOutcome>) {
                 Ok(Ok(outcome)) => {
                     console.picked = outcome.main;
+                    console.widths = outcome.results.iter().map(column_widths).collect();
                     console.outcome = Some(Rc::new(outcome));
                 }
                 Ok(Err(error)) => {
@@ -186,90 +202,95 @@ pub(super) fn page(
     let running = console.running.is_some();
     let written = !console.sql.read(cx).value().trim().is_empty();
     let (run_key, stop_key) = (key.to_owned(), key.to_owned());
-    let pane = cx.weak_entity();
-    let limit_key = key.to_owned();
-    let limits = ui::select(
-        SharedString::from(format!("db-limit-{key}")),
-        format!("{} rows", console.limit),
-        ROW_LIMITS
-            .iter()
-            .map(|limit| Pick::new(limit.to_string(), format!("{limit} rows")))
-            .collect(),
-        Some(console.limit.to_string().into()),
-        running,
-        move |picked, _, cx| {
-            let Ok(limit) = picked.parse::<u32>() else {
-                return;
-            };
-            let key = limit_key.clone();
-            act(&pane, cx, move |database, _| {
-                if let Some(console) = database.consoles.get_mut(&key) {
-                    console.limit = limit;
-                }
-            });
-        },
-        cx,
-    );
+    let version = connection.connected.clone().map(|version| {
+        let short = version
+            .split_once(" (")
+            .map_or(version.as_str(), |(short, _)| short)
+            .to_owned();
+        div()
+            .id(SharedString::from(format!("db-version-{key}")))
+            .min_w_0()
+            .child(ui::meta(short, cx).truncate())
+            .tooltip(ui::tooltip(version))
+    });
     let toolbar = div()
+        .h(px(44.))
+        .flex_none()
         .px(px(12.))
-        .py(px(8.))
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(px(10.))
         .children(lead)
         .child(
-            ui::text(connection.name.clone(), 12.5, FontWeight::SEMIBOLD)
-                .text_color(t.text_primary),
-        )
-        .children(
-            connection
-                .connected
-                .clone()
-                .map(|version| ui::meta(version, cx)),
+            div()
+                .min_w_0()
+                .flex()
+                .items_baseline()
+                .gap(px(8.))
+                .child(
+                    ui::text(connection.name.clone(), 12.5, FontWeight::SEMIBOLD)
+                        .text_color(t.text_primary)
+                        .flex_none(),
+                )
+                .children(version),
         )
         .child(div().flex_1())
         .children(connection.read_only.then(|| ui::caps("Read only", cx)))
-        .child(limits)
         .children(running.then(|| {
             Button::new("db-stop", "Stop", Variant::Outline).on_click(listen::<Database, _>(
                 cx,
                 move |database, host, _, _, cx| stop(database, host, &stop_key, cx),
             ))
         }))
-        .child(
-            Button::new(
-                "db-run",
-                if running { "Running…" } else { "Run" },
-                Variant::Primary,
-            )
-            .keys(Some("⌘↵".into()))
-            .disabled(running || !written)
-            .on_click(listen::<Database, _>(
-                cx,
-                move |database, host, _, _, cx| run(database, host, &run_key, cx),
-            )),
-        );
+        .child(ui::split_button(
+            &format!("db-run-{key}"),
+            if running { "Running…" } else { "Run" },
+            Some(Icon::Run),
+            running || !written,
+            false,
+            listen::<Database, _>(cx, move |database, host, _, _, cx| {
+                run(database, host, &run_key, cx)
+            }),
+            Some(limit_menu(key, console.limit, cx.weak_entity())),
+            cx,
+        ));
     let (fewest, most) = console.sql_rows;
     let rows = console.sql.read(cx).text().lines_len().clamp(fewest, most);
     let editor = div()
+        .flex_none()
         .mx(px(12.))
-        .px(px(10.))
-        .py(px(8.))
+        .mb(px(12.))
+        .px(px(6.))
+        .py(px(7.))
         .rounded(RADIUS_2)
         .border_1()
         .border_color(t.border)
         .bg(t.surface)
-        .font_family(theme::MONO)
-        .line_height(px(SQL_LINE_HEIGHT))
+        .flex()
+        .items_start()
+        .gap(px(8.))
         .child(
-            Editor::new(&console.sql)
-                .appearance(false)
-                .text_size(theme::ui_text(12.5))
-                .h(px(rows as f32 * SQL_LINE_HEIGHT)),
+            div().flex_1().min_w_0().child(
+                Editor::new(&console.sql)
+                    .appearance(false)
+                    .with_size(Size::XSmall)
+                    .text_size(theme::ui_text(SQL_TEXT))
+                    .h(theme::ui_text(rows as f32 * SQL_LINE)),
+            ),
+        )
+        .child(
+            div()
+                .flex_none()
+                .h(theme::ui_text(SQL_LINE))
+                .pr(px(4.))
+                .flex()
+                .items_center()
+                .child(ui::meta("⌘↵ to run", cx).text_color(t.ink_faint)),
         );
     let below = match (&console.error, &console.outcome) {
         (Some(error), _) => div()
             .m(px(12.))
+            .mt_0()
             .px(px(12.))
             .py(px(8.))
             .rounded(RADIUS_2)
@@ -298,6 +319,31 @@ pub(super) fn page(
         .into_any_element()
 }
 
+/// The Run button's menu: how many rows each statement keeps.
+fn limit_menu(key: &str, limit: u32, pane: WeakEntity<PluginPane>) -> ui::SplitMenu {
+    let key = key.to_owned();
+    Rc::new(move |mut popup: PopupMenu, _, cx| {
+        popup = popup.min_w(px(200.)).label("Rows kept per statement");
+        for each in ROW_LIMITS {
+            let (pane, key) = (pane.clone(), key.clone());
+            popup = popup.item(
+                MenuRow::new(format!("{each} rows"))
+                    .item(cx)
+                    .checked(each == limit)
+                    .on_click(move |_, _, cx| {
+                        let key = key.clone();
+                        act(&pane, cx, move |database, _| {
+                            if let Some(console) = database.consoles.get_mut(&key) {
+                                console.limit = each;
+                            }
+                        });
+                    }),
+            );
+        }
+        popup
+    })
+}
+
 fn results(
     key: &str,
     console: &Console,
@@ -317,10 +363,11 @@ fn results(
         ui::Segmented::words(
             SharedString::from(format!("db-statements-{key}")),
             (1..=outcome.results.len())
-                .map(|number| (SharedString::from(number.to_string()), None))
+                .map(|number| (SharedString::from(format!("Result {number}")), None))
                 .collect(),
             at,
         )
+        .slide()
         .on_select(move |picked, _, cx| {
             let (key, picked) = (key.clone(), *picked);
             act(&pane, cx, move |database, _| {
@@ -331,45 +378,19 @@ fn results(
             });
         })
     });
-    let copies = (!result.columns.is_empty()).then(|| {
-        let copy = |id: &'static str, label: &'static str, format: CopyFormat, what: &'static str| {
-            let shown = result.clone();
-            Button::new(id, label, Variant::Outline).on_click(listen::<Database, _>(
-                cx,
-                move |_, host, _, _, cx| {
-                    let call = host.call(
-                        "copyResult",
-                        json!({ "result": { "columns": shown.columns, "rows": shown.rows }, "format": format }),
-                    );
-                    after::<Database, _>(
-                        call,
-                        move |_, host, done, cx| match done {
-                            Ok(text) => host.copy(text.as_str().unwrap_or_default().to_owned(), what, cx),
-                            Err(failure) => host.said(&failure, cx),
-                        },
-                        cx,
-                    );
-                },
-            ))
-        };
-        div()
-            .flex()
-            .gap(px(6.))
-            .child(copy("db-copy", "Copy", CopyFormat::Tsv, "the results"))
-            .child(copy("db-copy-csv", "Copy CSV", CopyFormat::Csv, "the results as CSV"))
-    });
+    let copies = (!result.columns.is_empty()).then(|| copy_menu(key, &outcome, at, cx));
     let send = send_to_agent(key, result, host, cx);
     let bar = div()
+        .h(px(40.))
+        .flex_none()
         .px(px(12.))
-        .py(px(6.))
         .flex()
         .items_center()
         .gap(px(8.))
         .children(statements)
-        .child(ui::meta(
-            format!("{} · {} ms", result.summary, outcome.millis),
-            cx,
-        ))
+        .child(ui::meta(result.summary.clone(), cx))
+        .child(ui::meta("·", cx).text_color(t.ink_faint))
+        .child(ui::meta(format!("{} ms", outcome.millis), cx))
         .child(div().flex_1())
         .children(copies)
         .child(send);
@@ -388,6 +409,53 @@ fn results(
         .child(body)
         .children(inspector(console, result, cx))
         .into_any_element()
+}
+
+/// Copies the result in front as tab-separated rows, as spreadsheets paste them, or as CSV.
+fn copy_menu(
+    key: &str,
+    outcome: &Rc<QueryOutcome>,
+    at: usize,
+    cx: &mut Context<PluginPane>,
+) -> AnyElement {
+    let (pane, outcome) = (cx.weak_entity(), outcome.clone());
+    ui::select(
+        SharedString::from(format!("db-copy-{key}")),
+        "Copy",
+        vec![
+            Pick::new("tsv", "Copy rows").hint("Tab-separated"),
+            Pick::new("csv", "Copy as CSV"),
+        ],
+        None,
+        false,
+        move |picked, _, cx| {
+            let Some(result) = outcome.results.get(at) else {
+                return;
+            };
+            let (format, what) = match picked.as_ref() {
+                "csv" => (CopyFormat::Csv, "the results as CSV"),
+                _ => (CopyFormat::Tsv, "the results"),
+            };
+            let params = json!({
+                "result": { "columns": result.columns, "rows": result.rows },
+                "format": format,
+            });
+            let _ = pane.update(cx, |pane, cx| {
+                let call = pane.host.call("copyResult", params);
+                after::<Database, _>(
+                    call,
+                    move |_, host, done, cx| match done {
+                        Ok(text) => {
+                            host.copy(text.as_str().unwrap_or_default().to_owned(), what, cx)
+                        }
+                        Err(failure) => host.said(&failure, cx),
+                    },
+                    cx,
+                );
+            });
+        },
+        cx,
+    )
 }
 
 fn send_to_agent(
@@ -420,6 +488,38 @@ fn send_to_agent(
     )
 }
 
+/// How wide each column is drawn: enough for its name and type and its longest value in the
+/// first rows, within bounds, so a short id column stays narrow and long text is cut.
+fn column_widths(result: &ResultSet) -> Rc<[f32]> {
+    let (narrowest, widest) = COLUMN_WIDTHS;
+    result
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(at, column)| {
+            let typed = match column.type_name.is_empty() {
+                true => 0.,
+                false => 6. + column.type_name.chars().count() as f32 * TYPE_CHARACTER,
+            };
+            let header = column.name.chars().count() as f32 * NAME_CHARACTER + typed;
+            let longest = result
+                .rows
+                .iter()
+                .take(MEASURED_ROWS)
+                .map(|row| match row.get(at) {
+                    Some(Some(cell)) => cell.chars().count(),
+                    _ => "NULL".len(),
+                })
+                .max()
+                .unwrap_or(0);
+            let content = header.max(longest as f32 * CELL_CHARACTER);
+            (content + CELL_PADDING * 2.)
+                .clamp(narrowest, widest)
+                .ceil()
+        })
+        .collect()
+}
+
 /// The result's rows, drawn only where they show so a long one stays quick, with the row
 /// numbers at the start and numbers to the right.
 fn grid(
@@ -433,33 +533,68 @@ fn grid(
     let Some(result) = outcome.results.get(at) else {
         return div().into_any_element();
     };
-    let width = NUMBER_WIDTH + COLUMN_WIDTH * result.columns.len() as f32;
+    let widths = console
+        .widths
+        .get(at)
+        .cloned()
+        .unwrap_or_else(|| column_widths(result));
+    let digits = result.rows.len().max(1).to_string().len() as f32;
+    let number_width = (digits * CELL_CHARACTER + CELL_PADDING * 2.).max(40.);
+    let width = number_width + widths.iter().sum::<f32>();
+    let (line, rule) = (t.line_soft, t.border);
     let header = div()
-        .h(px(ROW_HEIGHT + 4.))
+        .w(px(width))
+        .h(px(HEADER_HEIGHT))
+        .flex_none()
         .flex()
-        .items_center()
+        .bg(t.surface)
         .border_b_1()
-        .border_color(t.border)
-        .child(div().w(px(NUMBER_WIDTH)).flex_none())
-        .children(result.columns.iter().map(|column| {
+        .border_color(rule)
+        .child(
             div()
-                .w(px(COLUMN_WIDTH))
+                .w(px(number_width))
+                .h_full()
                 .flex_none()
-                .px(px(8.))
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .when(column.numeric, |cell| cell.justify_end())
-                .child(
-                    ui::text(column.name.clone(), 11.5, FontWeight::SEMIBOLD)
-                        .text_color(t.text_primary)
-                        .truncate(),
-                )
-                .children((!column.type_name.is_empty()).then(|| {
-                    ui::mono(column.type_name.clone(), 10., cx).text_color(t.text_tertiary)
-                }))
-        }));
-    let (ink, dim, chosen) = (t.text_secondary, t.text_tertiary, t.surface_chosen);
+                .border_r_1()
+                .border_color(line),
+        )
+        .children(
+            result
+                .columns
+                .iter()
+                .zip(widths.iter())
+                .map(|(column, width)| {
+                    div()
+                        .w(px(*width))
+                        .h_full()
+                        .flex_none()
+                        .px(px(CELL_PADDING))
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .overflow_hidden()
+                        .border_r_1()
+                        .border_color(line)
+                        .when(column.numeric, |cell| cell.justify_end())
+                        .child(
+                            ui::text(column.name.clone(), 11.5, FontWeight::SEMIBOLD)
+                                .text_color(t.text_primary)
+                                .flex_none(),
+                        )
+                        .children((!column.type_name.is_empty()).then(|| {
+                            ui::mono(column.type_name.clone(), 10., cx)
+                                .text_color(t.ink_faint)
+                                .truncate()
+                        }))
+                }),
+        );
+    let (ink, dim, faint, chosen, hover) = (
+        t.text_secondary,
+        t.text_tertiary,
+        t.ink_faint,
+        t.surface_chosen,
+        t.surface_hover,
+    );
     let selected = console.selected;
     let pane = cx.weak_entity();
     let rows_key = key.to_owned();
@@ -474,49 +609,64 @@ fn grid(
                 .filter_map(|row| Some((row, result.rows.get(row)?)))
                 .map(|(row, cells)| {
                     div()
+                        .id(("db-row", row))
                         .w(px(width))
                         .h(px(ROW_HEIGHT))
                         .flex()
-                        .items_center()
+                        .border_b_1()
+                        .border_color(line)
+                        .hover(move |style| style.bg(hover))
                         .font_family(theme::MONO)
+                        .font_features(theme::tabular())
                         .text_size(theme::ui_text(11.5))
                         .child(
                             div()
-                                .w(px(NUMBER_WIDTH))
-                                .flex_none()
-                                .px(px(8.))
-                                .text_color(dim)
-                                .child((row + 1).to_string()),
-                        )
-                        .children(cells.iter().enumerate().map(|(column, cell)| {
-                            let numeric =
-                                result.columns.get(column).is_some_and(|each| each.numeric);
-                            let (pane, key) = (pane.clone(), rows_key.clone());
-                            div()
-                                .id(("db-cell", row * 4096 + column))
-                                .w(px(COLUMN_WIDTH))
+                                .w(px(number_width))
                                 .h_full()
                                 .flex_none()
-                                .px(px(8.))
+                                .px(px(CELL_PADDING))
                                 .flex()
                                 .items_center()
-                                .when(numeric, |cell| cell.justify_end())
-                                .when(selected == Some((row, column)), |cell| cell.bg(chosen))
-                                .text_color(if cell.is_some() { ink } else { dim })
-                                .child(
-                                    div()
-                                        .truncate()
-                                        .child(cell.clone().unwrap_or_else(|| "NULL".into())),
-                                )
-                                .on_click(move |_, _, cx| {
-                                    let key = key.clone();
-                                    act(&pane, cx, move |database, _| {
-                                        if let Some(console) = database.consoles.get_mut(&key) {
-                                            console.selected = Some((row, column));
-                                        }
-                                    });
-                                })
-                        }))
+                                .justify_end()
+                                .border_r_1()
+                                .border_color(line)
+                                .text_color(faint)
+                                .child((row + 1).to_string()),
+                        )
+                        .children(cells.iter().zip(widths.iter()).enumerate().map(
+                            |(column, (cell, width))| {
+                                let numeric =
+                                    result.columns.get(column).is_some_and(|each| each.numeric);
+                                let (pane, key) = (pane.clone(), rows_key.clone());
+                                div()
+                                    .id(("db-cell", row * 4096 + column))
+                                    .w(px(*width))
+                                    .h_full()
+                                    .flex_none()
+                                    .px(px(CELL_PADDING))
+                                    .flex()
+                                    .items_center()
+                                    .border_r_1()
+                                    .border_color(line)
+                                    .when(numeric, |cell| cell.justify_end())
+                                    .when(selected == Some((row, column)), |cell| cell.bg(chosen))
+                                    .text_color(if cell.is_some() { ink } else { dim })
+                                    .child(
+                                        div()
+                                            .min_w_0()
+                                            .truncate()
+                                            .child(cell.clone().unwrap_or_else(|| "NULL".into())),
+                                    )
+                                    .on_click(move |_, _, cx| {
+                                        let key = key.clone();
+                                        act(&pane, cx, move |database, _| {
+                                            if let Some(console) = database.consoles.get_mut(&key) {
+                                                console.selected = Some((row, column));
+                                            }
+                                        });
+                                    })
+                            },
+                        ))
                 })
                 .collect()
         },

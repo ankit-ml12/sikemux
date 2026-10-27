@@ -442,7 +442,7 @@ impl Database {
             self.connection_rows(connection, &words, false, &mut rows, cx);
         }
         let head = div()
-            .h(px(32.))
+            .h(px(36.))
             .px(px(10.))
             .flex()
             .items_center()
@@ -1209,6 +1209,7 @@ fn table_switch(tab: &Tab, structure: bool, cx: &mut Context<PluginPane>) -> Any
         vec![("Data".into(), None), ("Structure".into(), None)],
         usize::from(structure),
     )
+    .slide()
     .on_select(move |picked, _, cx| {
         let (picked, tab) = (*picked, picked_tab.clone());
         let _ = pane.update(cx, |pane, cx| {
