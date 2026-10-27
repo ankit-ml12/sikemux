@@ -3,6 +3,7 @@
 
 use std::rc::Rc;
 
+use gpui_kit::component::color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState};
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::prelude::FluentBuilder;
@@ -12,6 +13,7 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
+use sikemux_wire::protocol::{PaneColours, PaneCoverage, PanePattern};
 use sikemux_wire::theme::{ThemeSource, ThemeSummary};
 
 use crate::core::{Ask, Watch};
@@ -63,6 +65,12 @@ pub struct Fields {
     tone: Tone,
     source: Option<ThemeSource>,
     strength: Entity<SliderState>,
+    dot_size: Entity<SliderState>,
+    contrast: Entity<SliderState>,
+    brightness: Entity<SliderState>,
+    glow: Entity<SliderState>,
+    glow_size: Entity<SliderState>,
+    inks: Vec<Entity<ColorPickerState>>,
     opacity: Entity<SliderState>,
     blur: Entity<SliderState>,
     /// The theme being edited, when one is.
@@ -134,6 +142,73 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
         false,
         cx,
     );
+    let (dot_size, moved_dot_size) = slider(
+        "paneDotSize",
+        (1., 6., 1.),
+        preferences.pane_dot_size as f32,
+        true,
+        cx,
+    );
+    let (contrast, moved_contrast) = slider(
+        "paneContrast",
+        (-1., 1., 0.05),
+        preferences.pane_contrast as f32,
+        false,
+        cx,
+    );
+    let (brightness, moved_brightness) = slider(
+        "paneBrightness",
+        (-1., 1., 0.05),
+        preferences.pane_brightness as f32,
+        false,
+        cx,
+    );
+    let (glow, moved_glow) = slider(
+        "paneGlow",
+        (0., 1., 0.05),
+        preferences.pane_glow as f32,
+        false,
+        cx,
+    );
+    let (glow_size, moved_glow_size) = slider(
+        "paneGlowSize",
+        (0., 1., 0.05),
+        preferences.pane_glow_size as f32,
+        false,
+        cx,
+    );
+    let mut watching = vec![
+        typing,
+        moved_strength,
+        moved_dot_size,
+        moved_contrast,
+        moved_brightness,
+        moved_glow,
+        moved_glow_size,
+    ];
+    let inks = (0..preferences.pane_inks.len())
+        .map(|at| {
+            let picker = cx.new(|cx| {
+                ColorPickerState::new(window, cx)
+                    .default_value(theme::color(&preferences.pane_inks[at]))
+            });
+            watching.push(cx.subscribe_in(
+                &picker,
+                window,
+                move |bench, _, event: &ColorPickerEvent, _, _| {
+                    let ColorPickerEvent::Change(Some(color)) = event else {
+                        return;
+                    };
+                    let mut inks = bench.preferences().pane_inks;
+                    if let Some(ink) = inks.get_mut(at) {
+                        *ink = super::theme_editor::hex(*color);
+                    }
+                    crate::settings::set(bench, "paneInks", inks);
+                },
+            ));
+            picker
+        })
+        .collect();
     let (opacity, moved_opacity) = slider(
         "windowOpacity",
         (0., 1., 0.01),
@@ -155,14 +230,159 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
             tone: Tone::All,
             source: None,
             strength,
+            dot_size,
+            contrast,
+            brightness,
+            glow,
+            glow_size,
+            inks,
             opacity,
             blur,
             editor: None,
             reading: None,
-            _watching: vec![typing, moved_strength, moved_opacity, moved_blur],
+            _watching: {
+                watching.extend([moved_opacity, moved_blur]);
+                watching
+            },
         });
     }
     bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// How the pane picture is dithered: a preview drawn as the panes draw it, then each control.
+fn picture_rows(
+    preferences: &sikemux_wire::protocol::Preferences,
+    fields: &Fields,
+    this: &Entity<Workbench>,
+    knob: &dyn Fn(&Entity<SliderState>, String) -> gpui_kit::Div,
+    cx: &App,
+) -> impl IntoElement {
+    let t = Tokens::get(cx);
+    let words = |id: &'static str,
+                 key: &'static str,
+                 labels: &[&'static str],
+                 values: Vec<Value>,
+                 chosen: usize| {
+        let this = this.clone();
+        ui::Segmented::words(
+            id,
+            labels
+                .iter()
+                .map(|label| (SharedString::from(*label), None))
+                .collect(),
+            chosen,
+        )
+        .on_select(move |at, _, cx| {
+            let value = values[*at].clone();
+            this.update(cx, |bench, _| crate::settings::set(bench, key, value))
+        })
+    };
+    let colours = words(
+        "pane-colours",
+        "paneColours",
+        &["Theme", "Picture", "Custom"],
+        vec!["theme".into(), "picture".into(), "custom".into()],
+        match preferences.pane_colours {
+            PaneColours::Theme => 0,
+            PaneColours::Picture => 1,
+            PaneColours::Custom => 2,
+        },
+    );
+    let pattern = words(
+        "pane-pattern",
+        "panePattern",
+        &["2×2", "4×4", "8×8", "Noise"],
+        vec![
+            "bayer2".into(),
+            "bayer4".into(),
+            "bayer8".into(),
+            "noise".into(),
+        ],
+        match preferences.pane_pattern {
+            PanePattern::Bayer2 => 0,
+            PanePattern::Bayer4 => 1,
+            PanePattern::Bayer8 => 2,
+            PanePattern::Noise => 3,
+        },
+    );
+    let coverage = words(
+        "pane-coverage",
+        "paneCoverage",
+        &["Top", "Whole pane"],
+        vec!["band".into(), "full".into()],
+        match preferences.pane_coverage {
+            PaneCoverage::Band => 0,
+            PaneCoverage::Full => 1,
+        },
+    );
+    let signed = |value: f64| format!("{:+.2}", value);
+    div()
+        .child(
+            div().px(px(16.)).py(px(12.)).child(
+                div()
+                    .relative()
+                    .h(px(180.))
+                    .rounded(crate::theme::RADIUS_3)
+                    .border_1()
+                    .border_color(t.border)
+                    .overflow_hidden()
+                    .children(
+                        crate::ui::grain::picture_preview(cx).map(|preview| preview.size_full()),
+                    ),
+            ),
+        )
+        .child(rows::row(
+            "Colours",
+            Some("Theme dithers in the accent and text colour, Picture keeps its own."),
+            colours,
+            cx,
+        ))
+        .when(preferences.pane_colours == PaneColours::Custom, |rows_of| {
+            rows_of.child(rows::row(
+                "Inks",
+                Some("Dark, middle and light, in that order."),
+                div()
+                    .flex()
+                    .gap(px(8.))
+                    .children(fields.inks.iter().map(ColorPicker::new)),
+                cx,
+            ))
+        })
+        .child(rows::row("Pattern", None, pattern, cx))
+        .child(rows::row(
+            "Dot size",
+            None,
+            knob(&fields.dot_size, format!("{}pt", preferences.pane_dot_size)),
+            cx,
+        ))
+        .child(rows::row(
+            "Contrast",
+            None,
+            knob(&fields.contrast, signed(preferences.pane_contrast)),
+            cx,
+        ))
+        .child(rows::row(
+            "Brightness",
+            None,
+            knob(&fields.brightness, signed(preferences.pane_brightness)),
+            cx,
+        ))
+        .child(rows::row(
+            "Glow",
+            Some("Light around the picture's bright parts."),
+            knob(&fields.glow, format!("{:.2}", preferences.pane_glow)),
+            cx,
+        ))
+        .child(rows::row(
+            "Glow size",
+            None,
+            knob(
+                &fields.glow_size,
+                format!("{:.2}", preferences.pane_glow_size),
+            ),
+            cx,
+        ))
+        .child(rows::row("Covers", None, coverage, cx))
 }
 
 /// Wears the theme `by` places from the one worn in the library as filtered, else its first or last.
@@ -773,7 +993,10 @@ pub fn render(
                 format!("{:.2}", preferences.pane_strength),
             ),
             cx,
-        ));
+        ))
+        .when(preferences.pane_shader && has_pane_image, |rows_of| {
+            rows_of.child(picture_rows(&preferences, fields, this, &knob, cx))
+        });
 
     let style = bench
         .view

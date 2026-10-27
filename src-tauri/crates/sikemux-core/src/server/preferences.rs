@@ -131,6 +131,17 @@ fn within_limits(mut preferences: Preferences) -> Preferences {
     }
     preferences.custom_commands = commands_within_limits(preferences.custom_commands);
     preferences.pane_strength = ((preferences.pane_strength * 20.0).round() / 20.0).clamp(0.0, 2.0);
+    let hundredths = |value: f64, low: f64| ((value * 100.0).round() / 100.0).clamp(low, 1.0);
+    preferences.pane_dot_size = preferences.pane_dot_size.clamp(1, 6);
+    preferences.pane_contrast = hundredths(preferences.pane_contrast, -1.0);
+    preferences.pane_brightness = hundredths(preferences.pane_brightness, -1.0);
+    preferences.pane_glow = hundredths(preferences.pane_glow, 0.0);
+    preferences.pane_glow_size = hundredths(preferences.pane_glow_size, 0.0);
+    let inks = Preferences::default().pane_inks;
+    preferences.pane_inks.truncate(inks.len());
+    preferences
+        .pane_inks
+        .extend(inks.into_iter().skip(preferences.pane_inks.len()));
     preferences.window_opacity = preferences.window_opacity.clamp(0.0, 1.0);
     preferences.window_blur = preferences.window_blur.round();
     preferences.side_rail_width = preferences

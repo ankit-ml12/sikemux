@@ -12,10 +12,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{
-    canvas, relative, App, AppContext, Context, Global, Hsla, IntoElement, RenderImage,
+    canvas, relative, App, AppContext, Context, Global, Hsla, IntoElement, RenderImage, Rgba,
     ShaderProgram, Styled, Task, Window,
 };
-use sikemux_wire::protocol::Preferences;
+use sikemux_wire::protocol::{PaneColours, PaneCoverage, PanePattern, Preferences};
 
 use crate::theme::{self, Tokens, RADIUS_3};
 use crate::workbench::Workbench;
@@ -43,114 +43,208 @@ const SKY_SPEED: f32 = 0.35;
 const STILL: f32 = 2.5;
 /// High, because the grain's dots are the only paint and nothing is drawn between them.
 const FIELD_OPACITY: f32 = 0.85;
-const PICTURE_OPACITY: f32 = 0.38;
-/// How much of a pane, from its top, the picture covers.
+const PICTURE_OPACITY: f32 = 0.6;
+/// How much of a pane, from its top, the picture covers when it does not cover it all.
 const PICTURE_BAND: f32 = 0.6;
-/// The picture is drawn in two-pixel dots, so no more of it than one texel per dot is kept.
+/// The picture is drawn in dots of at least one point, so no more of it than that is kept.
 const PICTURE_LONGEST: u32 = 2560;
+/// The glow is a blur, so it is worked out on a small copy of the picture and stretched back.
+const GLOW_LONGEST: u32 = 320;
+/// How bright a place must be, from 0 to 1, before it glows.
+const GLOW_THRESHOLD: f32 = 0.45;
 
 /// What panes show behind them, as the person's preferences say, and whether a sky is up.
 /// Until the preferences are read, panes show nothing.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Grain {
     shown: bool,
     /// From 0 to 2.
     strength: f32,
-    picture_path: Option<String>,
-    picture: Picture,
+    look: Look,
+    /// The picture the preferences ask for, which may not have been read yet.
+    wanted: Option<Baked>,
+    picture: Option<(Baked, Arc<RenderImage>)>,
+    reading: Option<Baked>,
     skies: usize,
-}
-
-#[derive(Clone)]
-enum Picture {
-    None,
-    Loading,
-    Loaded(Arc<RenderImage>),
 }
 
 impl Global for Grain {}
 
-impl Default for Grain {
-    fn default() -> Self {
+/// A picture as read, with the glow worked into it for one spread.
+#[derive(Clone, PartialEq)]
+struct Baked {
+    path: String,
+    glow_size: f32,
+}
+
+/// How the picture is dithered, as the preferences say.
+#[derive(Clone, Copy, PartialEq, Default)]
+struct Look {
+    colours: PaneColours,
+    inks: [Option<Rgba>; 3],
+    pattern: PanePattern,
+    dot_size: f32,
+    contrast: f32,
+    brightness: f32,
+    glow: f32,
+    full: bool,
+}
+
+impl Look {
+    fn of(preferences: &Preferences) -> Self {
+        let ink = |at: usize| {
+            preferences
+                .pane_inks
+                .get(at)
+                .map(|hex| theme::color(hex).to_rgb())
+        };
         Self {
-            shown: false,
-            strength: 0.,
-            picture_path: None,
-            picture: Picture::None,
-            skies: 0,
+            colours: preferences.pane_colours,
+            inks: [ink(0), ink(1), ink(2)],
+            pattern: preferences.pane_pattern,
+            dot_size: preferences.pane_dot_size as f32,
+            contrast: preferences.pane_contrast as f32,
+            brightness: preferences.pane_brightness as f32,
+            glow: preferences.pane_glow as f32,
+            full: preferences.pane_coverage == PaneCoverage::Full,
         }
+    }
+
+    /// The shader's params after the first four, which the caller fills.
+    fn params(&self, cx: &App) -> [f32; gpui::SHADER_PARAMS] {
+        let pack = |ink: Option<Rgba>| {
+            ink.map_or(-1., |ink| {
+                let byte = |channel: f32| (channel.clamp(0., 1.) * 255.).round();
+                byte(ink.r) * 65536. + byte(ink.g) * 256. + byte(ink.b)
+            })
+        };
+        let inks = match self.colours {
+            PaneColours::Custom => self.inks,
+            PaneColours::Theme | PaneColours::Picture => {
+                let t = Tokens::get(cx);
+                [None, Some(t.accent.to_rgb()), Some(t.text_primary.to_rgb())]
+            }
+        };
+        let pattern = match self.pattern {
+            PanePattern::Bayer2 => 2.,
+            PanePattern::Bayer4 => 4.,
+            PanePattern::Bayer8 => 8.,
+            PanePattern::Noise => 0.,
+        };
+        let mut params = [0.; gpui::SHADER_PARAMS];
+        params[3] = if self.full { 1. } else { 0. };
+        params[4..13].copy_from_slice(&[
+            self.dot_size,
+            pattern,
+            self.contrast,
+            self.brightness,
+            self.glow,
+            if self.colours == PaneColours::Picture {
+                1.
+            } else {
+                0.
+            },
+            pack(inks[0]),
+            pack(inks[1]),
+            pack(inks[2]),
+        ]);
+        params
     }
 }
 
 impl Grain {
-    /// Only the grain moves: a picture holds still, and one still loading or a grain at no
+    /// Only the grain moves: a picture holds still, and one still being read or a grain at no
     /// strength paints nothing.
     fn moving(&self) -> bool {
-        self.skies > 0
-            || (self.shown && self.strength > 0. && matches!(self.picture, Picture::None))
+        self.skies > 0 || (self.shown && self.strength > 0. && self.wanted.is_none())
     }
 }
 
-/// Takes the preferences for what panes show, loading a newly chosen picture.
+/// Takes the preferences for what panes show, reading a newly chosen picture or spread of glow.
 pub fn set(preferences: &Preferences, cx: &mut App) {
-    let path = preferences.pane_image.clone();
-    let known = cx.try_global::<Grain>().map(|grain| {
-        let kept = (grain.picture_path == path).then(|| grain.picture.clone());
-        (kept, grain.skies)
+    let old = cx.try_global::<Grain>().cloned().unwrap_or_default();
+    let wanted = preferences.pane_image.clone().map(|path| Baked {
+        path,
+        glow_size: preferences.pane_glow_size as f32,
     });
-    let skies = known.as_ref().map_or(0, |(_, skies)| *skies);
-    let picture = match known.and_then(|(kept, _)| kept) {
-        Some(kept) => kept,
-        None => {
-            if let Some(path) = &path {
-                load(path.clone(), cx);
-            }
-            path.as_ref().map_or(Picture::None, |_| Picture::Loading)
+    let mut picture = old.picture.clone();
+    if let Some((baked, image)) = &picture {
+        if wanted
+            .as_ref()
+            .is_none_or(|wanted| wanted.path != baked.path)
+        {
+            cx.drop_image(image.clone(), None);
+            picture = None;
         }
-    };
-    let changed = cx.try_global::<Grain>().is_none_or(|grain| {
-        grain.shown != preferences.pane_shader
-            || grain.strength != preferences.pane_strength as f32
-            || grain.picture_path != path
-    });
-    if !changed {
-        return;
     }
-    cx.set_global(Grain {
+    let mut reading = old.reading.clone();
+    if let Some(wanted) = &wanted {
+        let done = picture.as_ref().is_some_and(|(baked, _)| baked == wanted);
+        if !done && reading.is_none() {
+            read(wanted.clone(), cx);
+            reading = Some(wanted.clone());
+        }
+    }
+    let grain = Grain {
         shown: preferences.pane_shader,
         strength: preferences.pane_strength as f32,
-        picture_path: path,
+        look: Look::of(preferences),
+        wanted,
         picture,
-        skies,
-    });
-    cx.refresh_windows();
+        reading,
+        skies: old.skies,
+    };
+    let changed = cx.try_global::<Grain>().is_none()
+        || grain.shown != old.shown
+        || grain.strength != old.strength
+        || grain.look != old.look
+        || grain.wanted != old.wanted
+        || grain.picture.as_ref().map(|(baked, _)| baked)
+            != old.picture.as_ref().map(|(baked, _)| baked);
+    if !changed && grain.reading == old.reading {
+        return;
+    }
+    cx.set_global(grain);
+    if changed {
+        cx.refresh_windows();
+    }
 }
 
-fn load(path: String, cx: &mut App) {
+fn read(wanted: Baked, cx: &mut App) {
     cx.spawn(async move |cx| {
-        let read = path.clone();
-        let picture = cx
-            .background_spawn(async move { read_picture(Path::new(&read)) })
+        let baking = wanted.clone();
+        let image = cx
+            .background_spawn(async move { bake(Path::new(&baking.path), baking.glow_size) })
             .await;
         cx.update(|cx| {
-            if let Some(grain) = cx.try_global::<Grain>() {
-                if grain.picture_path.as_deref() == Some(path.as_str()) {
-                    let mut grain = grain.clone();
-                    grain.picture = match picture {
-                        Some(picture) => Picture::Loaded(picture),
-                        None => Picture::None,
-                    };
-                    cx.set_global(grain);
-                    cx.refresh_windows();
+            let Some(mut grain) = cx.try_global::<Grain>().cloned() else {
+                return;
+            };
+            grain.reading = None;
+            if grain.wanted.as_ref() != Some(&wanted) {
+                if let Some(next) = grain.wanted.clone() {
+                    read(next.clone(), cx);
+                    grain.reading = Some(next);
                 }
+                cx.set_global(grain);
+                return;
             }
+            if let Some((_, old)) = grain.picture.take() {
+                cx.drop_image(old, None);
+            }
+            grain.picture = image.map(|image| (wanted, image));
+            cx.set_global(grain);
+            cx.refresh_windows();
         })
     })
     .detach();
 }
 
-/// The picture at `path` as the atlas takes it, no larger than its dots can show.
-fn read_picture(path: &Path) -> Option<Arc<RenderImage>> {
+/// The picture at `path` as the shader takes it, no larger than its dots can show: its colours
+/// laid on black, and in place of its opacity how much its bright parts glow, spread by `glow_size`.
+fn bake(path: &Path, glow_size: f32) -> Option<Arc<RenderImage>> {
+    use image::imageops::{self, FilterType};
+
     let decoded = image::open(path)
         .inspect_err(|error| eprintln!("sikemux: the pane picture does not open: {error}"))
         .ok()?;
@@ -159,8 +253,33 @@ fn read_picture(path: &Path) -> Option<Arc<RenderImage>> {
         false => decoded,
     };
     let mut pixels = fitted.into_rgba8();
-    for pixel in pixels.pixels_mut() {
-        pixel.0.swap(0, 2);
+    let (width, height) = pixels.dimensions();
+    let lum = |pixel: &image::Rgba<u8>| {
+        let [r, g, b, a] = pixel.0.map(|channel| channel as f32 / 255.);
+        (0.2126 * r + 0.7152 * g + 0.0722 * b) * a
+    };
+    let shrink = GLOW_LONGEST as f32 / width.max(height) as f32;
+    let small = imageops::thumbnail(
+        &pixels,
+        ((width as f32 * shrink).round() as u32).max(1),
+        ((height as f32 * shrink).round() as u32).max(1),
+    );
+    let bright = image::GrayImage::from_fn(small.width(), small.height(), |x, y| {
+        let over = (lum(small.get_pixel(x, y)) - GLOW_THRESHOLD) / (1. - GLOW_THRESHOLD);
+        image::Luma([(over.max(0.) * 255.) as u8])
+    });
+    let spread = 1. + glow_size * 10.;
+    let near = imageops::fast_blur(&bright, spread);
+    let far = imageops::fast_blur(&bright, spread * 3.);
+    let glow = image::GrayImage::from_fn(bright.width(), bright.height(), |x, y| {
+        let sum = near.get_pixel(x, y).0[0] as f32 * 1.2 + far.get_pixel(x, y).0[0] as f32 * 0.8;
+        image::Luma([sum.min(255.) as u8])
+    });
+    let glow = imageops::resize(&glow, width, height, FilterType::Triangle);
+    for (pixel, glow) in pixels.pixels_mut().zip(glow.pixels()) {
+        let [r, g, b, a] = pixel.0;
+        let on_black = |channel: u8| ((channel as u16 * a as u16) / 255) as u8;
+        pixel.0 = [on_black(b), on_black(g), on_black(r), glow.0[0]];
     }
     Some(Arc::new(RenderImage::new([image::Frame::new(pixels)])))
 }
@@ -171,31 +290,22 @@ pub fn field(cx: &App) -> Option<impl IntoElement> {
         .try_global::<Grain>()
         .filter(|grain| grain.shown && grain.strength > 0.)?;
     let inner_radius = f32::from(RADIUS_3) - 1.;
-    if let Picture::Loaded(picture) = &grain.picture {
-        let picture = picture.clone();
-        let strength = (PICTURE_OPACITY * grain.strength).min(1.);
+    if let Some((_, picture)) = &grain.picture {
+        let band = match grain.look.full {
+            true => relative(1.),
+            false => relative(PICTURE_BAND),
+        };
         return Some(
-            canvas(
-                |_, _, _| {},
-                move |bounds, (), window, _| {
-                    let mut params = [0.; gpui::SHADER_PARAMS];
-                    params[..3].copy_from_slice(&[window.ground_scale(), inner_radius, strength]);
-                    if let Err(error) =
-                        window.paint_ground_shader(bounds, &PICTURE, params, Some(&picture))
-                    {
-                        eprintln!("sikemux: the pane picture does not draw: {error}");
-                    }
-                },
-            )
-            .absolute()
-            .top_0()
-            .left_0()
-            .w_full()
-            .h(relative(PICTURE_BAND))
-            .into_any_element(),
+            picture_canvas(grain, picture.clone(), inner_radius, true, cx)
+                .absolute()
+                .top_0()
+                .left_0()
+                .w_full()
+                .h(band)
+                .into_any_element(),
         );
     }
-    if matches!(grain.picture, Picture::Loading) {
+    if grain.wanted.is_some() {
         return None;
     }
     let dot = Tokens::get(cx).shader_dot.to_rgb();
@@ -222,6 +332,51 @@ pub fn field(cx: &App) -> Option<impl IntoElement> {
         .absolute()
         .inset_0()
         .into_any_element(),
+    )
+}
+
+/// The pane picture as the preferences draw it now, for Settings to show beside its controls,
+/// or nothing while no picture is read.
+pub fn picture_preview(cx: &App) -> Option<impl IntoElement + Styled> {
+    let grain = cx.try_global::<Grain>()?;
+    let (_, picture) = grain.picture.as_ref()?;
+    Some(picture_canvas(
+        grain,
+        picture.clone(),
+        f32::from(RADIUS_3),
+        false,
+        cx,
+    ))
+}
+
+fn picture_canvas(
+    grain: &Grain,
+    picture: Arc<RenderImage>,
+    radius: f32,
+    ground: bool,
+    cx: &App,
+) -> impl IntoElement + Styled {
+    let mut params = grain.look.params(cx);
+    params[2] = (PICTURE_OPACITY * grain.strength).min(1.);
+    canvas(
+        |_, _, _| {},
+        move |bounds, (), window, _| {
+            let mut params = params;
+            params[1] = radius;
+            let painted = match ground {
+                true => {
+                    params[0] = window.ground_scale();
+                    window.paint_ground_shader(bounds, &PICTURE, params, Some(&picture))
+                }
+                false => {
+                    params[0] = window.scale_factor();
+                    window.paint_shader(bounds, &PICTURE, params, Some(&picture))
+                }
+            };
+            if let Err(error) = painted {
+                eprintln!("sikemux: the pane picture does not draw: {error}");
+            }
+        },
     )
 }
 

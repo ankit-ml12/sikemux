@@ -1052,6 +1052,11 @@ function evaluate(expr, type, file) {
   if (expr === "None") return null;
   const some = /^Some\((.*)\)$/s.exec(expr);
   if (some && type.kind === "option") return evaluate(some[1], type.of, file);
+  const listed = /^vec!\[(.*)\]$/s.exec(expr);
+  if (listed && type.kind === "list")
+    return splitTop(listed[1])
+      .filter((item) => item.trim())
+      .map((item) => evaluate(item, type.of, file));
   if (/^(?:String|Vec|BTreeMap|HashMap)::new\(\)$/.test(expr))
     return defaultOfType(type, file);
   if (/^(?:[\w:]+::)?(?:default|Default::default)\(\)$/.test(expr))

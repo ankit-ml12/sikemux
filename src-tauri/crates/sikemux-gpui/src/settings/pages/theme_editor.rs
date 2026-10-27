@@ -152,7 +152,7 @@ fn new_id() -> String {
 }
 
 /// `#rrggbb` for a colour the picker chose.
-fn hex(color: Hsla) -> String {
+pub(super) fn hex(color: Hsla) -> String {
     let rgba = color.to_rgb();
     let byte = |part: f32| (part.clamp(0., 1.) * 255.).round() as u8;
     format!(
@@ -730,7 +730,7 @@ pub fn view(editor: &Editor, this: &Entity<Workbench>, cx: &App) -> AnyElement {
         .flex()
         .flex_col()
         .gap(px(12.))
-        .p(px(14.))
+        .p(px(16.))
         .border_t_1()
         .border_color(t.line_soft)
         .child(named)

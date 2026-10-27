@@ -1492,6 +1492,22 @@ export interface Preferences {
   paneImage?: string;
   /** How strongly the texture or picture shows, from 0 to 2. */
   paneStrength: number;
+  /** The colours the pane picture is dithered in. */
+  paneColours: PaneColours;
+  /** The three inks, dark to light as hex, the picture takes with custom colours. */
+  paneInks: string[];
+  panePattern: PanePattern;
+  /** How wide each of the picture's dots is, from 1 to 6 points. */
+  paneDotSize: number;
+  /** From -1 to 1. */
+  paneContrast: number;
+  /** From -1 to 1. */
+  paneBrightness: number;
+  /** How brightly the picture's light parts glow, from 0 to 1. */
+  paneGlow: number;
+  /** How far the glow spreads, from 0 to 1. */
+  paneGlowSize: number;
+  paneCoverage: PaneCoverage;
   /** How opaque the window is, from 0 to 1. */
   windowOpacity: number;
   /** How much what is behind the window blurs, in points. */
@@ -1644,6 +1660,18 @@ export type NotchOpenWith = 'hover' | 'click';
 export type NotchFullScreen = 'needsYou' | 'always' | 'never';
 
 export type NotchPeeks = 'all' | 'needsYou' | 'never';
+
+/**
+ * Where the pane picture's inks come from: the theme's ground, accent and ink, the picture's
+ * own colours, or the person's three.
+ */
+export type PaneColours = 'theme' | 'picture' | 'custom';
+
+/** The grid that decides which of two inks each dot takes, or random noise. */
+export type PanePattern = 'bayer2' | 'bayer4' | 'bayer8' | 'noise';
+
+/** How much of a pane the picture covers: a band at its top fading down, or all of it. */
+export type PaneCoverage = 'band' | 'full';
 
 export type RailDensity = 'comfortable' | 'compact';
 

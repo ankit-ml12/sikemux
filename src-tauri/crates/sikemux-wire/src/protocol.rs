@@ -1253,6 +1253,22 @@ pub struct Preferences {
     pub pane_image: Option<String>,
     /// How strongly the texture or picture shows, from 0 to 2.
     pub pane_strength: f64,
+    /// The colours the pane picture is dithered in.
+    pub pane_colours: PaneColours,
+    /// The three inks, dark to light as hex, the picture takes with custom colours.
+    pub pane_inks: Vec<String>,
+    pub pane_pattern: PanePattern,
+    /// How wide each of the picture's dots is, from 1 to 6 points.
+    pub pane_dot_size: u32,
+    /// From -1 to 1.
+    pub pane_contrast: f64,
+    /// From -1 to 1.
+    pub pane_brightness: f64,
+    /// How brightly the picture's light parts glow, from 0 to 1.
+    pub pane_glow: f64,
+    /// How far the glow spreads, from 0 to 1.
+    pub pane_glow_size: f64,
+    pub pane_coverage: PaneCoverage,
     /// How opaque the window is, from 0 to 1.
     pub window_opacity: f64,
     /// How much what is behind the window blurs, in points.
@@ -1296,6 +1312,37 @@ pub enum TabRailScope {
     #[default]
     Project,
     All,
+}
+
+/// Where the pane picture's inks come from: the theme's ground, accent and ink, the picture's
+/// own colours, or the person's three.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PaneColours {
+    #[default]
+    Theme,
+    Picture,
+    Custom,
+}
+
+/// The grid that decides which of two inks each dot takes, or random noise.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PanePattern {
+    Bayer2,
+    Bayer4,
+    #[default]
+    Bayer8,
+    Noise,
+}
+
+/// How much of a pane the picture covers: a band at its top fading down, or all of it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PaneCoverage {
+    #[default]
+    Band,
+    Full,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1347,6 +1394,19 @@ impl Default for Preferences {
             pane_shader: true,
             pane_image: None,
             pane_strength: 1.0,
+            pane_colours: PaneColours::default(),
+            pane_inks: vec![
+                "#0f1214".to_owned(),
+                "#e673af".to_owned(),
+                "#fff0fa".to_owned(),
+            ],
+            pane_pattern: PanePattern::default(),
+            pane_dot_size: 2,
+            pane_contrast: 0.0,
+            pane_brightness: 0.0,
+            pane_glow: 0.4,
+            pane_glow_size: 0.4,
+            pane_coverage: PaneCoverage::default(),
             window_opacity: 1.0,
             window_blur: 0.0,
             rail_density: RailDensity::default(),
