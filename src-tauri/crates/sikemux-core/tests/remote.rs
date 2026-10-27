@@ -494,6 +494,28 @@ async fn keep_agent(app: &CoreClient, agent_id: &str, title: &str, asleep: bool)
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_picture_pasted_into_a_sleeping_chat_is_kept_for_it() {
+    let core_key = SecretKey::generate();
+    let core = start_core(&core_key, &[]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    publish_fake_agent(&app).await;
+    let _ = listening(&app).await;
+    keep_agent(&app, "agent-sleepy", "Tidy the docs", true).await;
+
+    let picture = vec![0x89u8, b'P', b'N', b'G', 1, 2, 3];
+    let path = app
+        .attach_file(
+            "agent-sleepy".into(),
+            "pasted.png".into(),
+            "image/png".into(),
+            &picture,
+        )
+        .await
+        .expect("a sleeping chat takes a pasted picture");
+    assert_eq!(std::fs::read(&path).expect("the host keeps it"), picture);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_prompt_reaches_everyone_watching_and_stays_in_the_replay() {
     let core_key = SecretKey::generate();
     let phone = Device::new("Phone", DeviceAccess::Full);
