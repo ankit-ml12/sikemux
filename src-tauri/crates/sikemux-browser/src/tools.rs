@@ -671,14 +671,21 @@ async fn run(
             merge(waited, report(manager, agent_id, params).await?)
         }
         "browser.viewport" => {
-            let (tab_id, _) = active_tab(manager, agent_id)?;
+            let (tab_id, view) = active_tab(manager, agent_id)?;
             let size = |key: &str| {
                 params
                     .get(key)
                     .and_then(Value::as_u64)
                     .map(|value| u32::try_from(value).unwrap_or(u32::MAX))
             };
-            let fixed = match (text("preset").as_deref(), size("width"), size("height")) {
+            let (mut width, mut height) = (size("width"), size("height"));
+            if width.is_some() != height.is_some() && text("preset").is_none() {
+                let now = call(&view, "viewportSize", &[]).await?;
+                let current = |key: &str| now[key].as_u64().map(|value| value as u32);
+                width = width.or_else(|| current("width"));
+                height = height.or_else(|| current("height"));
+            }
+            let fixed = match (text("preset").as_deref(), width, height) {
                 (Some(_), Some(_), _) | (Some(_), _, Some(_)) => {
                     return Err("pass a preset, or width and height, not both".into())
                 }

@@ -342,6 +342,30 @@
         const offscreen = offscreenBy(rectOf(element));
         return { key, line: offscreen ? `${key} [offscreen]` : key, offscreen };
     };
+    // What sits around an element besides its own label, such as the row a
+    // repeated Open button belongs to.
+    const surroundings = (element) => {
+        const own = compact(element.innerText || element.value || "");
+        for (let node = parentAcross(element), hops = 0; node && hops < 3; node = parentAcross(node), hops++) {
+            const text = briefText(node, 120);
+            if (text && text !== own) return compact(own ? text.replace(own, " ") : text).slice(0, 48);
+        }
+        return "";
+    };
+    // Entry lines for a list of numbered elements, with what sits around the
+    // ones that would otherwise read the same.
+    const lines = (pairs) => {
+        const entries = pairs.map(([id, element]) => entry(id, element));
+        const same = (one) => one.key.replace(/^\[\d+\] /, "");
+        const counts = new Map();
+        for (const one of entries) counts.set(same(one), (counts.get(same(one)) || 0) + 1);
+        return entries
+            .map((one, at) => {
+                const around = counts.get(same(one)) > 1 ? surroundings(pairs[at][1]) : "";
+                return around ? `${one.line} · ${around}` : one.line;
+            })
+            .join("\n");
+    };
     // Lying under a modal, a banner or a menu, or shut off by the page.
     const covered = (element) => {
         if (element.closest("[inert], [aria-hidden='true']")) return true;
@@ -581,11 +605,11 @@
         },
         find(query, role) {
             const found = matching(query, role);
-            const result = { matches: found.length, elements: found.slice(0, MAX_FOUND).map(([id, element]) => entry(id, element).line).join("\n") };
+            const result = { matches: found.length, elements: lines(found.slice(0, MAX_FOUND)) };
             if (!found.length) {
                 const holders = textHolders(query);
                 result.note = holders.length ? "the words are on the page but on no control; these elements show them" : "nothing on the page shows those words";
-                if (holders.length) result.elements = holders.map(([id, element]) => entry(id, element).line).join("\n");
+                if (holders.length) result.elements = lines(holders);
                 if (role) {
                     const wantedRole = compact(role).toLowerCase();
                     const listed = listing();
@@ -621,7 +645,7 @@
                 throw new Error("pass index, text or selector");
             }
             const { found } = match;
-            const listed = () => found.slice(0, 10).map(([id, element]) => entry(id, element).line).join("\n");
+            const listed = () => lines(found.slice(0, 10));
             if (found.length === 1 && (target.index == null || target.index === found[0][0])) return found[0][0];
             if (!found.length) throw new Error(match.none);
             if (target.index != null) {
@@ -827,8 +851,8 @@
                 const chosen = target && target.index != null && inputs.find((input) => numberOf(input) === target.index);
                 if (chosen) inputs = [chosen];
                 if (inputs.length > 1) {
-                    const lines = inputs.slice(0, 10).map((input) => entry(numberFor(input), input).line);
-                    throw new Error(`${inputs.length} file inputs match; nothing was done. Pass one of these numbers as index:\n${lines.join("\n")}`);
+                    const listed = lines(inputs.slice(0, 10).map((input) => [numberFor(input), input]));
+                    throw new Error(`${inputs.length} file inputs match; nothing was done. Pass one of these numbers as index:\n${listed}`);
                 }
                 if (target == null && !inputs.length) throw new Error("the page has no file input; pass the number or selector of the button that opens a chooser");
                 element = inputs[0] || null;

@@ -377,7 +377,9 @@ reports one you were not shown as removed.
 
 `browser_find` with a `query` lists the elements whose visible text,
 accessible name, placeholder, `name` or `id` contains it, with their numbers,
-exact matches first. `role` narrows it, as in `button`, `link`, `checkbox`,
+exact matches first, with what sits around elements that would otherwise read
+the same, such as the row of a repeated Open button. `role` narrows it, as in
+`button`, `link`, `checkbox`,
 `textbox` or `tab`; when nothing of that role is named that way, it lists
 every element of that role instead. When no control matches but the words
 show on the page, it lists the elements that show them, such as a heading or a
@@ -508,7 +510,7 @@ address on this machine, so relative links and assets load too.
 A tab's viewport follows the pane, so it changes size when the person resizes
 the pane, and a tab the pane is not showing lays out at the size it last had.
 `browser_viewport` holds the current tab at `width` and `height` in CSS pixels
-(200 to 4000), or a `preset`: `desktop` is 1280×800, `tablet` 820×1180 and
+(200 to 4000), one alone keeping the other side as it is, or a `preset`: `desktop` is 1280×800, `tablet` 820×1180 and
 `mobile` 390×844. `preset: "fit"` lets it follow the pane again. The size
 stays through reloads and navigations in that tab. The page lays out at that
 size and is scaled down to fit the pane, never up, so screenshots and `x`,
