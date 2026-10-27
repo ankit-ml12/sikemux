@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { userInfo } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -44,4 +46,10 @@ test("Sikemux Dev started from a Sikemux terminal drops that terminal's identity
     SIKEMUX_CORE_SOCKET: "/tmp/core.sock",
     SIKEMUX_SIDECAR_PATH: "/tmp/sidecar",
   });
+});
+
+test("Sikemux Dev never takes the installed app's core as its own", () => {
+  const installed = join(userInfo().homedir, ".config", "sikemux", "core.sock");
+  const env = withoutTerminalSession({ SIKEMUX_CORE_SOCKET: installed });
+  assert.equal(env.SIKEMUX_CORE_SOCKET, undefined);
 });
