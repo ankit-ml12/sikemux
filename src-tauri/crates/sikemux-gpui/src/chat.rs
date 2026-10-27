@@ -1,7 +1,7 @@
 //! An agent's chat: the rows the core folds, kept in a transcript, and how
 //! each row draws. Rows change only by the core's changes.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::FRAC_PI_2;
 use std::path::PathBuf;
@@ -448,9 +448,11 @@ impl Reading {
 /// subagents' rows, and where in the core's changes it has got to.
 pub struct Chat {
     pub transcript: Entity<Transcript<ChatRow>>,
-    looks: Rc<Looks>,
+    /// Swapped for new looks when the theme changes, which the transcript's rows draw with.
+    looks: Rc<RefCell<Rc<Looks>>>,
     /// The chat's text size, as a share of its designed size.
     scale: f32,
+    _theming: Subscription,
     /// The stage draws the welcome in an empty chat's place, and the activity line reads the
     /// last row, so both hear when the rows change.
     _rows: [Subscription; 2],
@@ -638,20 +640,22 @@ impl Chat {
         let reader = cx.new(|_| Reading::default());
         let stage = bench.clone();
         let chat = agent.clone();
-        let looks = Rc::new(Looks::new(
+        let looks = Rc::new(RefCell::new(Rc::new(Looks::new(
             Tokens::get(cx),
             provider,
             reader.clone(),
             (bench.clone(), target.asks().clone()),
             agent.clone(),
-        ));
-        let (kept_looks, text) = (looks.clone(), looks.styles.borrow().text.clone());
+            Rc::default(),
+        ))));
+        let (kept_looks, text) = (looks.clone(), looks.borrow().styles.borrow().text.clone());
         let transcript = cx.new(|cx| {
             cx.observe(&reader, |_, _, cx| cx.notify()).detach();
             Transcript::new(
                 Vec::new(),
                 text,
                 move |rows, ix, pen, window, cx| {
+                    let looks = looks.borrow().clone();
                     looks.reader.clone().update(cx, |reading, cx| {
                         row(
                             rows,
@@ -716,6 +720,27 @@ impl Chat {
                 .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
                 .ok();
         });
+        let theming = cx.observe_global::<Tokens>({
+            let (looks, transcript) = (kept_looks.clone(), transcript.downgrade());
+            let (provider, asks) = (provider.to_owned(), target.asks().clone());
+            move |cx| {
+                let old = looks.borrow().clone();
+                let new = Looks::new(
+                    Tokens::get(cx),
+                    &provider,
+                    old.reader.clone(),
+                    (old.bench.clone(), asks.clone()),
+                    old.agent.clone(),
+                    old.files.clone(),
+                );
+                new.pictures.replace(old.pictures.take());
+                let style = new.rescale(old.scale.get());
+                *looks.borrow_mut() = Rc::new(new);
+                transcript
+                    .update(cx, |transcript, cx| transcript.restyle(style, cx))
+                    .ok();
+            }
+        });
         let activity_line = cx.new(|_| status::Activity::new(provider));
         transcript.update(cx, |transcript, cx| {
             transcript.set_footer(activity_line.clone().into(), cx)
@@ -724,6 +749,7 @@ impl Chat {
             transcript,
             looks: kept_looks,
             scale: 1.,
+            _theming: theming,
             _found: found,
             finding: None,
             plan_open: false,
@@ -972,7 +998,7 @@ impl Chat {
             return;
         }
         self.scale = scale;
-        let style = self.looks.rescale(scale);
+        let style = self.looks.borrow().rescale(scale);
         self.transcript
             .update(cx, |transcript, cx| transcript.restyle(style, cx));
     }
@@ -1749,7 +1775,7 @@ pub fn pane(
             .find(|saved| saved.id == agent.id)
     }) {
         let cwd = saved.cwd.to_string_lossy();
-        (chat.looks.files.borrow_mut()).place(&cwd, &chat.target, &chat.reader);
+        (chat.looks.borrow().files.borrow_mut()).place(&cwd, &chat.target, &chat.reader);
     }
     let file_menu = chat.file_menu.as_ref().map(|open| {
         gpui_kit::deferred(
@@ -3534,6 +3560,7 @@ struct Looks {
     /// were designed, and at the chat's text size.
     designed: Styles,
     styles: RefCell<Styles>,
+    scale: Cell<f32>,
     line: Hsla,
     bubble: Hsla,
     quiet: Hsla,
@@ -3580,6 +3607,7 @@ impl Looks {
         };
         let text = styles.text.clone();
         *self.styles.borrow_mut() = styles;
+        self.scale.set(scale);
         text
     }
 }
@@ -3672,8 +3700,8 @@ impl Looks {
         reader: Entity<Reading>,
         (bench, asks): (WeakEntity<Workbench>, UnboundedSender<Ask>),
         agent: String,
+        files: Rc<RefCell<files::Files>>,
     ) -> Looks {
-        let files = Rc::new(RefCell::new(files::Files::default()));
         let mut mono = gpui_kit::font(theme::MONO);
         mono.fallbacks = Some(gpui_kit::FontFallbacks::from_fonts(vec![
             theme::MONO_ICONS.into()
@@ -3771,6 +3799,7 @@ impl Looks {
         Looks {
             styles: RefCell::new(designed.clone()),
             designed,
+            scale: Cell::new(1.),
             line: Hsla { a: 0.8, ..t.line },
             bubble: Hsla {
                 a: 0.72,
