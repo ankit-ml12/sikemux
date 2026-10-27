@@ -1789,8 +1789,6 @@ pub fn pane(
                 .into_any_element(),
         ),
     };
-    // Until the first message the composer sits under the welcome in the middle of the pane.
-    let welcoming = welcome.is_some();
     let list = chat.transcript.read(cx).list().clone();
     // The scrollbar shows whenever its list moves, and a list following the latest rows moves
     // with every streamed line; only a reader who scrolled up has a thumb, as on the Mac.
@@ -1851,16 +1849,7 @@ pub fn pane(
                         ),
                 )
         }))
-        .children(welcome.map(|welcome| {
-            div()
-                .absolute()
-                .inset_0()
-                .flex()
-                .flex_col()
-                .justify_end()
-                .pb(px(20.))
-                .child(div().w_full().flex().justify_center().child(welcome))
-        }));
+        .children(welcome.map(|welcome| crate::home::centred(welcome).absolute().inset_0()));
     let open: Vec<&Question> = bench
         .questions
         .iter()
@@ -1937,7 +1926,6 @@ pub fn pane(
             });
             composing.view.clone().into_element().isolated()
         }))
-        .when(welcoming, |pane| pane.child(div().flex_1()))
         .when(composing && cx.has_active_drag(), |pane| {
             pane.child(gpui_kit::deferred(attach::drop_hint(cx)))
         });

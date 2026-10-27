@@ -1088,6 +1088,7 @@ impl Workbench {
                 if key == crate::settings::ACTIVITY {
                     self.reads.insert(key, Value::Null);
                     self.parts.redraw(&self.parts.stage, cx);
+                    self.parts.activity.update(cx, |_, cx| cx.notify());
                 }
             }
             Update::Read("files.list", value) => {
@@ -4622,6 +4623,8 @@ pub struct Parts {
     pub finder: Entity<Part>,
     /// The welcome or the release notes over the whole window.
     pub over: Entity<Part>,
+    /// The calendar of tokens burnt, under a chat's welcome.
+    pub activity: Entity<crate::home::Activity>,
 }
 
 impl Parts {
@@ -4694,12 +4697,13 @@ impl Parts {
                 },
                 true,
             ),
+            activity: cx.new(|cx| crate::home::Activity::new(&bench, cx)),
         }
     }
 
-    /// Draws the activity calendar again, as when the pointer moves to another day.
+    /// Draws the welcome's activity again, as when the pointer moves to another day.
     pub fn redraw_activity(&self, cx: &mut App) {
-        self.redraw(&self.stage, cx);
+        self.activity.update(cx, |_, cx| cx.notify());
     }
 
     pub fn redraw(&self, part: &Entity<Part>, cx: &mut App) {

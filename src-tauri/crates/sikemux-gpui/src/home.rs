@@ -9,8 +9,9 @@ use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, point, px, quad, relative, size, Anchor, AnyElement, App, BorderStyle, Bounds,
-    Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement, MouseMoveEvent, ParentElement,
-    Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
+    Context, Div, Entity, FontWeight, Hsla, InteractiveElement, IntoElement, MouseMoveEvent,
+    ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, WeakEntity, Window,
 };
 use serde_json::Value;
 use sikemux_wire::protocol::AgentStatus;
@@ -205,8 +206,25 @@ fn asleep_in_terminal(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Work
 }
 
 /// What a chat opens on before its first message: the agent's face asking what is being made in
-/// the project.
+/// the project, over the calendar of the tokens burnt in it.
 pub fn welcome(
+    bench: &Workbench,
+    agent: Option<&AgentRow>,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
+    div()
+        .w_full()
+        .max_w(px(756.))
+        .mx(px(22.))
+        .flex()
+        .flex_col()
+        .gap(px(24.))
+        .child(greeting(bench, agent, cx))
+        .child(div().w_full().child(bench.parts.activity.clone()))
+}
+
+/// The agent's face asking what is being made in the project.
+fn greeting(
     bench: &Workbench,
     agent: Option<&AgentRow>,
     cx: &mut Context<Workbench>,
@@ -217,10 +235,8 @@ pub fn welcome(
         .map(|project| project.name.clone())
         .unwrap_or_default();
     div()
-        .mx(px(22.))
         .flex()
         .items_center()
-        .justify_center()
         .gap(px(12.))
         .child(div().flex().child(match agent {
             Some(agent) => ui::agent_mark(agent, 32., cx),
@@ -261,6 +277,58 @@ pub fn centred(welcome: impl IntoElement) -> Div {
         .flex_col()
         .justify_center()
         .child(div().w_full().flex().justify_center().child(welcome))
+}
+
+/// The welcome's calendar of the tokens burnt each day: a view of its own, drawn again when the
+/// workbench changes but not when a key is typed in the composer below it.
+pub struct Activity {
+    bench: WeakEntity<Workbench>,
+    _bench: Subscription,
+}
+
+impl Activity {
+    pub fn new(bench: &Entity<Workbench>, cx: &mut Context<Self>) -> Self {
+        Self {
+            bench: bench.downgrade(),
+            _bench: cx.observe(bench, |_, _, cx| cx.notify()),
+        }
+    }
+}
+
+impl Render for Activity {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.bench
+            .update(cx, |bench, cx| welcome_calendar(bench, cx))
+            .unwrap_or_else(|_| div().into_any_element())
+    }
+}
+
+fn welcome_calendar(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
+    let Some(summary) = bench.read("activity") else {
+        return div().into_any_element();
+    };
+    let t = Tokens::get(cx).clone();
+    let more = div()
+        .id("welcome-more")
+        .group("welcome-more")
+        .py(px(2.))
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .cursor_pointer()
+        .text_size(theme::ui_text(11.))
+        .text_color(t.ink_faint)
+        .hover(|more| more.text_color(t.text_primary))
+        .child("View activity")
+        .child(
+            ui::icon(Icon::Chevron, 10.)
+                .text_color(t.ink_faint)
+                .group_hover("welcome-more", move |icon| icon.text_color(t.text_primary)),
+        )
+        .on_click(cx.listener(|bench, _, window, cx| {
+            bench.open_settings(crate::settings::Page::Usage, window, cx)
+        }));
+    calendar(summary, bench, Some(more.into_any_element()), cx).into_any_element()
 }
 
 fn pane_header(
@@ -492,15 +560,19 @@ pub(crate) fn overview(totals: &Value, cx: &App) -> impl IntoElement {
     ))
 }
 
-/// The calendar of a year's days, coloured by the measure picked above it.
+/// The calendar of a year's days, coloured by the measure picked above it. With a `footer`, as
+/// under a chat's welcome, it shows only tokens, has no readout or measure choice, and the
+/// footer leads the legend's row.
 pub(crate) fn calendar(
     summary: &Value,
     bench: &Workbench,
+    footer: Option<AnyElement>,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let metric = bench.metric;
-    let key = METRICS[metric].0;
+    let welcome = footer.is_some();
+    let key = if welcome { "tokens" } else { METRICS[metric].0 };
     let today = (chrono::Local::now().date_naive() - epoch()).num_days();
     let start = today - (today + 3).rem_euclid(7) - (WEEKS - 1) * 7;
     let days: HashMap<i64, &Value> = summary["days"]
@@ -621,34 +693,36 @@ pub(crate) fn calendar(
         .flex()
         .flex_col()
         .gap(px(12.))
-        .child(
-            div()
-                .min_h(px(24.))
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .justify_between()
-                .gap(px(12.))
-                .child(
-                    ui::text(
-                        match hovered {
-                            Some(day) => format!(
-                                "{} · {}",
-                                long_date(day),
-                                metric_text(
-                                    key,
-                                    days.get(&day).map_or(0., |day| number(&day[key]))
-                                )
-                            ),
-                            None => readout(streaks),
-                        },
-                        12.,
-                        FontWeight::NORMAL,
+        .when(!welcome, |calendar| {
+            calendar.child(
+                div()
+                    .min_h(px(24.))
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(12.))
+                    .child(
+                        ui::text(
+                            match hovered {
+                                Some(day) => format!(
+                                    "{} · {}",
+                                    long_date(day),
+                                    metric_text(
+                                        key,
+                                        days.get(&day).map_or(0., |day| number(&day[key]))
+                                    )
+                                ),
+                                None => readout(streaks),
+                            },
+                            12.,
+                            FontWeight::NORMAL,
+                        )
+                        .text_color(t.text_secondary),
                     )
-                    .text_color(t.text_secondary),
-                )
-                .child(div().flex().gap(px(4.)).children(toggles)),
-        )
+                    .child(div().flex().gap(px(4.)).children(toggles)),
+            )
+        })
         .child(
             div()
                 .flex()
@@ -689,6 +763,7 @@ pub(crate) fn calendar(
                 .items_center()
                 .justify_end()
                 .gap(px(CELL_GAP))
+                .children(footer.map(|footer| div().flex_1().flex().child(footer)))
                 .child(small("Less".into(), &t).mr(px(4.)))
                 .children((0..5).map(|level| div().size(px(10.)).rounded(px(2.)).bg(colour(level))))
                 .child(small("More".into(), &t).ml(px(4.))),
