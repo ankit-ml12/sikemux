@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use gpui::{Context, Render};
 use gpui_kit::prelude::FluentBuilder;
@@ -281,6 +281,53 @@ fn chevron(id: impl Into<SharedString>, open: bool, tint: Hsla) -> impl IntoElem
     )
 }
 
+/// The calls a run has drawn, and those that joined it since it first drew, with when.
+/// A run first drawn live with one call has just come into the chat itself.
+struct Arrivals {
+    seen: HashSet<String>,
+    run: Option<Instant>,
+    calls: Vec<(String, Instant)>,
+}
+
+/// Whether the run `key` is still coming into the chat, and which of its calls are still
+/// coming into it. A run drawn again, as when scrolled back to, only shows.
+fn arrivals(
+    key: &str,
+    calls: &[Call],
+    live: bool,
+    window: &mut Window,
+    cx: &mut App,
+) -> (bool, HashSet<String>) {
+    let lasts = motion::ROW_ARRIVAL.lasts();
+    let now = Instant::now();
+    let state = window.use_keyed_state(
+        ElementId::Name(format!("run-arrivals:{key}").into()),
+        cx,
+        |_, _| Arrivals {
+            seen: calls
+                .iter()
+                .map(|call| call.tool.tool_call_id.clone())
+                .collect(),
+            run: (live && calls.len() == 1).then_some(now),
+            calls: Vec::new(),
+        },
+    );
+    state.update(cx, |arrivals, _| {
+        let run = arrivals.run.is_some_and(|at| at.elapsed() < lasts);
+        for call in calls {
+            let id = &call.tool.tool_call_id;
+            if arrivals.seen.insert(id.clone()) && !run {
+                arrivals.calls.push((id.clone(), now));
+            }
+        }
+        arrivals.calls.retain(|(_, at)| at.elapsed() < lasts);
+    });
+    let arrivals = state.read(cx);
+    let run = arrivals.run.is_some_and(|at| at.elapsed() < lasts);
+    let calls = arrivals.calls.iter().map(|(id, _)| id.clone()).collect();
+    (run, calls)
+}
+
 /// A run of calls: a line counting them and how long they took, and while the
 /// agent is still adding to it, or the reader opened it, each call's row.
 pub fn run(
@@ -295,8 +342,9 @@ pub fn run(
         return div().into_any_element();
     };
     let current = calls.iter().find(|call| call.running());
-    let spent: u64 = calls.iter().map(Call::took).sum();
     let key = first.id().to_owned();
+    let (run_arrives, arriving) = arrivals(&key, &calls, live, window, cx);
+    let spent: u64 = calls.iter().map(Call::took).sum();
     let open = looks
         .reading
         .tools
@@ -392,10 +440,15 @@ pub fn run(
         cx,
     );
     let body = (shown > 0.).then(|| {
-        let rows = calls
-            .iter()
-            .enumerate()
-            .map(|(ix, call)| row(call, ix + 1 == count, kind, looks, cx));
+        let rows = calls.iter().enumerate().map(|(ix, call)| {
+            let row = row(call, ix + 1 == count, kind, looks, cx);
+            let id = &call.tool.tool_call_id;
+            if !arriving.contains(id) {
+                return row;
+            }
+            let key = SharedString::from(format!("call-arrive:{id}"));
+            motion::arriving(key, motion::ROW_ARRIVAL, row).into_any_element()
+        });
         let rows = div().ml(px(6.)).py(px(2.)).flex().flex_col().children(rows);
         motion::folded(
             ElementId::Name(format!("run-body:{key}").into()),
@@ -405,13 +458,17 @@ pub fn run(
             cx,
         )
     });
-    div()
+    let run = div()
         .my(px(7.))
         .font_family(theme::MONO)
         .text_size(crate::theme::ui_text(11.))
         .child(div().flex().child(sum))
-        .children(body)
-        .into_any_element()
+        .children(body);
+    if !run_arrives {
+        return run.into_any_element();
+    }
+    let key = SharedString::from(format!("run-arrive:{key}"));
+    motion::arriving(key, motion::ROW_ARRIVAL, run).into_any_element()
 }
 
 /// One call: a tick off the run's spine, its icon and word in the colour of what

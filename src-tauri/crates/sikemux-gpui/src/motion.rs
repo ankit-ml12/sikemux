@@ -470,7 +470,8 @@ pub struct Departure {
 }
 
 /// An agent's row coming into the rail, and leaving it: content gone in 50 ms, the slot
-/// closing front-loaded, so the row answers the click at once.
+/// closing front-loaded, so the row answers the click at once. A tool call joining a chat
+/// comes in the same way.
 pub const ROW_ARRIVAL: Arrival = Arrival {
     along: Along::Down,
     grow: ARRIVE,
@@ -496,7 +497,7 @@ pub const TAB_DEPARTURE: Departure = Departure {
 };
 
 impl Arrival {
-    fn lasts(&self) -> Duration {
+    pub fn lasts(&self) -> Duration {
         self.grow
             .duration
             .max(self.slide.map_or(Duration::ZERO, |(ease, _)| ease.duration))
