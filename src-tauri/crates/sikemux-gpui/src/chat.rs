@@ -12,10 +12,10 @@ use gpui_kit::component::input::{Input, InputState, TextareaState};
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, div, px, relative, AnyElement, App, AppContext, Context, Div, Entity, Focusable,
-    FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement, KeyBinding, ParentElement,
-    Radians, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, StyledText,
-    Subscription, Task, Transformation, WeakEntity, Window,
+    actions, div, px, relative, AnyElement, App, AppContext, Context, Div, Entity, FontWeight,
+    HighlightStyle, Hsla, InteractiveElement, IntoElement, KeyBinding, ParentElement, Radians,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, StyledText, Subscription,
+    Task, Transformation, WeakEntity, Window,
 };
 use gpui_transcript::{
     AwayChanged, Change, CodeColours, EmptyChanged, FoundChanged, Markdown, Pen, Row, RowsChanged,
@@ -46,7 +46,6 @@ use crate::ui::shimmer::shimmer;
 use crate::ui::{self, Button, IconButton, Variant};
 use crate::workbench::{AgentRow, Workbench};
 use crate::worktree_switch::Switch;
-use gpui_kit::component::Sizable;
 use tokio::sync::mpsc::UnboundedSender;
 
 mod attach;
@@ -492,8 +491,6 @@ pub struct Chat {
     shown: Option<String>,
     /// The first open question when the person folded them away; another coming first unfolds them.
     folded: Option<String>,
-    /// The assumption the person chose to change, which the composer then answers.
-    writing: Option<String>,
     /// The groups of live work over the composer the reader folded away, by kind.
     groups_folded: HashSet<String>,
     /// The choice of the open question on show the arrow keys moved to.
@@ -606,6 +603,12 @@ struct Choice {
 impl Question {
     pub fn of(&self, agent: &str, state: &str) -> bool {
         self.agent_id == agent && self.state == state
+    }
+
+    /// Whether the person can answer it in `agent`'s chat: it waits on them, or the agent went
+    /// on assuming an answer they may still change.
+    pub fn asks(&self, agent: &str) -> bool {
+        self.of(agent, "open") || self.of(agent, "assumed")
     }
 
     fn title(&self, ix: usize, count: usize) -> String {
@@ -771,7 +774,6 @@ impl Chat {
             picks: HashMap::new(),
             shown: None,
             folded: None,
-            writing: None,
             groups_folded: HashSet::new(),
             cursor: None,
             recalled: None,
@@ -1339,10 +1341,6 @@ impl Chat {
         self.shown = Some(id.to_owned());
     }
 
-    pub fn write(&mut self, id: &str) {
-        self.writing = Some(id.to_owned());
-    }
-
     /// Holds the answer, then moves on to the next question still without one, or sends a lone question.
     fn pick(&mut self, id: &str, pick: Pick, open: &[&Question]) -> Option<Ask> {
         self.picks.insert(id.to_owned(), pick);
@@ -1445,7 +1443,7 @@ impl Chat {
     pub fn hint(&self, agent: &str, questions: &[Question], steer_first: bool) -> String {
         let open: Vec<&Question> = questions
             .iter()
-            .filter(|question| question.of(agent, "open"))
+            .filter(|question| question.asks(agent))
             .collect();
         if let Some(current) = self
             .current(&open)
@@ -1459,13 +1457,6 @@ impl Chat {
                 "Or answer “{}” in your own words",
                 current.title(ix, open.len())
             );
-        }
-        if let Some(asker) = self
-            .writing
-            .as_ref()
-            .and_then(|id| questions.iter().find(|question| &question.id == id))
-        {
-            return format!("Answer {}", asker.name);
         }
         let Some(head) = &self.state else {
             return "Ask about this project".into();
@@ -1668,12 +1659,6 @@ impl Chat {
             composing.tracked_context.clear();
         }
         self.recalled = None;
-        if let Some(id) = self.writing.take() {
-            return Some(Ask::Call {
-                method: "answerQuestion",
-                params: json!({ "id": id, "answer": answer_text(&text, &paths, &context) }),
-            });
-        }
         let answering = self
             .current(open)
             .filter(|question| !question.secret && !self.is_folded(open));
@@ -1879,7 +1864,7 @@ pub fn pane(
     let open: Vec<&Question> = bench
         .questions
         .iter()
-        .filter(|question| question.of(&agent.id, "open"))
+        .filter(|question| question.asks(&agent.id))
         .collect();
     let permissions = chat
         .state
@@ -1889,30 +1874,15 @@ pub fn pane(
         .iter()
         .map(|ask| permission(&agent.id, ask, chat.replying.is_some(), cx))
         .collect();
-    let assumed: Vec<_> = bench
-        .questions
-        .iter()
-        .filter(|question| question.of(&agent.id, "assumed"))
-        .map(|question| assumption(question, chat.answering.contains(&question.id), cx))
-        .collect();
-    let answered: Vec<_> = bench
+    let answered: Vec<&Question> = bench
         .questions
         .iter()
         .filter(|question| question.of(&agent.id, "answered"))
-        .map(|question| {
-            let card = answered_question(
-                None,
-                &question.text,
-                question.answer.as_deref().unwrap_or_default(),
-                question.secret,
-                Tokens::get(cx),
-            );
-            column().child(div().w_full().max_w(px(756.)).pt(px(12.)).child(card))
-        })
         .collect();
     let mut groups: Vec<AnyElement> = questions(&agent.id, chat, &open, cx).into_iter().collect();
     groups.extend(live::subagents(agent, chat, cx));
     groups.extend(live::tasks(agent, chat, cx));
+    groups.extend(waiting_answers(&agent.id, &answered, cx));
     groups.extend(live::queued(&agent.id, chat, cx));
     let stack = live::stack(groups, Tokens::get(cx));
     let covered = stack.is_some();
@@ -1939,8 +1909,6 @@ pub fn pane(
         .children(status::plan(agent, chat, cx))
         .children(status::trouble(bench, agent, chat, cx))
         .children(permissions)
-        .children(answered)
-        .children(assumed)
         .children(stack)
         .children(chat.composer.as_ref().map(|composing| {
             composing.view.update(cx, |view, cx| {
@@ -2071,7 +2039,7 @@ fn pressed<A: gpui::Action, F: Fn(&A) -> Press + 'static>(
             let open: Vec<&Question> = bench
                 .questions
                 .iter()
-                .filter(|question| question.of(&agent, "open"))
+                .filter(|question| question.asks(&agent))
                 .collect();
             let chat = bench.chats.get_mut(&agent)?;
             let (taken, ask) = chat.press(press(action), &open);
@@ -2301,81 +2269,64 @@ fn permission(
     )
 }
 
-/// A plain text button, for answering in a line of text.
-fn word(id: impl Into<SharedString>, label: &'static str, t: &Tokens) -> BaseButton {
-    let hover = t.text_primary;
-    BaseButton::new(gpui_kit::ElementId::Name(id.into()))
-        .px(px(4.))
-        .rounded(theme::RADIUS_1)
-        .text_color(t.text_secondary)
-        .hover(move |style| style.text_color(hover))
-        .child(label)
-}
-
-/// A question the agent went on without, on the assumption it stated.
-fn assumption(question: &Question, busy: bool, cx: &mut Context<Workbench>) -> impl IntoElement {
+/// Answers the agent has not read yet because it is busy, until the core hands them over.
+fn waiting_answers(
+    agent: &str,
+    answered: &[&Question],
+    cx: &mut Context<Workbench>,
+) -> Option<AnyElement> {
+    if answered.is_empty() {
+        return None;
+    }
     let t = Tokens::get(cx).clone();
-    let (fine, change) = (question.id.clone(), question.id.clone());
-    let (agent, assumed) = (
-        question.agent_id.clone(),
-        question.assumption.clone().unwrap_or_default(),
-    );
-    let said = format!("{} assumed {assumed}", question.name);
-    let bold = HighlightStyle {
-        color: Some(t.text_primary),
-        font_weight: Some(FontWeight::SEMIBOLD),
-        ..Default::default()
-    };
-    column().child(
+    let label = live::Label {
+        key: "answered".into(),
+        word: "answered".into(),
+        count: answered.len(),
+        folds: false,
+        folded: false,
+        icon: div().into_any_element(),
+        peek: Vec::new(),
+        action: None,
+    }
+    .draw(agent, cx);
+    let rows = answered.iter().map(|question| {
+        let answer = match question.secret {
+            true => "Kept private".to_owned(),
+            false => question.answer.clone().unwrap_or_default(),
+        };
         div()
-            .w_full()
-            .max_w(px(756.))
-            .min_h(px(26.))
-            .pt(px(12.))
+            .px(px(11.))
+            .pt(px(3.))
+            .pb(px(6.))
             .flex()
             .items_center()
             .gap(px(8.))
             .text_size(crate::theme::ui_text(12.))
-            .text_color(t.text_tertiary)
             .child(
-                ui::icon(Icon::Check, 14.)
-                    .flex_none()
-                    .text_color(t.text_disabled),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(t.text_tertiary)
+                    .child(question.text.clone()),
             )
             .child(
                 div()
+                    .max_w(relative(0.45))
                     .min_w_0()
                     .truncate()
-                    .child(StyledText::new(said).with_highlights([(0..question.name.len(), bold)])),
+                    .text_color(t.text_primary)
+                    .child(answer),
             )
-            .child("·")
-            .child(
-                word(format!("fine-{fine}"), "Fine", &t)
-                    .disabled(busy)
-                    .on_click(cx.listener({
-                        let agent = agent.clone();
-                        move |bench, _, _, cx| {
-                            let params = json!({ "id": fine, "fine": true });
-                            let ask = Ask::Call {
-                                method: "answerQuestion",
-                                params,
-                            };
-                            bench.ask_answering(&agent, ask, cx);
-                        }
-                    })),
-            )
-            .child(
-                word(format!("change-{change}"), "Change", &t)
-                    .disabled(busy)
-                    .on_click(cx.listener(move |bench, _, window, cx| {
-                        if let Some(chat) = bench.chats.get_mut(&agent) {
-                            chat.write(&change);
-                            if let Some(composing) = &chat.composer {
-                                window.focus(&composing.draft.focus_handle(cx), cx);
-                            }
-                        }
-                    })),
-            ),
+    });
+    Some(
+        div()
+            .flex()
+            .flex_col()
+            .child(label)
+            .children(rows)
+            .into_any_element(),
     )
 }
 
@@ -2418,7 +2369,16 @@ fn questions(
                 );
                 cx.notify();
             }))
-            .child(if count == 1 { "QUESTION" } else { "QUESTIONS" })
+            .child(
+                match (
+                    count,
+                    open.iter().all(|question| question.assumption.is_some()),
+                ) {
+                    (_, true) => "ASSUMED",
+                    (1, false) => "QUESTION",
+                    _ => "QUESTIONS",
+                },
+            )
             .child(
                 div()
                     .font_family(theme::MONO)
@@ -2546,6 +2506,27 @@ fn asking(
                     .child("⌘↵"),
             )
     });
+    let fine = current.assumption.is_some().then(|| {
+        let (agent, id) = (agent.to_owned(), current.id.clone());
+        BaseButton::new("question-fine")
+            .disabled(sending)
+            .h(px(22.))
+            .px(px(8.))
+            .flex()
+            .items_center()
+            .rounded(theme::RADIUS_2)
+            .text_size(crate::theme::ui_text(11.))
+            .bg(t.surface_chosen)
+            .text_color(t.text_primary)
+            .on_click(cx.listener(move |bench, _, _, cx| {
+                let ask = Ask::Call {
+                    method: "answerQuestion",
+                    params: json!({ "id": id, "fine": true }),
+                };
+                bench.ask_answering(&agent, ask, cx);
+            }))
+            .child("Fine")
+    });
     let fold = {
         let agent = agent.to_owned();
         let hover = t.surface_hover;
@@ -2589,6 +2570,7 @@ fn asking(
                 .overflow_hidden()
                 .children(tabs),
         )
+        .children(fine)
         .children(send)
         .child(fold);
     let mut asked = current.text.clone();
@@ -2615,6 +2597,21 @@ fn asking(
             asked.clone(),
             [(plain..asked.len(), faint)],
         ));
+    let assumed = current.assumption.as_ref().map(|assumption| {
+        let lead = format!("{} went on assuming ", current.name);
+        let said = format!("{lead}{assumption}");
+        div()
+            .px(px(12.))
+            .pb(px(4.))
+            .text_size(crate::theme::ui_text(12.5))
+            .line_height(relative(1.5))
+            .text_color(t.text_secondary)
+            .child(crate::ui::selectable::selectable(
+                SharedString::from(format!("question-assumed-{}", current.id)),
+                said,
+                [(0..lead.len(), faint)],
+            ))
+    });
     let picked = chat.picks.get(&current.id);
     let cursor = chat
         .cursor
@@ -2710,6 +2707,7 @@ fn asking(
         .flex_col()
         .child(head)
         .child(text)
+        .children(assumed)
         .when(!choices.is_empty(), |body| {
             body.child(
                 div()
@@ -3066,7 +3064,6 @@ fn composer(
     )
     .map(IntoElement::into_any_element);
     let mut composer = Composer::new(&composing.draft, &agent.provider, label, on_send, on_stop)
-        .answering(answering(bench, &agent.id, chat, cx))
         .notice(installing::notice(bench, composing, &this).or_else(|| {
             composing
                 .refusal
@@ -3379,7 +3376,7 @@ impl Workbench {
         let open: Vec<&Question> = self
             .questions
             .iter()
-            .filter(|question| question.of(&agent.id, "open"))
+            .filter(|question| question.asks(&agent.id))
             .collect();
         let asking = chat.current(&open).is_some() && !chat.is_folded(&open);
         (asking && !chat.sending_answers()).then_some(agent.id)
@@ -3491,56 +3488,6 @@ impl Workbench {
             self.switch_mode(agent, if on { "workspace-write" } else { "bypass" });
         }
     }
-}
-
-/// The chip over a draft that answers a question in the person's own words: who asked and
-/// what, and a way back to writing a message.
-fn answering(
-    bench: &Workbench,
-    agent: &str,
-    chat: &Chat,
-    cx: &mut Context<Workbench>,
-) -> Option<AnyElement> {
-    let id = chat.writing.as_ref()?;
-    let question = bench.questions.iter().find(|question| &question.id == id)?;
-    let provider = bench.shown().and_then(|view| {
-        view.workspace
-            .agents
-            .iter()
-            .find(|saved| saved.id == question.agent_id)
-            .map(|saved| saved.provider.clone())
-    });
-    let t = Tokens::get(cx).clone();
-    let (this, agent) = (cx.weak_entity(), agent.to_owned());
-    let label = format!("Answering {} · {}", question.name, question.text);
-    Some(
-        gpui_kit::component::attachment::Attachment::new()
-            .id("composer-answering")
-            .with_size(gpui_kit::component::Size::Small)
-            .tooltip(question.text.clone())
-            .media(
-                gpui_kit::component::attachment::AttachmentMedia::new().child(match provider {
-                    Some(provider) => ui::mark(&provider, 14.),
-                    None => ui::icon(Icon::Agent, 13.)
-                        .text_color(t.text_tertiary)
-                        .into_any_element(),
-                }),
-            )
-            .content(
-                gpui_kit::component::attachment::AttachmentContent::new()
-                    .title(gpui_kit::component::attachment::AttachmentTitle::new(label)),
-            )
-            .on_remove(move |_, _, cx| {
-                this.update(cx, |bench, cx| {
-                    if let Some(chat) = bench.chats.get_mut(&agent) {
-                        chat.writing = None;
-                    }
-                    bench.parts.redraw(&bench.parts.stage, cx);
-                })
-                .ok();
-            })
-            .into_any_element(),
-    )
 }
 
 pub(crate) fn tilde(path: &std::path::Path) -> String {
@@ -4050,53 +3997,71 @@ fn answered_question(
         font_weight: Some(FontWeight::SEMIBOLD),
         ..Default::default()
     };
-    let asker = asker.map(|(cli, name)| {
-        div()
-            .h(px(22.))
+    let asked = match asker {
+        Some((cli, name)) => div()
             .flex()
             .items_center()
             .gap(px(7.))
             .text_size(crate::theme::ui_text(11.))
             .text_color(t.text_tertiary)
-            .child(ui::mark(cli, 16.))
+            .child(ui::mark(cli, 14.))
             .child(
                 StyledText::new(format!("{name} asked you"))
                     .with_highlights([(0..name.len(), bold)]),
-            )
-    });
-    let answered = if secret {
-        div()
-            .flex()
-            .items_center()
-            .gap(px(6.))
-            .child(ui::icon(Icon::Shield, 12.).text_color(t.text_disabled))
-            .child("Answered, kept private")
-            .into_any_element()
+            ),
+        None => div()
+            .text_size(crate::theme::ui_text(10.))
+            .text_color(t.text_disabled)
+            .child("QUESTION"),
+    };
+    let (icon, answered) = if secret {
+        (
+            Icon::Shield,
+            div().text_color(t.text_tertiary).child("Kept private"),
+        )
     } else {
-        div()
-            .flex()
-            .flex_wrap()
-            .gap_x(px(4.))
-            .child("You answered:")
-            .child(div().text_color(t.text_primary).child(answer.to_owned()))
-            .into_any_element()
+        (
+            Icon::Check,
+            div().text_color(t.text_primary).child(answer.to_owned()),
+        )
     };
     div()
+        .w_full()
         .flex()
         .flex_col()
-        .children(asker)
+        .border_1()
+        .border_color(t.border)
+        .rounded(theme::RADIUS_3)
+        .bg(t.surface_composer)
+        .child(div().px(px(12.)).pt(px(9.)).child(asked))
         .child(
             div()
-                .text_size(crate::theme::ui_text(14.))
+                .px(px(12.))
+                .pt(px(4.))
+                .pb(px(10.))
+                .text_size(crate::theme::ui_text(13.5))
+                .line_height(relative(1.5))
                 .text_color(t.text_primary)
                 .child(question.to_owned()),
         )
         .child(
             div()
-                .mt(px(6.))
-                .text_size(crate::theme::ui_text(12.))
-                .text_color(t.text_tertiary)
-                .child(answered),
+                .px(px(12.))
+                .py(px(8.))
+                .flex()
+                .items_start()
+                .gap(px(8.))
+                .border_t_1()
+                .border_color(t.border)
+                .text_size(crate::theme::ui_text(13.))
+                .line_height(relative(1.45))
+                .child(
+                    ui::icon(icon, 12.)
+                        .flex_none()
+                        .mt(px(3.))
+                        .text_color(t.text_tertiary),
+                )
+                .child(answered.min_w_0()),
         )
 }
 

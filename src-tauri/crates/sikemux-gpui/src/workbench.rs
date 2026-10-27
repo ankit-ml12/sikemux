@@ -1775,7 +1775,7 @@ impl Workbench {
         let open: Vec<&Question> = self
             .questions
             .iter()
-            .filter(|question| question.of(agent, "open"))
+            .filter(|question| question.asks(agent))
             .collect();
         if let Some(ask) = self
             .chats

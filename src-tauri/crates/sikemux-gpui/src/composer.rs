@@ -82,8 +82,6 @@ pub struct Composer {
     heard: Option<SharedString>,
     /// The chat's text size, as a share of its designed size.
     text_scale: f32,
-    /// What the draft answers, when it answers a question rather than going out as a message.
-    answering: Option<AnyElement>,
     on_send: Act,
     on_stop: Act,
 }
@@ -115,7 +113,6 @@ impl Composer {
             dictation: None,
             heard: None,
             text_scale: 1.,
-            answering: None,
             on_send,
             on_stop,
         }
@@ -186,11 +183,6 @@ impl Composer {
 
     pub fn dictation(mut self, mic: impl Into<AnyView>, heard: Option<SharedString>) -> Self {
         (self.dictation, self.heard) = (Some(mic.into()), heard);
-        self
-    }
-
-    pub fn answering(mut self, answering: Option<AnyElement>) -> Self {
-        self.answering = answering;
         self
     }
 
@@ -348,10 +340,6 @@ impl RenderOnce for Composer {
                     .border_color(edge)
                     .rounded(theme::RADIUS_3)
                     .bg(fill)
-                    .children(
-                        self.answering
-                            .map(|answering| div().px(px(10.)).pt(px(10.)).flex().child(answering)),
-                    )
                     .children(tiles)
                     .child(
                         div()
