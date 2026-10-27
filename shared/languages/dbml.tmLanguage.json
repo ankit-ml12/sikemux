@@ -1,0 +1,217 @@
+{
+  "name": "dbml",
+  "displayName": "DBML",
+  "scopeName": "source.dbml",
+  "fileTypes": [
+    "dbml"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "match": "(?i)\\b(Table(?:Group|Partial)?)\\s+((?:\"[^\"]*\"|[\\w]+)(?:\\.(?:\"[^\"]*\"|[\\w]+))*)(?:\\s+(as)\\s+((?:\"[^\"]*\"|[\\w]+)))?",
+      "captures": {
+        "1": {
+          "name": "storage.type.dbml"
+        },
+        "2": {
+          "name": "entity.name.type.dbml"
+        },
+        "3": {
+          "name": "keyword.other.dbml"
+        },
+        "4": {
+          "name": "entity.name.type.dbml"
+        }
+      }
+    },
+    {
+      "match": "(?i)\\b(Enum)\\s+((?:\"[^\"]*\"|[\\w]+)(?:\\.(?:\"[^\"]*\"|[\\w]+))*)",
+      "captures": {
+        "1": {
+          "name": "storage.type.dbml"
+        },
+        "2": {
+          "name": "entity.name.type.dbml"
+        }
+      }
+    },
+    {
+      "match": "(?i)\\b(Project)\\s+((?:\"[^\"]*\"|[\\w]+))",
+      "captures": {
+        "1": {
+          "name": "storage.type.dbml"
+        },
+        "2": {
+          "name": "entity.name.section.dbml"
+        }
+      }
+    },
+    {
+      "match": "(?i)\\b(Ref)(?:\\s+((?:\"[^\"]*\"|[\\w]+)))?\\s*(?=[:{])",
+      "captures": {
+        "1": {
+          "name": "storage.type.dbml"
+        },
+        "2": {
+          "name": "entity.name.function.dbml"
+        }
+      }
+    },
+    {
+      "match": "(?i)\\b(Records)\\b",
+      "name": "storage.type.dbml"
+    },
+    {
+      "match": "(?i)\\b(indexes|Note|database_type)\\b(?=\\s*[:{])",
+      "name": "keyword.other.dbml"
+    },
+    {
+      "match": "~\\w+",
+      "name": "entity.name.type.dbml"
+    },
+    {
+      "match": "^\\s*((?:\"[^\"]*\"|[\\w]+))\\s+((?:\"[^\"]*\"|[\\w]+)(?:\\.(?:\"[^\"]*\"|[\\w]+))*(?:\\([^)\\n]*\\))?(?:\\[\\])?)(?=\\s*(?:\\[|$|//))",
+      "captures": {
+        "1": {
+          "name": "variable.other.property.dbml"
+        },
+        "2": {
+          "name": "support.type.dbml"
+        }
+      }
+    },
+    {
+      "include": "#settings"
+    },
+    {
+      "include": "#values"
+    },
+    {
+      "match": "<>|[<>-]",
+      "name": "keyword.operator.relationship.dbml"
+    },
+    {
+      "match": "[{}]",
+      "name": "punctuation.section.block.dbml"
+    },
+    {
+      "match": "[.,:()]",
+      "name": "punctuation.separator.dbml"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "begin": "//",
+          "end": "$",
+          "name": "comment.line.double-slash.dbml"
+        },
+        {
+          "begin": "/\\*",
+          "end": "\\*/",
+          "name": "comment.block.dbml"
+        }
+      ]
+    },
+    "settings": {
+      "begin": "\\[",
+      "end": "\\]",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.brackets.dbml"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.brackets.dbml"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "match": "(?i)\\b(pk|primary\\s+key|not\\s+null|null|unique|increment)\\b(?!\\s*:)",
+          "name": "constant.language.dbml"
+        },
+        {
+          "match": "(?i)\\b(cascade|restrict|set\\s+null|set\\s+default|no\\s+action|asc|desc|btree|hash|gin|gist|brin)\\b",
+          "name": "constant.language.dbml"
+        },
+        {
+          "match": "\\b([A-Za-z_]\\w*)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.dbml"
+            },
+            "2": {
+              "name": "punctuation.separator.dbml"
+            }
+          }
+        },
+        {
+          "include": "#values"
+        },
+        {
+          "match": "<>|[<>-]",
+          "name": "keyword.operator.relationship.dbml"
+        },
+        {
+          "match": "[.,()]",
+          "name": "punctuation.separator.dbml"
+        }
+      ]
+    },
+    "values": {
+      "patterns": [
+        {
+          "begin": "'''",
+          "end": "'''",
+          "name": "string.quoted.triple.dbml",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.dbml"
+            }
+          ]
+        },
+        {
+          "begin": "'",
+          "end": "'",
+          "name": "string.quoted.single.dbml",
+          "patterns": [
+            {
+              "match": "\\\\.",
+              "name": "constant.character.escape.dbml"
+            }
+          ]
+        },
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.dbml"
+        },
+        {
+          "begin": "`",
+          "end": "`",
+          "name": "string.template.expression.dbml"
+        },
+        {
+          "match": "#[0-9A-Fa-f]{3,8}\\b",
+          "name": "constant.other.color.dbml"
+        },
+        {
+          "match": "(?i)\\b(true|false|null)\\b",
+          "name": "constant.language.dbml"
+        },
+        {
+          "match": "-?\\b\\d+(?:\\.\\d+)?\\b",
+          "name": "constant.numeric.dbml"
+        }
+      ]
+    }
+  }
+}

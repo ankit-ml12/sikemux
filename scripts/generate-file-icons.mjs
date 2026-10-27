@@ -38,6 +38,19 @@ const appLanguages = new Set(
 );
 for (const name of ["dotenv", "docker", "make"]) appLanguages.add(name);
 
+// Languages Shiki and the icon theme lack, each a grammar and an icon of its own.
+const localDir = resolve(root, "shared/languages");
+const localLanguages = {};
+for (const file of (await readdir(localDir)).sort()) {
+  if (!file.endsWith(".tmLanguage.json")) continue;
+  const id = file.slice(0, -".tmLanguage.json".length);
+  const grammar = JSON.parse(await readFile(resolve(localDir, file), "utf8"));
+  localLanguages[id] = {
+    extensions: grammar.fileTypes ?? [],
+    icon: await readFile(resolve(localDir, `${id}.svg`), "utf8"),
+  };
+}
+
 const languages = {};
 for (const language of [...appLanguages].sort()) {
   const icon =
@@ -46,16 +59,27 @@ for (const language of [...appLanguages].sort()) {
   if (icon) languages[language] = icon;
 }
 
+for (const id of Object.keys(localLanguages)) languages[id] = id;
+
 const names = sorted(theme.fileNames);
-const extensions = sorted(theme.fileExtensions);
+const extensions = sorted({
+  ...theme.fileExtensions,
+  ...Object.fromEntries(
+    Object.entries(localLanguages).flatMap(([id, { extensions }]) =>
+      extensions.map((extension) => [extension, id]),
+    ),
+  ),
+});
 const fallback = theme.file;
 
-const used = new Set([
-  fallback,
-  ...Object.values(names),
-  ...Object.values(extensions),
-  ...Object.values(languages),
-]);
+const used = new Set(
+  [
+    fallback,
+    ...Object.values(names),
+    ...Object.values(extensions),
+    ...Object.values(languages),
+  ].filter((icon) => !localLanguages[icon]),
+);
 
 const lightVariants = {};
 for (const icon of used) {
@@ -72,6 +96,8 @@ for (const icon of [...used, ...Object.values(lightVariants)].sort()) {
     "utf8",
   );
 }
+
+for (const [id, { icon }] of Object.entries(localLanguages)) icons[id] = icon;
 
 /** Every file name an icon is for, joined by spaces so the file stays small. */
 function byIcon(record) {
@@ -160,7 +186,12 @@ try {
     "/server/app/src/chat/languages/generated/grammars.ts",
   );
   const known = sorted({
-    ...Object.fromEntries(Object.keys(GRAMMARS).map((id) => [id, id])),
+    ...Object.fromEntries(
+      [...Object.keys(GRAMMARS), ...Object.keys(localLanguages)].map((id) => [
+        id,
+        id,
+      ]),
+    ),
     ...GRAMMAR_ALIASES,
   });
   await emitPacked(

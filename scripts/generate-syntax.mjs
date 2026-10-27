@@ -43,6 +43,19 @@ for (const file of (await readdir(resolve(langsDir, "dist"))).sort()) {
   embeds[id] = [...module.matchAll(IMPORT)].map((match) => match[1]);
 }
 
+// Languages Shiki has no grammar for, kept beside the app's other shared sources.
+const localDir = resolve(root, "shared/languages");
+for (const file of (await readdir(localDir)).sort()) {
+  if (!file.endsWith(".tmLanguage.json")) continue;
+  const id = file.slice(0, -".tmLanguage.json".length);
+  if (sources[id] || aliases[id])
+    throw new Error(`${file} is already a Shiki grammar: ${id}`);
+  sources[id] = JSON.stringify(
+    JSON.parse(await readFile(resolve(localDir, file), "utf8")),
+  );
+  embeds[id] = [];
+}
+
 const grammars = Object.fromEntries(
   Object.entries(sources).map(([id, text]) => [id, JSON.parse(text)]),
 );

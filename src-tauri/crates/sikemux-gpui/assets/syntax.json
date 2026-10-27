@@ -511,34 +511,40 @@
    "at": 308267,
    "size": 2165
   },
+  "dbml": {
+   "scope": "source.dbml",
+   "requires": [],
+   "at": 310432,
+   "size": 910
+  },
   "desktop": {
    "scope": "source.desktop",
    "requires": [],
-   "at": 310432,
+   "at": 311342,
    "size": 709
   },
   "diff": {
    "scope": "source.diff",
    "requires": [],
-   "at": 311141,
+   "at": 312051,
    "size": 631
   },
   "docker": {
    "scope": "source.dockerfile",
    "requires": [],
-   "at": 311772,
+   "at": 312682,
    "size": 542
   },
   "dotenv": {
    "scope": "source.dotenv",
    "requires": [],
-   "at": 312314,
+   "at": 313224,
    "size": 475
   },
   "dream-maker": {
    "scope": "source.dm",
    "requires": [],
-   "at": 312789,
+   "at": 313699,
    "size": 2182
   },
   "edge": {
@@ -550,7 +556,7 @@
     "javascript",
     "typescript"
    ],
-   "at": 314971,
+   "at": 315881,
    "size": 547
   },
   "elixir": {
@@ -560,7 +566,7 @@
     "html",
     "javascript"
    ],
-   "at": 315518,
+   "at": 316428,
    "size": 2624
   },
   "elm": {
@@ -569,13 +575,13 @@
     "c",
     "glsl"
    ],
-   "at": 318142,
+   "at": 319052,
    "size": 2003
   },
   "emacs-lisp": {
    "scope": "source.emacs.lisp",
    "requires": [],
-   "at": 320145,
+   "at": 321055,
    "size": 198776
   },
   "erb": {
@@ -651,7 +657,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 518921,
+   "at": 519831,
    "size": 513
   },
   "erlang": {
@@ -726,7 +732,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 519434,
+   "at": 520344,
    "size": 4229
   },
   "es-tag-css": {
@@ -736,7 +742,7 @@
     "javascript",
     "typescript"
    ],
-   "at": 523663,
+   "at": 524573,
    "size": 547
   },
   "es-tag-glsl": {
@@ -747,7 +753,7 @@
     "javascript",
     "typescript"
    ],
-   "at": 524210,
+   "at": 525120,
    "size": 534
   },
   "es-tag-html": {
@@ -758,7 +764,7 @@
     "javascript",
     "typescript"
    ],
-   "at": 524744,
+   "at": 525654,
    "size": 557
   },
   "es-tag-sql": {
@@ -767,7 +773,7 @@
     "sql",
     "typescript"
    ],
-   "at": 525301,
+   "at": 526211,
    "size": 1151
   },
   "es-tag-xml": {
@@ -776,25 +782,25 @@
     "java",
     "xml"
    ],
-   "at": 526452,
+   "at": 527362,
    "size": 442
   },
   "fennel": {
    "scope": "source.fnl",
    "requires": [],
-   "at": 526894,
+   "at": 527804,
    "size": 1479
   },
   "fish": {
    "scope": "source.fish",
    "requires": [],
-   "at": 528373,
+   "at": 529283,
    "size": 1662
   },
   "fluent": {
    "scope": "source.ftl",
    "requires": [],
-   "at": 530035,
+   "at": 530945,
    "size": 835
   },
   "fortran-fixed-form": {
@@ -802,13 +808,13 @@
    "requires": [
     "fortran-free-form"
    ],
-   "at": 530870,
+   "at": 531780,
    "size": 608
   },
   "fortran-free-form": {
    "scope": "source.fortran.free",
    "requires": [],
-   "at": 531478,
+   "at": 532388,
    "size": 10933
   },
   "fsharp": {
@@ -883,7 +889,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 542411,
+   "at": 543321,
    "size": 3995
   },
   "gdresource": {
@@ -892,31 +898,31 @@
     "gdscript",
     "gdshader"
    ],
-   "at": 546406,
+   "at": 547316,
    "size": 1225
   },
   "gdscript": {
    "scope": "source.gdscript",
    "requires": [],
-   "at": 547631,
+   "at": 548541,
    "size": 3687
   },
   "gdshader": {
    "scope": "source.gdshader",
    "requires": [],
-   "at": 551318,
+   "at": 552228,
    "size": 1668
   },
   "genie": {
    "scope": "source.genie",
    "requires": [],
-   "at": 552986,
+   "at": 553896,
    "size": 1151
   },
   "gherkin": {
    "scope": "text.gherkin.feature",
    "requires": [],
-   "at": 554137,
+   "at": 555047,
    "size": 4986
   },
   "git-commit": {
@@ -924,7 +930,7 @@
    "requires": [
     "diff"
    ],
-   "at": 559123,
+   "at": 560033,
    "size": 442
   },
   "git-rebase": {
@@ -932,13 +938,13 @@
    "requires": [
     "shellscript"
    ],
-   "at": 559565,
+   "at": 560475,
    "size": 354
   },
   "gleam": {
    "scope": "source.gleam",
    "requires": [],
-   "at": 559919,
+   "at": 560829,
    "size": 761
   },
   "glimmer-js": {
@@ -949,7 +955,7 @@
     "javascript",
     "typescript"
    ],
-   "at": 560680,
+   "at": 561590,
    "size": 2771
   },
   "glimmer-ts": {
@@ -960,7 +966,7 @@
     "javascript",
     "typescript"
    ],
-   "at": 563451,
+   "at": 564361,
    "size": 2770
   },
   "glsl": {
@@ -968,25 +974,25 @@
    "requires": [
     "c"
    ],
-   "at": 566221,
+   "at": 567131,
    "size": 1320
   },
   "gn": {
    "scope": "source.gn",
    "requires": [],
-   "at": 567541,
+   "at": 568451,
    "size": 1432
   },
   "gnuplot": {
    "scope": "source.gnuplot",
    "requires": [],
-   "at": 568973,
+   "at": 569883,
    "size": 3183
   },
   "go": {
    "scope": "source.go",
    "requires": [],
-   "at": 572156,
+   "at": 573066,
    "size": 4954
   },
   "graphql": {
@@ -997,13 +1003,13 @@
     "tsx",
     "typescript"
    ],
-   "at": 577110,
+   "at": 578020,
    "size": 2311
   },
   "groovy": {
    "scope": "source.groovy",
    "requires": [],
-   "at": 579421,
+   "at": 580331,
    "size": 3517
   },
   "hack": {
@@ -1014,7 +1020,7 @@
     "javascript",
     "sql"
    ],
-   "at": 582938,
+   "at": 583848,
    "size": 26138
   },
   "haml": {
@@ -1089,7 +1095,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 609076,
+   "at": 609986,
    "size": 1694
   },
   "handlebars": {
@@ -1100,37 +1106,37 @@
     "javascript",
     "yaml"
    ],
-   "at": 610770,
+   "at": 611680,
    "size": 2220
   },
   "haskell": {
    "scope": "source.haskell",
    "requires": [],
-   "at": 612990,
+   "at": 613900,
    "size": 6262
   },
   "haxe": {
    "scope": "source.hx",
    "requires": [],
-   "at": 619252,
+   "at": 620162,
    "size": 5895
   },
   "hcl": {
    "scope": "source.hcl",
    "requires": [],
-   "at": 625147,
+   "at": 626057,
    "size": 1855
   },
   "hjson": {
    "scope": "source.hjson",
    "requires": [],
-   "at": 627002,
+   "at": 627912,
    "size": 1570
   },
   "hlsl": {
    "scope": "source.hlsl",
    "requires": [],
-   "at": 628572,
+   "at": 629482,
    "size": 2131
   },
   "html": {
@@ -1139,7 +1145,7 @@
     "css",
     "javascript"
    ],
-   "at": 630703,
+   "at": 631613,
    "size": 11507
   },
   "html-derivative": {
@@ -1149,7 +1155,7 @@
     "html",
     "javascript"
    ],
-   "at": 642210,
+   "at": 643120,
    "size": 378
   },
   "http": {
@@ -1165,7 +1171,7 @@
     "typescript",
     "xml"
    ],
-   "at": 642588,
+   "at": 643498,
    "size": 906
   },
   "hurl": {
@@ -1180,7 +1186,7 @@
     "typescript",
     "xml"
    ],
-   "at": 643494,
+   "at": 644404,
    "size": 966
   },
   "hxml": {
@@ -1188,37 +1194,37 @@
    "requires": [
     "haxe"
    ],
-   "at": 644460,
+   "at": 645370,
    "size": 812
   },
   "hy": {
    "scope": "source.hy",
    "requires": [],
-   "at": 645272,
+   "at": 646182,
    "size": 1124
   },
   "imba": {
    "scope": "source.imba",
    "requires": [],
-   "at": 646396,
+   "at": 647306,
    "size": 9258
   },
   "ini": {
    "scope": "source.ini",
    "requires": [],
-   "at": 655654,
+   "at": 656564,
    "size": 443
   },
   "java": {
    "scope": "source.java",
    "requires": [],
-   "at": 656097,
+   "at": 657007,
    "size": 4183
   },
   "javascript": {
    "scope": "source.js",
    "requires": [],
-   "at": 660280,
+   "at": 661190,
    "size": 15694
   },
   "jinja": {
@@ -1229,7 +1235,7 @@
     "javascript",
     "jinja-html"
    ],
-   "at": 675974,
+   "at": 676884,
    "size": 1135
   },
   "jinja-html": {
@@ -1240,7 +1246,7 @@
     "javascript",
     "jinja"
    ],
-   "at": 677109,
+   "at": 678019,
    "size": 283
   },
   "jison": {
@@ -1248,49 +1254,49 @@
    "requires": [
     "javascript"
    ],
-   "at": 677392,
+   "at": 678302,
    "size": 1766
   },
   "json": {
    "scope": "source.json",
    "requires": [],
-   "at": 679158,
+   "at": 680068,
    "size": 725
   },
   "json5": {
    "scope": "source.json5",
    "requires": [],
-   "at": 679883,
+   "at": 680793,
    "size": 779
   },
   "jsonc": {
    "scope": "source.json.comments",
    "requires": [],
-   "at": 680662,
+   "at": 681572,
    "size": 742
   },
   "jsonl": {
    "scope": "source.json.lines",
    "requires": [],
-   "at": 681404,
+   "at": 682314,
    "size": 738
   },
   "jsonnet": {
    "scope": "source.jsonnet",
    "requires": [],
-   "at": 682142,
+   "at": 683052,
    "size": 983
   },
   "jssm": {
    "scope": "source.jssm",
    "requires": [],
-   "at": 683125,
+   "at": 684035,
    "size": 555
   },
   "jsx": {
    "scope": "source.js.jsx",
    "requires": [],
-   "at": 683680,
+   "at": 684590,
    "size": 15779
   },
   "julia": {
@@ -1306,7 +1312,7 @@
     "regexp",
     "sql"
    ],
-   "at": 699459,
+   "at": 700369,
    "size": 4054
   },
   "just": {
@@ -1382,25 +1388,25 @@
     "xsl",
     "yaml"
    ],
-   "at": 703513,
+   "at": 704423,
    "size": 2426
   },
   "kdl": {
    "scope": "source.kdl",
    "requires": [],
-   "at": 705939,
+   "at": 706849,
    "size": 972
   },
   "kotlin": {
    "scope": "source.kotlin",
    "requires": [],
-   "at": 706911,
+   "at": 707821,
    "size": 2067
   },
   "kusto": {
    "scope": "source.kusto",
    "requires": [],
-   "at": 708978,
+   "at": 709888,
    "size": 3852
   },
   "latex": {
@@ -1475,19 +1481,19 @@
     "xsl",
     "yaml"
    ],
-   "at": 712830,
+   "at": 713740,
    "size": 6560
   },
   "lean": {
    "scope": "source.lean4",
    "requires": [],
-   "at": 719390,
+   "at": 720300,
    "size": 1860
   },
   "less": {
    "scope": "source.css.less",
    "requires": [],
-   "at": 721250,
+   "at": 722160,
    "size": 14469
   },
   "liquid": {
@@ -1498,25 +1504,25 @@
     "javascript",
     "json"
    ],
-   "at": 735719,
+   "at": 736629,
    "size": 2982
   },
   "llvm": {
    "scope": "source.llvm",
    "requires": [],
-   "at": 738701,
+   "at": 739611,
    "size": 1942
   },
   "log": {
    "scope": "text.log",
    "requires": [],
-   "at": 740643,
+   "at": 741553,
    "size": 837
   },
   "logo": {
    "scope": "source.logo",
    "requires": [],
-   "at": 741480,
+   "at": 742390,
    "size": 1410
   },
   "lua": {
@@ -1524,19 +1530,19 @@
    "requires": [
     "c"
    ],
-   "at": 742890,
+   "at": 743800,
    "size": 3038
   },
   "luau": {
    "scope": "source.luau",
    "requires": [],
-   "at": 745928,
+   "at": 746838,
    "size": 3469
   },
   "make": {
    "scope": "source.makefile",
    "requires": [],
-   "at": 749397,
+   "at": 750307,
    "size": 1699
   },
   "markdown": {
@@ -1611,7 +1617,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 751096,
+   "at": 752006,
    "size": 5521
   },
   "markdown-nix": {
@@ -1619,7 +1625,7 @@
    "requires": [
     "nix"
    ],
-   "at": 756617,
+   "at": 757527,
    "size": 377
   },
   "markdown-vue": {
@@ -1701,7 +1707,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 756994,
+   "at": 757904,
    "size": 340
   },
   "marko": {
@@ -1712,13 +1718,13 @@
     "scss",
     "typescript"
    ],
-   "at": 757334,
+   "at": 758244,
    "size": 3409
   },
   "matlab": {
    "scope": "source.matlab",
    "requires": [],
-   "at": 760743,
+   "at": 761653,
    "size": 2968
   },
   "mdc": {
@@ -1794,7 +1800,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 763711,
+   "at": 764621,
    "size": 6620
   },
   "mdx": {
@@ -1874,43 +1880,43 @@
     "xsl",
     "yaml"
    ],
-   "at": 770331,
+   "at": 771241,
    "size": 23223
   },
   "mermaid": {
    "scope": "markdown.mermaid.codeblock",
    "requires": [],
-   "at": 793554,
+   "at": 794464,
    "size": 4597
   },
   "mipsasm": {
    "scope": "source.mips",
    "requires": [],
-   "at": 798151,
+   "at": 799061,
    "size": 1105
   },
   "mojo": {
    "scope": "source.mojo",
    "requires": [],
-   "at": 799256,
+   "at": 800166,
    "size": 9064
   },
   "moonbit": {
    "scope": "source.moonbit",
    "requires": [],
-   "at": 808320,
+   "at": 809230,
    "size": 3661
   },
   "move": {
    "scope": "source.move",
    "requires": [],
-   "at": 811981,
+   "at": 812891,
    "size": 2978
   },
   "narrat": {
    "scope": "source.narrat",
    "requires": [],
-   "at": 814959,
+   "at": 815869,
    "size": 1050
   },
   "nextflow": {
@@ -1918,13 +1924,13 @@
    "requires": [
     "nextflow-groovy"
    ],
-   "at": 816009,
+   "at": 816919,
    "size": 1070
   },
   "nextflow-groovy": {
    "scope": "source.nextflow-groovy",
    "requires": [],
-   "at": 817079,
+   "at": 817989,
    "size": 2077
   },
   "nginx": {
@@ -1933,7 +1939,7 @@
     "c",
     "lua"
    ],
-   "at": 819156,
+   "at": 820066,
    "size": 4305
   },
   "nim": {
@@ -2009,7 +2015,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 823461,
+   "at": 824371,
    "size": 2911
   },
   "nix": {
@@ -2017,49 +2023,49 @@
    "requires": [
     "markdown-nix"
    ],
-   "at": 826372,
+   "at": 827282,
    "size": 2159
   },
   "nsis": {
    "scope": "source.nsis",
    "requires": [],
-   "at": 828531,
+   "at": 829441,
    "size": 3996
   },
   "nushell": {
    "scope": "source.nushell",
    "requires": [],
-   "at": 832527,
+   "at": 833437,
    "size": 5271
   },
   "objective-c": {
    "scope": "source.objc",
    "requires": [],
-   "at": 837798,
+   "at": 838708,
    "size": 23185
   },
   "objective-cpp": {
    "scope": "source.objcpp",
    "requires": [],
-   "at": 860983,
+   "at": 861893,
    "size": 29945
   },
   "ocaml": {
    "scope": "source.ocaml",
    "requires": [],
-   "at": 890928,
+   "at": 891838,
    "size": 4863
   },
   "odin": {
    "scope": "source.odin",
    "requires": [],
-   "at": 895791,
+   "at": 896701,
    "size": 2859
   },
   "openscad": {
    "scope": "source.scad",
    "requires": [],
-   "at": 898650,
+   "at": 899560,
    "size": 952
   },
   "org": {
@@ -2138,13 +2144,13 @@
     "yaml",
     "zig"
    ],
-   "at": 899602,
+   "at": 900512,
    "size": 2724
   },
   "pascal": {
    "scope": "source.pascal",
    "requires": [],
-   "at": 902326,
+   "at": 903236,
    "size": 1614
   },
   "perl": {
@@ -2157,7 +2163,7 @@
     "sql",
     "xml"
    ],
-   "at": 903940,
+   "at": 904850,
    "size": 4403
   },
   "php": {
@@ -2171,67 +2177,67 @@
     "sql",
     "xml"
    ],
-   "at": 908343,
+   "at": 909253,
    "size": 28353
   },
   "pkl": {
    "scope": "source.pkl",
    "requires": [],
-   "at": 936696,
+   "at": 937606,
    "size": 1308
   },
   "plsql": {
    "scope": "source.plsql.oracle",
    "requires": [],
-   "at": 938004,
+   "at": 938914,
    "size": 2920
   },
   "po": {
    "scope": "source.po",
    "requires": [],
-   "at": 940924,
+   "at": 941834,
    "size": 844
   },
   "polar": {
    "scope": "source.polar",
    "requires": [],
-   "at": 941768,
+   "at": 942678,
    "size": 1064
   },
   "postcss": {
    "scope": "source.css.postcss",
    "requires": [],
-   "at": 942832,
+   "at": 943742,
    "size": 1847
   },
   "powerquery": {
    "scope": "source.powerquery",
    "requires": [],
-   "at": 944679,
+   "at": 945589,
    "size": 1451
   },
   "powershell": {
    "scope": "source.powershell",
    "requires": [],
-   "at": 946130,
+   "at": 947040,
    "size": 3984
   },
   "prisma": {
    "scope": "source.prisma",
    "requires": [],
-   "at": 950114,
+   "at": 951024,
    "size": 1418
   },
   "prolog": {
    "scope": "source.prolog",
    "requires": [],
-   "at": 951532,
+   "at": 952442,
    "size": 3778
   },
   "proto": {
    "scope": "source.proto",
    "requires": [],
-   "at": 955310,
+   "at": 956220,
    "size": 1355
   },
   "pug": {
@@ -2245,25 +2251,25 @@
     "scss",
     "stylus"
    ],
-   "at": 956665,
+   "at": 957575,
    "size": 2432
   },
   "puppet": {
    "scope": "source.puppet",
    "requires": [],
-   "at": 959097,
+   "at": 960007,
    "size": 2033
   },
   "purescript": {
    "scope": "source.purescript",
    "requires": [],
-   "at": 961130,
+   "at": 962040,
    "size": 3131
   },
   "python": {
    "scope": "source.python",
    "requires": [],
-   "at": 964261,
+   "at": 965171,
    "size": 8913
   },
   "qml": {
@@ -2271,37 +2277,37 @@
    "requires": [
     "javascript"
    ],
-   "at": 973174,
+   "at": 974084,
    "size": 1295
   },
   "qmldir": {
    "scope": "source.qmldir",
    "requires": [],
-   "at": 974469,
+   "at": 975379,
    "size": 394
   },
   "qss": {
    "scope": "source.qss",
    "requires": [],
-   "at": 974863,
+   "at": 975773,
    "size": 2515
   },
   "r": {
    "scope": "source.r",
    "requires": [],
-   "at": 977378,
+   "at": 978288,
    "size": 1756
   },
   "racket": {
    "scope": "source.racket",
    "requires": [],
-   "at": 979134,
+   "at": 980044,
    "size": 14832
   },
   "raku": {
    "scope": "source.perl.6",
    "requires": [],
-   "at": 993966,
+   "at": 994876,
    "size": 2885
   },
   "razor": {
@@ -2312,49 +2318,49 @@
     "html",
     "javascript"
    ],
-   "at": 996851,
+   "at": 997761,
    "size": 3391
   },
   "rbs": {
    "scope": "source.rbs",
    "requires": [],
-   "at": 1000242,
+   "at": 1001152,
    "size": 664
   },
   "reg": {
    "scope": "source.reg",
    "requires": [],
-   "at": 1000906,
+   "at": 1001816,
    "size": 640
   },
   "regexp": {
    "scope": "source.regexp.python",
    "requires": [],
-   "at": 1001546,
+   "at": 1002456,
    "size": 1355
   },
   "rel": {
    "scope": "source.rel",
    "requires": [],
-   "at": 1002901,
+   "at": 1003811,
    "size": 1048
   },
   "riscv": {
    "scope": "source.riscv",
    "requires": [],
-   "at": 1003949,
+   "at": 1004859,
    "size": 1900
   },
   "ron": {
    "scope": "source.ron",
    "requires": [],
-   "at": 1005849,
+   "at": 1006759,
    "size": 921
   },
   "rosmsg": {
    "scope": "source.rosmsg",
    "requires": [],
-   "at": 1006770,
+   "at": 1007680,
    "size": 999
   },
   "rst": {
@@ -2429,7 +2435,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 1007769,
+   "at": 1008679,
    "size": 1981
   },
   "ruby": {
@@ -2504,13 +2510,13 @@
     "xsl",
     "yaml"
    ],
-   "at": 1009750,
+   "at": 1010660,
    "size": 5349
   },
   "rust": {
    "scope": "source.rust",
    "requires": [],
-   "at": 1015099,
+   "at": 1016009,
    "size": 2629
   },
   "sas": {
@@ -2518,25 +2524,25 @@
    "requires": [
     "sql"
    ],
-   "at": 1017728,
+   "at": 1018638,
    "size": 3724
   },
   "sass": {
    "scope": "source.sass",
    "requires": [],
-   "at": 1021452,
+   "at": 1022362,
    "size": 2414
   },
   "scala": {
    "scope": "source.scala",
    "requires": [],
-   "at": 1023866,
+   "at": 1024776,
    "size": 3817
   },
   "scheme": {
    "scope": "source.scheme",
    "requires": [],
-   "at": 1027683,
+   "at": 1028593,
    "size": 1993
   },
   "scss": {
@@ -2544,13 +2550,13 @@
    "requires": [
     "css"
    ],
-   "at": 1029676,
+   "at": 1030586,
    "size": 4074
   },
   "sdbl": {
    "scope": "source.sdbl",
    "requires": [],
-   "at": 1033750,
+   "at": 1034660,
    "size": 1943
   },
   "shaderlab": {
@@ -2558,13 +2564,13 @@
    "requires": [
     "hlsl"
    ],
-   "at": 1035693,
+   "at": 1036603,
    "size": 1985
   },
   "shellscript": {
    "scope": "source.shell",
    "requires": [],
-   "at": 1037678,
+   "at": 1038588,
    "size": 5928
   },
   "shellsession": {
@@ -2572,25 +2578,25 @@
    "requires": [
     "shellscript"
    ],
-   "at": 1043606,
+   "at": 1044516,
    "size": 340
   },
   "smalltalk": {
    "scope": "source.smalltalk.gnu",
    "requires": [],
-   "at": 1043946,
+   "at": 1044856,
    "size": 2080
   },
   "smithy": {
    "scope": "source.smithy",
    "requires": [],
-   "at": 1046026,
+   "at": 1046936,
    "size": 1451
   },
   "solidity": {
    "scope": "source.solidity",
    "requires": [],
-   "at": 1047477,
+   "at": 1048387,
    "size": 3060
   },
   "soy": {
@@ -2600,7 +2606,7 @@
     "html",
     "javascript"
    ],
-   "at": 1050537,
+   "at": 1051447,
    "size": 1518
   },
   "sparql": {
@@ -2608,25 +2614,25 @@
    "requires": [
     "turtle"
    ],
-   "at": 1052055,
+   "at": 1052965,
    "size": 731
   },
   "splunk": {
    "scope": "source.splunk_search",
    "requires": [],
-   "at": 1052786,
+   "at": 1053696,
    "size": 1464
   },
   "sql": {
    "scope": "source.sql",
    "requires": [],
-   "at": 1054250,
+   "at": 1055160,
    "size": 7342
   },
   "ssh-config": {
    "scope": "source.ssh-config",
    "requires": [],
-   "at": 1061592,
+   "at": 1062502,
    "size": 1546
   },
   "stata": {
@@ -2634,13 +2640,13 @@
    "requires": [
     "sql"
    ],
-   "at": 1063138,
+   "at": 1064048,
    "size": 12182
   },
   "stylus": {
    "scope": "source.stylus",
    "requires": [],
-   "at": 1075320,
+   "at": 1076230,
    "size": 7915
   },
   "surrealql": {
@@ -2648,7 +2654,7 @@
    "requires": [
     "javascript"
    ],
-   "at": 1083235,
+   "at": 1084145,
    "size": 3186
   },
   "svelte": {
@@ -2725,43 +2731,43 @@
     "xsl",
     "yaml"
    ],
-   "at": 1086421,
+   "at": 1087331,
    "size": 2967
   },
   "swift": {
    "scope": "source.swift",
    "requires": [],
-   "at": 1089388,
+   "at": 1090298,
    "size": 14507
   },
   "system-verilog": {
    "scope": "source.systemverilog",
    "requires": [],
-   "at": 1103895,
+   "at": 1104805,
    "size": 4764
   },
   "systemd": {
    "scope": "source.systemd",
    "requires": [],
-   "at": 1108659,
+   "at": 1109569,
    "size": 2478
   },
   "talonscript": {
    "scope": "source.talon",
    "requires": [],
-   "at": 1111137,
+   "at": 1112047,
    "size": 1424
   },
   "tasl": {
    "scope": "source.tasl",
    "requires": [],
-   "at": 1112561,
+   "at": 1113471,
    "size": 791
   },
   "tcl": {
    "scope": "source.tcl",
    "requires": [],
-   "at": 1113352,
+   "at": 1114262,
    "size": 1452
   },
   "templ": {
@@ -2771,13 +2777,13 @@
     "go",
     "javascript"
    ],
-   "at": 1114804,
+   "at": 1115714,
    "size": 5264
   },
   "terraform": {
    "scope": "source.hcl.terraform",
    "requires": [],
-   "at": 1120068,
+   "at": 1120978,
    "size": 2435
   },
   "tex": {
@@ -2785,13 +2791,13 @@
    "requires": [
     "r"
    ],
-   "at": 1122503,
+   "at": 1123413,
    "size": 2962
   },
   "toml": {
    "scope": "source.toml",
    "requires": [],
-   "at": 1125465,
+   "at": 1126375,
    "size": 1211
   },
   "ts-tags": {
@@ -2812,25 +2818,25 @@
     "typescript",
     "xml"
    ],
-   "at": 1126676,
+   "at": 1127586,
    "size": 162
   },
   "tsv": {
    "scope": "text.tsv",
    "requires": [],
-   "at": 1126838,
+   "at": 1127748,
    "size": 287
   },
   "tsx": {
    "scope": "source.tsx",
    "requires": [],
-   "at": 1127125,
+   "at": 1128035,
    "size": 15681
   },
   "turtle": {
    "scope": "source.turtle",
    "requires": [],
-   "at": 1142806,
+   "at": 1143716,
    "size": 908
   },
   "twig": {
@@ -2906,19 +2912,19 @@
     "xsl",
     "yaml"
    ],
-   "at": 1143714,
+   "at": 1144624,
    "size": 3543
   },
   "typescript": {
    "scope": "source.ts",
    "requires": [],
-   "at": 1147257,
+   "at": 1148167,
    "size": 14913
   },
   "typespec": {
    "scope": "source.tsp",
    "requires": [],
-   "at": 1162170,
+   "at": 1163080,
    "size": 2549
   },
   "typst": {
@@ -2997,43 +3003,43 @@
     "xsl",
     "yaml"
    ],
-   "at": 1164719,
+   "at": 1165629,
    "size": 9610
   },
   "v": {
    "scope": "source.v",
    "requires": [],
-   "at": 1174329,
+   "at": 1175239,
    "size": 2679
   },
   "vala": {
    "scope": "source.vala",
    "requires": [],
-   "at": 1177008,
+   "at": 1177918,
    "size": 1131
   },
   "vb": {
    "scope": "source.asp.vb.net",
    "requires": [],
-   "at": 1178139,
+   "at": 1179049,
    "size": 2272
   },
   "verilog": {
    "scope": "source.verilog",
    "requires": [],
-   "at": 1180411,
+   "at": 1181321,
    "size": 1867
   },
   "vhdl": {
    "scope": "source.vhdl",
    "requires": [],
-   "at": 1182278,
+   "at": 1183188,
    "size": 3773
   },
   "viml": {
    "scope": "source.viml",
    "requires": [],
-   "at": 1186051,
+   "at": 1186961,
    "size": 6655
   },
   "vue": {
@@ -3115,7 +3121,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 1192706,
+   "at": 1193616,
    "size": 2301
   },
   "vue-directives": {
@@ -3197,7 +3203,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 1195007,
+   "at": 1195917,
    "size": 226
   },
   "vue-html": {
@@ -3205,7 +3211,7 @@
    "requires": [
     "javascript"
    ],
-   "at": 1195233,
+   "at": 1196143,
    "size": 1577
   },
   "vue-interpolations": {
@@ -3287,7 +3293,7 @@
     "xsl",
     "yaml"
    ],
-   "at": 1196810,
+   "at": 1197720,
    "size": 201
   },
   "vue-sfc-style-variable-injection": {
@@ -3295,7 +3301,7 @@
    "requires": [
     "javascript"
    ],
-   "at": 1197011,
+   "at": 1197921,
    "size": 346
   },
   "vue-vine": {
@@ -3308,31 +3314,31 @@
     "scss",
     "stylus"
    ],
-   "at": 1197357,
+   "at": 1198267,
    "size": 16681
   },
   "vyper": {
    "scope": "source.vyper",
    "requires": [],
-   "at": 1214038,
+   "at": 1214948,
    "size": 10537
   },
   "wasm": {
    "scope": "source.wat",
    "requires": [],
-   "at": 1224575,
+   "at": 1225485,
    "size": 2111
   },
   "wenyan": {
    "scope": "source.wenyan",
    "requires": [],
-   "at": 1226686,
+   "at": 1227596,
    "size": 1022
   },
   "wgsl": {
    "scope": "source.wgsl",
    "requires": [],
-   "at": 1227708,
+   "at": 1228618,
    "size": 1330
   },
   "wikitext": {
@@ -3408,19 +3414,19 @@
     "xsl",
     "yaml"
    ],
-   "at": 1229038,
+   "at": 1229948,
    "size": 4663
   },
   "wit": {
    "scope": "source.wit",
    "requires": [],
-   "at": 1233701,
+   "at": 1234611,
    "size": 2805
   },
   "wolfram": {
    "scope": "source.wolfram",
    "requires": [],
-   "at": 1236506,
+   "at": 1237416,
    "size": 76966
   },
   "xml": {
@@ -3428,7 +3434,7 @@
    "requires": [
     "java"
    ],
-   "at": 1313472,
+   "at": 1314382,
    "size": 1116
   },
   "xsl": {
@@ -3437,25 +3443,25 @@
     "java",
     "xml"
    ],
-   "at": 1314588,
+   "at": 1315498,
    "size": 413
   },
   "yaml": {
    "scope": "source.yaml",
    "requires": [],
-   "at": 1315001,
+   "at": 1315911,
    "size": 2193
   },
   "zenscript": {
    "scope": "source.zenscript",
    "requires": [],
-   "at": 1317194,
+   "at": 1318104,
    "size": 1232
   },
   "zig": {
    "scope": "source.zig",
    "requires": [],
-   "at": 1318426,
+   "at": 1319336,
    "size": 1494
   }
  },
