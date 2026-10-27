@@ -1778,7 +1778,7 @@ pub fn pane(
                 title.clone(),
             ),
             DeskItem::Hosted { shown, .. } => shown.read(cx).desk_face(cx),
-            DeskItem::Plugin { shown, .. } => shown.read(cx).desk_face(),
+            DeskItem::Plugin { shown, .. } => shown.read(cx).desk_face(cx),
         };
         let (pick_agent, pick_item) = (agent.to_owned(), item.clone());
         let (close_agent, close_item) = (agent.to_owned(), item.clone());

@@ -741,12 +741,10 @@ impl PluginPane {
     }
 
     /// How a desk's tab names the thing shown alone: the plugin's mark and its title.
-    pub fn desk_face(&self) -> (AnyElement, String) {
+    pub fn desk_face(&self, cx: &App) -> (AnyElement, String) {
         let name = self.host.plugin.trim_start_matches("sikemux.");
-        let mark = match crate::icons::Icon::named(name) {
-            Some(icon) => ui::icon(icon, 13.).flex_none().into_any_element(),
-            None => div().into_any_element(),
-        };
+        let glyph = crate::rail::plugin_mark(&self.host.plugin).unwrap_or(Icon::Window);
+        let mark = ui::picture(glyph, 13., Tokens::get(cx).text_secondary);
         let title = self.panel.as_ref().and_then(|panel| panel.alone_title());
         (mark, title.unwrap_or_else(|| name.to_owned()))
     }
