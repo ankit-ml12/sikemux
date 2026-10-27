@@ -1,6 +1,8 @@
 //! One pull request opened from the list or a link: its head and actions over tabs for its
 //! conversation, its changed files' diffs, its commits, and its checks and merge.
 
+use std::collections::HashSet;
+
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -11,7 +13,8 @@ use serde::Deserialize;
 use serde_json::json;
 use sikemux_core::git::diff::DiffRow;
 use sikemux_wire::codehost::{
-    ChangedFile, MergeReadiness, OpenPull, Outcome, PullCommit, PullState, ReviewVerdict,
+    ChangedFile, Check, CheckTally, MergeReadiness, OpenPull, Outcome, PullCommit, PullState,
+    ReviewVerdict,
 };
 
 use super::diffs::{Changed, Diffs};
@@ -78,6 +81,9 @@ pub struct Opened {
     focused: Option<String>,
     /// The file list is folded to its head.
     list_folded: bool,
+    /// The runs in the checks folded or unfolded against how each starts: open while one
+    /// of its jobs fails or is still going, shut otherwise.
+    turned_runs: HashSet<String>,
     pub method: usize,
     pub busy: bool,
     /// The comment being written, made once the conversation first shows.
@@ -99,6 +105,7 @@ impl Opened {
             narrow: false,
             focused: None,
             list_folded: false,
+            turned_runs: HashSet::new(),
             method: 0,
             busy: false,
             draft: None,
@@ -754,11 +761,12 @@ fn merge_footer(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) ->
     };
     let mut statuses = vec![(outcome, said.to_owned(), short.to_owned())];
     if let Some(tally) = &view.checks {
-        let counted = format!("{}/{}", tally.passed, tally.total);
+        let ran = tally.total - tally.skipped;
+        let passed = tally.passed - tally.skipped;
         statuses.push((
             tally.outcome,
-            format!("{counted} checks passed"),
-            format!("{counted} checks"),
+            checks_said(tally),
+            format!("{passed}/{ran} checks"),
         ));
     }
     if let Some((outcome, title, _)) = readiness(view, area) {
@@ -1261,7 +1269,7 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .base
         .clone()
         .unwrap_or_else(|| "the base branch".into());
-    let checks = checks(view, cx);
+    let checks = checks(area, view, cx);
     let card = div()
         .m(px(10.))
         .rounded(RADIUS_2)
@@ -1355,16 +1363,322 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     }
     let (outcome, said) = reviews(view);
     let verdict = part(outcome, said, None, cx);
-    let readiness =
-        readiness(view, area).map(|(outcome, title, detail)| part(outcome, title, detail, cx));
+    let readiness = readiness(view, area).map(|(outcome, title, detail)| {
+        let files = view.conflicts.len();
+        let detail = match files {
+            0 => detail,
+            1 => Some("1 file conflicts.".to_owned()),
+            files => Some(format!("{files} files conflict.")),
+        };
+        part(outcome, title, detail, cx).children(view.conflicts.iter().map(|path| {
+            div()
+                .pl(px(22.))
+                .h(px(22.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(crate::file_icons::glyph(
+                    path.rsplit('/').next().unwrap_or(path),
+                    13.,
+                    cx,
+                ))
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .font_family(theme::MONO)
+                        .text_size(crate::theme::ui_text(11.5))
+                        .text_color(t.text_secondary)
+                        .child(path.clone()),
+                )
+        }))
+    });
     card.child(verdict)
         .children(checks)
         .children(readiness)
         .into_any_element()
 }
 
-/// The runs on the pull request's head commit, one row each under how they stand.
-fn checks(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
+/// How the checks on the head commit stand, in words: how many passed and were skipped
+/// once all pass, else what holds them up.
+fn checks_said(tally: &CheckTally) -> String {
+    let passed = tally.passed - tally.skipped;
+    if tally.passed == tally.total {
+        return match tally.skipped {
+            0 => format!("{passed} checks passed"),
+            skipped => format!("{passed} passed, {skipped} skipped"),
+        };
+    }
+    tally_summary(tally)
+}
+
+/// The checks on the pull request's head commit: each run with its jobs hanging from it,
+/// then each check an app outside the host's CI posted. A host that lists no jobs shows its
+/// runs alone.
+fn checks(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
+    if view.jobs.is_empty() {
+        return run_rows(view, cx);
+    }
+    let tally = view.checks.as_ref()?;
+    let title = match tally.passed == tally.total {
+        true => "All checks passed".to_owned(),
+        false => format!("Checks: {}", tally_summary(tally)),
+    };
+    let turned = &area.pull.as_ref()?.turned_runs;
+    let mut rows: Vec<AnyElement> = Vec::new();
+    for listed in &view.runs {
+        let run = &listed.run;
+        let jobs: Vec<&Check> = (view.jobs.iter())
+            .filter(|job| job.run_id.as_deref() == Some(run.id.as_str()))
+            .collect();
+        if jobs.is_empty() {
+            continue;
+        }
+        let stuck = jobs.iter().any(|job| {
+            matches!(
+                job.outcome,
+                Outcome::Failure | Outcome::Running | Outcome::Queued | Outcome::Blocked
+            )
+        });
+        let open = stuck != turned.contains(&run.id);
+        let skipped = jobs
+            .iter()
+            .filter(|job| job.outcome == Outcome::Skipped)
+            .count();
+        let count = match (jobs.len(), skipped) {
+            (1, _) => "1 job".to_owned(),
+            (jobs, 0) => format!("{jobs} jobs"),
+            (jobs, skipped) => format!("{jobs} jobs, {skipped} skipped"),
+        };
+        let took = super::elapsed(
+            run.started_at.as_deref().unwrap_or(&run.created_at),
+            (!listed.unfinished).then_some(run.updated_at.as_str()),
+        );
+        let key = run.id.clone();
+        rows.push(
+            check_row(
+                SharedString::from(format!("pull-run-{}", run.id)),
+                run.outcome,
+                Some(open),
+                &run.name,
+                Some(format!("#{} · {count}", run.run_number)),
+                false,
+                Some(took),
+                cx,
+            )
+            .on_click(cx.listener(move |area, _, _, cx| {
+                if let Some(opened) = &mut area.pull {
+                    if !opened.turned_runs.remove(&key) {
+                        opened.turned_runs.insert(key.clone());
+                    }
+                }
+                cx.notify();
+            }))
+            .into_any_element(),
+        );
+        if open {
+            let last = jobs.len() - 1;
+            for (at, job) in jobs.into_iter().enumerate() {
+                rows.push(job_row(view, job, at == 0, at == last, cx));
+            }
+        }
+    }
+    let grouped: HashSet<&str> = view
+        .runs
+        .iter()
+        .map(|listed| listed.run.id.as_str())
+        .collect();
+    for (at, job) in view.jobs.iter().enumerate() {
+        if job
+            .run_id
+            .as_deref()
+            .is_some_and(|run| grouped.contains(run))
+        {
+            continue;
+        }
+        let took = job
+            .started_at
+            .as_deref()
+            .map(|started| super::elapsed(started, job.finished_at.as_deref()));
+        let url = job.url.clone();
+        rows.push(
+            check_row(
+                SharedString::from(format!("pull-app-check-{at}")),
+                job.outcome,
+                None,
+                &job.name,
+                job.app.clone(),
+                job.required,
+                took,
+                cx,
+            )
+            .when_some(url, |row, url| {
+                row.on_click(move |_, _, cx| cx.open_url(&url))
+            })
+            .into_any_element(),
+        );
+    }
+    Some(
+        part(tally.outcome, title, None, cx)
+            .child(
+                div()
+                    .pl(px(22.))
+                    .mt(px(-2.))
+                    .child(ui::meta(checks_said(tally), cx)),
+            )
+            .child(div().pt(px(6.)).flex().flex_col().children(rows)),
+    )
+}
+
+/// A run, or an app's check, in the checks: its mark, a chevron while it holds jobs, its
+/// name and what else it says, a Required badge, and how long it took.
+#[allow(clippy::too_many_arguments)]
+fn check_row(
+    id: SharedString,
+    outcome: Outcome,
+    open: Option<bool>,
+    name: &str,
+    after: Option<String>,
+    required: bool,
+    took: Option<String>,
+    cx: &mut Context<HostArea>,
+) -> gpui_kit::Stateful<Div> {
+    let t = Tokens::get(cx).clone();
+    let chevron = div()
+        .w(px(12.))
+        .flex_none()
+        .flex()
+        .justify_center()
+        .children(open.map(|open| {
+            crate::motion::turn(
+                format!("{id}:chevron"),
+                crate::motion::fold_angle(open),
+                crate::motion::LIST_FOLD,
+                ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary),
+            )
+        }));
+    div()
+        .id(id.clone())
+        .h(px(ROW_HEIGHT))
+        .px(px(4.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .rounded(RADIUS_2)
+        .text_size(crate::theme::ui_text(12.5))
+        .cursor_pointer()
+        .hover(move |row| row.bg(t.surface_hover))
+        .child(chevron)
+        .child(ui::run_mark(id.clone(), outcome_word(outcome), 14., cx))
+        .child(
+            div()
+                .flex_none()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(t.text_primary)
+                .child(name.to_owned()),
+        )
+        .children(after.map(|after| {
+            div()
+                .min_w_0()
+                .truncate()
+                .text_size(crate::theme::ui_text(12.))
+                .text_color(t.text_tertiary)
+                .child(after)
+        }))
+        .child(div().flex_1())
+        .when(required, |row| row.child(required_badge(cx)))
+        .children(took.map(|took| took_cell(took, cx)))
+}
+
+/// One job of a run, hanging from it by the tree's line: its mark and name, a Required
+/// badge, and how long it took or that it was skipped. It opens its run.
+fn job_row(
+    view: &OpenPull,
+    job: &Check,
+    first: bool,
+    last: bool,
+    cx: &mut Context<HostArea>,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let skipped = job.outcome == Outcome::Skipped;
+    let took = match skipped {
+        true => Some("skipped".to_owned()),
+        false => job
+            .started_at
+            .as_deref()
+            .map(|started| super::elapsed(started, job.finished_at.as_deref())),
+    };
+    let (run, number) = (job.run_id.clone(), view.pull.number);
+    div()
+        .id(SharedString::from(format!(
+            "pull-job-{}",
+            job.job_id.as_deref().unwrap_or(&job.name)
+        )))
+        .relative()
+        .h(px(ROW_HEIGHT))
+        .pl(px(26.))
+        .pr(px(4.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .rounded(RADIUS_2)
+        .text_size(crate::theme::ui_text(12.5))
+        .text_color(if skipped {
+            t.text_tertiary
+        } else {
+            t.text_primary
+        })
+        .cursor_pointer()
+        .hover(move |row| row.bg(t.surface_hover))
+        .on_click(cx.listener(move |area, _, _, cx| {
+            if let (Some(run), true) = (&run, area.elsewhere.is_none() && area.desk.is_none()) {
+                area.open_run(run.clone(), Some(number), cx)
+            }
+        }))
+        .children(
+            crate::git::pane::tree_lines(first, last, &t)
+                .into_iter()
+                .map(|line| line.ml(px(4.))),
+        )
+        .child(ui::run_mark(
+            format!("pull-job-mark-{}", job.name),
+            outcome_word(job.outcome),
+            13.,
+            cx,
+        ))
+        .child(div().flex_1().min_w_0().truncate().child(job.name.clone()))
+        .when(job.required, |row| row.child(required_badge(cx)))
+        .children(took.map(|took| took_cell(took, cx)))
+        .into_any_element()
+}
+
+fn required_badge(cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    div()
+        .flex_none()
+        .px(px(6.))
+        .rounded_full()
+        .border_1()
+        .border_color(t.border)
+        .text_size(crate::theme::ui_text(10.5))
+        .text_color(t.text_tertiary)
+        .child("Required")
+}
+
+fn took_cell(took: String, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    div()
+        .flex_none()
+        .w(px(52.))
+        .text_right()
+        .text_size(crate::theme::ui_text(12.))
+        .font_features(theme::tabular())
+        .text_color(t.text_tertiary)
+        .child(took)
+}
+
+/// The runs on the head commit, one row each, from a host that does not list their jobs.
+fn run_rows(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
     let t = Tokens::get(cx).clone();
     let tally = view.checks.as_ref().filter(|_| !view.runs.is_empty())?;
     let summary = tally_summary(tally);
