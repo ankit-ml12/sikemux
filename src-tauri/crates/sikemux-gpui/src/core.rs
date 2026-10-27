@@ -512,6 +512,18 @@ impl Default for Home {
     }
 }
 
+impl Home {
+    /// A core someone else started and looks after, at `socket`: the window never starts or
+    /// replaces it, nor changes whether this build's core starts at login.
+    pub fn at(socket: PathBuf) -> Self {
+        Self {
+            socket,
+            launch: None,
+            manifest_dir: None,
+        }
+    }
+}
+
 /// Where the app keeps its data, its settings and its logs: the folders the Tauri app used on
 /// each system, so an install's data carries over.
 struct Folders {
@@ -996,11 +1008,10 @@ pub fn force_next_core_update() {
 /// Keeps the core starting at login while remote access is on, so phones reach this host
 /// after a restart, and stops it starting then once remote access is off.
 fn start_at_login(home: &Home, remote_on: Option<bool>) {
-    let Some(enabled) = remote_on else {
+    let (Some(enabled), Some(launch)) = (remote_on, home.launch.clone()) else {
         return;
     };
-    let launch = home.launch.clone();
-    tokio::task::spawn_blocking(move || login_item::sync(IDENTIFIER, launch.as_ref(), enabled));
+    tokio::task::spawn_blocking(move || login_item::sync(IDENTIFIER, Some(&launch), enabled));
 }
 
 /// How long Quit and Stop Everything waits for the core to stop what it runs and answer, before
