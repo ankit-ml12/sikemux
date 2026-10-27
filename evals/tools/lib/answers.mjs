@@ -1,7 +1,43 @@
+import { execFileSync } from 'node:child_process';
+import { deflateSync, crc32 } from 'node:zlib';
 import { valueMatches, toolMatches } from './match.mjs';
+import { AUTHOR, BASE_PATH } from './sandbox.mjs';
 
-const GRAY_PNG =
-  'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAoCAIAAADBrGu+AAAAOUlEQVR42u3PMQ0AAAwDoEqv9GrYuQQckD4XAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAYGLAV9/AOLIIj9iAAAAAElFTkSuQmCC';
+const pictures = new Map();
+
+// A plain picture at the size the real tool returns, so a screenshot does not look broken.
+function picture(width, height) {
+  const key = `${width}x${height}`;
+  if (pictures.has(key)) return pictures.get(key);
+  const row = Buffer.alloc(1 + width * 3);
+  const rows = [];
+  for (let y = 0; y < height; y += 1) {
+    const shade = y < 48 ? 0x2a : 0xf4;
+    row.fill(shade, 1);
+    rows.push(Buffer.from(row));
+  }
+  const chunk = (type, data) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, sum]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 2, 0, 0, 0], 8);
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.concat(rows))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]).toString('base64');
+  pictures.set(key, png);
+  return png;
+}
+
 
 const BLANK_PAGE = { url: 'about:blank', title: '', elements: [], text: '' };
 
@@ -91,7 +127,7 @@ function where(tab) {
 function pageState(tab, full) {
   return {
     ...where(tab),
-    scroll: { y: 0, height: 2400, viewport: 900 },
+    scroll: { y: tab.scrollY ?? 0, height: 2400, viewport: 900 },
     viewport: { width: 1280, height: 900 },
     elements: elementsText(tab.page),
     ...(full && tab.page.text ? { text: tab.page.text } : {}),
@@ -125,6 +161,7 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
           : { matches: 0, elements: '', note: 'nothing on the page shows those words' };
       });
     case 'browser_click':
+      if (tab && [args.index, args.text, args.selector, args.role, args.x].every((value) => value === undefined)) return { error: 'pass index, text or selector' };
       return needTab(() => ({
         ...(args.index !== undefined ? { index: args.index } : {}),
         label: args.text ?? args.selector ?? numbered(tab.page, args.index)?.replace(/^\[\d+\] /, '') ?? 'element',
@@ -144,7 +181,11 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
     case 'browser_act':
       return needTab(() => ({ steps: (args.steps ?? []).length, done: true, ...where(tab) }));
     case 'browser_scroll':
-      return needTab(() => ({ y: args.to === 'bottom' ? 1500 : args.to === 'top' ? 0 : args.deltaY ?? 600, height: 2400, viewport: 900, atBottom: args.to === 'bottom' }));
+      return needTab(() => {
+        const y = args.to === 'bottom' ? 1500 : args.to === 'top' ? 0 : Math.max(0, Math.min(1500, (tab.scrollY ?? 0) + (args.deltaY ?? 600)));
+        tab.scrollY = y;
+        return { y, height: 2400, viewport: 900, atBottom: y >= 1500 };
+      });
     case 'browser_wait':
       return needTab(() => {
         const met =
@@ -156,7 +197,7 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
     case 'browser_evaluate':
       return needTab(() => ({ result: null }));
     case 'browser_screenshot':
-      return needTab(() => ({ data: GRAY_PNG, mimeType: 'image/png', title: tab.page.title, url: tab.page.url }));
+      return needTab(() => ({ data: picture(1280, 800), mimeType: 'image/png', title: tab.page.title, url: tab.page.url }));
     case 'browser_viewport':
       return needTab(() => ({ viewport: { width: args.width ?? 1280, height: args.height ?? 900, preset: args.preset ?? null }, ...where(tab) }));
     case 'browser_switch_tab': {
@@ -178,7 +219,7 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
     case 'browser_dialog':
       return needTab(() => ({ dialog: null }));
     case 'page_preview':
-      return { value: { data: GRAY_PNG, mimeType: 'image/png', width: 756, contentHeight: 900, console: { recorded: 0, matched: 0, messages: [] } } };
+      return { value: { data: picture(756, 900), mimeType: 'image/png', width: 756, contentHeight: 900, console: { recorded: 0, matched: 0, messages: [] } } };
     case 'page_show':
       return {
         value: {
@@ -230,15 +271,7 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
     case 'who_wrote':
       return { value: { target: 'file', path: args.target, commits: [], owners: [{ kind: 'person', name: 'the person', action: 'ask the person' }], note: '' } };
     case 'git_commit':
-      return {
-        value: {
-          commit: '0f3c2a91d5e8b7c4a6f1e2d3c4b5a69788776655',
-          branch: 'refs/heads/main',
-          files: (args.paths ?? ['changed file']).map((path) => ({ path, added: 3, removed: 1 })),
-          left: [],
-          ...(args.land ? { landed: true } : {}),
-        },
-      };
+      return commit(project, args);
     case 'ask':
       return {
         value: {
@@ -260,7 +293,7 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
     case 'sim_devices':
       return { value: { devices: [{ udid: 'SIM-EVAL-1', name: 'iPhone 17', state: 'Booted', runtime: 'iOS 26.0' }] } };
     case 'sim_screenshot':
-      return { value: { data: GRAY_PNG, mimeType: 'image/png', title: 'iPhone 17', url: '' } };
+      return { value: { data: picture(390, 844), mimeType: 'image/png', title: 'iPhone 17', url: '' } };
     case 'sim_state':
       return { value: { app: 'com.example.app', elements: elementsText(fixture.sim ?? BLANK_PAGE) } };
     case 'jira_search':
@@ -278,4 +311,29 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
     default:
       return { value: { ok: true } };
   }
+}
+
+// Commits for real in the case's repo, so an agent that checks the result finds the commit it was told about.
+function commit(repo, args) {
+  if (/co-authored-by:[^\n]*claude/i.test(args.message ?? '')) {
+    return { error: "Nothing was committed: leave out the Co-Authored-By trailer naming Claude. Sikemux's footer credits the agent already." };
+  }
+  const git = (...words) => execFileSync('/usr/bin/git', words, { cwd: repo, env: { ...AUTHOR, PATH: BASE_PATH }, encoding: 'utf8' });
+  const paths = (args.paths ?? []).map((path) => (path.startsWith(`${repo}/`) ? path.slice(repo.length + 1) : path));
+  const changed = git('status', '--porcelain', '--', ...paths).trim();
+  if (!changed) {
+    if (args.land && !args.message) return { value: { landed: true, branch: 'refs/heads/main', commits: [] } };
+    return { error: paths.length ? `Nothing was committed: ${paths.join(', ')} ${paths.length === 1 ? 'has' : 'have'} nothing uncommitted in ${repo}.` : 'None of the uncommitted lines here are yours' };
+  }
+  git('add', '--', ...(paths.length ? paths : ['.']));
+  git('commit', '-q', '-m', args.message || 'Update');
+  const files = git('show', '--numstat', '--format=', 'HEAD')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [added, removed, path] = line.split('\t');
+      return { path, added: Number(added), removed: Number(removed) };
+    });
+  const left = git('status', '--porcelain', '-z').split('\0').filter(Boolean).map((entry) => entry.replace(/^.. /, ''));
+  return { value: { commit: git('rev-parse', 'HEAD').trim(), branch: 'refs/heads/main', files, left, ...(args.land ? { landed: true } : {}) } };
 }

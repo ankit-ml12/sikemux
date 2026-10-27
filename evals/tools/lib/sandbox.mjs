@@ -17,8 +17,10 @@ const NEVER_RUN = [
 ];
 const SIKEMUX_REGEX = ['^/Applications/Sikemux[^/]*\\.app(/|$)', '/Sikemux[^/]*\\.app/Contents/'];
 const SIKEMUX_PATHS = [join(REPO, 'src-tauri/target'), '/tmp/sikemux-tool-eval/hosts', '/private/tmp/sikemux-tool-eval/hosts'];
+// Other cases' homes, the run folders with every fixture and grade, and other sessions' temporary files.
+const OTHERS = [`^/private/tmp/u${'[A-Za-z0-9]'.repeat(6)}(/|$)`, '^/private/tmp/sikemux-tool-eval(/|$)', '^/private/tmp/omphome(/|$)', '^/private/tmp/claude-[0-9]+(/|$)'];
 const SIKEMUX_SOCKETS = ['.config/sikemux', 'Library/Application Support/com.nodelike.sikemux'].map((path) => join(HOME, path));
-const AUTHOR = { GIT_AUTHOR_NAME: 'nodelike', GIT_AUTHOR_EMAIL: 'dev@example.com', GIT_COMMITTER_NAME: 'nodelike', GIT_COMMITTER_EMAIL: 'dev@example.com' };
+export const AUTHOR = { GIT_AUTHOR_NAME: 'nodelike', GIT_AUTHOR_EMAIL: 'dev@example.com', GIT_COMMITTER_NAME: 'nodelike', GIT_COMMITTER_EMAIL: 'dev@example.com' };
 
 export const BASE_PATH = [
   join(HOME, '.local/bin'),
@@ -41,8 +43,16 @@ export function prepareCase(dir, testCase, { at = null, host, shell = '/bin/zsh'
   symlinkSync(root, join(dir, 'sandbox'));
   writeFileSync(join(home, '.claude.json'), JSON.stringify(claudeAccount()));
   if (shellEnv) for (const name of ['.zshenv', '.bashenv']) cpSync(shellEnv, join(home, name));
+  else writeFileSync(join(home, '.zshenv'), `[[ -o interactive ]] || ${agentZshOptions(at)}\n`);
+  writeFileSync(join(home, '.zshrc'), shellEnv ? '' : `${agentZshOptions(at)}\n`);
   writeFileSync(join(dir, 'fixture.json'), JSON.stringify(fixture, null, 1));
+  const agent = join(dir, 'agent');
+  mkdirSync(agent, { recursive: true });
+  writeFileSync(join(agent, 'shell-rules.json'), JSON.stringify(fixture.shell ?? []));
+  writeFileSync(join(agent, 'rival-rules.json'), JSON.stringify((fixture.answers ?? []).filter((rule) => [rule.tool].flat().some((name) => name.includes('.')))));
 
+  writeFileSync(join(bin, 'timeout'), TIMEOUT);
+  chmodSync(join(bin, 'timeout'), 0o755);
   for (const name of Object.keys(SHIMMED)) {
     const shim = join(bin, name);
     writeFileSync(shim, `#!/bin/sh\nexec "${process.execPath}" "${join(EVAL, 'lib/shim.mjs')}" ${name} "$@"\n`);
@@ -66,12 +76,13 @@ export function prepareCase(dir, testCase, { at = null, host, shell = '/bin/zsh'
     git('commit', '-q', '-m', commit.message);
   }
   if (fixture.remote) git('remote', 'add', 'origin', fixture.remote);
+  for (const branch of fixture.branches ?? []) git('branch', branch);
   writeFiles(repo, fixture.dirty);
 
-  writeFileSync(join(dir, 'sandbox.sb'), profile([dir, root]));
   writeFileSync(join(dir, 'tools.sb'), profile([dir, root], host));
   return {
     root,
+    agent,
     home,
     repo,
     env: {
@@ -107,7 +118,37 @@ function claudeAccount() {
 
 // The agent's profile keeps every Sikemux program out of reach: one started with the sandbox's home once replaced the person's host key.
 // The tools profile is the same without that, for the one sikemux-host the harness itself runs.
-function profile(writable, host) {
+// The zsh options Sikemux starts agents' shells with.
+function agentZshOptions(at) {
+  return readRepo('src-tauri/crates/sikemux-core/src/agent_shell.rs', at).match(/const OPTIONS: &str = "([^"]+)"/)[1];
+}
+
+// Sikemux links a GNU-style timeout beside its git shim; macOS has none.
+const TIMEOUT = `#!/bin/sh
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -k|-s|--kill-after|--signal) shift 2 ;;
+    --) shift; break ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+exec /usr/bin/perl -e '
+  my $limit = shift; my %unit = (s => 1, m => 60, h => 3600, d => 86400);
+  $limit =~ /^([0-9.]+)([smhd]?)$/ or die "timeout: invalid time interval\n";
+  my $seconds = $1 * ($unit{$2 || "s"});
+  my $child = fork; if (!$child) { exec @ARGV or exit 127 }
+  local $SIG{ALRM} = sub { kill "TERM", $child; waitpid $child, 0; exit 124 };
+  alarm $seconds; waitpid $child, 0; alarm 0; exit($? >> 8);
+' "$@"
+`;
+
+// Written once the relay's port is known: the agent reaches only that one local port.
+export function writeAgentProfile(dir, sandbox, relayPort) {
+  writeFileSync(join(dir, 'sandbox.sb'), profile([dir, sandbox.root], null, { root: sandbox.root, agent: sandbox.agent, relayPort }));
+}
+
+function profile(writable, host, own) {
   const quote = (path) => JSON.stringify(path);
   const sikemux = [...SIKEMUX_REGEX.map((pattern) => `(regex #"${pattern}")`), ...SIKEMUX_PATHS.map((path) => `(subpath ${quote(path)})`)].join(' ');
   return [
@@ -123,6 +164,15 @@ function profile(writable, host) {
     '(deny signal)',
     '(allow signal (target same-sandbox))',
     ...(host ? [`(allow file-read* process-exec (literal ${quote(host)}))`] : [`(deny file-read* process-exec ${sikemux})`]),
+    ...(own
+      ? [
+          `(deny file-read-data (literal ${quote(HOME)}))`,
+          `(deny process-exec (subpath "/Applications") (subpath ${quote(join(HOME, 'Applications'))}))`,
+          '(deny network-outbound (remote ip "localhost:*"))',
+          ...(own.relayPort ? [`(allow network-outbound (remote ip "localhost:${own.relayPort}"))`] : []),
+        ]
+      : []),
+    ...(own ? [`(deny file-read* ${OTHERS.map((pattern) => `(regex #"${pattern}")`).join(' ')})`, `(allow file-read* (subpath ${quote(own.root)}) (subpath ${quote(own.agent)}) (regex #"^/private/tmp/claude-[0-9]+/${own.root.replace(/[^A-Za-z0-9]/g, '-')}-") (literal ${quote(`/private/tmp/claude-${process.getuid()}`)}))`] : []),
     '',
   ].join('\n');
 }

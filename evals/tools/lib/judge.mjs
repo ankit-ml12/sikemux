@@ -35,7 +35,7 @@ export async function judge({ testCase, outcome, dir, sandbox }) {
 export function readVerdict(folder) {
   try {
     const answer = JSON.parse(readFileSync(join(folder, 'transcript.jsonl'), 'utf8'));
-    const verdict = JSON.parse(answer.result.slice(answer.result.indexOf('{'), answer.result.lastIndexOf('}') + 1));
+    const verdict = JSON.parse(answer.result.match(/\{[^{}]*"pass"[^{}]*\}/)[0]);
     return { pass: Boolean(verdict.pass), why: String(verdict.why ?? ''), cost: answer.total_cost_usd ?? 0 };
   } catch {
     return null;

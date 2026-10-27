@@ -4,8 +4,7 @@ import { valueMatches, toolMatches } from './match.mjs';
 
 const [specPath, caseDir] = process.argv.slice(2);
 const spec = JSON.parse(readFileSync(specPath, 'utf8'));
-const fixture = JSON.parse(readFileSync(`${caseDir}/fixture.json`, 'utf8'));
-const rules = (fixture.answers ?? []).filter((rule) => [rule.tool].flat().some((name) => name.startsWith(`${spec.name}.`)));
+const rules = JSON.parse(readFileSync(`${caseDir}/agent/rival-rules.json`, 'utf8')).filter((rule) => [rule.tool].flat().some((name) => name.startsWith(`${spec.name}.`)));
 
 const emit = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 

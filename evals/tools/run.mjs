@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { loadSurface, REPO, SIGNED_IN_PLUGINS } from './lib/surface.mjs';
 import { startCore } from './lib/core.mjs';
-import { prepareCase } from './lib/sandbox.mjs';
+import { prepareCase, writeAgentProfile } from './lib/sandbox.mjs';
 import { MODELS, mcpServers, runClaude, readClaude, killAll } from './lib/runners.mjs';
 import { startTools } from './lib/tools.mjs';
 import { runOmp, readOmp } from './lib/omp.mjs';
@@ -259,7 +259,9 @@ async function judgeOnce(testCase, outcome, dir, sandbox) {
   const again = join(dir, 'rejudge');
   rmSync(again, { recursive: true, force: true });
   mkdirSync(again, { recursive: true });
-  const verdict = await judge({ testCase, outcome, dir: again, sandbox: prepareCase(again, testCase, { at, host: HOST }) });
+  const fresh = prepareCase(again, testCase, { at, host: HOST });
+  writeAgentProfile(again, fresh, null);
+  const verdict = await judge({ testCase, outcome, dir: again, sandbox: fresh });
   dropSandbox(again);
   return verdict;
 }
@@ -286,6 +288,7 @@ async function runAgent(variant, testCase, dir) {
   const core = await startCore({ surface, fixture, project: sandbox.repo, endpointFile: endpoint, logFile: join(dir, 'core.jsonl') });
   roots.add(sandbox.root);
   const tools = await startTools({ host: HOST, endpoint, sandbox, profile: join(dir, 'tools.sb') });
+  writeAgentProfile(dir, sandbox, tools.port);
   const servers = mcpServers({ tools: tools.config, dir, rivals: fixture.rivals });
   const limits = { maxTurns: testCase.maxTurns ?? Number(options.turns), timeoutMs: Number(options.timeout) * 1000 };
   let outcome;

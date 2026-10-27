@@ -19,7 +19,7 @@ const EXTENSION = `export default function (pi) {
 export async function runOmp({ model, dir, sandbox, servers, prompt, maxTurns, timeoutMs }) {
   const key = process.env.TOOL_EVAL_LITHOS_KEY_FILE ? readFileSync(process.env.TOOL_EVAL_LITHOS_KEY_FILE, 'utf8').trim() : process.env.TOOL_EVAL_LITHOS_KEY;
   if (!key) throw new Error('DeepSeek runs need TOOL_EVAL_LITHOS_KEY_FILE, a file holding the LithosAI key');
-  const extension = join(dir, 'omp-model-provider.js');
+  const extension = join(dir, 'agent', 'omp-model-provider.js');
   writeFileSync(extension, EXTENSION);
   writeFileSync(join(sandbox.repo, '.mcp.json'), JSON.stringify(servers, null, 1));
   const entry = { id: model, input: ['text'] };
@@ -33,20 +33,26 @@ export async function runOmp({ model, dir, sandbox, servers, prompt, maxTurns, t
 
 const BUILT_IN = { bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', web_search: 'WebSearch', task: 'Task', todo: 'TodoWrite' };
 
+function mcpTool(device, servers) {
+  const server = servers.find((one) => device.startsWith(`${one.replace(/[^A-Za-z0-9]/g, '_')}_`));
+  const tool = server ? device.slice(server.length + 1) : device;
+  return !server || server === 'sikemux-tools' ? tool : `${server}.${tool}`;
+}
+
 function canonicalCall(name, args, servers) {
   const path = String(args.path ?? '');
+  if (name.startsWith('mcp__')) return { tool: mcpTool(name.slice('mcp__'.length), servers), args };
   if ((name === 'write' || name === 'read') && path.startsWith('xd://mcp__')) {
-    const device = path.slice('xd://mcp__'.length);
-    const server = servers.find((one) => device.startsWith(`${one.replace(/[^A-Za-z0-9]/g, '_')}_`));
-    const tool = server ? device.slice(server.length + 1) : device;
-    const qualified = !server || server === 'sikemux-tools' ? tool : `${server}.${tool}`;
+    const qualified = mcpTool(path.slice('xd://mcp__'.length), servers);
     if (name === 'read') return { tool: 'ToolSearch', args: { query: qualified } };
+    if (args.content && typeof args.content === 'object') return { tool: qualified, args: args.content };
     try {
       return { tool: qualified, args: args.content ? JSON.parse(args.content) : {} };
     } catch {
       return { tool: qualified, args: { unparsed: args.content } };
     }
   }
+  if ((name === 'write' || name === 'read') && path.startsWith('xd://')) return { tool: `omp.${path.slice('xd://'.length)}`, args };
   if (name === 'read' && /^https?:\/\//.test(path)) return { tool: 'WebFetch', args: { url: path } };
   const renamed = BUILT_IN[name] ?? name;
   return { tool: renamed, args: path && renamed !== 'Bash' ? { ...args, file_path: path } : args };

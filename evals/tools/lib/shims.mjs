@@ -1,5 +1,5 @@
 export const SHIMMED = {
-  gh: {},
+  gh: { version: 'gh version 2.81.0 (2026-09-30)' },
   aws: { stderr: 'Unable to locate credentials. You can configure credentials by running "aws configure".\n', exit: 253 },
   vercel: { stderr: 'Error: No existing credentials found. Please run `vercel login`.\n', exit: 1 },
   ps: { stdout: '  PID TTY           TIME CMD\n' },
@@ -11,7 +11,7 @@ export const SHIMMED = {
   scp: { stderr: 'ssh: Could not resolve hostname\n', exit: 255 },
   sleep: {},
   xcrun: { stderr: 'xcrun: error: no simulator is booted\n', exit: 1 },
-  xcodebuild: { stdout: '** BUILD SUCCEEDED **\n' },
+  xcodebuild: { stdout: '** BUILD SUCCEEDED **\n', version: 'Xcode 26.1\nBuild version 17B55' },
   simctl: { stderr: 'simctl: no simulator is booted\n', exit: 1 },
   screencapture: { stderr: 'screencapture: could not create image from display\n', exit: 1 },
   osascript: { stderr: 'execution error: Not authorized to send Apple events.\n', exit: 1 },
@@ -23,9 +23,9 @@ export const SHIMMED = {
   claude: { stderr: 'claude: not available in this shell\n', exit: 1 },
   codex: { stderr: 'codex: not available in this shell\n', exit: 1 },
   omp: { stderr: 'omp: not available in this shell\n', exit: 1 },
-  pnpm: {},
-  npm: {},
+  pnpm: { version: '10.20.0' },
+  npm: { version: '11.6.2' },
   npx: {},
-  cargo: { stderr: '    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.42s\n' },
+  cargo: { stderr: '    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.42s\n', version: 'cargo 1.99.0 (5f94df478 2026-08-27)' },
   make: {},
 };

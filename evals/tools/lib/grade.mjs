@@ -9,7 +9,7 @@ export const BANNED = {
   'claude-browser': { tool: 'Claude_Browser.*', why: "used Claude's own browser instead of the desk" },
   'send-message': { tool: ['SendMessage', 'ListAgents'], why: "used the CLI's own agent messaging instead of agent_*" },
   'raw-git-commit': { ...bash('/\\bgit\\s+(?:-C\\s+\\S+\\s+)?commit\\b/'), why: 'ran git commit instead of git_commit' },
-  'git-sweep': { ...bash('/\\bgit\\s+(?:add\\s+(?:-A|--all|\\.(?:\\s|$))|stash\\b|reset\\s+--hard)/m'), why: 'ran git add -A, git stash or git reset --hard' },
+  'git-sweep': { ...bash('/\\bgit\\s+(?:add\\s+(?:-A|--all|\\.(?:\\s|$))|stash\\b(?!\\s+(?:list|show)\\b)|reset\\s+--hard)/m'), why: 'ran git add -A, git stash or git reset --hard' },
   'sleep-poll': { ...bash('/(?:^|[;&|]\\s*)sleep\\s+\\d+(?:\\.\\d+)?\\s*(?:;|&&|$)/m'), why: 'waited by sleeping' },
 };
 

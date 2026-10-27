@@ -31,6 +31,7 @@ export async function startTools({ host, endpoint, sandbox, profile }) {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
+    port: server.address().port,
     config: { command: process.execPath, args: [join(import.meta.dirname, 'relay.mjs'), String(server.address().port)] },
     close() {
       for (const tools of servers) tools.kill('SIGKILL');

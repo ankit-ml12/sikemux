@@ -65,7 +65,7 @@ export function run({ command, args, cwd, env, dir, timeoutMs, profile = join(di
 }
 
 export async function runClaude({ model, search, dir, sandbox, servers, prompt, maxTurns, timeoutMs }) {
-  const config = join(dir, 'mcp.json');
+  const config = join(dir, 'agent', 'mcp.json');
   writeFileSync(config, JSON.stringify(servers, null, 1));
   const args = [
     '-p',
