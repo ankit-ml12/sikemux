@@ -18,7 +18,9 @@ import { ComposerInput } from '@/chat/ComposerInput';
 import { fitting, uploadEach, type Attachment } from '@/chat/uploads';
 import type { StashItem } from '@/stash/api';
 import { downloadedFile, intoMessage, stashIdsOf } from '@/stash/attach';
+import { StashMenu } from '@/stash/StashMenu';
 import { takeStash } from '@/stash/store';
+import { stashQuery, withoutQuery } from '@/stash/words';
 import { MAX_ATTACHMENTS } from '@/core/wire.generated';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf } from '@/core/problem';
@@ -184,6 +186,7 @@ export default function NewChat() {
   );
   const mode = chosenMode ?? launcher?.permissionMode ?? '';
   const room = MAX_ATTACHMENTS - attachments.length;
+  const mention = stashQuery(draft);
   const sendable = Boolean((draft.trim() || attachments.length) && launcher && project && live.status === 'open' && !starting);
   const blocked =
     live.status !== 'open'
@@ -207,8 +210,8 @@ export default function NewChat() {
       .catch((error: unknown) => setProblem(`Could not pick: ${problemOf(error)}`));
   };
 
-  const fromStash = (items: StashItem[]) => {
-    const put = intoMessage(items, draft, downloadedFile);
+  const fromStash = (items: StashItem[], base = draft) => {
+    const put = intoMessage(items, base, downloadedFile);
     setDraft(put.draft);
     setStashedWords((known) => [...known, ...put.words]);
     if (put.files) attach(put.files);
@@ -306,6 +309,7 @@ export default function NewChat() {
           </View>
         )}
         <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
+          {mention !== undefined ? <StashMenu query={mention} onPick={(item) => fromStash([item], withoutQuery(draft))} /> : null}
           {project ? (
             <Pressable
               style={styles.strip}

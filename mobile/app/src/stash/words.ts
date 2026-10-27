@@ -29,3 +29,27 @@ export function itemText(item: StashItem): string {
 }
 
 export const carriesFile = (item: StashItem) => item.kind === 'image' || item.kind === 'video' || item.kind === 'file';
+
+const MENTION = /(^|\s)&(\S*)$/;
+
+/** What follows an `&` that starts the last word of `draft`, or undefined when there is none. */
+export function stashQuery(draft: string): string | undefined {
+  return MENTION.exec(draft)?.[2];
+}
+
+/** `draft` without the `&` word it ends with. */
+export function withoutQuery(draft: string): string {
+  return draft.replace(MENTION, '$1').trimEnd();
+}
+
+/** The items whose title, note, link or text holds every word of `query`, ignoring case. */
+export function stashMatches(items: readonly StashItem[], query: string): StashItem[] {
+  const words = query
+    .toLowerCase()
+    .split(/[\s&]+/)
+    .filter(Boolean);
+  return items.filter((item) => {
+    const said = [itemTitle(item), item.note, item.url, item.text, item.preview?.site].filter(Boolean).join(' ').toLowerCase();
+    return words.every((word) => said.includes(word));
+  });
+}

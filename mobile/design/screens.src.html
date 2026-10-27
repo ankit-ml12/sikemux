@@ -932,6 +932,13 @@
   .stash-empty b { font-size: 16px; font-weight: 600; color: var(--text-primary); }
   .stash-empty span { font-size: 14px; line-height: 1.45; color: var(--text-tertiary); text-wrap: balance; }
   .stash-empty .dev-connect { margin-top: 10px; }
+  .mentions { display: flex; flex-direction: column; gap: 4px; margin: 0 0 8px; }
+  .mentions > span { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 5px 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-overlay); }
+  .mentions .face { flex: none; width: 34px; height: 34px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-raised); display: grid; place-items: center; color: var(--text-secondary); }
+  .mentions .face.og { border-color: transparent; background: radial-gradient(circle at 76% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 48%, #a277ff 64%, #1d2a3a 65%, #101a24 100%); }
+  .mentions .words { min-width: 0; }
+  .mentions b { display: block; font-size: 13.5px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mentions em { display: block; margin-top: 1px; font-style: normal; font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
@@ -3221,6 +3228,37 @@ expected 1 write, got 2</div>
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>The stash</b><div class="note">The sheet rises to full height under × and Stash. Each item shows what it is: a link its page's picture, title and site; photos a thumbnail; text its first line; a file its icon and name in the code face, with its size. A note shows under the title, then the site, "Text" or the size, and when. Taps number the picks as photos are, up to what the message has room for, and Add puts them on the composer: each item's note, then a link or text, goes into the message's text, as on the Mac, and the host fetches a file or photo from the stash itself, so it sits on the composer as a file, past the 10 MB a file picked on the phone may be. Once the message is sent its items leave the stash. A long press offers Remove from stash.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="mentions">
+            <span><i class="face og"></i><span class="words"><b>Stash links from your phone for agents to read later</b><em>github.com · 2m</em></span></span>
+            <span><i class="face">{{IconText:14}}</i><span class="words"><b>Stash limits: 25 MB an item, 1 GB an account</b><em>Text · 3h</em></span></span>
+          </div>
+          <div class="composer focus">
+            <div class="ta">Use the layout from &amp;sta<span class="caret"></span></div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>&amp; for the stash</b><div class="note">As on the Mac, an &amp; that starts a word lists the stash items whose title, note, link or text holds what follows it, four at most, in the boxes slash commands use: each with its picture or glyph, its title, and its note or site and age. A tap takes the &amp; word out and attaches the item as Add does. With nothing matching, one box says so; with nothing stashed, how to stash something.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

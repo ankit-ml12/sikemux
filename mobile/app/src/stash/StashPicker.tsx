@@ -127,7 +127,7 @@ export function StashPicker({
 }
 
 /** A sign-in for drawing stashed photos, which the server hands only to the account. */
-function useBearer(): string | undefined {
+export function useBearer(): string | undefined {
   const [bearer, setBearer] = useState<string>();
   useEffect(() => {
     stashToken()?.()
@@ -145,7 +145,7 @@ const KIND_ICONS: Record<StashItem['kind'], IconName> = {
   file: 'IconFile',
 };
 
-function Face({ item, bearer }: { item: StashItem; bearer: string | undefined }) {
+export function Face({ item, bearer, size = 46 }: { item: StashItem; bearer: string | undefined; size?: number }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const picture =
@@ -155,11 +155,11 @@ function Face({ item, bearer }: { item: StashItem; bearer: string | undefined })
         ? { uri: `${apiUrl()}/v1/stash/${encodeURIComponent(item.id)}/file`, headers: { authorization: `Bearer ${bearer}` } }
         : undefined;
   return (
-    <View style={[styles.face, picture && styles.pictureFace]}>
+    <View style={[styles.face, { width: size, height: size, borderRadius: size / 5 }, picture && styles.pictureFace]}>
       {picture ? (
         <Image source={picture} style={StyleSheet.absoluteFill} resizeMode="cover" resizeMethod="resize" fadeDuration={0} />
       ) : (
-        <Icon name={KIND_ICONS[item.kind]} size={18} color={colors.secondary} />
+        <Icon name={KIND_ICONS[item.kind]} size={Math.round(size * 0.39)} color={colors.secondary} />
       )}
     </View>
   );

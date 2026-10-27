@@ -25,7 +25,9 @@ import { AttachSheet } from './AttachSheet';
 import { MAX_ATTACHMENTS } from '@/core/wire.generated';
 import type { StashItem } from '@/stash/api';
 import { intoMessage, stashIdsOf } from '@/stash/attach';
+import { StashMenu } from '@/stash/StashMenu';
 import { takeStash } from '@/stash/store';
+import { stashQuery, withoutQuery } from '@/stash/words';
 import type { ChatSession } from './session';
 import type { Attachment } from './uploads';
 import { useDraft } from './useChat';
@@ -500,6 +502,7 @@ export const Composer = memo(function Composer({
   }
 
   const matches = matchingCommands(commands, draft);
+  const mention = matches.length ? undefined : stashQuery(draft);
   const sendable = Boolean(draft.trim()) || attachments.length > 0;
   const send = () => {
     const text = draft.trim();
@@ -527,8 +530,8 @@ export const Composer = memo(function Composer({
     picking.then(session.attach).catch((error: unknown) => session.report(`could not pick: ${problem(error)}`));
   };
 
-  const fromStash = (items: StashItem[]) => {
-    const put = intoMessage(items, draft, session.fromStash);
+  const fromStash = (items: StashItem[], base = draft) => {
+    const put = intoMessage(items, base, session.fromStash);
     session.setDraft(put.draft);
     setStashedWords((known) => [...known, ...put.words]);
     if (put.files) attach(put.files);
@@ -538,7 +541,8 @@ export const Composer = memo(function Composer({
     <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
       {dock}
       <Commands matches={matches} onPick={(name) => session.setDraft(`/${name} `)} />
-      {dock || matches.length ? null : strip}
+      {mention !== undefined ? <StashMenu query={mention} onPick={(item) => fromStash([item], withoutQuery(draft))} /> : null}
+      {dock || matches.length || mention !== undefined ? null : strip}
       <View style={[styles.composer, focused && { borderColor: colors.borderSelected }]} {...pullUp.panHandlers}>
         {question ? <AnsweringChip question={question} /> : null}
         {attachments.length ? <ComposerAttachments attachments={attachments} onRemove={session.removeAttachment} onRetry={send} /> : null}
