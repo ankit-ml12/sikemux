@@ -309,11 +309,6 @@ pub enum Ask {
         mode: Option<String>,
         started: Option<oneshot::Sender<String>>,
     },
-    /// Takes up one of the device view's recent chats again and brings its tab to the front.
-    ResumeChat {
-        recent: String,
-        project: String,
-    },
     /// Stops every agent and terminal the core runs.
     Shutdown,
     /// Starts the core again after it stopped on purpose.
@@ -560,7 +555,7 @@ struct Beginning {
     begun: oneshot::Sender<String>,
 }
 
-/// Starts or takes up again a chat on `client`'s core and brings its tab to the front there:
+/// Starts a chat on `client`'s core and brings its tab to the front there:
 /// as soon as `begun` names the new chat, rather than once its agent's program is ready, which
 /// takes a real agent seconds.
 async fn open_chat_on(client: Arc<CoreClient>, ask: Ask, begun: Option<oneshot::Receiver<String>>) {
@@ -596,9 +591,6 @@ async fn open_chat_on(client: Arc<CoreClient>, ask: Ask, begun: Option<oneshot::
                 Err(error) => Err(error),
             };
             (begun, project, started, shown)
-        }
-        Ask::ResumeChat { recent, project } => {
-            (client.resume_chat(recent).await, project, None, None)
         }
         _ => return,
     };
@@ -926,11 +918,6 @@ impl Target {
             mode,
             started,
         });
-    }
-
-    /// Takes up one of the place's recent chats again.
-    pub fn resume_chat(&self, recent: String, project: String) {
-        self.send(Ask::ResumeChat { recent, project });
     }
 
     /// Asks once, the answer arriving as a read under `key`.
@@ -1340,7 +1327,7 @@ async fn run(
                                         }
                                     }
                                 },
-                                ask @ (Ask::StartChat { .. } | Ask::ResumeChat { .. }) => {
+                                ask @ Ask::StartChat { .. } => {
                                     let linked = linked.clone();
                                     tokio::spawn(async move {
                                         let client = match &linked {
@@ -1437,7 +1424,7 @@ async fn run(
                                 });
                             }
                             Some(Ask::Terminal(session, ask)) => streams.ask(session, ask),
-                            Some(ask @ (Ask::StartChat { .. } | Ask::ResumeChat { .. })) => {
+                            Some(ask @ Ask::StartChat { .. }) => {
                                 let heard = match &ask {
                                     Ask::StartChat { launcher, .. } => {
                                         let (begun, heard) = oneshot::channel();

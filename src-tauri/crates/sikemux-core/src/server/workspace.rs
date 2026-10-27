@@ -393,6 +393,11 @@ pub(crate) struct SessionChoice {
     pub provider: String,
     pub session_id: String,
     pub project: PathBuf,
+    /// The worktree of `project` it ran in, when it ran in one.
+    #[serde(default)]
+    pub cwd: Option<PathBuf>,
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 /// A recent chat's saved session, as its agent's CLI names it.
@@ -1558,9 +1563,9 @@ impl Workspaces {
             launcher: String::new(),
             provider: session.provider,
             session_id: session.session_id,
-            title: String::new(),
-            project: session.project.clone(),
-            cwd: session.project,
+            title: session.title.unwrap_or_default(),
+            cwd: session.cwd.unwrap_or_else(|| session.project.clone()),
+            project: session.project,
             active_at: 0,
         });
         let choice = ResumeChoice {

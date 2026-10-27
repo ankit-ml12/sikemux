@@ -435,7 +435,7 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
     .child(tail)
     .on_click(cx.listener({
         let recent = recent.clone();
-        move |bench, _, _, _| bench.resume_chat(&recent)
+        move |bench, _, _, cx| bench.resume_chat(&recent, cx)
     }));
     let pin = pin_chat(&cx.entity(), recent);
     let unpin = recent.pinned.then(|| {
@@ -494,7 +494,7 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
                 .item(
                     PopupMenuItem::new("Open")
                         .icon(Icon::Message)
-                        .on_click(on(|bench, chat, _| bench.resume_chat(chat))),
+                        .on_click(on(|bench, chat, cx| bench.resume_chat(chat, cx))),
                 )
                 .item(
                     PopupMenuItem::new("Rename…")

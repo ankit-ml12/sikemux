@@ -75,7 +75,7 @@ impl Workbench {
                     bench.open_agent(agent);
                 } else if let Some(id) = key.strip_prefix(RESUME) {
                     if let Some(recent) = bench.saved_chat(id).cloned() {
-                        bench.resume_chat(&recent);
+                        bench.resume_chat(&recent, cx);
                     }
                 }
             },

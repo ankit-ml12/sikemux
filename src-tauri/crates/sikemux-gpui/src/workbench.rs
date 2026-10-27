@@ -3450,10 +3450,41 @@ impl Workbench {
         cx.notify();
     }
 
-    /// Takes up a recent chat again, in the project it ran in.
-    pub fn resume_chat(&self, recent: &RecentInfo) {
-        self.target()
-            .resume_chat(recent.id.clone(), recent.project.clone());
+    /// Takes up a saved chat again, in the project it ran in, and brings its tab forward.
+    /// It goes by the chat's session rather than its place in the core's list, which forgets
+    /// the oldest chats any device paged to.
+    pub fn resume_chat(&self, recent: &RecentInfo, cx: &mut Context<Self>) {
+        let Some(project) = self
+            .projects()
+            .iter()
+            .find(|known| known.id == recent.project)
+        else {
+            return;
+        };
+        let session = recent
+            .id
+            .strip_prefix(&format!("{}:", recent.provider))
+            .unwrap_or(&recent.id);
+        let asked = json!({
+            "provider": recent.provider,
+            "sessionId": session,
+            "project": project.path,
+            "cwd": recent.cwd,
+            "title": recent.title,
+        });
+        let target = self.target();
+        let taken = target.request("resumeSession", asked);
+        cx.spawn(async move |bench, cx| match taken.await {
+            Ok(taken) => {
+                let tab = json!({ "project": taken["project"], "kind": "agent", "target": taken["agentId"] });
+                target.call("openTab", tab);
+            }
+            Err(error) => {
+                let note = toast::error(format!("The chat did not open: {error}"));
+                let _ = bench.update(cx, |bench, cx| bench.notify(note, cx));
+            }
+        })
+        .detach();
     }
 
     /// Brings forward the tab `by` places from the one in front, among those `same`
