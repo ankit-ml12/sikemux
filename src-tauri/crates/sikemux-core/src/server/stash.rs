@@ -15,8 +15,8 @@ use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 
 use crate::accounts::protocol::{
-    AccountEvent, AccountEventType, StashItem, StashKind, StashList, StashTaken, StashTarget,
-    StashUpdate,
+    AccountEvent, AccountEventType, StashItem, StashKind, StashList, StashSeen, StashTaken,
+    StashTarget, StashUpdate,
 };
 
 use super::changed::Topic;
@@ -56,6 +56,7 @@ pub(crate) async fn list(core: &Core, params: ListParams) -> CoreResult<Shown> {
             list: StashList {
                 items: Vec::new(),
                 cursor: None,
+                seen_at: None,
             },
         });
     }
@@ -115,6 +116,35 @@ pub(crate) async fn remove(core: &Core, params: ItemParams) -> CoreResult<()> {
     host_request(core, Method::DELETE, &item_path(&params.id)?, None).await?;
     core.changes.changed(Topic::Stash, None, None);
     Ok(())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct SeeParams {
+    at: String,
+}
+
+/// The person has seen the stash as it stood at `at`, the newest item they saw, on every device.
+pub(crate) async fn see(core: &Core, params: SeeParams) -> CoreResult<StashSeen> {
+    let body = serde_json::to_value(StashSeen { at: params.at })?;
+    let seen = as_host(core, Method::PUT, "/v1/stash/seen", Some(body)).await?;
+    core.changes.changed(Topic::Stash, None, None);
+    Ok(seen)
+}
+
+#[derive(Serialize)]
+pub(crate) struct Kept {
+    path: PathBuf,
+}
+
+/// The item's file, kept on this host for the person to open.
+pub(crate) async fn keep(core: &Core, params: ItemParams) -> CoreResult<Kept> {
+    let item = item(core, &params.id).await?;
+    if !has_file(&item) {
+        return Err(CoreError::from("that item has no file"));
+    }
+    Ok(Kept {
+        path: download(core, &item).await?,
+    })
 }
 
 /// A picture in the stash, in base64, for an app to show small.
@@ -302,6 +332,7 @@ pub(crate) fn heard(core: &Arc<Core>, events: &[AccountEvent]) {
             AccountEventType::StashAdded
                 | AccountEventType::StashChanged
                 | AccountEventType::StashRemoved
+                | AccountEventType::StashSeen
         )
     });
     if stash_moved {
