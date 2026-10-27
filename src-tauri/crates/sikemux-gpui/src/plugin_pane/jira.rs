@@ -25,7 +25,7 @@ use super::{after, listen, Host, Panel, PluginPane};
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::toast;
-use crate::ui::{self, sign_in, Button, IconButton, Segmented, Toggle, Variant};
+use crate::ui::{self, sign_in, Button, IconButton, Toggle, Variant};
 use crate::workbench::Workbench;
 
 const API_TOKENS_PAGE: &str = "https://id.atlassian.com/manage-profile/security/api-tokens";
@@ -121,16 +121,16 @@ fn my_work() -> [(List, &'static str, Icon); 5] {
     ]
 }
 
-/// What the open issue's activity shows.
+/// What the open issue shows under its head: its description, or its activity, all of it or
+/// only its comments or its changes.
 #[derive(Clone, Copy, Default, PartialEq)]
 enum Shown {
-    All,
     #[default]
+    Description,
+    Activity,
     Comments,
     History,
 }
-
-const SHOWN: [Shown; 3] = [Shown::All, Shown::Comments, Shown::History];
 
 /// The fields of the sign-in with an API token.
 struct TokenForm {
@@ -1434,31 +1434,153 @@ impl Jira {
         let issue = &view.issue;
         let url = issue.url.clone();
         let (open_url, copy_url, key_url) = (url.clone(), url.clone(), url);
-        let sent = view.clone();
+        let dot = || div().text_color(t.text_tertiary).child("·");
+        let line = || {
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap(px(6.))
+                .text_size(crate::theme::ui_text(12.))
+                .text_color(t.text_tertiary)
+        };
+        let marked = |mark: AnyElement, words: String| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .text_color(t.text_secondary)
+                .child(mark)
+                .child(words)
+        };
+        let mut meta = line()
+            .child(status_chip(&issue.status, &issue.status_category, cx))
+            .child(
+                div()
+                    .id("jira-detail-key")
+                    .cursor_pointer()
+                    .tooltip(ui::tooltip("Open in browser"))
+                    .child(ui::mono(issue.key.clone(), 11.5, cx).text_color(jira_blue()))
+                    .on_click(move |_, _, cx| cx.open_url(&key_url)),
+            );
+        if let Some(kind) = &issue.issue_type {
+            meta = meta
+                .child(dot())
+                .child(marked(type_mark(Some(kind), cx), kind.clone()));
+        }
+        if let Some(priority) = &issue.priority {
+            meta = meta
+                .child(dot())
+                .child(marked(priority_mark(priority, cx), priority.clone()));
+        }
+        let created = view
+            .created
+            .as_deref()
+            .map(ago)
+            .filter(|ago| !ago.is_empty());
+        let reported = match (&view.reporter, created) {
+            (Some(reporter), Some(created)) => {
+                Some((reporter.name.clone(), format!("reported {created}")))
+            }
+            (Some(reporter), None) => Some((reporter.name.clone(), "reported it".to_owned())),
+            (None, Some(created)) => Some((String::new(), format!("created {created}"))),
+            (None, None) => None,
+        };
+        if let Some((who, did)) = reported {
+            meta = meta.child(dot()).child(
+                div()
+                    .flex()
+                    .gap(px(4.))
+                    .child(div().text_color(t.text_primary).child(who))
+                    .child(did),
+            );
+        }
+        let has_more = issue.due.is_some()
+            || issue.parent.is_some()
+            || issue.sprint.is_some()
+            || !view.labels.is_empty();
+        let more = has_more.then(|| {
+            line()
+                .children(
+                    issue
+                        .due
+                        .as_deref()
+                        .map(|due| due_chip(due, issue.status_category == "done", cx)),
+                )
+                .children(issue.parent.as_ref().map(|parent| epic_chip(parent, cx)))
+                .children(issue.sprint.clone().map(|sprint| {
+                    marked(
+                        ui::icon(Icon::Timer, 12.)
+                            .text_color(t.text_tertiary)
+                            .into_any_element(),
+                        sprint,
+                    )
+                }))
+                .children(view.labels.iter().map(|label| tag(label, cx)))
+        });
+        let assignee = issue.assignee.as_ref();
+        let face = host.face(
+            assignee.map_or("Unassigned", |person| person.name.as_str()),
+            assignee.and_then(|person| person.avatar_url.as_deref()),
+            36.,
+            cx,
+        );
+        let tabs = [
+            (Shown::Description, Icon::File, "Description", None),
+            (Shown::Activity, Icon::Activity, "Activity", None),
+            (
+                Shown::Comments,
+                Icon::Message,
+                "Comments",
+                Some(view.comment_count),
+            ),
+            (Shown::History, Icon::Clock, "History", None),
+        ];
+        let tabs = ui::page_tabs(
+            tabs.into_iter().map(|(shown, glyph, label, count)| {
+                let count = count.filter(|count| *count > 0).map(|count| {
+                    div()
+                        .text_size(crate::theme::ui_text(12.))
+                        .text_color(t.text_tertiary)
+                        .child(count.to_string())
+                        .into_any_element()
+                });
+                ui::page_tab("jira-tab", glyph, label, count, self.shown == shown, cx).on_click(
+                    listen::<Jira, _>(cx, move |jira, _, _, _, cx| {
+                        jira.shown = shown;
+                        cx.notify();
+                    }),
+                )
+            }),
+            None,
+        )
+        .pl(px(16. + 36. + 12.));
         let head = div()
             .id("jira-detail-head")
-            .px(px(16.))
-            .pt(px(12.))
-            .pb(px(10.))
-            .flex()
-            .flex_col()
-            .gap(px(6.))
+            .pt(px(16.))
             .border_b_1()
             .border_color(t.border)
             .child(
                 div()
+                    .px(px(16.))
                     .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(type_mark(issue.issue_type.as_deref(), cx))
+                    .items_start()
+                    .gap(px(12.))
+                    .child(face)
                     .child(
                         div()
-                            .id("jira-detail-key")
-                            .cursor_pointer()
-                            .tooltip(ui::tooltip("Open in browser"))
-                            .child(ui::mono(issue.key.clone(), 12., cx).text_color(jira_blue()))
-                            .on_click(move |_, _, cx| cx.open_url(&key_url)),
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.))
+                            .child(
+                                ui::text(issue.summary.clone(), 16., FontWeight::SEMIBOLD)
+                                    .text_color(t.text_primary)
+                                    .whitespace_normal(),
+                            )
+                            .child(meta)
+                            .children(more),
                     )
                     .child(
                         IconButton::new("jira-copy-link", Icon::Copy, "Copy link")
@@ -1472,31 +1594,18 @@ impl Jira {
                             .small()
                             .on_click(move |_, _, cx| cx.open_url(&open_url)),
                     )
-                    .child(div().flex_1())
-                    .child(
-                        Button::new("jira-send", "Send to agent board", Variant::Outline)
-                            .icon(Icon::Agent)
-                            .tooltip(
-                                "Put this issue on the open project's board as a card for agents",
-                            )
-                            .on_click(listen::<Jira, _>(cx, move |_, host, _, _, cx| {
-                                send_to_board(host.bench(), &sent, cx)
-                            })),
-                    )
-                    .child(
-                        IconButton::new("jira-close", Icon::Close, "Close the issue")
-                            .small()
-                            .on_click(listen::<Jira, _>(cx, |jira, _, _, _, cx| {
-                                jira.open(None);
-                                cx.notify();
-                            })),
-                    ),
+                    .when(!self.alone, |row| {
+                        row.child(
+                            IconButton::new("jira-close", Icon::Close, "Close the issue")
+                                .small()
+                                .on_click(listen::<Jira, _>(cx, |jira, _, _, _, cx| {
+                                    jira.open(None);
+                                    cx.notify();
+                                })),
+                        )
+                    }),
             )
-            .child(
-                ui::text(issue.summary.clone(), 15., FontWeight::SEMIBOLD)
-                    .text_color(t.text_primary)
-                    .whitespace_normal(),
-            )
+            .child(tabs.mt(px(10.)))
             .context_menu(ui::menu(issue_menu(issue, host.bench().clone())));
         let mut style = crate::editor::preview::reading_style(13., cx);
         let pane = cx.weak_entity();
@@ -1516,11 +1625,20 @@ impl Jira {
             });
         }));
         let pen = Pen::new(Rc::new(style));
-        let actions = self.actions(&view, site, window, cx);
-        let fields = self.fields(host, &view, cx);
-        let description = self.description(&pen, &view, window, cx);
-        let commits = commits(host, &issue.key, cx);
-        let activity = self.activity(host, &pen, &view, site, window, cx);
+        let body = match self.shown {
+            Shown::Description => {
+                let commits = commits(host, &issue.key, cx);
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(16.))
+                    .child(self.description(&pen, &view, window, cx))
+                    .children(commits)
+                    .into_any_element()
+            }
+            _ => self.activity(host, &pen, &view, site, window, cx),
+        };
+        let footer = self.footer(host, &view, site, window, cx);
         div()
             .size_full()
             .flex()
@@ -1533,100 +1651,187 @@ impl Jira {
                     .min_h_0()
                     .overflow_y_scroll()
                     .px(px(16.))
-                    .py(px(12.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(16.))
-                    .child(actions)
-                    .child(fields)
-                    .child(description)
-                    .children(commits)
-                    .child(activity),
+                    .py(px(14.))
+                    .child(body),
             )
+            .child(footer)
             .into_any_element()
     }
 
-    fn actions(
+    /// The foot of the open issue: who it is assigned to, a menu to assign it, sending it to
+    /// the agent board, and a split button moving it to its next status, the rest in its menu.
+    fn footer(
         &mut self,
+        host: &Host,
         view: &IssueView,
         site: &str,
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
+        let t = Tokens::get(cx).clone();
         let issue = &view.issue;
         let busy = self.busy;
-        let picks = view
+        let at = |key: &str| (key.to_owned(), site.to_owned());
+        let assignee = issue.assignee.as_ref();
+        let who = div()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .min_w_0()
+            .text_size(crate::theme::ui_text(12.))
+            .text_color(t.text_tertiary)
+            .child(host.face(
+                assignee.map_or("Unassigned", |person| person.name.as_str()),
+                assignee.and_then(|person| person.avatar_url.as_deref()),
+                20.,
+                cx,
+            ))
+            .child(match assignee {
+                Some(person) => div()
+                    .flex()
+                    .gap(px(4.))
+                    .child("Assigned to")
+                    .child(div().text_color(t.text_primary).child(person.name.clone())),
+                None => div().child("Unassigned"),
+            });
+        let pane = cx.weak_entity();
+        let (me_key, me_site) = at(&issue.key);
+        let (none_key, none_site) = at(&issue.key);
+        let assigned = assignee.is_some();
+        let assign = ui::menu_button(
+            "jira-assign",
+            gpui_kit::Anchor::BottomRight,
+            Button::new("jira-assign-pill", "Assign…", Variant::Outline)
+                .icon(Icon::User)
+                .disabled(busy),
+            move |popup, _, cx| {
+                let write = |label: &'static str, params: Value| {
+                    let pane = pane.clone();
+                    move |_: &gpui_kit::ClickEvent, _: &mut Window, cx: &mut App| {
+                        let params = params.clone();
+                        let _ = pane.update(cx, |pane, cx| {
+                            if let Some((jira, host)) = pane.parts::<Jira>() {
+                                jira.write(host, label, "assign", params, cx);
+                            }
+                        });
+                    }
+                };
+                let finding = pane.clone();
+                popup
+                    .item(
+                        ui::MenuRow::new("Assign to me")
+                            .icon(Icon::User)
+                            .item(cx)
+                            .on_click(write(
+                                "Assign",
+                                json!({ "key": me_key, "me": true, "site": site_of(&me_site) }),
+                            )),
+                    )
+                    .item(
+                        ui::MenuRow::new("Unassign")
+                            .icon(Icon::Minus)
+                            .item(cx)
+                            .disabled(!assigned)
+                            .on_click(write(
+                                "Unassign",
+                                json!({
+                                    "key": none_key,
+                                    "accountId": null,
+                                    "site": site_of(&none_site),
+                                }),
+                            )),
+                    )
+                    .item(
+                        ui::MenuRow::new("Find someone…")
+                            .icon(Icon::Search)
+                            .item(cx)
+                            .on_click(move |_, _, cx| {
+                                let _ = finding.update(cx, |pane, cx| {
+                                    if let Some((jira, _)) = pane.parts::<Jira>() {
+                                        jira.assigning = true;
+                                        jira.people.clear();
+                                    }
+                                    cx.notify();
+                                });
+                            }),
+                    )
+            },
+        );
+        let sent = view.clone();
+        let send = Button::new("jira-send", "Send to agent board", Variant::Outline)
+            .icon(Icon::Agent)
+            .tooltip("Put this issue on the open project's board as a card for agents")
+            .on_click(listen::<Jira, _>(cx, move |_, host, _, _, cx| {
+                send_to_board(host.bench(), &sent, cx)
+            }));
+        let moves = |to: String| {
+            let (key, site) = at(&issue.key);
+            let pane = cx.weak_entity();
+            move |_: &gpui_kit::ClickEvent, _: &mut Window, cx: &mut App| {
+                let params = json!({ "key": key, "to": to, "site": site_of(&site) });
+                let _ = pane.update(cx, |pane, cx| {
+                    if let Some((jira, host)) = pane.parts::<Jira>() {
+                        jira.write(host, "Move issue", "transition", params, cx);
+                    }
+                });
+            }
+        };
+        let next = view.transitions.first();
+        let label = next.map_or_else(
+            || format!("Status: {}", issue.status),
+            |next| format!("Move to {}", next.to),
+        );
+        let first = moves(next.map(|next| next.id.clone()).unwrap_or_default());
+        let rest: Vec<(String, String, String)> = view
             .transitions
             .iter()
             .map(|transition| {
-                let pick = ui::Pick::new(transition.id.clone(), transition.to.clone());
-                if transition.name.eq_ignore_ascii_case(&transition.to) {
-                    pick
-                } else {
-                    pick.hint(transition.name.clone())
-                }
+                (
+                    transition.id.clone(),
+                    transition.to.clone(),
+                    transition.name.clone(),
+                )
             })
             .collect();
-        let at = |key: &str| (key.to_owned(), site.to_owned());
-        let (move_key, move_site) = at(&issue.key);
-        let status = ui::select(
-            "jira-transition",
-            format!("Status: {}", issue.status),
-            picks,
+        let (key, site) = at(&issue.key);
+        let pane = cx.weak_entity();
+        let menu: Option<ui::SplitMenu> = (rest.len() > 1).then(|| {
+            Rc::new(
+                move |mut popup: PopupMenu, _: &mut Window, cx: &mut Context<PopupMenu>| {
+                    for (id, to, name) in &rest {
+                        let (pane, params) = (
+                            pane.clone(),
+                            json!({ "key": key, "to": id, "site": site_of(&site) }),
+                        );
+                        let row = ui::MenuRow::new(to.clone());
+                        let row = if name.eq_ignore_ascii_case(to) {
+                            row
+                        } else {
+                            row.hint(name.clone())
+                        };
+                        popup = popup.item(row.item(cx).on_click(move |_, _, cx| {
+                            let params = params.clone();
+                            let _ = pane.update(cx, |pane, cx| {
+                                if let Some((jira, host)) = pane.parts::<Jira>() {
+                                    jira.write(host, "Move issue", "transition", params, cx);
+                                }
+                            });
+                        }));
+                    }
+                    popup
+                },
+            ) as ui::SplitMenu
+        });
+        let status = ui::split_button(
+            "jira-move",
+            label,
             None,
-            busy || view.transitions.is_empty(),
-            listen::<Jira, SharedString>(cx, move |jira, host, to, _, cx| {
-                let params = json!({
-                    "key": move_key,
-                    "to": to.to_string(),
-                    "site": site_of(&move_site),
-                });
-                jira.write(host, "Move issue", "transition", params, cx);
-            }),
+            busy || next.is_none(),
+            true,
+            first,
+            menu,
             cx,
         );
-        let (me_key, me_site) = at(&issue.key);
-        let (none_key, none_site) = at(&issue.key);
-        let row = div()
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap(px(6.))
-            .child(status)
-            .child(
-                Button::new("jira-assign-me", "Assign to me", Variant::Outline)
-                    .icon(Icon::User)
-                    .disabled(busy)
-                    .on_click(listen::<Jira, _>(cx, move |jira, host, _, _, cx| {
-                        let params =
-                            json!({ "key": me_key, "me": true, "site": site_of(&me_site) });
-                        jira.write(host, "Assign", "assign", params, cx);
-                    })),
-            )
-            .child(
-                Button::new("jira-unassign", "Unassign", Variant::Outline)
-                    .icon(Icon::Minus)
-                    .disabled(busy || issue.assignee.is_none())
-                    .on_click(listen::<Jira, _>(cx, move |jira, host, _, _, cx| {
-                        let params = json!({
-                            "key": none_key,
-                            "accountId": null,
-                            "site": site_of(&none_site),
-                        });
-                        jira.write(host, "Unassign", "assign", params, cx);
-                    })),
-            )
-            .child(
-                Button::new("jira-assign", "Assign…", Variant::Outline)
-                    .icon(Icon::Search)
-                    .pressed(self.assigning)
-                    .disabled(busy)
-                    .on_click(listen::<Jira, _>(cx, |jira, _, _, _, cx| {
-                        jira.assigning = !jira.assigning;
-                        jira.people.clear();
-                        cx.notify();
-                    })),
-            );
         let finder =
             self.assigning.then(|| {
                 let find = field(
@@ -1658,11 +1863,32 @@ impl Jira {
                     .child(div().flex().flex_wrap().gap(px(4.)).children(chips))
             });
         div()
+            .flex_none()
+            .px(px(16.))
+            .py(px(10.))
             .flex()
             .flex_col()
             .gap(px(8.))
-            .child(row)
+            .border_t_1()
+            .border_color(t.border)
             .children(finder)
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(who)
+                    .child(
+                        div()
+                            .ml_auto()
+                            .flex()
+                            .gap(px(6.))
+                            .child(assign)
+                            .child(send)
+                            .child(status),
+                    ),
+            )
             .into_any_element()
     }
 
@@ -1689,100 +1915,6 @@ impl Jira {
         );
     }
 
-    fn fields(&self, host: &Host, view: &IssueView, cx: &mut Context<PluginPane>) -> AnyElement {
-        let t = Tokens::get(cx).clone();
-        let issue = &view.issue;
-        let fact = |label: &'static str, value: AnyElement| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(12.))
-                .min_h(px(24.))
-                .child(div().w(px(90.)).flex_none().child(ui::meta(label, cx)))
-                .child(div().flex_1().min_w_0().child(value))
-        };
-        let person = |who: Option<&Person>| {
-            let name = who.map_or("Unassigned", |person| person.name.as_str());
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .text_size(crate::theme::ui_text(12.5))
-                .text_color(t.text_primary)
-                .child(host.face(
-                    name,
-                    who.and_then(|person| person.avatar_url.as_deref()),
-                    20.,
-                    cx,
-                ))
-                .child(name.to_owned())
-                .into_any_element()
-        };
-        let plain = |text: String| {
-            ui::text(text, 12.5, FontWeight::NORMAL)
-                .text_color(t.text_primary)
-                .whitespace_normal()
-                .into_any_element()
-        };
-        let mut facts = div()
-            .flex()
-            .flex_col()
-            .gap(px(4.))
-            .child(ui::caps("Details", cx))
-            .child(fact("Assignee", person(issue.assignee.as_ref())));
-        if let Some(reporter) = &view.reporter {
-            facts = facts.child(fact("Reporter", person(Some(reporter))));
-        }
-        if let Some(priority) = &issue.priority {
-            facts = facts.child(fact(
-                "Priority",
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(priority_mark(priority, cx))
-                    .child(plain(priority.clone()))
-                    .into_any_element(),
-            ));
-        }
-        if let Some(due) = &issue.due {
-            facts = facts.child(fact(
-                "Due date",
-                due_chip(due, issue.status_category == "done", cx),
-            ));
-        }
-        if let Some(parent) = &issue.parent {
-            facts = facts.child(fact("Parent", epic_chip(parent, cx)));
-        }
-        if let Some(kind) = &issue.issue_type {
-            facts = facts.child(fact(
-                "Type",
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(type_mark(Some(kind), cx))
-                    .child(plain(kind.clone()))
-                    .into_any_element(),
-            ));
-        }
-        if let Some(sprint) = &issue.sprint {
-            facts = facts.child(fact("Sprint", plain(sprint.clone())));
-        }
-        if !view.labels.is_empty() {
-            facts = facts.child(fact(
-                "Labels",
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(4.))
-                    .children(view.labels.iter().map(|label| tag(label, cx)))
-                    .into_any_element(),
-            ));
-        }
-        facts.into_any_element()
-    }
-
     fn description(
         &mut self,
         pen: &Pen,
@@ -1798,11 +1930,7 @@ impl Jira {
             pen.markdown("jira-description", &doc, window, cx)
         };
         div()
-            .flex()
-            .flex_col()
-            .gap(px(6.))
             .text_color(t.text_primary)
-            .child(ui::caps("Description", cx))
             .child(body)
             .into_any_element()
     }
@@ -1818,23 +1946,6 @@ impl Jira {
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
-        let chosen = SHOWN
-            .iter()
-            .position(|shown| *shown == self.shown)
-            .unwrap_or_default();
-        let switch = Segmented::words(
-            "jira-activity",
-            vec![
-                ("All".into(), None),
-                ("Comments".into(), Some(view.comment_count)),
-                ("History".into(), None),
-            ],
-            chosen,
-        )
-        .on_select(listen::<Jira, usize>(cx, |jira, _, index, _, cx| {
-            jira.shown = SHOWN[*index];
-            cx.notify();
-        }));
         let composer = (self.shown != Shown::History).then(|| {
             let draft = self
                 .draft
@@ -1895,7 +2006,7 @@ impl Jira {
             .filter(|entry| {
                 matches!(
                     (self.shown, entry),
-                    (Shown::All, _)
+                    (Shown::Activity, _)
                         | (Shown::Comments, Activity::Comment { .. })
                         | (Shown::History, Activity::Change { .. })
                 )
@@ -1907,19 +2018,7 @@ impl Jira {
             .filter(|entry| matches!(entry, Activity::Comment { .. }))
             .count() as u64;
         let hidden = view.comment_count.saturating_sub(shown_comments);
-        let mut part = div()
-            .flex()
-            .flex_col()
-            .gap(px(10.))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .child(ui::caps("Activity", cx))
-                    .child(div().flex_1())
-                    .child(switch),
-            )
-            .children(composer);
+        let mut part = div().flex().flex_col().gap(px(10.)).children(composer);
         if entries.is_empty() {
             part = part.child(ui::meta(
                 if self.shown == Shown::History {

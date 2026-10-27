@@ -278,6 +278,7 @@ pub type SplitMenu = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) 
 /// A primary button with a chevron beside it, as GitHub's merge button: its face does the
 /// chosen thing, and the chevron opens `menu` to pick another. It dims and stops while `off`;
 /// `opens_up` lifts the menu above it, for a button at the foot of a page.
+#[allow(clippy::too_many_arguments)]
 pub fn split_button(
     id: &str,
     label: impl Into<SharedString>,
