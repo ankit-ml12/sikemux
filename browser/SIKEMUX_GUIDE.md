@@ -148,6 +148,14 @@ After a Maven, Gradle, Vitest, Jest, pytest, Go or Cargo test task, `workspace_i
 `testResults`: per module, the counts and each failing test with its message,
 file and line, read from the reports the runner writes. Read those instead of the whole build log.
 
+`events_wait` with a `file` or `pid` in place of a cursor waits on work
+started outside tasks, such as a background job writing its output to a file,
+a log under `/tmp` or a process: until the file holds `text`, until it stops
+changing for two seconds when no text is given, or until `pid` exits, for up
+to `timeoutMs` (30 seconds). It answers `met`, what is still `failing`, and the
+file's last lines in `tail`. Call it again when it times out rather than
+sleeping in a shell.
+
 If a task you started stops with an error while you are doing something else,
 such as a dev server crashing, Sikemux sends you a notice with its
 `executionId`. Read its output with `task_read` before starting it again.

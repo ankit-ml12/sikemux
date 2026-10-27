@@ -578,6 +578,10 @@ async fn dispatch(
                 .await
                 .map(|run| with_fields(&run, json!({})))
         }
+        "events.wait" if super::wait_for::asked(&request.params) => {
+            let _slot = core.harness.wait_slot()?;
+            super::wait_for::call(&request).await
+        }
         "events.wait" => events_wait(core, &request).await,
         "agent.list" => messages::list(core, &request).await,
         "agent.send" => messages::send(core, &request).await,

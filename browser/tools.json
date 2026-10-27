@@ -88,7 +88,7 @@
       "name": "browser_state",
       "row": {"verb": "read", "kind": "read", "icon": "eye", "target": ["{selector}"]},
       "method": "browser.state",
-      "description": "Read the tab: url, title, numbered elements, text, tabs and downloads.",
+      "description": "Read the tab: url, title, numbered elements, text, tabs, downloads.",
       "properties": {
         "fullText": {
           "description": "Up to 40 KB of text",
@@ -1210,7 +1210,7 @@
       "name": "task_start",
       "row": {"verb": "start", "kind": "execute", "icon": "run", "target": ["{taskId}", "{label}", "{command}"], "detail": ["{command}"]},
       "method": "task.start",
-      "description": "Start a sikemux.json task or any shell command.",
+      "description": "Start a sikemux.json task or a shell command.",
       "properties": {
         "taskId": {
           "description": "From workspace_inspect or an earlier result",
@@ -1418,9 +1418,9 @@
     },
     {
       "name": "events_wait",
-      "row": {"verb": "wait", "kind": "think", "icon": "clock", "target": ["for {executionId}", "for events"]},
+      "row": {"verb": "wait", "kind": "think", "icon": "clock", "target": ["for {executionId}", "for {file}", "for process {pid}", "for events"]},
       "method": "events.wait",
-      "description": "Wait for task or UI events after a cursor.",
+      "description": "Wait for task or UI events, a file or a process.",
       "properties": {
         "cursor": {
           "description": "Event cursor from workspace_inspect or the last wait",
@@ -1434,11 +1434,26 @@
         "executionId": {
           "description": "Only this run's events",
           "type": "string"
+        },
+        "file": {
+          "description": "Instead of a cursor: wait on this absolute path; with no text, until it stops changing",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "text": {
+          "description": "Until the file holds this",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "pid": {
+          "description": "Instead of a cursor: until this process exits",
+          "type": "integer",
+          "minimum": 1
         }
       },
-      "required": [
-        "cursor"
-      ]
+      "required": []
     },
     {
       "name": "agent_list",

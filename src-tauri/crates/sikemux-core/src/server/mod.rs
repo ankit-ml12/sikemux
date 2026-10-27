@@ -85,6 +85,7 @@ mod tools;
 mod transcript;
 mod updates;
 mod upgrade;
+mod wait_for;
 mod wake;
 mod wallpaper;
 mod warm;

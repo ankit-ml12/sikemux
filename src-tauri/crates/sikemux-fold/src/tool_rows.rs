@@ -546,7 +546,12 @@ pub(super) const SPECS: &[(&str, Spec)] = &[
             verb: "wait",
             kind: "think",
             icon: "clock",
-            target: &["for {executionId}", "for events"],
+            target: &[
+                "for {executionId}",
+                "for {file}",
+                "for process {pid}",
+                "for events",
+            ],
             detail: &[],
             plugin: None,
         },
