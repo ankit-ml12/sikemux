@@ -9,9 +9,8 @@ use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, point, px, quad, relative, size, Anchor, AnyElement, App, BorderStyle, Bounds,
-    Context, Div, Entity, FontWeight, Hsla, InteractiveElement, IntoElement, MouseMoveEvent,
-    ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, WeakEntity, Window,
+    Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement, MouseMoveEvent, ParentElement,
+    Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::Value;
 use sikemux_wire::protocol::AgentStatus;
@@ -205,32 +204,54 @@ fn asleep_in_terminal(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Work
         )
 }
 
-/// What a chat opens on before its first message: the agent's face beside the tokens burnt in
-/// the project, over the calendar of them.
+/// What a chat opens on before its first message: the agent's face asking what is being made in
+/// the project.
 pub fn welcome(
     bench: &Workbench,
     agent: Option<&AgentRow>,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let project = bench
+        .project()
+        .map(|project| project.name.clone())
+        .unwrap_or_default();
     div()
-        .w_full()
-        .max_w(px(756.))
         .mx(px(22.))
         .flex()
-        .flex_col()
-        .gap(px(24.))
+        .items_center()
+        .justify_center()
+        .gap(px(12.))
+        .child(div().flex().child(match agent {
+            Some(agent) => ui::agent_mark(agent, 32., cx),
+            None => ui::mark("claude", 32.),
+        }))
         .child(
             div()
+                .min_w_0()
                 .flex()
                 .items_center()
-                .gap(px(14.))
-                .child(div().flex().child(match agent {
-                    Some(agent) => ui::agent_mark(agent, 40., cx),
-                    None => ui::mark("claude", 40.),
-                }))
-                .child(div().flex_1().min_w_0().child(bench.parts.burn.clone())),
+                .text_size(theme::ui_text(20.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(t.text_primary)
+                .child("What are we making in")
+                .child(
+                    ui::icon(Icon::Folder, 17.)
+                        .ml(px(8.))
+                        .mr(px(6.))
+                        .text_color(t.live),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .font_family(theme::MONO)
+                        .font_weight(FontWeight::NORMAL)
+                        .text_size(theme::ui_text(18.))
+                        .child(project),
+                )
+                .child("?"),
         )
-        .child(div().w_full().child(bench.parts.activity.clone()))
 }
 
 /// The welcome in the middle of the space it is given, across and down.
@@ -240,130 +261,6 @@ pub fn centred(welcome: impl IntoElement) -> Div {
         .flex_col()
         .justify_center()
         .child(div().w_full().flex().justify_center().child(welcome))
-}
-
-/// A piece of the welcome drawn from the project's activity: a view of its own, drawn again
-/// when the workbench changes but not when a key is typed in the composer beside it.
-pub struct Activity {
-    bench: WeakEntity<Workbench>,
-    draw: fn(&Workbench, &mut Context<Workbench>) -> AnyElement,
-    _bench: Subscription,
-}
-
-impl Activity {
-    /// The calendar of the tokens burnt each day.
-    pub fn calendar(bench: &Entity<Workbench>, cx: &mut Context<Self>) -> Self {
-        Self::new(bench, welcome_calendar, cx)
-    }
-
-    /// The tokens burnt in the project, or on the day the pointer is over.
-    pub fn burn(bench: &Entity<Workbench>, cx: &mut Context<Self>) -> Self {
-        Self::new(bench, burn, cx)
-    }
-
-    fn new(
-        bench: &Entity<Workbench>,
-        draw: fn(&Workbench, &mut Context<Workbench>) -> AnyElement,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        Self {
-            bench: bench.downgrade(),
-            draw,
-            _bench: cx.observe(bench, |_, _, cx| cx.notify()),
-        }
-    }
-}
-
-impl Render for Activity {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let draw = self.draw;
-        self.bench
-            .update(cx, |bench, cx| draw(bench, cx))
-            .unwrap_or_else(|_| div().into_any_element())
-    }
-}
-
-fn welcome_calendar(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    let Some(summary) = bench.read("activity") else {
-        return div().into_any_element();
-    };
-    let t = Tokens::get(cx).clone();
-    let more = div()
-        .id("welcome-more")
-        .group("welcome-more")
-        .py(px(2.))
-        .flex()
-        .items_center()
-        .gap(px(4.))
-        .cursor_pointer()
-        .text_size(theme::ui_text(11.))
-        .text_color(t.ink_faint)
-        .hover(|more| more.text_color(t.text_primary))
-        .child("View activity")
-        .child(
-            ui::icon(Icon::Chevron, 10.)
-                .text_color(t.ink_faint)
-                .group_hover("welcome-more", move |icon| icon.text_color(t.text_primary)),
-        )
-        .on_click(cx.listener(|bench, _, window, cx| {
-            bench.open_settings(crate::settings::Page::Usage, window, cx)
-        }));
-    calendar(summary, bench, Some(more.into_any_element()), cx).into_any_element()
-}
-
-fn burn(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    let t = Tokens::get(cx).clone();
-    let summary = bench.read("activity");
-    let hovered = bench.metric_day;
-    let tokens = match hovered {
-        Some(day) => Some(
-            summary
-                .and_then(|summary| summary["days"].as_array())
-                .and_then(|days| days.iter().find(|entry| entry["day"].as_i64() == Some(day)))
-                .map_or(0., |entry| number(&entry["tokens"])),
-        ),
-        None => summary.map(|summary| burnt(&summary["totals"])),
-    };
-    let label = match hovered {
-        Some(day) => div().child(format!("tokens on {}", long_date(day))),
-        None => div()
-            .flex()
-            .items_center()
-            .gap(px(5.))
-            .child("tokens burnt in")
-            .child(ui::icon(Icon::Folder, 12.).text_color(t.live))
-            .child(
-                div().text_color(t.text_primary).child(
-                    bench
-                        .project()
-                        .map(|project| project.name.clone())
-                        .unwrap_or_default(),
-                ),
-            ),
-    };
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(2.))
-        .min_w_0()
-        .child(
-            ui::text(
-                tokens.map_or_else(|| "—".to_owned(), compact),
-                28.,
-                FontWeight::SEMIBOLD,
-            )
-            .line_height(theme::ui_text(28. * 1.1))
-            .letter_spacing(-0.028)
-            .font_features(theme::tabular())
-            .text_color(t.text_primary),
-        )
-        .child(
-            label
-                .text_size(theme::ui_text(12.))
-                .font_features(theme::tabular())
-                .text_color(t.ink_faint),
-        )
-        .into_any_element()
 }
 
 fn pane_header(
@@ -595,19 +492,15 @@ pub(crate) fn overview(totals: &Value, cx: &App) -> impl IntoElement {
     ))
 }
 
-/// The calendar of a year's days, coloured by the measure picked above it. With a `footer`, as
-/// under a chat's welcome, it shows only tokens, has no readout or measure choice, and the
-/// footer leads the legend's row.
+/// The calendar of a year's days, coloured by the measure picked above it.
 pub(crate) fn calendar(
     summary: &Value,
     bench: &Workbench,
-    footer: Option<AnyElement>,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let metric = bench.metric;
-    let welcome = footer.is_some();
-    let key = if welcome { "tokens" } else { METRICS[metric].0 };
+    let key = METRICS[metric].0;
     let today = (chrono::Local::now().date_naive() - epoch()).num_days();
     let start = today - (today + 3).rem_euclid(7) - (WEEKS - 1) * 7;
     let days: HashMap<i64, &Value> = summary["days"]
@@ -728,36 +621,34 @@ pub(crate) fn calendar(
         .flex()
         .flex_col()
         .gap(px(12.))
-        .when(!welcome, |calendar| {
-            calendar.child(
-                div()
-                    .min_h(px(24.))
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(12.))
-                    .child(
-                        ui::text(
-                            match hovered {
-                                Some(day) => format!(
-                                    "{} · {}",
-                                    long_date(day),
-                                    metric_text(
-                                        key,
-                                        days.get(&day).map_or(0., |day| number(&day[key]))
-                                    )
-                                ),
-                                None => readout(streaks),
-                            },
-                            12.,
-                            FontWeight::NORMAL,
-                        )
-                        .text_color(t.text_secondary),
+        .child(
+            div()
+                .min_h(px(24.))
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .justify_between()
+                .gap(px(12.))
+                .child(
+                    ui::text(
+                        match hovered {
+                            Some(day) => format!(
+                                "{} · {}",
+                                long_date(day),
+                                metric_text(
+                                    key,
+                                    days.get(&day).map_or(0., |day| number(&day[key]))
+                                )
+                            ),
+                            None => readout(streaks),
+                        },
+                        12.,
+                        FontWeight::NORMAL,
                     )
-                    .child(div().flex().gap(px(4.)).children(toggles)),
-            )
-        })
+                    .text_color(t.text_secondary),
+                )
+                .child(div().flex().gap(px(4.)).children(toggles)),
+        )
         .child(
             div()
                 .flex()
@@ -798,7 +689,6 @@ pub(crate) fn calendar(
                 .items_center()
                 .justify_end()
                 .gap(px(CELL_GAP))
-                .children(footer.map(|footer| div().flex_1().flex().child(footer)))
                 .child(small("Less".into(), &t).mr(px(4.)))
                 .children((0..5).map(|level| div().size(px(10.)).rounded(px(2.)).bg(colour(level))))
                 .child(small("More".into(), &t).ml(px(4.))),
