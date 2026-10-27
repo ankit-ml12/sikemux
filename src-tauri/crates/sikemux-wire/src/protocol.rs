@@ -2157,6 +2157,8 @@ pub enum PaneKind {
     /// What setting Sikemux up adds on an SSH host, and the one action that does it; `target`
     /// is the host's alias.
     InstallSikemux,
+    /// What the account keeps in its Stash; `target` is `stash`.
+    Stash,
     /// A kind a newer core shows, which this build does not know and leaves out.
     #[serde(other)]
     Unknown,

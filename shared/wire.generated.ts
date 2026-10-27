@@ -741,7 +741,7 @@ export type Pane =
       };
 
 export type PaneKind =
-    "agent" | "terminal" | "files" | "git" | "search" | "board" | "browser" | "plugin" | "desk" | "projectSettings" | "installSikemux";
+    "agent" | "terminal" | "files" | "git" | "search" | "board" | "browser" | "plugin" | "desk" | "projectSettings" | "installSikemux" | "stash";
 
 export type SplitDir = "row" | "column" | "stack";
 
