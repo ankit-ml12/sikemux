@@ -110,8 +110,7 @@ impl Render for Activity {
         centred(
             div()
                 .px(px(22.))
-                .pt(px(6.))
-                .pb(px(16.))
+                .pb(px(30.))
                 .flex()
                 .items_center()
                 .gap(px(8.))
@@ -124,7 +123,7 @@ impl Render for Activity {
                     line.child(ui::mono(elapsed(seconds), 10.5, cx).text_color(t.text_disabled))
                 }),
         )
-        .pt(px(END_SPACE))
+        .pt(px(12.))
         .into_any_element()
     }
 }
