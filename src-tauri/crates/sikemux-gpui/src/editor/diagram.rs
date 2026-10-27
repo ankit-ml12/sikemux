@@ -114,16 +114,23 @@ pub(crate) struct Diagram {
     fit_pending: bool,
     /// The canvas's size when the tables were last fitted to it.
     fitted: gpui_kit::Size<Pixels>,
+    /// A new canvas size seen once; the tables are fitted to it only if the next frame has it
+    /// too, so a size a layout holds for a single frame never moves them.
+    settling: Option<gpui_kit::Size<Pixels>>,
+    fitted_once: bool,
+    /// Whether the next fit follows the text growing, which only ever zooms out, so a schema an
+    /// agent is writing does not pulse in and out.
+    growing: bool,
+    /// The tallest an embedded diagram has drawn at its width, so it never shrinks as its text
+    /// grows; with the width it was measured at.
+    tallest: (f32, f32),
+    latch: crate::ui::scroll_latch::ScrollLatch,
     hover: Option<Spot>,
     pointer: Option<Point<Pixels>>,
     drag: Option<Drag>,
     open: Option<OpenLine>,
-    /// Drawn inside other content, such as a chat: scrolling passes through it to what holds
-    /// it until the person clicks into it.
+    /// Drawn inside other content, such as a chat, as tall as its tables need.
     embedded: bool,
-    engaged: bool,
-    /// Whether the pointer is over the canvas.
-    inside: bool,
     /// Whether the person moved, panned or zoomed it; until they do, it lays itself out
     /// again whenever its text changes.
     touched: bool,
@@ -155,13 +162,16 @@ impl Diagram {
             viewport: Rc::new(Cell::new(Bounds::default())),
             fit_pending: true,
             fitted: gpui_kit::Size::default(),
+            settling: None,
+            fitted_once: false,
+            growing: false,
+            tallest: (0., 0.),
+            latch: Default::default(),
             hover: None,
             pointer: None,
             drag: None,
             open,
             embedded,
-            engaged: false,
-            inside: false,
             touched: false,
             widths: HashMap::new(),
         };
@@ -179,6 +189,7 @@ impl Diagram {
             false => {
                 self.kept.clear();
                 self.fit_pending = true;
+                self.growing = true;
             }
         }
         self.read(source);
@@ -329,9 +340,16 @@ impl Diagram {
         };
         let (w, h) = (extent.2 - extent.0, extent.3 - extent.1);
         let margin = self.margin();
-        self.zoom = ((width - margin) / w)
+        let zoom = ((width - margin) / w)
             .min((height - margin) / h)
             .clamp(MIN_ZOOM, 1.);
+        self.zoom = match self.growing && self.fitted_once {
+            true => zoom.min(self.zoom),
+            false => zoom,
+        };
+        self.growing = false;
+        self.fitted_once = true;
+        self.settling = None;
         self.pan = point(
             width / 2. - (extent.0 + w / 2.) * self.zoom,
             height / 2. - (extent.1 + h / 2.) * self.zoom,
@@ -355,11 +373,15 @@ impl Diagram {
     pub(crate) fn height(&self) -> f32 {
         let width = f32::from(self.viewport.get().size.width);
         let Some(extent) = extent(&self.cards).filter(|_| width > 0.) else {
-            return EMBEDDED_HEIGHT.start;
+            return EMBEDDED_HEIGHT.start.max(self.tallest.1);
         };
         let zoom = ((width - self.margin()) / (extent.2 - extent.0)).min(1.);
-        ((extent.3 - extent.1) * zoom + self.margin() + 40.)
-            .clamp(EMBEDDED_HEIGHT.start, EMBEDDED_HEIGHT.end)
+        let needed = ((extent.3 - extent.1) * zoom + self.margin() + 40.)
+            .clamp(EMBEDDED_HEIGHT.start, EMBEDDED_HEIGHT.end);
+        match self.tallest.0 == width {
+            true => needed.max(self.tallest.1),
+            false => needed,
+        }
     }
 
     fn rearrange(&mut self, cx: &mut Context<Self>) {
@@ -387,7 +409,6 @@ impl Diagram {
     }
 
     fn press(&mut self, event: &MouseDownEvent, cx: &mut Context<Self>) -> Option<u32> {
-        self.engaged = true;
         if let Some(map) = self.map().filter(|map| map.frame.contains(&event.position)) {
             self.drag = Some(Drag::Map);
             self.centre_on_map(event.position, &map, cx);
@@ -448,11 +469,6 @@ impl Diagram {
                 }
             }
             None => {
-                if self.inside != hovered {
-                    self.inside = hovered;
-                    self.engaged &= hovered;
-                    cx.notify();
-                }
                 let spot = hovered.then(|| self.spot_at(event.position)).flatten();
                 let pointer = hovered.then_some(event.position);
                 let tip_moves =
@@ -472,10 +488,19 @@ impl Render for Diagram {
         if !self.measured {
             self.measure(window);
         }
-        let viewport = self.viewport.get();
-        let resized = !self.touched && viewport.size != self.fitted;
-        if (self.fit_pending || resized) && viewport.size.width > px(0.) {
-            self.fit(cx);
+        let size = self.viewport.get().size;
+        let resized = !self.touched && size != self.fitted;
+        if size.width > px(0.) {
+            if self.fit_pending || resized && self.settling == Some(size) {
+                self.fit(cx);
+            } else if resized {
+                self.settling = Some(size);
+                cx.notify();
+            }
+        }
+        if self.embedded {
+            let width = f32::from(size.width);
+            self.tallest = (width, self.height());
         }
         let t = Tokens::get(cx).clone();
         if self.schema.tables.is_empty() {
@@ -521,8 +546,6 @@ impl Render for Diagram {
             },
         );
         let percent = format!("{}%", (self.zoom * 100.).round());
-        let hint = (self.embedded && self.inside && !self.engaged)
-            .then_some("Click in to scroll and zoom");
         let height = self.embedded.then(|| self.height());
         div()
             .relative()
@@ -571,17 +594,6 @@ impl Render for Diagram {
                     .text_color(t.text_tertiary)
                     .child(summary),
             )
-            .when_some(hint, |diagram, hint| {
-                diagram.child(
-                    div()
-                        .absolute()
-                        .top(px(10.))
-                        .right(px(12.))
-                        .text_size(theme::ui_text(11.))
-                        .text_color(t.text_disabled)
-                        .child(hint),
-                )
-            })
             .child(
                 div()
                     .id("diagram-controls")
@@ -665,8 +677,8 @@ fn text_button(
         .child(label)
 }
 
-/// Hears the pointer over the canvas `hitbox`: dragging pans or moves a table, scrolling
-/// pans, and pinching or scrolling with ⌘ zooms around the pointer.
+/// Hears the pointer over the canvas `hitbox`: dragging pans or moves a table, a scroll that
+/// begins over it pans, and pinching or scrolling with ⌘ zooms around the pointer.
 fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
     window.on_mouse_event({
         let (this, hitbox) = (this.clone(), hitbox.clone());
@@ -716,27 +728,35 @@ fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
     window.on_mouse_event({
         let (this, hitbox) = (this.clone(), hitbox.clone());
         move |event: &ScrollEvent, phase, window, cx| {
-            if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) || passes(&this, cx) {
+            if phase != DispatchPhase::Bubble {
                 return;
             }
-            cx.stop_propagation();
+            let over = hitbox.is_hovered(window);
             let delta = event.delta.pixel_delta(px(20.));
-            let _ = this.update(cx, |diagram, cx| {
+            let took = this.update(cx, |diagram, cx| {
+                if !diagram.latch.takes(event, over) {
+                    return false;
+                }
                 if event.modifiers.platform || event.modifiers.control {
                     let factor = (-f32::from(delta.y) / 240.).exp();
                     diagram.zoom_at(event.position, factor, cx);
                 } else {
+                    diagram.touched = true;
                     diagram.pan.x += f32::from(delta.x);
                     diagram.pan.y += f32::from(delta.y);
                     cx.notify();
                 }
+                true
             });
+            if took.unwrap_or(false) {
+                cx.stop_propagation();
+            }
         }
     });
     window.on_mouse_event({
         let (this, hitbox) = (this.clone(), hitbox.clone());
         move |event: &PinchEvent, phase, window, cx| {
-            if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) || passes(&this, cx) {
+            if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) {
                 return;
             }
             cx.stop_propagation();
@@ -745,14 +765,6 @@ fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
             });
         }
     });
-}
-
-/// Whether scrolling and pinching go past the diagram to what holds it.
-fn passes(this: &WeakEntity<Diagram>, cx: &App) -> bool {
-    this.upgrade().is_some_and(|diagram| {
-        let diagram = diagram.read(cx);
-        diagram.embedded && !diagram.engaged
-    })
 }
 
 /// What one frame draws, taken from the diagram when it renders.

@@ -12,6 +12,7 @@ pub mod grain;
 mod lists;
 pub mod moving_face;
 mod pane;
+pub mod scroll_latch;
 mod select;
 pub mod selectable;
 pub mod shimmer;

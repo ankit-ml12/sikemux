@@ -41,7 +41,7 @@ fn block(
     cx: &mut App,
 ) -> AnyElement {
     let key = ElementId::NamedChild(Arc::new(fence.id.clone()), "dbml".into());
-    let code = fence.code.clone();
+    let code = finished_lines(&fence.code);
     let block = window.use_keyed_state(key, cx, |_, cx| Block {
         diagram: cx.new(|_| Diagram::embedded(&code)),
         code: code.clone(),
@@ -49,11 +49,11 @@ fn block(
     });
     let (diagram, changed) = {
         let kept = block.read(cx);
-        (kept.diagram.clone(), kept.code != fence.code)
+        (kept.diagram.clone(), kept.code != code)
     };
     if changed {
-        block.update(cx, |kept, _| kept.code = fence.code.clone());
-        diagram.update(cx, |diagram, cx| diagram.set_source(&fence.code, cx));
+        block.update(cx, |kept, _| kept.code = code.clone());
+        diagram.update(cx, |diagram, cx| diagram.set_source(&code, cx));
     }
     let empty = diagram.read(cx).is_empty();
     let source = block.read(cx).source || empty;
@@ -135,6 +135,15 @@ fn block(
             }
         })
         .into_any_element()
+}
+
+/// The block's text up to its last line break: while an agent writes a line, the diagram
+/// waits for the whole of it rather than drawing it again with each word.
+fn finished_lines(code: &SharedString) -> SharedString {
+    match code.rfind('\n') {
+        Some(end) if end + 1 < code.len() => SharedString::from(code[..=end].to_string()),
+        _ => code.clone(),
+    }
 }
 
 fn chip(id: &'static str) -> Stateful<Div> {
