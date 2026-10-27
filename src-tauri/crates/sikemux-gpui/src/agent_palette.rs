@@ -40,10 +40,7 @@ impl Workbench {
             .is_some_and(|view| view.workspace.permission_mode == YOLO);
         let mode = Rc::new(Cell::new(usize::from(yolo)));
         let choice = Choice {
-            options: vec![
-                (Icon::Lock, "safe".into()),
-                (Icon::BoltFill, "yolo".into()),
-            ],
+            options: vec![(Icon::Lock, "safe".into()), (Icon::BoltFill, "yolo".into())],
             chosen: mode.clone(),
             armed: Some(1),
         };

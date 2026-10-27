@@ -4,18 +4,18 @@
 use std::rc::Rc;
 
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::input::{InputState, InputEvent};
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
     div, px, AnyElement, App, AppContext, Context, Entity, FontWeight, InteractiveElement,
-    IntoElement,
-    ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement, Styled, Window,
+    IntoElement, ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement,
+    Styled, Window,
 };
 use serde_json::json;
 use sikemux_wire::database::{Engine, ProfileDraft, ProfileForm};
 
 use super::{Database, Host, PluginPane};
-use crate::plugin_pane::Failure;
 use crate::icons::Icon;
+use crate::plugin_pane::Failure;
 use crate::plugin_pane::{after, listen};
 use crate::theme::{Tokens, RADIUS_2};
 use crate::ui::{self, Button, IconButton, Pick, Segmented, Variant};
@@ -45,7 +45,11 @@ pub(super) struct Form {
 }
 
 impl Form {
-    pub(super) fn new(choices: Rc<ProfileForm>, window: &mut Window, cx: &mut Context<PluginPane>) -> Self {
+    pub(super) fn new(
+        choices: Rc<ProfileForm>,
+        window: &mut Window,
+        cx: &mut Context<PluginPane>,
+    ) -> Self {
         let draft = &choices.draft;
         let hint = match choices.has_password {
             true => "Saved in the Keychain",
@@ -90,10 +94,18 @@ impl Form {
 
     /// The fields' hints for the engine picked.
     fn hint(&self, window: &mut Window, cx: &mut App) {
-        let Some(engine) = self.choices.engines.iter().find(|each| each.engine == self.engine) else {
+        let Some(engine) = self
+            .choices
+            .engines
+            .iter()
+            .find(|each| each.engine == self.engine)
+        else {
             return;
         };
-        let port = engine.default_port.map(|port| port.to_string()).unwrap_or_default();
+        let port = engine
+            .default_port
+            .map(|port| port.to_string())
+            .unwrap_or_default();
         for (input, hint) in [
             (&self.name, engine.name_hint.clone()),
             (&self.host, "localhost".to_owned()),
@@ -136,7 +148,12 @@ impl Form {
 }
 
 /// Asks the plugin for the form of the saved connection `id`, or of a new one.
-pub(super) fn open(database: &mut Database, host: &Host, id: Option<String>, cx: &mut Context<PluginPane>) {
+pub(super) fn open(
+    database: &mut Database,
+    host: &Host,
+    id: Option<String>,
+    cx: &mut Context<PluginPane>,
+) {
     database.form = None;
     database.form_loading = true;
     let call = host.call("form", json!({ "id": id }));
@@ -185,7 +202,9 @@ fn run(database: &mut Database, host: &Host, kind: &'static str, cx: &mut Contex
                 (_, Ok(tested)) => {
                     let version = tested["version"].as_str().unwrap_or_default();
                     let millis = tested["millis"].as_u64().unwrap_or_default();
-                    form.said = Some(Said::Tested(format!("Connected to {version} in {millis} ms")));
+                    form.said = Some(Said::Tested(format!(
+                        "Connected to {version} in {millis} ms"
+                    )));
                 }
                 (_, Err(failure)) => form.said = Some(Said::Failed(failure.message)),
             }
@@ -211,13 +230,18 @@ fn choose(window: &mut Window, cx: &mut Context<PluginPane>) {
             return;
         };
         let file = path.to_string_lossy().into_owned();
-        let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let _ = pane.update_in(cx, |pane, window, cx| {
             if let Some((database, _)) = pane.parts::<Database>() {
                 if let Some(form) = &database.form {
-                    form.path.update(cx, |input, cx| input.set_value(file, window, cx));
+                    form.path
+                        .update(cx, |input, cx| input.set_value(file, window, cx));
                     if form.name.read(cx).value().trim().is_empty() {
-                        form.name.update(cx, |input, cx| input.set_value(name, window, cx));
+                        form.name
+                            .update(cx, |input, cx| input.set_value(name, window, cx));
                     }
                 }
             }
@@ -253,16 +277,19 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
             .collect(),
         at,
     )
-    .on_select(listen::<Database, usize>(cx, |database, _, picked, window, cx| {
-        if let Some(form) = &mut database.form {
-            if let Some(engine) = form.choices.engines.get(*picked).map(|each| each.engine) {
-                form.engine = engine;
-                form.said = None;
-                form.hint(window, cx);
+    .on_select(listen::<Database, usize>(
+        cx,
+        |database, _, picked, window, cx| {
+            if let Some(form) = &mut database.form {
+                if let Some(engine) = form.choices.engines.get(*picked).map(|each| each.engine) {
+                    form.engine = engine;
+                    form.said = None;
+                    form.hint(window, cx);
+                }
             }
-        }
-        cx.notify();
-    }));
+            cx.notify();
+        },
+    ));
     let labelled = |label: &'static str, input: &Entity<InputState>| {
         div()
             .flex_1()
@@ -273,7 +300,11 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
             .child(ui::meta(label, cx))
             .child(ui::Field::new(input))
     };
-    let mut fields = div().flex().flex_col().gap(px(10.)).child(labelled("Name", &form.name));
+    let mut fields = div()
+        .flex()
+        .flex_col()
+        .gap(px(10.))
+        .child(labelled("Name", &form.name));
     fields = match server {
         true => {
             let tls_detail = form
@@ -293,7 +324,9 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                 form.choices
                     .tls_modes
                     .iter()
-                    .map(|mode| Pick::new(mode.value.clone(), mode.label.clone()).hint(mode.detail.clone()))
+                    .map(|mode| {
+                        Pick::new(mode.value.clone(), mode.label.clone()).hint(mode.detail.clone())
+                    })
                     .collect(),
                 Some(form.tls.clone().into()),
                 false,
@@ -306,7 +339,12 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                         .flex()
                         .gap(px(10.))
                         .child(labelled("Host", &form.host))
-                        .child(div().w(px(110.)).flex_none().child(labelled("Port", &form.port))),
+                        .child(
+                            div()
+                                .w(px(110.))
+                                .flex_none()
+                                .child(labelled("Port", &form.port)),
+                        ),
                 )
                 .child(labelled("Database", &form.database))
                 .child(
@@ -343,17 +381,20 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                         ),
                 )
         }
-        false => fields.child(
-            div()
-                .flex()
-                .items_end()
-                .gap(px(8.))
-                .child(labelled("Database file", &form.path))
-                .child(
-                    IconButton::new("db-form-choose", Icon::Folder, "Choose…")
-                        .on_click(listen::<Database, _>(cx, |_, _, _, window, cx| choose(window, cx))),
-                ),
-        ),
+        false => {
+            fields.child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap(px(8.))
+                    .child(labelled("Database file", &form.path))
+                    .child(
+                        IconButton::new("db-form-choose", Icon::Folder, "Choose…").on_click(
+                            listen::<Database, _>(cx, |_, _, _, window, cx| choose(window, cx)),
+                        ),
+                    ),
+            )
+        }
     };
     let toggles = div()
         .flex()
@@ -414,18 +455,21 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
         .children(removing)
         .child(div().flex_1())
         .child(
-            Button::new("db-form-cancel", "Cancel", Variant::Outline).on_click(listen::<Database, _>(
-                cx,
-                |database, _, _, _, cx| {
+            Button::new("db-form-cancel", "Cancel", Variant::Outline).on_click(
+                listen::<Database, _>(cx, |database, _, _, _, cx| {
                     database.form = None;
                     cx.notify();
-                },
-            )),
+                }),
+            ),
         )
         .child(
             Button::new(
                 "db-form-test",
-                if busy == Some("test") { "Connecting…" } else { "Test" },
+                if busy == Some("test") {
+                    "Connecting…"
+                } else {
+                    "Test"
+                },
                 Variant::Outline,
             )
             .disabled(busy.is_some())
@@ -436,7 +480,11 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
         .child(
             Button::new(
                 "db-form-save",
-                if busy == Some("save") { "Saving…" } else { "Save" },
+                if busy == Some("save") {
+                    "Saving…"
+                } else {
+                    "Save"
+                },
                 Variant::Primary,
             )
             .disabled(busy.is_some())
