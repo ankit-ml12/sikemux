@@ -4024,7 +4024,9 @@ fn answered_question(
     } else {
         (
             Icon::Check,
-            div().text_color(t.text_primary).child(answer.to_owned()),
+            div()
+                .text_color(t.text_primary)
+                .child(recommended(answer).0.to_owned()),
         )
     };
     div()
