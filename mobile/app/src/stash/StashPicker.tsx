@@ -9,23 +9,33 @@ import { Chip } from '@/ui/controls';
 import { alertFailure, PromptGlyph } from '@/ui/prompt';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import type { StashItem } from './api';
-import { refreshStash, removeStash, seeStash, stashToken, useStash } from './store';
+import { newInStash, refreshStash, removeStash, seeStash, stashNow, stashToken, useStash } from './store';
 import { itemPlace, itemTitle } from './words';
 
 const GHOSTS = 3;
+/** Files of a stashed prompt shown under its words. */
+const PROMPT_THUMBS = 4;
 /** How far the list is pulled down past its top before it goes back to the tiles. */
 const PULL_DOWN = 70;
 
-/** The stash, newest first, to pick items from for the next message; `chosen` are numbered in the order picked. */
+/**
+ * The stash, newest first, to pick items from for the next message; `chosen` are numbered in the order
+ * picked. What came in since the person last looked is marked new, and opening it counts as looking.
+ */
 export function StashPicker({
   chosen,
   onToggle,
+  onAddNew,
+  onStashPrompt,
   onBack,
   onClose,
 }: {
   chosen: readonly StashItem[];
   onToggle: (item: StashItem) => void;
-  /** Pulled down from its top, back to the tiles. */
+  onAddNew: (items: StashItem[]) => void;
+  /** Present while the composer holds something to stash. */
+  onStashPrompt?: () => void;
+  /** Pulled down from its top. */
   onBack: () => void;
   onClose: () => void;
 }) {
@@ -33,9 +43,15 @@ export function StashPicker({
   const styles = useStyles(makeStyles);
   const stash = useStash();
   const bearer = useBearer();
+  const [fresh, setFresh] = useState(() => new Set(newInStash(stashNow()).map((item) => item.id)));
   useEffect(() => {
-    void refreshStash().then(seeStash);
+    void refreshStash().then(() => {
+      const arrived = newInStash(stashNow());
+      if (arrived.length) setFresh((known) => new Set([...known, ...arrived.map((item) => item.id)]));
+      void seeStash();
+    });
   }, []);
+  const news = stash.items.filter((item) => fresh.has(item.id));
 
   const remove = (item: StashItem) => {
     haptics.select();
@@ -63,6 +79,7 @@ export function StashPicker({
           <Row
             key={item.id}
             item={item}
+            fresh={fresh.has(item.id)}
             bearer={bearer}
             order={chosen.findIndex((known) => known.id === item.id) + 1}
             onPress={() => {
@@ -118,8 +135,29 @@ export function StashPicker({
         <Text style={styles.title} accessibilityRole="header">
           Stash
         </Text>
-        <View style={styles.close} />
+        {news.length ? (
+          <Pressable
+            onPress={() => onAddNew(news)}
+            hitSlop={8}
+            style={styles.headAction}
+            accessibilityRole="button"
+            accessibilityLabel={`Add ${news.length} new`}>
+            <Text style={styles.headActionText}>Add {news.length} new</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.close} />
+        )}
       </View>
+      {onStashPrompt ? (
+        <Pressable
+          onPress={onStashPrompt}
+          style={({ pressed }) => [styles.stashPrompt, pressed && { backgroundColor: colors.active }]}
+          accessibilityRole="button">
+          <Icon name="IconStack" size={16} color={colors.ink} />
+          <Text style={styles.stashPromptText}>Stash this prompt</Text>
+          <Text style={styles.stashPromptHint}>Clears the composer</Text>
+        </Pressable>
+      ) : null}
       {body}
       <View style={{ height: chosen.length ? 80 : 0 }} />
     </View>
@@ -143,6 +181,7 @@ const KIND_ICONS: Record<StashItem['kind'], IconName> = {
   image: 'IconImage',
   video: 'IconImage',
   file: 'IconFile',
+  prompt: 'IconMessage',
 };
 
 export function Face({ item, bearer, size = 46 }: { item: StashItem; bearer: string | undefined; size?: number }) {
@@ -167,12 +206,14 @@ export function Face({ item, bearer, size = 46 }: { item: StashItem; bearer: str
 
 function Row({
   item,
+  fresh,
   bearer,
   order,
   onPress,
   onLongPress,
 }: {
   item: StashItem;
+  fresh: boolean;
   bearer: string | undefined;
   order: number;
   onPress: () => void;
@@ -180,6 +221,7 @@ function Row({
 }) {
   const styles = useStyles(makeStyles);
   const file = item.kind === 'file' || item.kind === 'video';
+  const prompt = item.kind === 'prompt';
   return (
     <Pressable
       onPress={onPress}
@@ -191,9 +233,19 @@ function Row({
       accessibilityState={{ selected: order > 0 }}>
       <Face item={item} bearer={bearer} />
       <View style={styles.body}>
-        <Text style={[styles.rowTitle, file && styles.mono]} numberOfLines={1}>
-          {itemTitle(item)}
-        </Text>
+        <View style={styles.titleLine}>
+          <Text style={[styles.rowTitle, file && styles.mono]} numberOfLines={prompt ? 2 : 1}>
+            {prompt ? item.text?.trim() : itemTitle(item)}
+          </Text>
+          {fresh ? <Text style={styles.fresh}>NEW</Text> : null}
+        </View>
+        {prompt && item.attachments?.length ? (
+          <View style={styles.thumbs}>
+            {item.attachments.slice(0, PROMPT_THUMBS).map((attached) => (
+              <Face key={attached.id} item={attached} bearer={bearer} size={24} />
+            ))}
+          </View>
+        ) : null}
         {item.note ? (
           <Text style={styles.note} numberOfLines={1}>
             {item.note}
@@ -233,7 +285,37 @@ const makeStyles = (colors: Palette) =>
     ghostFace: { borderColor: 'transparent' },
     ghostLine: { height: 11, borderRadius: 4, backgroundColor: colors.raised },
     body: { flex: 1, minWidth: 0 },
-    rowTitle: { fontFamily: fonts.uiMedium, fontSize: 14.5, color: colors.ink },
+    titleLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+    rowTitle: { flexShrink: 1, fontFamily: fonts.uiMedium, fontSize: 14.5, color: colors.ink },
+    fresh: {
+      marginTop: 2,
+      paddingHorizontal: 5,
+      borderRadius: 4,
+      overflow: 'hidden',
+      backgroundColor: colors.accent,
+      fontFamily: fonts.uiSemibold,
+      fontSize: 9.5,
+      lineHeight: 15,
+      letterSpacing: 0.76,
+      color: colors.ground,
+    },
+    thumbs: { flexDirection: 'row', gap: 4, marginTop: 5 },
+    headAction: { minWidth: 40, height: 40, paddingHorizontal: 4, alignItems: 'flex-end', justifyContent: 'center' },
+    headActionText: { fontFamily: fonts.uiSemibold, fontSize: 14, color: colors.accent },
+    stashPrompt: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      height: 48,
+      marginBottom: 8,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+    },
+    stashPromptText: { fontFamily: fonts.uiMedium, fontSize: 14.5, color: colors.ink },
+    stashPromptHint: { flex: 1, textAlign: 'right', fontFamily: fonts.ui, fontSize: 12, color: colors.tertiary },
     mono: { fontFamily: fonts.mono, fontSize: 13 },
     note: { marginTop: 3, fontFamily: fonts.ui, fontSize: 12.5, color: colors.secondary },
     place: { marginTop: 2, fontFamily: fonts.ui, fontSize: 12, color: colors.tertiary },

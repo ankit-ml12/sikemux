@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { basename } from '@shared/lib/paths';
+import { StashPreview, useStashItem } from '@/stash/StashChip';
 import { Icon } from '@/ui/Icon';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import { useHostFile } from './hostFiles';
@@ -27,15 +28,25 @@ function FileChip({ name, size, image, tall }: { name: string; size?: number; im
   );
 }
 
+/** A file from the stash shows as the stash showed it, while the stash still holds it. */
+function StashedOrFile({ attachment }: { attachment: Attachment }) {
+  const item = useStashItem(attachment.stashId);
+  if (item) return <StashPreview item={item} />;
+  return <FileChip name={attachment.name} size={attachment.size || undefined} tall />;
+}
+
 /** What is picked for the next message, above the composer's text, each with its upload's state. */
 export function ComposerAttachments({
   attachments,
   onRemove,
   onRetry,
+  lead,
 }: {
   attachments: readonly Attachment[];
   onRemove: (id: string) => void;
   onRetry: () => void;
+  /** Shown before the files, such as stashed links picked for the message. */
+  lead?: ReactNode;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
@@ -43,6 +54,7 @@ export function ComposerAttachments({
   return (
     <View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row} keyboardShouldPersistTaps="handled">
+        {lead}
         {attachments.map((attachment) => {
           const sending = attachment.upload === 'sending';
           const broken = attachment.upload === 'failed';
@@ -64,7 +76,7 @@ export function ComposerAttachments({
                 {attachment.kind === 'image' ? (
                   <Image source={{ uri: attachment.uri }} style={styles.thumbImage} resizeMode="cover" />
                 ) : (
-                  <FileChip name={attachment.name} size={attachment.size || undefined} tall />
+                  <StashedOrFile attachment={attachment} />
                 )}
               </View>
               {sending || broken ? (

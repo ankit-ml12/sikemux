@@ -35,7 +35,7 @@ function failure(status: number, body: string): ApiProblem {
 export async function stashFile(
   token: TokenSource,
   file: { uri: string; name: string; mime: string },
-  extra: { note?: string; target?: StashTarget },
+  extra: { note?: string; target?: StashTarget; prompt?: string },
   options: { onProgress?: (share: number) => void; signal?: AbortSignal } = {},
 ): Promise<StashItem> {
   const headers: Record<string, string> = {
@@ -45,6 +45,7 @@ export async function stashFile(
   };
   if (extra.note) headers['x-stash-note'] = encodeURIComponent(extra.note);
   if (extra.target) headers['x-stash-target'] = encodeURIComponent(JSON.stringify(extra.target));
+  if (extra.prompt) headers['x-stash-prompt'] = extra.prompt;
   const task = new UploadTask(new File(file.uri), `${apiUrl()}/v1/stash`, {
     httpMethod: 'POST',
     uploadType: UploadType.BINARY_CONTENT,
@@ -95,4 +96,24 @@ export async function fetchStashFile(token: TokenSource, item: StashItem): Promi
     size: destination.size ?? item.size ?? 0,
     stashId: item.id,
   };
+}
+
+/**
+ * Stashes a whole prompt as one item: its text, then each file under it. The server shows it only once
+ * every file is in; one that could not finish is taken back.
+ */
+export async function stashPrompt(
+  token: TokenSource,
+  prompt: { text: string; files: readonly { uri: string; name: string; mime: string }[] },
+): Promise<StashItem> {
+  const item = await stashApi(token).addStash({ kind: 'prompt', text: prompt.text, attachmentCount: prompt.files.length });
+  try {
+    for (const file of prompt.files) await stashFile(token, file, { prompt: item.id });
+  } catch (error) {
+    await stashApi(token)
+      .deleteStash(item.id)
+      .catch(() => {});
+    throw error;
+  }
+  return item;
 }

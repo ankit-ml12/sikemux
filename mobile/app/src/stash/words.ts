@@ -6,26 +6,37 @@ export function siteOf(url: string): string {
   return url.replace(/^[a-z]+:\/\//i, '').split(/[/?#]/)[0] ?? url;
 }
 
-/** What an item is called in a list: a page's title, text's first line, or a file's name. */
+/** What an item is called in a list: a page's title, a text's or prompt's first line, or a file's name. */
 export function itemTitle(item: StashItem): string {
   if (item.kind === 'link') return item.preview?.title || (item.url ?? '').replace(/^https?:\/\//, '');
-  if (item.kind === 'text') return (item.text ?? '').trim().split('\n')[0] ?? '';
+  if (item.kind === 'text' || item.kind === 'prompt') return (item.text ?? '').trim().split('\n')[0] ?? '';
   return item.name ?? 'file';
 }
 
 /** The line under it: where a link goes or what the item is, then how long ago it was stashed. */
 export function itemPlace(item: StashItem): string {
   const what =
-    item.kind === 'link' ? item.preview?.site || siteOf(item.url ?? '') : item.kind === 'text' ? 'Text' : formatBytes(item.size ?? 0);
+    item.kind === 'link'
+      ? item.preview?.site || siteOf(item.url ?? '')
+      : item.kind === 'text'
+        ? 'Text'
+        : item.kind === 'prompt'
+          ? promptWords(item)
+          : formatBytes(item.size ?? 0);
   const age = formatAge(item.createdAt);
   return `${what} · ${age === 'now' ? 'just now' : age}`;
 }
 
-/** What a link or text puts in the message; an item with a file puts none. */
+/** What a link, text or prompt puts in the message; an item with a file puts none. */
 export function itemText(item: StashItem): string {
   if (item.kind === 'link') return item.url ?? '';
-  if (item.kind === 'text') return item.text ?? '';
+  if (item.kind === 'text' || item.kind === 'prompt') return item.text ?? '';
   return '';
+}
+
+function promptWords(item: StashItem): string {
+  const files = item.attachments?.length ?? 0;
+  return files ? `Prompt · ${files} ${files === 1 ? 'file' : 'files'}` : 'Prompt';
 }
 
 export const carriesFile = (item: StashItem) => item.kind === 'image' || item.kind === 'video' || item.kind === 'file';
@@ -52,4 +63,9 @@ export function stashMatches(items: readonly StashItem[], query: string): StashI
     const said = [itemTitle(item), item.note, item.url, item.text, item.preview?.site].filter(Boolean).join(' ').toLowerCase();
     return words.every((word) => said.includes(word));
   });
+}
+
+/** The message as sent: what was written, then each chip's link or text. */
+export function withChips(text: string, chips: readonly StashItem[]): string {
+  return [text, ...chips.map(itemText)].filter(Boolean).join('\n\n');
 }

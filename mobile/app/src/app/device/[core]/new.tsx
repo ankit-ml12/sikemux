@@ -18,9 +18,11 @@ import { ComposerInput } from '@/chat/ComposerInput';
 import { fitting, uploadEach, type Attachment } from '@/chat/uploads';
 import type { StashItem } from '@/stash/api';
 import { downloadedFile, intoMessage, stashIdsOf } from '@/stash/attach';
+import { StashButton } from '@/stash/StashButton';
+import { StashChip } from '@/stash/StashChip';
 import { StashMenu } from '@/stash/StashMenu';
 import { takeStash } from '@/stash/store';
-import { stashQuery, withoutQuery } from '@/stash/words';
+import { stashQuery, withChips, withoutQuery } from '@/stash/words';
 import { MAX_ATTACHMENTS } from '@/core/wire.generated';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf } from '@/core/problem';
@@ -163,10 +165,10 @@ export default function NewChat() {
   const [chosenMode, setChosenMode] = useState<string>();
   const [projectId, setProjectId] = useState<string | undefined>(linkedProject);
   const [draft, setDraft] = useState('');
-  const [sheet, setSheet] = useState<'agent' | 'project' | 'attach' | 'settings'>();
+  const [sheet, setSheet] = useState<'agent' | 'project' | 'attach' | 'stash' | 'settings'>();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  /** Stashed links and text put in the message, which leave the stash once it is sent. */
-  const [stashedWords, setStashedWords] = useState<string[]>([]);
+  /** Stashed links and text picked for the message, shown as chips and sent as words. */
+  const [chips, setChips] = useState<StashItem[]>([]);
   const [sending, setSending] = useState<Sending>();
   const starting = Boolean(sending);
   const [problem, setProblem] = useState<string>();
@@ -187,7 +189,9 @@ export default function NewChat() {
   const mode = chosenMode ?? launcher?.permissionMode ?? '';
   const room = MAX_ATTACHMENTS - attachments.length;
   const mention = stashQuery(draft);
-  const sendable = Boolean((draft.trim() || attachments.length) && launcher && project && live.status === 'open' && !starting);
+  const sendable = Boolean(
+    (draft.trim() || attachments.length || chips.length) && launcher && project && live.status === 'open' && !starting,
+  );
   const blocked =
     live.status !== 'open'
       ? live.snapshot
@@ -213,8 +217,9 @@ export default function NewChat() {
   const fromStash = (items: StashItem[], base = draft) => {
     const put = intoMessage(items, base, downloadedFile);
     setDraft(put.draft);
-    setStashedWords((known) => [...known, ...put.words]);
+    setChips((known) => [...known, ...put.chips.filter((chip) => !known.some((held) => held.id === chip.id))]);
     if (put.files) attach(put.files);
+    void takeStash(put.restored);
   };
 
   /** Answers the files as they ended up, and all of them sent or null when one did not get there. */
@@ -242,7 +247,7 @@ export default function NewChat() {
   };
 
   const start = async () => {
-    const text = draft.trim();
+    const text = withChips(draft.trim(), chips);
     if (busy.current || (!text && !attachments.length) || !launcher || !project || live.status !== 'open') return;
     busy.current = true;
     haptics.tap();
@@ -260,8 +265,8 @@ export default function NewChat() {
       const { sent, files } = await upload(live.connection, agentId, shown.attachments);
       if (!sent) return giveBack(shown, files, 'Could not send every file to the host');
       chatSession(core, agentId).sendWhenAttached(text, sent);
-      void takeStash(stashIdsOf(shown.attachments, stashedWords));
-      setStashedWords([]);
+      void takeStash(stashIdsOf(shown.attachments, chips));
+      setChips([]);
       router.replace({ pathname: '/device/[core]/chat/[agent]', params: { core, agent: agentId, started: '1' } });
     } catch (error) {
       giveBack(shown, shown.attachments, problemOf(error));
@@ -325,11 +330,14 @@ export default function NewChat() {
             </Pressable>
           ) : null}
           <View style={styles.composer}>
-            {attachments.length ? (
+            {attachments.length || chips.length ? (
               <ComposerAttachments
                 attachments={attachments}
                 onRemove={(id) => !starting && setAttachments((now) => now.filter((attachment) => attachment.id !== id))}
                 onRetry={start}
+                lead={chips.map((chip) => (
+                  <StashChip key={chip.id} item={chip} onRemove={() => setChips((now) => now.filter((held) => held.id !== chip.id))} />
+                ))}
               />
             ) : null}
             <ComposerInput value={draft} onChangeText={setDraft} placeholder={IDLE} editable={!starting} />
@@ -347,6 +355,7 @@ export default function NewChat() {
                 accessibilityState={{ disabled: starting || room <= 0 }}>
                 <Icon name="IconPlus" size={17} color={colors.inkDim} />
               </Pressable>
+              <StashButton onPress={() => setSheet('stash')} />
               {launcher ? (
                 <YoloToggle mode={mode} provider={launcher.provider} locked={starting || Boolean(started)} onToggle={setChosenMode} />
               ) : null}
@@ -381,7 +390,14 @@ export default function NewChat() {
           </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
-      <AttachSheet visible={sheet === 'attach'} room={room} onClose={() => setSheet(undefined)} onAttach={attach} onStash={fromStash} />
+      <AttachSheet
+        visible={sheet === 'attach' || sheet === 'stash'}
+        stash={sheet === 'stash'}
+        room={room}
+        onClose={() => setSheet(undefined)}
+        onAttach={attach}
+        onStash={fromStash}
+      />
       <AgentSheet
         visible={sheet === 'agent'}
         onClose={() => setSheet(undefined)}

@@ -95,6 +95,11 @@ export async function seeStash() {
   } catch {}
 }
 
+/** The stash as the phone knows it now, outside a render. */
+export function stashNow(): Stash {
+  return now;
+}
+
 export function useStash(): Stash {
   return useSyncExternalStore(subscribe, () => now);
 }

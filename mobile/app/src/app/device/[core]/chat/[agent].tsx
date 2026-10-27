@@ -413,6 +413,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
               hostName={hostName}
               onSent={scroll.toEnd}
               attachments={chat.attachments}
+              chips={chat.chips}
               strip={strip}
               onRecent={recalls ? openRecent : undefined}
               inputRef={input}

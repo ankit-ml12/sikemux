@@ -13,8 +13,12 @@ import { Folds } from './folds';
 import type { ChatStore, DraftStore, Kept } from './kept';
 import { fitting, pathsOf, uploadEach, type Attachment } from './uploads';
 import type { StashItem } from '@/stash/api';
+import { withChips } from '@/stash/words';
 
 export type Attached = 'attaching' | 'live' | 'missing';
+
+/** What the composer held, taken out to be put back later. */
+export type HeldComposer = { text: string; attachments: Attachment[]; chips: StashItem[] };
 
 /** A message this phone wrote that the host has not taken yet. */
 export type Unsent = { state: 'sending' | 'failed'; problem?: string };
@@ -36,6 +40,8 @@ export type ChatSnapshot = {
   unsent: ReadonlyMap<string, Unsent>;
   /** Picked for the next message. */
   attachments: readonly Attachment[];
+  /** Stashed links and text picked for the next message, shown as chips and sent as words. */
+  chips: readonly StashItem[];
   /** What this phone sent, by the path the host keeps it at. */
   sentFiles: ReadonlyMap<string, Attachment>;
   /** Permission requests whose answer is on its way. */
@@ -182,6 +188,7 @@ export class ChatSession {
   /** Model and effort picks this phone made, by picker id, shown until the host says what it runs on. */
   private chosen: ReadonlyMap<string, string> = new Map();
   private attachments: Attachment[] = [];
+  private chips: StashItem[] = [];
   private sentFiles: ReadonlyMap<string, Attachment> = new Map();
   private answering: ReadonlySet<string> = new Set();
   private stopping: ReadonlySet<string> = new Set();
@@ -238,6 +245,7 @@ export class ChatSession {
       this.draft = unsaved.text;
       this.attachments = unsaved.attachments.filter((attachment) => attachment.path || new File(attachment.uri).exists);
       this.draftExtra = unsaved.extra;
+      this.chips = unsaved.chips ?? [];
       this.draftRev = unsaved.rev;
       this.edits = 1;
     }
@@ -345,6 +353,41 @@ export class ChatSession {
     };
   };
 
+  /** Stashed links and text for the next message, which ride as chips until it is sent. */
+  addChips = (items: readonly StashItem[]) => {
+    const fresh = items.filter((item) => !this.chips.some((chip) => chip.id === item.id));
+    if (!fresh.length) return;
+    this.chips = [...this.chips, ...fresh];
+    this.edited();
+    this.emit();
+  };
+
+  removeChip = (id: string) => {
+    this.chips = this.chips.filter((chip) => chip.id !== id);
+    this.edited();
+    this.emit();
+  };
+
+  /** Takes everything out of the composer, answering it so it can be put back. */
+  takeComposer = (): HeldComposer => {
+    const held = { text: this.draft, attachments: this.attachments, chips: this.chips };
+    this.draft = '';
+    this.attachments = [];
+    this.chips = [];
+    this.edited();
+    this.emit();
+    return held;
+  };
+
+  /** Puts back what `takeComposer` took, before whatever was written since. */
+  putComposer = (held: HeldComposer) => {
+    this.draft = [held.text, this.draft].filter(Boolean).join('\n\n');
+    this.attachments = [...held.attachments, ...this.attachments];
+    this.chips = [...held.chips, ...this.chips.filter((chip) => !held.chips.some((known) => known.id === chip.id))];
+    this.edited();
+    this.emit();
+  };
+
   removeAttachment = (id: string) => {
     if (this.uploading()) return;
     this.attachments = this.attachments.filter((attachment) => attachment.id !== id);
@@ -361,6 +404,8 @@ export class ChatSession {
     this.notice = null;
     const files = this.attachments;
     this.attachments = [];
+    text = withChips(text, this.chips);
+    this.chips = [];
     this.edited();
     if (this.outbox.some((outgoing) => outgoing.waiting)) this.deliver(text, files, true);
     else if (this.busy()) this.queue(text, files);
@@ -381,7 +426,10 @@ export class ChatSession {
     this.notice = null;
     const attachments = this.attachments.length ? await this.upload() : [];
     if (!attachments) return false;
-    if (await answer(answerText(text, pathsOf(attachments)))) return true;
+    if (await answer(answerText(withChips(text, this.chips), pathsOf(attachments)))) {
+      this.chips = [];
+      return true;
+    }
     this.attachments = [...attachments, ...this.attachments];
     this.emit();
     return false;
@@ -612,6 +660,7 @@ export class ChatSession {
       notice: this.notice,
       unsent: this.unsentView(),
       attachments: this.attachments,
+      chips: this.chips,
       sentFiles: this.sentFiles,
       answering: this.answering,
       stopping: this.stopping,
@@ -769,6 +818,7 @@ export class ChatSession {
     this.options.drafts?.save({
       text: this.draft,
       attachments: this.attachments.filter((attachment) => !attachment.upload),
+      chips: this.chips,
       extra: this.draftExtra,
       rev: this.draftRev,
     });

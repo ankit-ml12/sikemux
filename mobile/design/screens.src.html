@@ -908,8 +908,6 @@
   .share-done span { font-size: 14px; color: var(--text-tertiary); }
   .share-sheet.short { top: auto; height: 380px; }
 
-  .attach-tiles .count-on { position: relative; }
-  .attach-tiles .badge { position: absolute; top: -5px; right: 10px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 11px; font-weight: 600; font-style: normal; display: grid; place-items: center; }
   .stash-list { display: flex; flex-direction: column; gap: 2px; margin: 0 -4px; }
   .stash-item { display: flex; align-items: center; gap: 12px; min-height: 62px; padding: 8px; border-radius: 10px; border: 1px solid transparent; }
   .stash-item.on { background: var(--surface-active); }
@@ -937,11 +935,27 @@
   .mentions .face { flex: none; width: 34px; height: 34px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-raised); display: grid; place-items: center; color: var(--text-secondary); }
   .mentions .face.og { border-color: transparent; background: radial-gradient(circle at 76% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 48%, #a277ff 64%, #1d2a3a 65%, #101a24 100%); }
   .mentions .words { min-width: 0; }
-  .stash-news { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; height: 36px; margin: 0 0 8px; padding: 0 4px 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-overlay); font-size: 13px; color: var(--text-secondary); }
-  .stash-news .ico { color: var(--ink-dim); }
-  .stash-news b { font-weight: 500; color: var(--text-primary); }
-  .stash-news .add { height: 26px; padding: 0 10px; display: grid; place-items: center; font-weight: 600; color: var(--acc); }
-  .stash-news .x { width: 26px; height: 26px; display: grid; place-items: center; color: var(--text-tertiary); }
+  .stash-btn { display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 8px; color: var(--ink-dim); }
+  .stash-btn.on { color: var(--ink); }
+  .stash-btn .pill { min-width: 17px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--acc); color: var(--bg); font-style: normal; font-size: 10.5px; font-weight: 600; display: grid; place-items: center; }
+  .gallery-head .head-act { width: 84px; text-align: right; font-size: 14px; font-weight: 600; color: var(--acc); }
+  .stash-prompt { display: flex; align-items: center; gap: 10px; height: 48px; margin: 0 0 8px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-raised); color: var(--ink); }
+  .stash-prompt b { font-size: 14.5px; font-weight: 500; }
+  .stash-prompt span { flex: 1; text-align: right; font-size: 12px; color: var(--text-tertiary); }
+  .stash-item .t .new { display: inline-block; vertical-align: 2px; margin-left: 4px; padding: 0 5px; border-radius: 4px; background: var(--acc); color: var(--bg); font-style: normal; font-size: 9.5px; font-weight: 600; letter-spacing: .08em; line-height: 15px; }
+  .stash-item .t.tline { display: flex; align-items: center; gap: 2px; }
+  .stash-item .t.tline span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .stash-item .t.two { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .stash-item .thumbs { display: flex; gap: 4px; margin-top: 5px; }
+  .stash-item .thumbs .face { width: 24px; height: 24px; border-radius: 5px; }
+  .attachments > .stash-chip { display: flex; align-items: center; gap: 8px; max-width: 220px; padding: 0 28px 0 6px; }
+  .stash-chip .face { flex: none; width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-raised); }
+  .stash-chip .face.og { border-color: transparent; background: radial-gradient(circle at 76% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 48%, #a277ff 64%, #1d2a3a 65%, #101a24 100%); }
+  .stash-chip .face.photo { border-color: transparent; background: radial-gradient(circle at 72% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 45%, #a277ff 62%, #1d2a3a 63%, #101a24 100%); }
+  .stash-chip b { min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stash-toast { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; height: 36px; margin: 0 0 8px; padding: 0 4px 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-overlay); font-size: 13px; color: var(--live); }
+  .stash-toast b { margin-right: 4px; font-weight: 500; color: var(--ink); }
+  .stash-toast .add { height: 26px; padding: 0 10px; display: grid; place-items: center; font-weight: 600; color: var(--acc); }
   .mentions b { display: block; font-size: 13.5px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mentions em { display: block; margin-top: 1px; font-style: normal; font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
@@ -3187,7 +3201,7 @@ expected 1 write, got 2</div>
 <!-- ================================================================ -->
 <section class="flow on-host">
   <h2>Stash in the composer</h2>
-  <p>Stash joins Camera, Photos and Files on the composer's +. It lists what the account has stashed and not yet used, newest first, from any device. An item picked goes with the message like any photo or file.</p>
+  <p>The stash has its own button in the composer's bar, as on the Mac. It lists what the account has stashed and not yet used, newest first, from any device, and takes the whole prompt in too. An item picked rides with the message as a preview chip.</p>
   <div class="phones">
 
     <figure><div class="phone"><div class="island"></div>
@@ -3198,41 +3212,40 @@ expected 1 write, got 2</div>
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
         </div>
-        <div class="scrim"></div>
-        <div class="sheet gallery-half">
-          <div class="grabber"></div>
-          <div class="attach-tiles">
-            <span><i>{{IconCamera:20}}</i>Camera</span>
-            <span><i>{{IconImage:20}}</i>Photos</span>
-            <span><i>{{IconFile:20}}</i>Files</span>
-            <span class="count-on"><i>{{IconStack:20}}</i><em class="badge">4</em>Stash</span>
-          </div>
-          <div class="gallery">
-            <span class="cam">{{IconCamera:20}}Camera</span>
-            <span class="photo ph1"></span><span class="photo ph2"></span><span class="photo ph3"></span>
-            <span class="photo ph4"></span><span class="photo ph5"></span><span class="photo"></span><span class="photo ph6"></span>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn on">{{IconStack:16}}<i class="pill">2</i></span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
           </div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Stash on the +</b><div class="note">A fourth tile, after Files, with the count of what is waiting in the stash; no count when it is empty. On Android the sheet is these four tiles.</div></figcaption>
+      <figcaption><b>A Stash button</b><div class="note">As on the Mac, the stash has its own button in the composer's bar, after +: the Stack icon, and the count of what came in since the person last looked, on any device, in a purple pill. No chip floats over the chat. The + only picks photos and files again. A tap opens the stash.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen gallery-full">
-        <div class="gallery-head"><span class="icon-btn">{{IconClose:15}}</span><b>Stash</b><span class="spacer"></span></div>
+        <div class="gallery-head"><span class="icon-btn">{{IconClose:15}}</span><b>Stash</b><span class="head-act">Add 2 new</span></div>
+        <div class="stash-prompt">{{IconStack:16}}<b>Stash this prompt</b><span>Clears the composer</span></div>
         <div class="stash-list">
-          <div class="stash-item on"><span class="face og"></span><div class="body"><div class="t">Stash links from your phone for agents to read later</div><div class="s">github.com · 2m</div></div><span class="pick">1</span></div>
-          <div class="stash-item"><span class="face photo"></span><div class="body"><div class="t">PXL_20261027_0912.jpg</div><div class="n">The crash on resume, both times after a call</div><div class="s">2.1 MB · 1h</div></div><span class="pick"></span></div>
-          <div class="stash-item"><span class="face">{{IconText:18}}</span><div class="body"><div class="t">Rate limits: 60 a minute per account, 600 per host, and the burst…</div><div class="s">Text · 3h</div></div><span class="pick"></span></div>
-          <div class="stash-item on"><span class="face">{{IconFile:18}}</span><div class="body"><div class="t mono">invoice-2026-10.pdf</div><div class="s">240 KB · yesterday</div></div><span class="pick">2</span></div>
-          <div class="stash-item"><span class="face">{{IconLink:18}}</span><div class="body"><div class="t">docs.expo.dev/versions/latest/config/app</div><div class="s">docs.expo.dev · 2d</div></div><span class="pick"></span></div>
+          <div class="stash-item on"><span class="face og"></span><div class="body"><div class="t tline"><span>Stash links from your phone for agents to read later</span><i class="new">NEW</i></div><div class="s">github.com · 2m</div></div><span class="pick">1</span></div>
+          <div class="stash-item"><span class="face photo"></span><div class="body"><div class="t tline"><span>PXL_20261027_0912.jpg</span><i class="new">NEW</i></div><div class="n">The crash on resume, both times after a call</div><div class="s">2.1 MB · 1h</div></div><span class="pick"></span></div>
+          <div class="stash-item"><span class="face">{{IconMessage:18}}</span><div class="body"><div class="t two">Retry the upload when the socket drops, but only twice, then show the error with what was sent</div><div class="thumbs"><span class="face photo"></span><span class="face">{{IconFile:12}}</span></div><div class="s">Prompt · 2 files · 3h</div></div><span class="pick"></span></div>
+          <div class="stash-item"><span class="face">{{IconText:18}}</span><div class="body"><div class="t">Rate limits: 60 a minute per account, 600 per host, and the burst…</div><div class="s">Text · 5h</div></div><span class="pick"></span></div>
+          <div class="stash-item"><span class="face">{{IconFile:18}}</span><div class="body"><div class="t mono">invoice-2026-10.pdf</div><div class="s">240 KB · yesterday</div></div><span class="pick"></span></div>
         </div>
-        <div class="gallery-add"><span class="btn primary">Add 2</span></div>
+        <div class="gallery-add"><span class="btn primary">Add 1</span></div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>The stash</b><div class="note">The sheet rises to full height under × and Stash. Each item shows what it is: a link its page's picture, title and site; photos a thumbnail; text its first line; a file its icon and name in the code face, with its size. A note shows under the title, then the site, "Text" or the size, and when. Taps number the picks as photos are, up to what the message has room for, and Add puts them on the composer: each item's note, then a link or text, goes into the message's text, as on the Mac, and the host fetches a file or photo from the stash itself, so it sits on the composer as a file, past the 10 MB a file picked on the phone may be. Once the message is sent its items leave the stash. A long press offers Remove from stash.</div></figcaption>
+      <figcaption><b>The stash</b><div class="note">The button's sheet rises to full height. New items come first, each marked NEW, and Add N new at the top right attaches them all; opening the stash counts as looking, on every device. While the composer holds something, Stash this prompt heads the list. Each item shows what it is: a link its page's picture, title and site; a photo its thumbnail; text its first line; a file its icon and name in the code face; a stashed prompt its first two lines and its files' thumbnails. Taps number the picks, and Add puts them on the composer. A long press offers Remove from stash.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -3274,16 +3287,18 @@ expected 1 write, got 2</div>
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
         </div>
-        <div class="composer-wrap" style="display:flex;flex-direction:column">
-          <div class="stash-news">{{IconStack:13}}<span><b>2</b> new in Stash</span><span class="add">Add</span><span class="x">{{IconClose:11}}</span></div>
-          <div class="composer">
-            <div class="ta ph">Ask about this project, or type / for commands</div>
+        <div class="composer-wrap">
+          <div class="composer focus">
+            <div class="attachments">
+              <span class="stash-chip"><i class="face og"></i><b>Stash links from your phone</b><span class="x">{{IconClose:10}}</span></span>
+              <span class="stash-chip"><i class="face photo"></i><b>PXL_0912.jpg</b><span class="x">{{IconClose:10}}</span></span>
+            </div>
+            <div class="ta">The crash on resume, both times after a call. Can you match the hero's spacing to this?<span class="caret"></span></div>
             <div class="bar">
               <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn">{{IconStack:16}}</span>
               <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
               <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
-              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
               <span class="spacer"></span>
               <span class="send">{{IconArrowUp:16}}</span>
             </div>
@@ -3291,7 +3306,34 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>New in Stash</b><div class="note">As on the Mac, what was stashed since the person last looked at the stash, on any device, shows as one chip above the composer: the count, then Add, which attaches them all as picking them would, and × to let them be. Opening the stash, Add and × each mark it looked at everywhere, so the chip goes on every device at once. It steps aside while a permission card, slash commands or the &amp; list show.</div></figcaption>
+      <figcaption><b>Attached as previews</b><div class="note">An item picked from the stash sits on the composer as a chip with its picture or glyph and its title, never as a pasted address; its note goes into the text. A link or text joins the message's words only as it is sent, and the host fetches a file or photo from the stash itself, past the 10 MB a file picked on the phone may be. Once the message is sent its items leave the stash. A stashed prompt picked here comes back whole: its words into the text and its files beside them, and it leaves the stash.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+        </div>
+        <div class="composer-wrap" style="display:flex;flex-direction:column">
+          <div class="stash-toast">{{IconCheck:13}}<b>Stashed</b><span class="add">Undo</span></div>
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn">{{IconStack:16}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Stash this prompt</b><div class="note">From the stash's sheet, or a long press on send, the whole prompt goes to the stash as one item: its text, with any link or text chips in it, and the files picked on the phone. The composer clears at once, and Stashed with Undo shows over it for six seconds; Undo takes the item back out of the stash and puts the prompt back as it was. Files the host fetched for the prompt stay out, and a line says so.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
