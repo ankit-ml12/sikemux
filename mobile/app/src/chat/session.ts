@@ -13,12 +13,9 @@ import { Folds } from './folds';
 import type { ChatStore, DraftStore, Kept } from './kept';
 import { fitting, pathsOf, uploadEach, type Attachment } from './uploads';
 import type { StashItem } from '@/stash/api';
-import { withChips } from '@/stash/words';
+import { contextChipsOf, withContext, type ContextChip } from '@/stash/words';
 
 export type Attached = 'attaching' | 'live' | 'missing';
-
-/** What the composer held, taken out to be put back later. */
-export type HeldComposer = { text: string; attachments: Attachment[]; chips: StashItem[] };
 
 /** A message this phone wrote that the host has not taken yet. */
 export type Unsent = { state: 'sending' | 'failed'; problem?: string };
@@ -40,8 +37,8 @@ export type ChatSnapshot = {
   unsent: ReadonlyMap<string, Unsent>;
   /** Picked for the next message. */
   attachments: readonly Attachment[];
-  /** Stashed links and text picked for the next message, shown as chips and sent as words. */
-  chips: readonly StashItem[];
+  /** Links and text the draft carries, as the host keeps them: shown as chips, sent as words. */
+  chips: readonly ContextChip[];
   /** What this phone sent, by the path the host keeps it at. */
   sentFiles: ReadonlyMap<string, Attachment>;
   /** Permission requests whose answer is on its way. */
@@ -188,7 +185,7 @@ export class ChatSession {
   /** Model and effort picks this phone made, by picker id, shown until the host says what it runs on. */
   private chosen: ReadonlyMap<string, string> = new Map();
   private attachments: Attachment[] = [];
-  private chips: StashItem[] = [];
+  private chips: ContextChip[] = [];
   private sentFiles: ReadonlyMap<string, Attachment> = new Map();
   private answering: ReadonlySet<string> = new Set();
   private stopping: ReadonlySet<string> = new Set();
@@ -332,60 +329,44 @@ export class ChatSession {
     this.emit();
   };
 
-  /** A stash item's file, which the host fetches from the stash itself, ready to go with the next message. */
-  fromStash = async (item: StashItem): Promise<Attachment> => {
-    const connection = this.connection;
-    if (!connection?.isOpen()) throw new Error('the host is not connected');
-    const answer = JSON.parse(
-      await connection.call('attachStash', JSON.stringify({ id: item.id, agentId: this.agentId, draft: false })),
-    ) as { path?: string };
-    if (!answer.path) throw new Error('the host kept no file for it');
-    const name = item.name ?? 'file';
-    return {
-      id: `stash-${item.id}`,
-      kind: 'file',
-      name,
-      mime: item.mime ?? 'application/octet-stream',
-      uri: answer.path,
-      size: item.size ?? 0,
-      path: answer.path,
-      stashId: item.id,
-    };
+  /** Has the host put stash items in this chat's draft: files beside it, links and text as chips, notes in its words. */
+  attachStash = async (items: readonly StashItem[]) => {
+    const connection = this.openConnection();
+    for (const item of items) await connection.call('attachStash', JSON.stringify({ id: item.id, agentId: this.agentId }));
   };
 
-  /** Stashed links and text for the next message, which ride as chips until it is sent. */
-  addChips = (items: readonly StashItem[]) => {
-    const fresh = items.filter((item) => !this.chips.some((chip) => chip.id === item.id));
-    if (!fresh.length) return;
-    this.chips = [...this.chips, ...fresh];
+  removeChip = (uri: string) => {
+    this.chips = this.chips.filter((chip) => chip.uri !== uri);
     this.edited();
     this.emit();
   };
 
-  removeChip = (id: string) => {
-    this.chips = this.chips.filter((chip) => chip.id !== id);
-    this.edited();
-    this.emit();
-  };
-
-  /** Takes everything out of the composer, answering it so it can be put back. */
-  takeComposer = (): HeldComposer => {
-    const held = { text: this.draft, attachments: this.attachments, chips: this.chips };
+  /**
+   * Stashes the whole draft as one prompt, with the files picked here put on the host first, and empties
+   * it. Answers the prompt's id.
+   */
+  stashPrompt = async (): Promise<string> => {
+    const connection = this.openConnection();
+    if (this.attachments.some((attachment) => !attachment.path)) {
+      this.attachments = await this.putFiles(connection, this.attachments, (id, change) => this.patch(id, change));
+      this.edited();
+    }
+    clearTimeout(this.saving);
+    await this.saveDraft();
+    if (this.edits) throw new Error('the draft did not reach the host');
+    const { id } = JSON.parse(await connection.call('stashPrompt', JSON.stringify({ agentId: this.agentId }))) as { id: string };
     this.draft = '';
     this.attachments = [];
     this.chips = [];
-    this.edited();
     this.emit();
-    return held;
+    return id;
   };
 
-  /** Puts back what `takeComposer` took, before whatever was written since. */
-  putComposer = (held: HeldComposer) => {
-    this.draft = [held.text, this.draft].filter(Boolean).join('\n\n');
-    this.attachments = [...held.attachments, ...this.attachments];
-    this.chips = [...held.chips, ...this.chips.filter((chip) => !held.chips.some((known) => known.id === chip.id))];
-    this.edited();
-    this.emit();
+  /** Puts a stashed prompt back in the draft and takes it out of the stash. */
+  unstashPrompt = async (id: string) => {
+    const connection = this.openConnection();
+    await connection.call('attachStash', JSON.stringify({ id, agentId: this.agentId }));
+    await connection.call('removeStash', JSON.stringify({ id }));
   };
 
   removeAttachment = (id: string) => {
@@ -404,7 +385,7 @@ export class ChatSession {
     this.notice = null;
     const files = this.attachments;
     this.attachments = [];
-    text = withChips(text, this.chips);
+    text = withContext(text, this.chips);
     this.chips = [];
     this.edited();
     if (this.outbox.some((outgoing) => outgoing.waiting)) this.deliver(text, files, true);
@@ -426,7 +407,7 @@ export class ChatSession {
     this.notice = null;
     const attachments = this.attachments.length ? await this.upload() : [];
     if (!attachments) return false;
-    if (await answer(answerText(withChips(text, this.chips), pathsOf(attachments)))) {
+    if (await answer(answerText(withContext(text, this.chips), pathsOf(attachments)))) {
       this.chips = [];
       return true;
     }
@@ -727,6 +708,12 @@ export class ChatSession {
     return this.turnSince;
   }
 
+  private openConnection(): ConnectionLike {
+    const connection = this.connection;
+    if (!connection?.isOpen() || this.attached !== 'live') throw new Error('the host is not connected');
+    return connection;
+  }
+
   private uploading() {
     return this.attachments.some((attachment) => attachment.upload === 'sending');
   }
@@ -833,11 +820,11 @@ export class ChatSession {
     if (!this.edits || !connection?.isOpen() || this.attached !== 'live') return;
     const edits = this.edits;
     const paths = pathsOf(this.attachments);
-    const { attachments: _, ...rest } = this.draftExtra;
+    const { attachments: _files, context: _chips, ...rest } = this.draftExtra;
     const draft = {
       key: `chat:${this.agentId}`,
       text: this.draft,
-      extra: paths.length ? { ...rest, attachments: paths } : rest,
+      extra: { ...rest, ...(paths.length ? { attachments: paths } : {}), ...(this.chips.length ? { context: this.chips } : {}) },
       ...(this.draftRev === undefined ? {} : { rev: this.draftRev }),
     };
     try {
@@ -857,12 +844,13 @@ export class ChatSession {
     const host = this.chat.draft;
     if (host?.rev === this.draftRev && host) return;
     const extra = host?.extra && typeof host.extra === 'object' ? (host.extra as Record<string, unknown>) : {};
-    const { attachments, ...rest } = extra;
+    const { attachments, context, ...rest } = extra;
     const paths = Array.isArray(attachments) ? attachments.filter((path): path is string => typeof path === 'string') : [];
     const kept = new Map(this.attachments.flatMap((attachment) => (attachment.path ? [[attachment.path, attachment] as const] : [])));
     this.draftRev = host?.rev;
     this.draftExtra = rest;
     this.draft = host?.text ?? '';
+    this.chips = contextChipsOf(context);
     this.attachments = [
       ...paths.map((path) => kept.get(path) ?? hostFile(path)),
       ...this.attachments.filter((attachment) => !attachment.path),

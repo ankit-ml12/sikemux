@@ -949,7 +949,7 @@
   .stash-item .thumbs { display: flex; gap: 4px; margin-top: 5px; }
   .stash-item .thumbs .face { width: 24px; height: 24px; border-radius: 5px; }
   .attachments > .stash-chip { display: flex; align-items: center; gap: 8px; max-width: 220px; padding: 0 28px 0 6px; }
-  .stash-chip .face { flex: none; width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-raised); }
+  .stash-chip .face { flex: none; width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-raised); display: grid; place-items: center; color: var(--text-secondary); }
   .stash-chip .face.og { border-color: transparent; background: radial-gradient(circle at 76% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 48%, #a277ff 64%, #1d2a3a 65%, #101a24 100%); }
   .stash-chip .face.photo { border-color: transparent; background: radial-gradient(circle at 72% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 45%, #a277ff 62%, #1d2a3a 63%, #101a24 100%); }
   .stash-chip b { min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -3290,8 +3290,8 @@ expected 1 write, got 2</div>
         <div class="composer-wrap">
           <div class="composer focus">
             <div class="attachments">
-              <span class="stash-chip"><i class="face og"></i><b>Stash links from your phone</b><span class="x">{{IconClose:10}}</span></span>
-              <span class="stash-chip"><i class="face photo"></i><b>PXL_0912.jpg</b><span class="x">{{IconClose:10}}</span></span>
+              <span class="stash-chip"><i class="face">{{IconGlobe:13}}</i><b>Stash links from your phone</b><span class="x">{{IconClose:10}}</span></span>
+              <span class="file">{{IconImage:16}}<span class="file-words"><b>PXL_0912.jpg</b></span><span class="x">{{IconClose:10}}</span></span>
             </div>
             <div class="ta">The crash on resume, both times after a call. Can you match the hero's spacing to this?<span class="caret"></span></div>
             <div class="bar">
@@ -3306,7 +3306,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Attached as previews</b><div class="note">An item picked from the stash sits on the composer as a chip with its picture or glyph and its title, never as a pasted address; its note goes into the text. A link or text joins the message's words only as it is sent, and the host fetches a file or photo from the stash itself, past the 10 MB a file picked on the phone may be. Once the message is sent its items leave the stash. A stashed prompt picked here comes back whole: its words into the text and its files beside them, and it leaves the stash.</div></figcaption>
+      <figcaption><b>Attached as previews</b><div class="note">An item picked from the stash goes into the chat's draft on the host, as on the Mac, so the Mac and every phone show the same composer: a link or text as a chip with its site's icon, or the text glyph, and its title, never a pasted address; a file or photo as a tile beside it, fetched by the host itself; its note into the words. Picking an item takes it out of the stash. A link or text goes with the message as words when it is sent from the phone. A stashed prompt picked here comes back whole: its words into the text and its files beside them.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -3333,7 +3333,7 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Stash this prompt</b><div class="note">From the stash's sheet, or a long press on send, the whole prompt goes to the stash as one item: its text, with any link or text chips in it, and the files picked on the phone. The composer clears at once, and Stashed with Undo shows over it for six seconds; Undo takes the item back out of the stash and puts the prompt back as it was. Files the host fetched for the prompt stay out, and a line says so.</div></figcaption>
+      <figcaption><b>Stash this prompt</b><div class="note">From the stash's sheet, or a long press on send, the whole prompt goes to the stash as one item: its words, its files and its links. In a chat the host keeps the draft as the prompt, with the files picked on the phone put on the host first, and empties the draft on every device; a new chat, which has no draft on the host yet, sends it from the phone. Stashed with Undo shows over the composer for six seconds; Undo puts the prompt back in the composer and takes the item out of the stash.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

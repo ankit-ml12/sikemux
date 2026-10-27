@@ -42,6 +42,6 @@ export function intoMessage(
 }
 
 /** The stash items a message carries, which leave the stash once it is sent. */
-export function stashIdsOf(attachments: readonly Attachment[], chips: readonly StashItem[]): string[] {
+export function stashIdsOf(attachments: readonly Attachment[], chips: readonly { id: string }[]): string[] {
   return [...attachments.flatMap((attachment) => (attachment.stashId ? [attachment.stashId] : [])), ...chips.map((chip) => chip.id)];
 }

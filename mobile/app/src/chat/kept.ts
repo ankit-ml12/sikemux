@@ -3,7 +3,7 @@ import * as Updates from 'expo-updates';
 import type { ChatRows } from '@shared/chat/rows';
 
 import { writeWhole } from '@/devices/disk';
-import type { StashItem } from '@/stash/api';
+import type { ContextChip } from '@/stash/words';
 import type { Attachment } from './uploads';
 
 /** A chat as this phone last drew it, so opening it again draws at once and asks the host only for what came after. */
@@ -59,7 +59,7 @@ export function keptChat(core: string, agentId: string): ChatStore {
 }
 
 /** What was written in a chat's composer here and not saved on the host yet, with the host's revision it was written over. */
-export type UnsavedDraft = { text: string; attachments: Attachment[]; chips?: StashItem[]; extra: Record<string, unknown>; rev?: number };
+export type UnsavedDraft = { text: string; attachments: Attachment[]; chips?: ContextChip[]; extra: Record<string, unknown>; rev?: number };
 
 export type DraftStore = { load: () => UnsavedDraft | undefined; save: (draft: UnsavedDraft) => void; clear: () => void };
 

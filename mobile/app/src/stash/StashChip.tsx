@@ -1,11 +1,12 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Icon } from '@/ui/Icon';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import type { StashItem } from './api';
 import { Face, useBearer } from './StashPicker';
 import { useStash } from './store';
-import { itemTitle } from './words';
+import { itemTitle, type ContextChip } from './words';
 
 /** A stash item as it sits in the composer: its picture or glyph and its title. */
 export function StashPreview({ item }: { item: StashItem }) {
@@ -27,19 +28,41 @@ export function useStashItem(id: string | undefined): StashItem | undefined {
   return id === undefined ? undefined : items.find((item) => item.id === id);
 }
 
-/** A stashed link or text picked for the next message, with its × to take it off. */
-export function StashChip({ item, onRemove }: { item: StashItem; onRemove: () => void }) {
+/** A link's site icon, or the text glyph for stashed text and a link whose site has none. */
+function ChipFace({ uri }: { uri: string }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const host = /^https?:\/\/([^/?#]+)/i.exec(uri)?.[1];
+  const [broken, setBroken] = useState(false);
+  return (
+    <View style={styles.face}>
+      {host && !broken ? (
+        <Image source={{ uri: `https://${host}/favicon.ico` }} style={styles.favicon} onError={() => setBroken(true)} />
+      ) : (
+        <Icon name={host ? 'IconLink' : 'IconText'} size={13} color={colors.secondary} />
+      )}
+    </View>
+  );
+}
+
+/** A link or text the draft carries, with its × to take it off. */
+export function StashChip({ chip, onRemove }: { chip: ContextChip; onRemove: () => void }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.chip}>
-      <StashPreview item={item} />
+      <View style={styles.preview}>
+        <ChipFace uri={chip.uri} />
+        <Text style={styles.title} numberOfLines={1}>
+          {chip.title}
+        </Text>
+      </View>
       <Pressable
         onPress={onRemove}
         hitSlop={10}
         style={styles.remove}
         accessibilityRole="button"
-        accessibilityLabel={`Remove ${itemTitle(item)}`}>
+        accessibilityLabel={`Remove ${chip.title}`}>
         <Icon name="IconClose" size={10} color={colors.ground} />
       </Pressable>
     </View>
@@ -60,6 +83,17 @@ const makeStyles = (colors: Palette) =>
     },
     preview: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 6, paddingRight: 28, maxWidth: 220 },
     title: { flexShrink: 1, fontFamily: fonts.uiMedium, fontSize: 12.5, color: colors.ink },
+    face: {
+      width: 30,
+      height: 30,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    favicon: { width: 16, height: 16, borderRadius: 3 },
     remove: {
       position: 'absolute',
       top: 3,

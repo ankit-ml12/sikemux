@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { memo, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ActivityIndicator, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaskedView from '@react-native-masked-view/masked-view';
@@ -23,15 +23,13 @@ import { ComposerAttachments } from './Attachments';
 import { ComposerInput } from './ComposerInput';
 import { AttachSheet } from './AttachSheet';
 import { MAX_ATTACHMENTS } from '@/core/wire.generated';
-import { stashApi, stashPrompt, type StashItem } from '@/stash/api';
-import { StashedToast } from '@/stash/StashedToast';
-import { intoMessage, stashIdsOf } from '@/stash/attach';
+import type { StashItem } from '@/stash/api';
 import { StashMenu } from '@/stash/StashMenu';
 import { StashButton } from '@/stash/StashButton';
 import { StashChip } from '@/stash/StashChip';
-import { stashToken, takeStash } from '@/stash/store';
-import { stashQuery, withChips, withoutQuery } from '@/stash/words';
-import type { ChatSession, HeldComposer } from './session';
+import { usePromptStash } from '@/stash/usePromptStash';
+import { stashQuery, withoutQuery, type ContextChip } from '@/stash/words';
+import type { ChatSession } from './session';
 import type { Attachment } from './uploads';
 import { useDraft } from './useChat';
 import { matchingCommands } from './commands';
@@ -407,8 +405,6 @@ function AnsweringChip({ question }: { question: ComposerQuestion }) {
 
 /** How far up an empty composer is pulled before it opens the recent prompts. */
 const PULL_UP = 18;
-/** How long Undo stays offered after a prompt went to the stash. */
-const UNDO_MS = 6000;
 
 export const Composer = memo(function Composer({
   session,
@@ -456,7 +452,7 @@ export const Composer = memo(function Composer({
   /** Picked for the next message. */
   attachments: readonly Attachment[];
   /** Stashed links and text picked for the next message. */
-  chips: readonly StashItem[];
+  chips: readonly ContextChip[];
   /** What is still going, docked on the composer's top edge while nothing more urgent is. */
   strip: ReactNode;
   /** Pulling an empty composer up opens what was sent before; absent when nothing was. */
@@ -470,13 +466,6 @@ export const Composer = memo(function Composer({
   const styles = useStyles(makeStyles);
   const draft = useDraft(session);
   const [adding, setAdding] = useState<'files' | 'stash' | false>(false);
-  /** The prompt just stashed, kept to put back on Undo; `id` once the stash has it. */
-  const [stashed, setStashed] = useState<{ held: HeldComposer; id?: string } | null>(null);
-  useEffect(() => {
-    if (!stashed?.id) return;
-    const gone = setTimeout(() => setStashed(null), UNDO_MS);
-    return () => clearTimeout(gone);
-  }, [stashed]);
   const uploading = attachments.some((attachment) => attachment.upload === 'sending');
   const room = MAX_ATTACHMENTS - attachments.length;
   const [focused, setFocused] = useState(false);
@@ -502,6 +491,16 @@ export const Composer = memo(function Composer({
     <PermissionDock requests={requests} provider={provider} answering={answering} onAnswer={session.answer} />
   ) : null;
 
+  const prompt = usePromptStash({
+    stash: async () => {
+      const id = await session.stashPrompt();
+      input.current?.clear();
+      return id;
+    },
+    undo: session.unstashPrompt,
+    report: session.report,
+  });
+
   if (watchOnly) {
     return (
       <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
@@ -526,11 +525,9 @@ export const Composer = memo(function Composer({
       return;
     }
     haptics.tap();
-    const stashed = stashIdsOf(attachments, chips);
     const sending = question ? session.answerWith(text, question.onAnswer) : session.send(text);
     void sending.then((sent) => {
       if (!sent) return;
-      void takeStash(stashed);
       // Clearing the state alone leaves text the keyboard is still composing.
       input.current?.clear();
       session.setDraft('');
@@ -542,46 +539,9 @@ export const Composer = memo(function Composer({
     picking.then(session.attach).catch((error: unknown) => session.report(`could not pick: ${problem(error)}`));
   };
 
-  const toStash = () => {
-    const token = stashToken();
-    if (!token || !sendable || uploading) return;
-    haptics.tap();
-    const held = session.takeComposer();
-    input.current?.clear();
-    const files = held.attachments.filter((attachment) => !attachment.path);
-    const left = held.attachments.length - files.length;
-    const text = withChips(held.text.trim(), held.chips) || files.map((file) => file.name).join(', ');
-    setStashed({ held });
-    stashPrompt(token, { text, files })
-      .then((item) => {
-        haptics.success();
-        if (left) session.report(`${left} ${left === 1 ? 'file' : 'files'} kept on the host could not go to the stash`);
-        setStashed((shown) => (shown?.held === held ? { held, id: item.id } : shown));
-      })
-      .catch((error: unknown) => {
-        session.putComposer(held);
-        setStashed((shown) => (shown?.held === held ? null : shown));
-        session.report(`could not stash it: ${problem(error)}`);
-      });
-  };
-
-  const undoStash = () => {
-    const shown = stashed;
-    const token = stashToken();
-    if (!shown?.id || !token) return;
-    setStashed(null);
-    session.putComposer(shown.held);
-    void stashApi(token)
-      .deleteStash(shown.id)
-      .catch(() => {});
-  };
-
   const fromStash = (items: StashItem[], base = draft) => {
-    const put = intoMessage(items, base, session.fromStash);
-    session.setDraft(put.draft);
-    session.addChips(put.chips);
-    if (put.files) attach(put.files);
-    void takeStash(put.restored);
+    if (base !== draft) session.setDraft(base);
+    session.attachStash(items).catch((error: unknown) => session.report(`could not attach it: ${problem(error)}`));
   };
 
   return (
@@ -589,7 +549,7 @@ export const Composer = memo(function Composer({
       {dock}
       <Commands matches={matches} onPick={(name) => session.setDraft(`/${name} `)} />
       {mention !== undefined ? <StashMenu query={mention} onPick={(item) => fromStash([item], withoutQuery(draft))} /> : null}
-      {stashed ? <StashedToast done={stashed.id !== undefined} onUndo={undoStash} /> : null}
+      {prompt.toast}
       {dock || matches.length || mention !== undefined ? null : strip}
       <View style={[styles.composer, focused && { borderColor: colors.borderSelected }]} {...pullUp.panHandlers}>
         {question ? <AnsweringChip question={question} /> : null}
@@ -599,7 +559,7 @@ export const Composer = memo(function Composer({
             onRemove={session.removeAttachment}
             onRetry={send}
             lead={chips.map((chip) => (
-              <StashChip key={chip.id} item={chip} onRemove={() => session.removeChip(chip.id)} />
+              <StashChip key={chip.uri} chip={chip} onRemove={() => session.removeChip(chip.uri)} />
             ))}
           />
         ) : null}
@@ -663,7 +623,7 @@ export const Composer = memo(function Composer({
           {sendable || !running ? (
             <Pressable
               onPress={send}
-              onLongPress={toStash}
+              onLongPress={sendable ? prompt.stash : undefined}
               style={[styles.send, (!sendable || offline) && { opacity: 0.28 }]}
               disabled={uploading}
               accessibilityRole="button"
@@ -692,7 +652,7 @@ export const Composer = memo(function Composer({
         onClose={() => setAdding(false)}
         onAttach={attach}
         onStash={fromStash}
-        onStashPrompt={sendable && !uploading ? toStash : undefined}
+        onStashPrompt={sendable && !uploading ? prompt.stash : undefined}
       />
       <ConfigSheet
         visible={sheet}

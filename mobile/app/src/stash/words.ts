@@ -27,13 +27,6 @@ export function itemPlace(item: StashItem): string {
   return `${what} · ${age === 'now' ? 'just now' : age}`;
 }
 
-/** What a link, text or prompt puts in the message; an item with a file puts none. */
-export function itemText(item: StashItem): string {
-  if (item.kind === 'link') return item.url ?? '';
-  if (item.kind === 'text' || item.kind === 'prompt') return item.text ?? '';
-  return '';
-}
-
 function promptWords(item: StashItem): string {
   const files = item.attachments?.length ?? 0;
   return files ? `Prompt · ${files} ${files === 1 ? 'file' : 'files'}` : 'Prompt';
@@ -65,7 +58,33 @@ export function stashMatches(items: readonly StashItem[], query: string): StashI
   });
 }
 
-/** The message as sent: what was written, then each chip's link or text. */
-export function withChips(text: string, chips: readonly StashItem[]): string {
-  return [text, ...chips.map(itemText)].filter(Boolean).join('\n\n');
+/** A stashed link or text as a chat's draft holds it, in `extra.context`: a chip in every app, sent with the message. */
+export type ContextChip = { uri: string; title: string; text: string };
+
+/** How the host puts a link or text in a draft, for a draft that is still only on this phone. */
+export function contextChip(item: StashItem): ContextChip {
+  if (item.kind === 'link') {
+    const url = item.url ?? '';
+    const title = item.preview?.title || url;
+    return { uri: url, title, text: [title, url, item.preview?.description].filter(Boolean).join('\n\n') };
+  }
+  return { uri: `sikemux://stash/${item.id}`, title: itemTitle(item).slice(0, 80), text: item.text ?? '' };
+}
+
+/** The chips a draft's `extra.context` holds, leaving out any it cannot read. */
+export function contextChipsOf(value: unknown): ContextChip[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (chip): chip is ContextChip =>
+      typeof chip === 'object' &&
+      chip !== null &&
+      typeof chip.uri === 'string' &&
+      typeof chip.title === 'string' &&
+      typeof chip.text === 'string',
+  );
+}
+
+/** The message as this phone sends it: what was written, then each chip's words. */
+export function withContext(text: string, chips: readonly ContextChip[]): string {
+  return [text, ...chips.map((chip) => chip.text)].filter(Boolean).join('\n\n');
 }

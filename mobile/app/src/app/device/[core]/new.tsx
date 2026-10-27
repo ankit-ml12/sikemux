@@ -16,13 +16,14 @@ import { AttachSheet } from '@/chat/AttachSheet';
 import { YoloToggle } from '@/chat/Composer';
 import { ComposerInput } from '@/chat/ComposerInput';
 import { fitting, uploadEach, type Attachment } from '@/chat/uploads';
-import type { StashItem } from '@/stash/api';
+import { stashApi, stashPrompt, type StashItem } from '@/stash/api';
 import { downloadedFile, intoMessage, stashIdsOf } from '@/stash/attach';
 import { StashButton } from '@/stash/StashButton';
 import { StashChip } from '@/stash/StashChip';
 import { StashMenu } from '@/stash/StashMenu';
-import { takeStash } from '@/stash/store';
-import { stashQuery, withChips, withoutQuery } from '@/stash/words';
+import { stashToken, takeStash } from '@/stash/store';
+import { usePromptStash } from '@/stash/usePromptStash';
+import { contextChip, stashQuery, withContext, withoutQuery } from '@/stash/words';
 import { MAX_ATTACHMENTS } from '@/core/wire.generated';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf } from '@/core/problem';
@@ -189,6 +190,39 @@ export default function NewChat() {
   const mode = chosenMode ?? launcher?.permissionMode ?? '';
   const room = MAX_ATTACHMENTS - attachments.length;
   const mention = stashQuery(draft);
+  const stashable = Boolean(draft.trim() || attachments.length || chips.length) && !starting;
+  /** What the composer held when its prompt went to the stash, to put back on Undo. */
+  const stashedFrom = useRef<{ draft: string; attachments: Attachment[]; chips: StashItem[] } | null>(null);
+  const prompt = usePromptStash({
+    stash: async () => {
+      const token = stashToken();
+      if (!token) throw new Error('Sign in again.');
+      const held = { draft, attachments, chips };
+      stashedFrom.current = held;
+      setDraft('');
+      setAttachments([]);
+      setChips([]);
+      try {
+        const text = withContext(held.draft.trim(), held.chips.map(contextChip)) || held.attachments.map((file) => file.name).join(', ');
+        return (await stashPrompt(token, { text, files: held.attachments })).id;
+      } catch (error) {
+        putBack(held);
+        throw error;
+      }
+    },
+    undo: async (id) => {
+      const token = stashToken();
+      const held = stashedFrom.current;
+      if (held) putBack(held);
+      if (token) await stashApi(token).deleteStash(id);
+    },
+    report: setProblem,
+  });
+  const putBack = (held: { draft: string; attachments: Attachment[]; chips: StashItem[] }) => {
+    setDraft((now) => [held.draft, now].filter(Boolean).join('\n\n'));
+    setAttachments((now) => [...held.attachments, ...now]);
+    setChips((now) => [...held.chips, ...now.filter((chip) => !held.chips.some((known) => known.id === chip.id))]);
+  };
   const sendable = Boolean(
     (draft.trim() || attachments.length || chips.length) && launcher && project && live.status === 'open' && !starting,
   );
@@ -247,7 +281,7 @@ export default function NewChat() {
   };
 
   const start = async () => {
-    const text = withChips(draft.trim(), chips);
+    const text = withContext(draft.trim(), chips.map(contextChip));
     if (busy.current || (!text && !attachments.length) || !launcher || !project || live.status !== 'open') return;
     busy.current = true;
     haptics.tap();
@@ -314,6 +348,7 @@ export default function NewChat() {
           </View>
         )}
         <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
+          {prompt.toast}
           {mention !== undefined ? <StashMenu query={mention} onPick={(item) => fromStash([item], withoutQuery(draft))} /> : null}
           {project ? (
             <Pressable
@@ -336,7 +371,11 @@ export default function NewChat() {
                 onRemove={(id) => !starting && setAttachments((now) => now.filter((attachment) => attachment.id !== id))}
                 onRetry={start}
                 lead={chips.map((chip) => (
-                  <StashChip key={chip.id} item={chip} onRemove={() => setChips((now) => now.filter((held) => held.id !== chip.id))} />
+                  <StashChip
+                    key={chip.id}
+                    chip={contextChip(chip)}
+                    onRemove={() => setChips((now) => now.filter((held) => held.id !== chip.id))}
+                  />
                 ))}
               />
             ) : null}
@@ -377,7 +416,8 @@ export default function NewChat() {
               <View style={{ flex: 1 }} />
               <Pressable
                 onPress={start}
-                disabled={!sendable}
+                onLongPress={stashable ? prompt.stash : undefined}
+                disabled={!sendable && !stashable}
                 hitSlop={5}
                 style={[styles.send, !sendable && { opacity: 0.28 }]}
                 accessibilityRole="button"
@@ -397,6 +437,7 @@ export default function NewChat() {
         onClose={() => setSheet(undefined)}
         onAttach={attach}
         onStash={fromStash}
+        onStashPrompt={stashable ? prompt.stash : undefined}
       />
       <AgentSheet
         visible={sheet === 'agent'}
