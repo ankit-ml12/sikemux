@@ -109,6 +109,19 @@ impl Manifest {
                 .iter()
                 .enumerate()
                 .find(|(_, (name, _))| *name == wanted)
+                .or_else(|| {
+                    [true, false].into_iter().find_map(|whole| {
+                        let close: Vec<_> = sections
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, (name, _))| near(name, wanted, whole))
+                            .collect();
+                        match close.as_slice() {
+                            [one] => Some(*one),
+                            _ => None,
+                        }
+                    })
+                })
                 .map(|(index, (_, start))| {
                     let end = sections
                         .get(index + 1)
@@ -193,6 +206,19 @@ impl Manifest {
 }
 
 const ALL_TOPICS: &str = "all";
+
+/// Whether a topic asked for by a near name, such as `page` for `pages`, or
+/// `input` for `browser-input` when not `whole`, means `name`.
+fn near(name: &str, wanted: &str, whole: bool) -> bool {
+    let wanted = wanted.trim().to_lowercase();
+    let same = |part: &str| {
+        !wanted.is_empty() && part.trim_end_matches('s') == wanted.trim_end_matches('s')
+    };
+    match whole {
+        true => same(name),
+        false => name.split('-').any(same),
+    }
+}
 
 /// Leaves out the name and description atop the guide file, which only matter to tools that read it as a skill.
 fn without_front_matter(opening: &str) -> &str {
