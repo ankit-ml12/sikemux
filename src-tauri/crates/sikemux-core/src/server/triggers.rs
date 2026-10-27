@@ -90,6 +90,17 @@ impl Triggers {
         shown
     }
 
+    /// When the agent's soonest trigger fires.
+    pub(crate) fn next_at(&self, agent_id: &str) -> Option<u64> {
+        let state = self.state.locked();
+        state
+            .triggers
+            .iter()
+            .filter(|trigger| trigger.agent_id == agent_id)
+            .map(|trigger| trigger.next_at)
+            .min()
+    }
+
     fn change<T>(&self, change: impl FnOnce(&mut Saved) -> T) -> T {
         let mut state = self.state.locked();
         let out = change(&mut state);
@@ -259,11 +270,13 @@ async fn fire(core: Arc<Core>, firing: Firing) {
     }
 }
 
-/// Tells the chat's clients what triggers it has now.
+/// Tells the chat's clients what triggers it has now, and every device's view when it next
+/// fires.
 fn show(core: &Core, agent_id: &str) {
     if let Some(feed) = core.chats.heard(agent_id) {
         feed.set_triggers(core.triggers.shown(agent_id));
     }
+    core.view_changed();
 }
 
 fn caller(request: &HarnessRequest, tool: &str) -> Result<String, String> {

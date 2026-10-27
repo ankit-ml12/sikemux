@@ -369,6 +369,11 @@ export interface SessionInfo {
     /** For an agent terminal the device view lists, as for a chat. */
     group: AgentGroup | null;
     status: AgentStatus | null;
+    /**
+     * For an agent terminal, when the soonest trigger set on its agent sends it a prompt, in
+     * Unix milliseconds.
+     */
+    nextTrigger?: number;
     attentionRank: number | null;
     /** For an SSH terminal, where its connection last stood. */
     ssh?: SshLink;
@@ -462,6 +467,8 @@ export interface ChatInfo {
     activeAt: number | null;
     group: AgentGroup;
     status: AgentStatus;
+    /** When the soonest trigger set on it sends it a prompt, in Unix milliseconds. */
+    nextTrigger?: number;
     /**
      * Its place among the open agents, chats and agent terminals together,
      * in the order they want the person: 0 first.
@@ -653,6 +660,8 @@ export interface AgentShown {
     /** It still has subagents or shells running. */
     background: boolean;
     activeAt: number | null;
+    /** When the soonest trigger set on it sends it a prompt, in Unix milliseconds. */
+    nextTrigger?: number;
     /**
      * The face it wears, as the workspace's agent does; none while it shows
      * its CLI's logo.

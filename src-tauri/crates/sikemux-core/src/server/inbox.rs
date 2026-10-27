@@ -194,6 +194,9 @@ pub(crate) struct Shown {
     /// It still has subagents or shells running.
     pub background: bool,
     pub active_at: Option<u64>,
+    /// When the soonest trigger set on it sends it a prompt, in Unix milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_trigger: Option<u64>,
     /// The face it wears, as the workspace's agent does; none while it shows
     /// its CLI's logo.
     pub face: Option<crate::protocol::AgentFace>,
@@ -233,6 +236,7 @@ impl Shown {
             busy: matches!(group, AgentGroup::Blocked | AgentGroup::Working),
             background: false,
             active_at: None,
+            next_trigger: None,
             face: None,
             team: None,
         }
@@ -993,6 +997,7 @@ fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown
             .running(chat.subagents, chat.tasks);
             shown.unread = chat.unread;
             shown.active_at = chat.active_at;
+            shown.next_trigger = chat.next_trigger;
             (chat.attention_rank, shown)
         })
         .collect();
@@ -1016,6 +1021,7 @@ fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown
         );
         shown.unread = session.unread;
         shown.active_at = session.active_at;
+        shown.next_trigger = session.next_trigger;
         Some((session.attention_rank.unwrap_or(u32::MAX), shown))
     }));
     ranked.sort_by(|a, b| (a.0, &a.1.agent_id).cmp(&(b.0, &b.1.agent_id)));

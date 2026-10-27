@@ -24,6 +24,7 @@ export const emptyChat: ChatRows = {
     tasks: [],
     runningSubagents: [],
     queued: [],
+    triggers: [],
     earlierLost: false,
     messages: [],
     subagentRows: {},

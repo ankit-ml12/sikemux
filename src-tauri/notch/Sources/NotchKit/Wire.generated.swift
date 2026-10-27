@@ -181,6 +181,8 @@ struct AgentShown: Codable, Hashable {
     let group: AgentGroup
     let subagents: Int
     let tasks: Int
+    /// When the soonest trigger set on it sends it a prompt, in Unix milliseconds.
+    let nextTrigger: Int?
     /// The face it wears, as the workspace's agent does; none while it shows
     /// its CLI's logo.
     let face: AgentFace?
