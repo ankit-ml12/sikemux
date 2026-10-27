@@ -1,0 +1,27 @@
+{
+  "id": "Pq7rT2vWx9yZa1bC3dE5fG",
+  "kind": "prompt",
+  "text": "Make the header match this screenshot.",
+  "attachments": [
+    {
+      "id": "Kd2mX8qLr0VbNw4pYt6sHA",
+      "kind": "image",
+      "name": "screen.png",
+      "mime": "image/png",
+      "size": 184220,
+      "preview": null,
+      "target": null,
+      "createdAt": "2026-10-28T08:00:01.000Z",
+      "takenAt": null,
+      "fromDevice": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29"
+    }
+  ],
+  "preview": null,
+  "target": {
+    "hostKey": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+    "chatId": "c_8f2d1e"
+  },
+  "createdAt": "2026-10-28T08:00:00.000Z",
+  "takenAt": null,
+  "fromDevice": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29"
+}

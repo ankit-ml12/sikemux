@@ -15,10 +15,14 @@ export const ITEM_ID = /^[A-Za-z0-9_-]{22}$/;
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 export const MAX_ACCOUNT_BYTES = 1024 * 1024 * 1024;
 export const TAKEN_KEPT_DAYS = 30;
+export const UNFINISHED_PROMPT_DAYS = 1;
 
 export type ItemRow = Selectable<Tables["stash_items"]>;
 
-export function toItem(row: ItemRow): StashItem {
+export function toItem(
+  row: ItemRow,
+  attachments: readonly ItemRow[] = [],
+): StashItem {
   const item: StashItem = {
     id: row.id,
     kind: row.kind as StashKind,
@@ -34,7 +38,34 @@ export function toItem(row: ItemRow): StashItem {
   if (row.name !== null) item.name = row.name;
   if (row.mime !== null) item.mime = row.mime;
   if (row.size !== null) item.size = Number(row.size);
+  if (row.kind === "prompt")
+    item.attachments = attachments.map((part) => toItem(part));
   return item;
+}
+
+/** The items as clients see them, each prompt with its attachments. */
+export async function withAttachments(
+  db: Kysely<Tables>,
+  rows: readonly ItemRow[],
+): Promise<StashItem[]> {
+  const prompts = rows
+    .filter((row) => row.kind === "prompt")
+    .map((row) => row.id);
+  const parts = prompts.length
+    ? await db
+        .selectFrom("stash_items")
+        .selectAll()
+        .where("prompt_id", "in", prompts)
+        .orderBy("created_at")
+        .orderBy("id")
+        .execute()
+    : [];
+  return rows.map((row) =>
+    toItem(
+      row,
+      parts.filter((part) => part.prompt_id === row.id),
+    ),
+  );
 }
 
 /** Refuses a target that is not a chat, or a new chat in a project, on one of the account's hosts. */

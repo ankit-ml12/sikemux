@@ -38,6 +38,8 @@ import {
   ITEM_ID,
   MAX_FILE_BYTES,
   toItem,
+  withAttachments,
+  type ItemRow,
 } from "./items.ts";
 import { fetchPreview, isFetchable } from "./preview.ts";
 
@@ -118,7 +120,24 @@ function readUpload(c: Context) {
     : mime.startsWith("video/")
       ? ("video" as const)
       : ("file" as const);
-  return { kind, mime, name, note: note || null, target: readTarget(c) };
+  const prompt = c.req.header("x-stash-prompt");
+  if (prompt !== undefined && !ITEM_ID.test(prompt))
+    throw badRequest("X-Stash-Prompt is not a stashed item's id.");
+  const target = readTarget(c);
+  if (prompt !== undefined && target)
+    throw badRequest(
+      "An attachment goes where its prompt goes; send no target.",
+    );
+  return { kind, mime, name, note: note || null, target, prompt };
+}
+
+/** Refuses an item that is not shown on its own: an attachment, or a prompt still receiving them. */
+function listed(row: ItemRow): ItemRow {
+  if (row.prompt_id !== null)
+    throw badRequest("An attachment is changed with its prompt.");
+  if (row.attachments_missing > 0)
+    throw notFound("That prompt is still receiving its attachments.");
+  return row;
 }
 
 /** The device the request came from: the one that signed it, or the phone a session belongs to. */
@@ -194,6 +213,25 @@ export function stashRoutes(
     return row;
   };
 
+  /** The account's prompt that is still waiting for attachments, locked while one is added. */
+  const openPrompt = async (
+    from: Kysely<Tables>,
+    userId: string,
+    id: string,
+  ) => {
+    const row = await from
+      .selectFrom("stash_items")
+      .select("id")
+      .where("id", "=", id)
+      .where("user_id", "=", userId)
+      .where("kind", "=", "prompt")
+      .where("attachments_missing", ">", 0)
+      .forUpdate()
+      .executeTakeFirst();
+    if (!row)
+      throw badRequest("That prompt is not waiting for any more attachments.");
+  };
+
   const preview = (userId: string, id: string, url: string) => {
     if (previewing >= PREVIEWS_AT_ONCE) return;
     previewing += 1;
@@ -228,14 +266,17 @@ export function stashRoutes(
         throw badRequest("A link is an http or https url.");
       if (request.text !== undefined)
         throw badRequest("A link has a url and no text.");
-    } else if (request.kind === "text") {
+    } else if (request.kind === "text" || request.kind === "prompt") {
       if (request.text === undefined || request.url !== undefined)
-        throw badRequest("Text has text and no url.");
+        throw badRequest("Text and prompts have text and no url.");
     } else {
       throw badRequest(
         "Images, videos and files are sent as their bytes, not as JSON.",
       );
     }
+    if (request.attachmentCount !== undefined && request.kind !== "prompt")
+      throw badRequest("Only a prompt has attachments.");
+    const missing = request.attachmentCount ?? 0;
     if (request.target) await checkTarget(db, userId, request.target);
     const id = newId();
     const row = await db.transaction().execute(async (trx) => {
@@ -255,10 +296,11 @@ export function stashRoutes(
           preview: null,
           target: request.target ? JSON.stringify(request.target) : null,
           from_device: await fromDevice(trx, identity),
+          attachments_missing: missing,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
-      await announce(trx, userId, "stash.added", id);
+      if (missing === 0) await announce(trx, userId, "stash.added", id);
       return row;
     });
     if (row.url) {
@@ -272,7 +314,7 @@ export function stashRoutes(
     const store = stored();
     const identity = c.get("identity");
     const { userId } = identity;
-    const { kind, mime, name, note, target } = readUpload(c);
+    const { kind, mime, name, note, target, prompt } = readUpload(c);
     const declared = Number(c.req.header("content-length") ?? 0);
     if (declared > MAX_FILE_BYTES)
       throw new ApiFailure(
@@ -282,6 +324,7 @@ export function stashRoutes(
       );
     await checkSpace(db, userId, declared);
     if (target) await checkTarget(db, userId, target);
+    if (prompt) await openPrompt(db, userId, prompt);
     const id = newId();
     const written = await store.write(
       id,
@@ -294,6 +337,7 @@ export function stashRoutes(
       const row = await db.transaction().execute(async (trx) => {
         await holdAccount(trx, userId);
         await checkSpace(trx, userId, written.size);
+        if (prompt) await openPrompt(trx, userId, prompt);
         const row = await trx
           .insertInto("stash_items")
           .values({
@@ -309,10 +353,22 @@ export function stashRoutes(
             preview: null,
             target: target ? JSON.stringify(target) : null,
             from_device: device,
+            prompt_id: prompt ?? null,
           })
           .returningAll()
           .executeTakeFirstOrThrow();
-        await announce(trx, userId, "stash.added", id);
+        if (prompt) {
+          const { attachments_missing } = await trx
+            .updateTable("stash_items")
+            .set((eb) => ({
+              attachments_missing: eb("attachments_missing", "-", 1),
+            }))
+            .where("id", "=", prompt)
+            .returning("attachments_missing")
+            .executeTakeFirstOrThrow();
+          if (attachments_missing === 0)
+            await announce(trx, userId, "stash.added", prompt);
+        } else await announce(trx, userId, "stash.added", id);
         await store.commit(id);
         return row;
       });
@@ -346,7 +402,9 @@ export function stashRoutes(
         .selectFrom("stash_items")
         .selectAll()
         .select(sql<string>`created_at::text`.as("created_text"))
-        .where("user_id", "=", userId);
+        .where("user_id", "=", userId)
+        .where("prompt_id", "is", null)
+        .where("attachments_missing", "=", 0);
       if (taken === "false") query = query.where("taken_at", "is", null);
       if (taken === "true") query = query.where("taken_at", "is not", null);
       if (cursor) {
@@ -370,7 +428,7 @@ export function stashRoutes(
       const page = rows.slice(0, PAGE);
       const last = page.at(-1);
       const body: StashList = {
-        items: page.map(toItem),
+        items: await withAttachments(db, page),
         seenAt: user?.stash_seen_at?.toISOString() ?? null,
       };
       if (rows.length > PAGE && last)
@@ -412,9 +470,13 @@ export function stashRoutes(
       const body: StashSeen = { at: (seenAt ?? new Date(at)).toISOString() };
       return c.json(body);
     })
-    .get("/:id", perUser("stash-get", 240), async (c) =>
-      c.json(toItem(await owned(c.get("identity").userId, itemId(c)))),
-    )
+    .get("/:id", perUser("stash-get", 240), async (c) => {
+      const row = await owned(c.get("identity").userId, itemId(c));
+      if (row.attachments_missing > 0)
+        throw notFound("That prompt is still receiving its attachments.");
+      const [item] = await withAttachments(db, [row]);
+      return c.json(item);
+    })
     .get("/:id/file", perUser("stash-file", 120), async (c) => {
       const row = await owned(c.get("identity").userId, itemId(c));
       if (row.size === null || row.name === null || row.mime === null)
@@ -439,9 +501,15 @@ export function stashRoutes(
       if (update.taken === false)
         throw badRequest("A taken item cannot be untaken.");
       const row = await db.transaction().execute(async (trx) => {
-        const before = await owned(userId, id, trx);
+        const before = listed(await owned(userId, id, trx));
         if (update.note === undefined && (!update.taken || before.taken_at))
           return before;
+        if (update.taken)
+          await trx
+            .updateTable("stash_items")
+            .set({ taken_at: sql<Date>`coalesce(taken_at, now())` })
+            .where("prompt_id", "=", id)
+            .execute();
         const row = await trx
           .updateTable("stash_items")
           .set({
@@ -458,23 +526,38 @@ export function stashRoutes(
         await announce(trx, userId, "stash.changed", id);
         return row;
       });
-      return c.json(toItem(row));
+      const [item] = await withAttachments(db, [row]);
+      return c.json(item);
     })
     .delete("/:id", perUser("stash-delete", 120), async (c) => {
       const { userId } = c.get("identity");
       const id = itemId(c);
       const removed = await db.transaction().execute(async (trx) => {
         const row = await trx
-          .deleteFrom("stash_items")
+          .selectFrom("stash_items")
+          .select(["prompt_id", "attachments_missing"])
           .where("id", "=", id)
           .where("user_id", "=", userId)
-          .returning(["id", "size"])
+          .forUpdate()
           .executeTakeFirst();
-        if (row) await announce(trx, userId, "stash.removed", id);
-        return row;
+        if (!row) return [];
+        if (row.prompt_id !== null)
+          throw badRequest("An attachment is deleted with its prompt.");
+        const gone = await trx
+          .deleteFrom("stash_items")
+          .where("user_id", "=", userId)
+          .where((eb) => eb.or([eb("id", "=", id), eb("prompt_id", "=", id)]))
+          .returning(["id", "size"])
+          .execute();
+        if (row.attachments_missing === 0)
+          await announce(trx, userId, "stash.removed", id);
+        return gone;
       });
-      if (removed?.size != null && files)
-        await removeStashFiles(files.dir, [id]).catch((error: unknown) =>
+      const withFiles = removed
+        .filter((row) => row.size !== null)
+        .map((row) => row.id);
+      if (withFiles.length && files)
+        await removeStashFiles(files.dir, withFiles).catch((error: unknown) =>
           c
             .get("log")
             .warn({ err: error, id }, "could not delete a stashed file"),

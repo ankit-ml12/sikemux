@@ -710,7 +710,7 @@ pub enum RevokeReason {
     Unknown,
 }
 
-/// A link or text to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget). A file signed with SikemuxHost or SikemuxDevice also sends X-Body-Sha256, the body's SHA-256 in lowercase hex, which the signature covers in place of hashing the body.
+/// A link, text or prompt to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget), or X-Stash-Prompt with a prompt's id to attach it to that prompt. A file signed with SikemuxHost or SikemuxDevice also sends X-Body-Sha256, the body's SHA-256 in lowercase hex, which the signature covers in place of hashing the body.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StashAdd {
@@ -718,9 +718,12 @@ pub struct StashAdd {
     /// An http or https link, with kind link.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    /// With kind text.
+    /// With kind text or prompt.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// With kind prompt: how many files will follow, each uploaded with X-Stash-Prompt set to the prompt's id. Until the last arrives the prompt is in no list and announced to no device; one left unfinished for a day is deleted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachment_count: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<StashNote>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -736,9 +739,12 @@ pub struct StashItem {
     /// Only on links.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    /// Only on text.
+    /// Only on text and prompts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// Only on prompts: the files attached to the prompt, oldest first. They are not listed on their own, get no events of their own, and are taken and deleted with their prompt.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<StashItem>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<StashNote>,
     /// The file's name. Only on items with a file.
@@ -763,7 +769,7 @@ pub struct StashItem {
 /// A stash item's id: 16 random bytes the server picks, in unpadded base64url.
 pub type StashItemId = String;
 
-/// What was shared. A link or text arrives as JSON; an image, video or file as its bytes.
+/// What was shared. A link, text or prompt arrives as JSON; an image, video or file as its bytes. A prompt is a composer's whole prompt: its text and the files attached to it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StashKind {
     #[serde(rename = "link")]
@@ -776,6 +782,8 @@ pub enum StashKind {
     Video,
     #[serde(rename = "file")]
     File,
+    #[serde(rename = "prompt")]
+    Prompt,
     /// A value added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,

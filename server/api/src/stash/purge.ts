@@ -4,13 +4,14 @@ import type { Tables } from "../db.ts";
 import { appendEvents } from "../events/log.ts";
 import type { Logger } from "../log.ts";
 import { removeStashFiles, sweepStashFiles } from "./files.ts";
-import { TAKEN_KEPT_DAYS } from "./items.ts";
+import { TAKEN_KEPT_DAYS, UNFINISHED_PROMPT_DAYS } from "./items.ts";
 
 const BATCH = 1_000;
 
 /**
- * Deletes items taken more than 30 days ago, telling their accounts, then every file no item
- * holds, which includes those of accounts purged before this ran.
+ * Deletes items taken more than 30 days ago, telling their accounts, and prompts whose
+ * attachments never all arrived, then every file no item holds: those of the attachments
+ * deleted with their prompts, and of accounts purged before this ran.
  */
 export async function purgeStash(
   db: Kysely<Tables>,
@@ -28,6 +29,7 @@ export async function purgeStash(
           trx
             .selectFrom("stash_items")
             .select("id")
+            .where("prompt_id", "is", null)
             .where(
               "taken_at",
               "<",
@@ -56,6 +58,20 @@ export async function purgeStash(
     if (gone.length < BATCH) break;
   }
   if (taken) log.info({ items: taken }, "purged taken stash items");
+  const unfinished = await db
+    .deleteFrom("stash_items")
+    .where("attachments_missing", ">", 0)
+    .where(
+      "created_at",
+      "<",
+      sql<Date>`now() - make_interval(days => ${UNFINISHED_PROMPT_DAYS})`,
+    )
+    .executeTakeFirst();
+  if (unfinished.numDeletedRows > 0n)
+    log.info(
+      { prompts: Number(unfinished.numDeletedRows) },
+      "purged prompts whose attachments never arrived",
+    );
   if (!dir) return;
   await sweepStashFiles(
     dir,

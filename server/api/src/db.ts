@@ -151,6 +151,10 @@ export interface Tables {
     from_device: string | null;
     created_at: CreatedAt;
     taken_at: ColumnType<Date | null, never, Date | null>;
+    /** The prompt this file is attached to. */
+    prompt_id: ColumnType<string | null, string | null | undefined, never>;
+    /** On a prompt, how many of its attachments have yet to arrive; it stays hidden until none. */
+    attachments_missing: ColumnType<number, number | undefined, number>;
   };
   audit: {
     id: Generated<string>;

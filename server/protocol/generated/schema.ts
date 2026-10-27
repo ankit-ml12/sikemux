@@ -1365,7 +1365,7 @@ export const schema = {
     },
     StashAdd: {
       description:
-        "A link or text to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget). A file signed with SikemuxHost or SikemuxDevice also sends X-Body-Sha256, the body's SHA-256 in lowercase hex, which the signature covers in place of hashing the body.",
+        "A link, text or prompt to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget), or X-Stash-Prompt with a prompt's id to attach it to that prompt. A file signed with SikemuxHost or SikemuxDevice also sends X-Body-Sha256, the body's SHA-256 in lowercase hex, which the signature covers in place of hashing the body.",
       type: "object",
       properties: {
         kind: { $ref: "#/$defs/StashKind" },
@@ -1376,10 +1376,17 @@ export const schema = {
           maxLength: 8192,
         },
         text: {
-          description: "With kind text.",
+          description: "With kind text or prompt.",
           type: "string",
           minLength: 1,
           maxLength: 16000,
+        },
+        attachmentCount: {
+          description:
+            "With kind prompt: how many files will follow, each uploaded with X-Stash-Prompt set to the prompt's id. Until the last arrives the prompt is in no list and announced to no device; one left unfinished for a day is deleted.",
+          type: "integer",
+          minimum: 0,
+          maximum: 20,
         },
         note: { $ref: "#/$defs/StashNote" },
         target: { $ref: "#/$defs/StashTarget" },
@@ -1396,9 +1403,16 @@ export const schema = {
         kind: { $ref: "#/$defs/StashKind" },
         url: { description: "Only on links.", type: "string", maxLength: 8192 },
         text: {
-          description: "Only on text.",
+          description: "Only on text and prompts.",
           type: "string",
           maxLength: 16000,
+        },
+        attachments: {
+          description:
+            "Only on prompts: the files attached to the prompt, oldest first. They are not listed on their own, get no events of their own, and are taken and deleted with their prompt.",
+          type: "array",
+          items: { $ref: "#/$defs/StashItem" },
+          maxItems: 20,
         },
         note: { $ref: "#/$defs/StashNote" },
         name: {
@@ -1454,9 +1468,9 @@ export const schema = {
     },
     StashKind: {
       description:
-        "What was shared. A link or text arrives as JSON; an image, video or file as its bytes.",
+        "What was shared. A link, text or prompt arrives as JSON; an image, video or file as its bytes. A prompt is a composer's whole prompt: its text and the files attached to it.",
       type: "string",
-      enum: ["link", "text", "image", "video", "file"],
+      enum: ["link", "text", "image", "video", "file", "prompt"],
     },
     StashList: {
       description: "A page of the stash, newest first.",

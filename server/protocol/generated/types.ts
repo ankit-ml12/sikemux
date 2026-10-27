@@ -784,13 +784,15 @@ export interface ShareWantsSnapshot {
   share: ShareId;
 }
 
-/** A link or text to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget). A file signed with SikemuxHost or SikemuxDevice also sends X-Body-Sha256, the body's SHA-256 in lowercase hex, which the signature covers in place of hashing the body. */
+/** A link, text or prompt to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget), or X-Stash-Prompt with a prompt's id to attach it to that prompt. A file signed with SikemuxHost or SikemuxDevice also sends X-Body-Sha256, the body's SHA-256 in lowercase hex, which the signature covers in place of hashing the body. */
 export interface StashAdd {
   kind: StashKind;
   /** An http or https link, with kind link. */
   url?: string;
-  /** With kind text. */
+  /** With kind text or prompt. */
   text?: string;
+  /** With kind prompt: how many files will follow, each uploaded with X-Stash-Prompt set to the prompt's id. Until the last arrives the prompt is in no list and announced to no device; one left unfinished for a day is deleted. */
+  attachmentCount?: number;
   note?: StashNote;
   target?: StashTarget;
 }
@@ -801,8 +803,10 @@ export interface StashItem {
   kind: StashKind;
   /** Only on links. */
   url?: string;
-  /** Only on text. */
+  /** Only on text and prompts. */
   text?: string;
+  /** Only on prompts: the files attached to the prompt, oldest first. They are not listed on their own, get no events of their own, and are taken and deleted with their prompt. */
+  attachments?: StashItem[];
   note?: StashNote;
   /** The file's name. Only on items with a file. */
   name?: string;
@@ -823,14 +827,15 @@ export interface StashItem {
 /** A stash item's id: 16 random bytes the server picks, in unpadded base64url. */
 export type StashItemId = string;
 
-/** What was shared. A link or text arrives as JSON; an image, video or file as its bytes. */
-export type StashKind = "link" | "text" | "image" | "video" | "file";
+/** What was shared. A link, text or prompt arrives as JSON; an image, video or file as its bytes. A prompt is a composer's whole prompt: its text and the files attached to it. */
+export type StashKind = "link" | "text" | "image" | "video" | "file" | "prompt";
 export const stashKindValues: readonly StashKind[] = [
   "link",
   "text",
   "image",
   "video",
   "file",
+  "prompt",
 ];
 
 /** A page of the stash, newest first. */
