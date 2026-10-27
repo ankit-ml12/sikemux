@@ -788,6 +788,9 @@ pub struct CreateRequest {
     pub project: String,
     #[serde(default, rename = "type")]
     pub issue_type: Option<String>,
+    /// A status to move the new issue to, through its workflow.
+    #[serde(default)]
+    pub status: Option<String>,
     #[serde(flatten)]
     pub changes: Changes,
     #[serde(default)]
@@ -798,6 +801,10 @@ pub struct CreateRequest {
 pub struct Saved {
     pub key: String,
     pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 fn project_path(project: &str) -> JiraResult<String> {
@@ -870,9 +877,29 @@ pub async fn create(data_dir: &Path, request: CreateRequest) -> JiraResult<Saved
     };
     let key = text(created.get("key"))
         .ok_or_else(|| JiraError::Response("Jira did not say which issue it made".into()))?;
+    let (status, note) = match request.status.filter(|status| !status.trim().is_empty()) {
+        None => (None, None),
+        Some(status) => {
+            let moved = transition(
+                data_dir,
+                TransitionRequest {
+                    key: key.clone(),
+                    to: Some(status),
+                    site: request.site,
+                },
+            )
+            .await;
+            match moved {
+                Ok(moved) => (moved.status, None),
+                Err(error) => (None, Some(format!("created, but not moved: {error}"))),
+            }
+        }
+    };
     Ok(Saved {
         url: format!("https://{}/browse/{key}", site.host),
         key,
+        status,
+        note,
     })
 }
 
@@ -904,6 +931,8 @@ pub async fn edit(data_dir: &Path, request: EditRequest) -> JiraResult<Saved> {
     Ok(Saved {
         url: format!("https://{}/browse/{key}", site.host),
         key,
+        status: None,
+        note: None,
     })
 }
 

@@ -14,7 +14,7 @@
     {
       "name": "jira_search",
       "row": {"verb": "search", "kind": "search", "icon": "search", "target": ["{jql}"], "detail": ["{site}"]},
-      "method": "search",
+      "method": "agentSearch",
       "description": "Find Jira issues with JQL, e.g. 'assignee = currentUser() AND sprint in openSprints()'. Returns key, summary, status, priority, assignee, sprint, last update.",
       "properties": {
         "jql": { "type": "string" },
@@ -70,6 +70,7 @@
         "project": { "type": "string", "description": "Project key, e.g. ABC." },
         "summary": { "type": "string" },
         "type": { "type": "string", "description": "Issue type name, e.g. Epic, Bug, Story. Default Task." },
+        "status": { "type": "string", "description": "A status to move it to once made, e.g. In Progress." },
         "description": { "type": "string" },
         "parent": { "type": "string", "description": "Epic or issue key." },
         "priority": { "type": "string", "description": "Priority name, e.g. High." },

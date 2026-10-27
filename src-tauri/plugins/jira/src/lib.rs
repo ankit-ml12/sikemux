@@ -48,6 +48,28 @@ async fn signed_in(data_dir: &Path, outcome: JiraResult<()>) -> Result<Value, Pl
     reply(auth::status(data_dir).await)
 }
 
+/// An answer as an agent reads it: without the pictures and empty fields
+/// only the app's views use.
+fn for_agent(value: Value) -> Value {
+    match value {
+        Value::Object(fields) => Value::Object(
+            fields
+                .into_iter()
+                .filter(|(key, value)| {
+                    !value.is_null()
+                        && !matches!(
+                            key.as_str(),
+                            "avatarUrl" | "authorAvatarUrl" | "statusCategory"
+                        )
+                })
+                .map(|(key, value)| (key, for_agent(value)))
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.into_iter().map(for_agent).collect()),
+        other => other,
+    }
+}
+
 impl Plugin for Jira {
     fn manifest(&self) -> &Manifest {
         &self.manifest
@@ -73,7 +95,12 @@ impl Plugin for Jira {
                 "signOut" => answer(auth::sign_out(data_dir, params(input)?)).await,
                 "search" => answer(issues::search(data_dir, params(input)?)).await,
                 "issue" => answer(issues::issue(data_dir, params(input)?)).await,
-                "agentIssue" => answer(issues::agent_issue(data_dir, params(input)?)).await,
+                "agentSearch" => answer(issues::search(data_dir, params(input)?))
+                    .await
+                    .map(for_agent),
+                "agentIssue" => answer(issues::agent_issue(data_dir, params(input)?))
+                    .await
+                    .map(for_agent),
                 "comment" => answer(issues::comment(data_dir, params(input)?)).await,
                 "transition" => answer(issues::transition(data_dir, params(input)?)).await,
                 "assign" => answer(issues::assign(data_dir, params(input)?)).await,
