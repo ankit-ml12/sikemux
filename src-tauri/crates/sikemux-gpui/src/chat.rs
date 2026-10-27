@@ -61,7 +61,6 @@ mod mention;
 mod meta;
 mod page;
 mod schema;
-pub mod stash;
 mod status;
 mod tools;
 
@@ -1905,7 +1904,9 @@ pub fn pane(
         .relative()
         .flex()
         .flex_col()
-        .when(composing, |pane| attach::takes_drops(pane, id, cx))
+        .when(composing, |pane| {
+            crate::stash::takes_drops(attach::takes_drops(pane, id, cx), id, cx)
+        })
         .when(asking, |pane| {
             question_keys(pane, id, true, &cx.weak_entity())
         })
@@ -1915,6 +1916,11 @@ pub fn pane(
         .children(status::trouble(bench, agent, chat, cx))
         .children(permissions)
         .children(stack)
+        .children(
+            chat.composer
+                .as_ref()
+                .and_then(|_| crate::stash::chip(bench, id, cx)),
+        )
         .children(chat.composer.as_ref().map(|composing| {
             composing.view.update(cx, |view, cx| {
                 view.agent = Some(agent.clone());
@@ -3082,7 +3088,6 @@ fn composer(
             Rc::new(attach::on_paste(&agent.id, cx)),
             attach::chip(cx.weak_entity()),
         )
-        .attach_menu(&agent.id, cx.entity())
         .strip(strip)
         .dictation(
             composing.mic.clone(),

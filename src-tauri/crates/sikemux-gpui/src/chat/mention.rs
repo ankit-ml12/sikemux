@@ -1,6 +1,6 @@
-//! The menu the draft opens over itself while a word starts with `@`, `+` or `/`: the
-//! agents to name, the project's files and folders to hand over, or the session's
-//! commands. A named agent, earlier chat or file goes into the draft as a token, which
+//! The menu the draft opens over itself while a word starts with `@`, `+`, `/` or `&`: the
+//! agents to name, the project's files and folders to hand over, the session's commands,
+//! or what waits in the Stash, which goes into the draft as an attachment. A named agent, earlier chat or file goes into the draft as a token, which
 //! is what the message sends: the agent or chat for the core to describe (an earlier
 //! chat the core opens again first), the file as a path.
 
@@ -22,6 +22,7 @@ use crate::ui::{self, DockMenu, DockRow, DockScope};
 use crate::workbench::Workbench;
 
 const SHOWN: usize = 8;
+const STASH_SHOWN: usize = 4;
 const AGENT: &str = "agent:";
 const FILE: &str = "file:";
 const FOLDER: &str = "folder:";
@@ -49,7 +50,7 @@ fn typed(text: &str, caret: usize) -> Option<Typed> {
     let mut word = before[start..].chars();
     let trigger = word
         .next()
-        .filter(|first| matches!(first, '@' | '+' | '/' | '#' | '!'))?;
+        .filter(|first| matches!(first, '@' | '+' | '/' | '#' | '!' | '&'))?;
     Some(Typed {
         trigger,
         start,
@@ -87,6 +88,8 @@ enum Choice {
         active_at: Option<u64>,
     },
     Tracked(Item),
+    /// An item of the Stash, as the core lists it.
+    Stashed(Value),
 }
 
 /// The code host's open issues and pull requests, as `codeHostTracked` answers.
@@ -302,6 +305,14 @@ impl Workbench {
                 let tracked = self.tracked_of(agent);
                 tracked_choices(tracked, typed.trigger, &typed.needle).into()
             }
+            '&' => crate::stash::Stash::of(self)
+                .items
+                .into_iter()
+                .filter(|item| crate::stash::matches(item, &typed.needle))
+                .take(STASH_SHOWN)
+                .map(|item| Choice::Stashed(item.clone()))
+                .collect::<Vec<_>>()
+                .into(),
             _ => Rc::from(Vec::new()),
         };
         let ranking = match typed.trigger {
@@ -669,6 +680,10 @@ impl Workbench {
         let Some(choice) = menu.choices.get(index.unwrap_or(menu.selected)).cloned() else {
             return;
         };
+        let stashed = match &choice {
+            Choice::Stashed(item) => item["id"].as_str().map(str::to_owned),
+            _ => None,
+        };
         if let (Choice::Tracked(item), Some(project)) = (&choice, &project) {
             let id = tracked_id(item);
             let answer = target.request(
@@ -755,7 +770,7 @@ impl Workbench {
                     format!("{EARLIER}{cli}/{session}"),
                     format!("@{name}"),
                 )),
-                Choice::Earlier { .. } => {
+                Choice::Earlier { .. } | Choice::Stashed(_) => {
                     draft.replace("", window, cx);
                     None
                 }
@@ -772,8 +787,13 @@ impl Workbench {
                     eprintln!("sikemux: a mention did not go into the draft: {error}");
                 }
             }
-            draft.replace(" ", window, cx);
+            if stashed.is_none() {
+                draft.replace(" ", window, cx);
+            }
         });
+        if let Some(id) = stashed {
+            self.add_from_stash(agent, vec![id], cx);
+        }
         cx.notify();
     }
 }
@@ -781,6 +801,15 @@ impl Workbench {
 /// The draft's token for an issue or pull request, by which its context goes with the message.
 fn tracked_id(item: &Item) -> String {
     format!("{TRACKED}{}:{}:{}", item.kind, item.number, item.url)
+}
+
+/// `title` cut to what a menu row has room for.
+fn clipped(title: &str) -> String {
+    const ROOM: usize = 56;
+    match title.char_indices().nth(ROOM) {
+        Some((at, _)) => format!("{}…", title[..at].trim_end()),
+        None => title.to_owned(),
+    }
 }
 
 fn leaf(path: &str) -> &str {
@@ -810,11 +839,12 @@ fn ranked_entries(needle: &str, files: &Arc<Vec<String>>) -> Vec<Choice> {
 }
 
 /// The kinds of thing the menu names, in the order its heading lists them.
-const SCOPES: [(char, &str); 4] = [
+const SCOPES: [(char, &str); 5] = [
     ('@', "Agents"),
     ('#', "Issues"),
     ('!', "Pull requests"),
     ('+', "Files"),
+    ('&', "Stash"),
 ];
 
 /// The menu over the draft of `agent`'s chat, while it offers anything, under a heading of the
@@ -849,7 +879,7 @@ pub fn dock(
             })
             .collect();
         let aside = match trigger {
-            '+' => "attach",
+            '+' | '&' => "attach",
             '#' | '!' => repo.unwrap_or_default(),
             _ => "mention",
         };
@@ -870,6 +900,13 @@ pub fn dock(
                     .clone()
                     .map_or_else(DockMenu::loading, DockMenu::empty),
             ),
+            '&' if !crate::stash::Stash::of(bench).signed_in => {
+                Some(DockMenu::empty("Sign in to use your Stash"))
+            }
+            '&' if blank => Some(DockMenu::empty(
+                "Nothing in your Stash. Share to Sikemux from any app on your phone.",
+            )),
+            '&' => Some(DockMenu::empty("Nothing in your Stash matches")),
             _ => menu.empty.clone().map(DockMenu::empty),
         };
         return empty.map(headed);
@@ -965,6 +1002,9 @@ pub fn dock(
                     .mark(ui::icon(icon, 13.).text_color(tint).into_any_element())
                     .detail(item.title.clone())
             }
+            Choice::Stashed(item) => DockRow::new(clipped(&crate::stash::title(item)), choose)
+                .mark(crate::stash::mark(bench, item, 15., cx))
+                .detail(crate::stash::place(item)),
         }
     });
     let rows: Vec<DockRow> = rows.collect();

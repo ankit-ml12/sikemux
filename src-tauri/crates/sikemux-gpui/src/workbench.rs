@@ -1155,6 +1155,13 @@ impl Workbench {
                 }
                 self.reads.insert("git-draft", value);
             }
+            Update::Read("stash", value) => {
+                self.reads.insert("stash", value);
+                let unseen = !crate::stash::Stash::of(self).new_items().is_empty();
+                if unseen && self.stash_in_front() {
+                    self.see_stash();
+                }
+            }
             Update::Read(key @ ("drafts" | "host-drafts"), value) => {
                 self.drafts(&value, key == "host-drafts", cx);
                 self.reads.insert(key, value);
@@ -4387,6 +4394,11 @@ impl Workbench {
 
     /// The project's agents in the order the core ranks them for the person.
     /// The agent `id` as the rails draw it, in whichever project it is.
+    /// The agent whose chat last took the keys.
+    pub fn focused_agent(&self) -> Option<&str> {
+        self.focused_chat.as_ref().map(|(agent, _)| agent.as_str())
+    }
+
     pub fn agent_by_id(&self, id: &str) -> Option<AgentRow> {
         let view = self.shown()?;
         let agent = view.workspace.agents.iter().find(|agent| agent.id == id)?;

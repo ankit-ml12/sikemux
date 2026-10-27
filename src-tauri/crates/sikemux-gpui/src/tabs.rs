@@ -1336,6 +1336,7 @@ pub fn kind_icon(kind: PaneKind) -> Icon {
         PaneKind::Desk => Icon::PanelRight,
         PaneKind::ProjectSettings => Icon::Settings,
         PaneKind::InstallSikemux => Icon::Download,
+        PaneKind::Stash => Icon::Stash,
         PaneKind::Unknown => Icon::Window,
     }
 }
@@ -1353,6 +1354,7 @@ fn kind_label(kind: PaneKind) -> &'static str {
         PaneKind::Desk => "Desk",
         PaneKind::ProjectSettings => "Project settings",
         PaneKind::InstallSikemux => "Install Sikemux",
+        PaneKind::Stash => "Stash",
         PaneKind::Unknown => "Needs a newer Sikemux",
     }
 }

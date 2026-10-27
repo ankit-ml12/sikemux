@@ -576,6 +576,7 @@ fn view(
         PaneKind::Desk => desk::pane(bench, target, window, cx),
         PaneKind::ProjectSettings => crate::project_settings::pane(bench, target, window, cx),
         PaneKind::InstallSikemux => crate::install_pane::pane(bench, target, cx),
+        PaneKind::Stash => crate::stash::pane(bench, cx),
         PaneKind::Unknown => ui::pane(cx)
             .child(
                 div()

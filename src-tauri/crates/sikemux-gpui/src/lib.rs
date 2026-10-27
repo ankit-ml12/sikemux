@@ -87,6 +87,7 @@ mod sim_screen;
 mod sim_screen;
 mod skills_added;
 mod space_editor;
+mod stash;
 mod swipe;
 mod switcher;
 pub mod syntax;
