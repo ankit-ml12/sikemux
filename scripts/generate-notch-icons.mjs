@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Writes the notch helper's icons from the app's own: the line icons in
-// shared/ui/Icons.tsx and the agent marks beside them. `--check` fails when the
-// Swift file is out of date instead of writing it.
+// Writes the notch helper's icons, which the phone's share extension draws too,
+// from the app's own: the line icons in shared/ui/Icons.tsx and the agent marks
+// beside them. `--check` fails when the Swift file is out of date instead of
+// writing it.
 
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -27,6 +28,8 @@ const LINE_ICONS = {
   arrowUp: "IconArrowUp",
   agent: "IconAgent",
   command: "IconCommand",
+  stack: "IconStack",
+  globe: "IconGlobe",
 };
 
 // Line icons the app fills from its stylesheet rather than from the icon itself.

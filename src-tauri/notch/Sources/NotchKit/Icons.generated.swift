@@ -38,6 +38,15 @@ enum Icons {
     static let command = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
         IconShape(d: "M3 4.6 6 8l-3 3.4M7.6 11.4H13", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
     ])
+    static let stack = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
+        IconShape(d: "M8 2.6 13.4 5.4 8 8.2 2.6 5.4Z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
+        IconShape(d: "M2.6 8.2 8 11 13.4 8.2", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
+        IconShape(d: "M2.6 10.8 8 13.6 13.4 10.8", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
+    ])
+    static let globe = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
+        IconShape(d: "M2.4 8a5.6 5.6 0 1 0 11.2 0a5.6 5.6 0 1 0 -11.2 0z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
+        IconShape(d: "M2.7 8h10.6M8 2.4c1.7 1.6 2.5 3.5 2.5 5.6S9.7 12 8 13.6C6.3 12 5.5 10.1 5.5 8S6.3 4 8 2.4Z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
+    ])
     static let brand = IconDef(viewBox: ViewBox(x: 82, y: 24, width: 265, height: 265), shapes: [
         IconShape(d: "M257,72 L331,29 L331,114Z", style: .fill(.current), opacity: 1, evenOdd: false, translate: (0, 0)),
         IconShape(d: "M98,199 L172,241 L98,284Z", style: .fill(.current), opacity: 1, evenOdd: false, translate: (0, 0)),
