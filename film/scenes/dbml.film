@@ -38,32 +38,31 @@ key enter
 hold 1
 wait 0.6
 still opened
-zoom 310,330,860,300 0.9 &
-move 850,452 1.0
-wait 0.7
+# One frame on the diagram's pane from here on, so every zoom seen is the canvas's own.
+zoom 290,150,900,720 0.8 &
+move 850,452 0.9
+wait 0.6
 still hover-orders
-pinch 1.9 0.8
+pinch 2.1 1.0
 wait 0.3
-zoom 700,380,500,320 0.8 &
-move 861,494 0.5
+move 870,500 0.5
 wait 0.9
 still column-tip
-zoom 300,180,900,680 0.8 &
-move 578,582 0.7
-drag 600,700 0.8
+move 557,600 0.6
+drag 520,470 0.8
 wait 0.3
 still dragged
-click 1155,827
-wait 0.7
+click 1167,833
+wait 0.8
 still arranged
-move 640,470 0.6
-pinch 1.7 0.8
-pan -300,-60 1.0
-pan 220,40 0.8
+move 700,480 0.6
+pinch 1.9 0.9
+pan -280,-80 0.9
+pan 200,60 0.8
 wait 0.2
 still panned
-click 1111,827
-wait 0.6
+click 1123,833
+wait 0.7
 still fitted
 zoom out 0.8 &
 move 1300,700 0.8
