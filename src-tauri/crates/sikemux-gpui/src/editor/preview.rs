@@ -4,18 +4,39 @@
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, App, Context, Entity, Hsla, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    actions, div, point, px, App, AppContext, Context, Entity, FocusHandle, Focusable, Hsla,
+    InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, RenderOnce,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
-use gpui_transcript::{Markdown, Pen, Style};
+use gpui_transcript::{DocFind, Markdown, Pen, Query, Style};
 use serde_json::Value;
 use sikemux_markdown::{Doc, Op, Options};
 
-use super::OpenAt;
+use super::{Document, FileKey, OpenAt};
 use crate::theme::{self, Tokens};
+use crate::ui::FindBar;
 use crate::workbench::Workbench;
+
+actions!(markdown_preview, [FindInPreview]);
+
+pub(super) const CONTEXT: &str = "MarkdownPreview";
+/// The room above the preview's text, where a place found is brought to rest below.
+const PAD_Y: f32 = 24.;
+const TEXT_SIZE: f32 = 15.;
+/// Frames spent bringing a place found into view: one from its block's top, one from its line.
+const REVEAL_FRAMES: u8 = 2;
+
+pub(super) fn install(cx: &mut App) {
+    let find = if cfg!(target_os = "macos") {
+        "cmd-f"
+    } else {
+        "ctrl-f"
+    };
+    cx.bind_keys([KeyBinding::new(find, FindInPreview, Some(CONTEXT))]);
+}
 
 const OPTIONS: Options = Options {
     gfm: true,
@@ -121,11 +142,14 @@ pub(super) fn toolbar(
         ))
 }
 
-/// The markdown of the file at `path`, drawn to read.
+/// The markdown of the file at `path`, drawn to read, with the places a find found marked.
 #[derive(IntoElement)]
 pub(super) struct Body {
     pub(super) path: PathBuf,
     pub(super) markdown: Rc<Markdown>,
+    pub(super) found: Option<Rc<DocFind>>,
+    pub(super) scroll: ScrollHandle,
+    pub(super) focus: FocusHandle,
 }
 
 impl RenderOnce for Body {
@@ -135,25 +159,233 @@ impl RenderOnce for Body {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_default();
-        let style = Style {
+        let style = Rc::new(Style {
             on_link: Some(Rc::new(
                 move |link: &str, window: &mut Window, cx: &mut App| {
                     follow(&folder, link, window, cx)
                 },
             )),
-            ..reading_style(15., cx)
+            ..reading_style(TEXT_SIZE, cx)
+        });
+        let pen = match &self.found {
+            Some(found) => found.pen(style, &self.markdown),
+            None => Pen::new(style),
         };
-        let pen = Pen::new(Rc::new(style));
         let id = SharedString::from(format!("markdown-{}", self.path.display()));
-        div().id(id.clone()).size_full().overflow_y_scroll().child(
-            div()
-                .mx_auto()
-                .max_w(px(860.))
-                .px(px(28.))
-                .py(px(24.))
-                .child(pen.markdown(id, &self.markdown, window, cx)),
-        )
+        let focus = self.focus.clone();
+        div()
+            .id(id.clone())
+            .size_full()
+            .overflow_y_scroll()
+            .track_scroll(&self.scroll)
+            .track_focus(&self.focus)
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                focus.focus(window, cx)
+            })
+            .child(
+                div()
+                    .mx_auto()
+                    .max_w(px(860.))
+                    .px(px(28.))
+                    .py(px(PAD_Y))
+                    .child(pen.markdown(id, &self.markdown, window, cx)),
+            )
     }
+}
+
+/// The find bar over a markdown preview, while it is open.
+pub(super) struct Finding {
+    input: Entity<InputState>,
+    match_case: bool,
+    whole_word: bool,
+    /// The places found, once the bar holds something to find.
+    found: Option<Rc<DocFind>>,
+    /// Frames left to bring the place the reader is on into view.
+    reveal: u8,
+    _typed: Subscription,
+}
+
+impl Finding {
+    pub(super) fn found(&self) -> Option<Rc<DocFind>> {
+        self.found.clone()
+    }
+
+    pub(super) fn revealing(&self) -> bool {
+        self.reveal > 0
+    }
+}
+
+/// Opens the find bar over the preview of `key`, or puts the reader back in it.
+pub(super) fn open_find(
+    bench: &mut Workbench,
+    key: &FileKey,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    let Some(document) = bench.editors.open.get_mut(key) else {
+        return;
+    };
+    if document.finding.is_none() {
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Find in file"));
+        let typed = {
+            let key = key.clone();
+            cx.subscribe(&input, move |bench, _, event: &InputEvent, cx| {
+                if let InputEvent::Change = event {
+                    search(bench, &key, cx);
+                }
+            })
+        };
+        document.finding = Some(Finding {
+            input,
+            match_case: false,
+            whole_word: false,
+            found: None,
+            reveal: 0,
+            _typed: typed,
+        });
+    }
+    if let Some(finding) = &document.finding {
+        finding
+            .input
+            .update(cx, |input, cx| input.select_all(window, cx));
+        finding.input.read(cx).focus_handle(cx).focus(window, cx);
+    }
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// Looks for what the bar holds, as its options say, in the preview as it reads now.
+fn search(bench: &mut Workbench, key: &FileKey, cx: &mut Context<Workbench>) {
+    if let Some(document) = bench.editors.open.get_mut(key) {
+        refind(document, cx);
+    }
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// Finds again what the bar holds, as the preview's text changed or the bar did.
+pub(super) fn refind(document: &mut Document, cx: &App) {
+    let rendered = document.markdown();
+    let Some(finding) = document.finding.as_mut() else {
+        return;
+    };
+    let query = Query {
+        text: finding.input.read(cx).value().to_string(),
+        match_case: finding.match_case,
+        whole_word: finding.whole_word,
+    };
+    finding.found = match (query.text.is_empty(), rendered) {
+        (false, Some(markdown)) => Some(Rc::new(DocFind::new(&markdown, &query))),
+        _ => None,
+    };
+    finding.reveal = REVEAL_FRAMES;
+}
+
+fn step_find(bench: &mut Workbench, key: &FileKey, forward: bool, cx: &mut Context<Workbench>) {
+    let finding = bench
+        .editors
+        .open
+        .get_mut(key)
+        .and_then(|document| document.finding.as_mut());
+    if let Some(finding) = finding {
+        if let Some(found) = finding.found.as_mut() {
+            Rc::make_mut(found).step(forward);
+            finding.reveal = REVEAL_FRAMES;
+        }
+    }
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+fn flip_find(
+    bench: &mut Workbench,
+    key: &FileKey,
+    flip: fn(&mut Finding),
+    cx: &mut Context<Workbench>,
+) {
+    let finding = bench
+        .editors
+        .open
+        .get_mut(key)
+        .and_then(|document| document.finding.as_mut());
+    if let Some(finding) = finding {
+        flip(finding);
+        search(bench, key, cx);
+    }
+}
+
+/// Closes the bar, takes the marks away, and puts the reader back in the preview.
+fn close_find(
+    bench: &mut Workbench,
+    key: &FileKey,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    if let Some(document) = bench.editors.open.get_mut(key) {
+        document.finding = None;
+        document.preview_focus.focus(window, cx);
+    }
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// Scrolls the preview so the place the reader is on sits in view, aimed from where the last
+/// frame drew it.
+pub(super) fn reveal(bench: &mut Workbench, key: &FileKey, cx: &mut Context<Workbench>) {
+    let Some(document) = bench.editors.open.get_mut(key) else {
+        return;
+    };
+    let (Some(markdown), Some(finding)) = (document.markdown(), document.finding.as_mut()) else {
+        return;
+    };
+    finding.reveal = finding.reveal.saturating_sub(1);
+    let style = reading_style(TEXT_SIZE, cx);
+    let offset = (finding.found.as_ref()).and_then(|found| found.current_offset(&markdown, &style));
+    if let Some(offset) = offset {
+        let scroll = &document.preview_scroll;
+        let (line, room) = (px(PAD_Y) + offset, room(scroll));
+        let scrolled = -scroll.offset().y;
+        let view = scroll.bounds().size.height;
+        if line < scrolled + room || line > scrolled + view - room {
+            scroll.set_offset(point(px(0.), -(line - room).max(px(0.))));
+        }
+    }
+    if finding.reveal > 0 {
+        bench.parts.redraw(&bench.parts.stage, cx);
+    }
+}
+
+/// How far from the edge of the view a place found is kept.
+fn room(scroll: &ScrollHandle) -> Pixels {
+    (scroll.bounds().size.height / 4.).min(px(96.))
+}
+
+/// The find bar over the preview of `key`, while it is open.
+pub(super) fn bar(this: &Entity<Workbench>, key: &FileKey, finding: &Finding, cx: &App) -> FindBar {
+    let label = match finding.found.as_ref().map(|found| found.found()) {
+        Some((current, total)) if total > 0 => format!("{}/{total}", current + 1),
+        _ if finding.input.read(cx).value().is_empty() => "0/0".to_owned(),
+        _ => "No results".to_owned(),
+    };
+    let on = |act: fn(&mut Workbench, &FileKey, &mut Window, &mut Context<Workbench>)| {
+        let (this, key) = (this.clone(), key.clone());
+        move |window: &mut Window, cx: &mut App| {
+            this.update(cx, |bench, cx| act(bench, &key, window, cx))
+        }
+    };
+    let step = {
+        let (this, key) = (this.clone(), key.clone());
+        move |forward: bool, _: &mut Window, cx: &mut App| {
+            this.update(cx, |bench, cx| step_find(bench, &key, forward, cx))
+        }
+    };
+    FindBar::new(&finding.input, label)
+        .match_case(
+            finding.match_case,
+            on(|bench, key, _, cx| flip_find(bench, key, |finding| finding.match_case ^= true, cx)),
+        )
+        .whole_word(
+            finding.whole_word,
+            on(|bench, key, _, cx| flip_find(bench, key, |finding| finding.whole_word ^= true, cx)),
+        )
+        .on_step(step)
+        .on_close(on(close_find))
 }
 
 /// [`reading_style`] whose web links open what they name in the app, as
@@ -224,4 +456,42 @@ fn follow(folder: &Path, link: &str, window: &mut Window, cx: &mut App) {
         column: None,
     };
     window.dispatch_action(Box::new(at), cx);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn query(text: &str, match_case: bool, whole_word: bool) -> Query {
+        Query {
+            text: text.to_owned(),
+            match_case,
+            whole_word,
+        }
+    }
+
+    const TEXT: &str = "# Notes\n\nFoo the food, then foo again.\n\n- one foo\n- `foo()` in code\n";
+
+    #[test]
+    fn find_counts_every_place_in_the_preview_as_it_reads() {
+        let markdown = render(TEXT);
+        let count = |query: Query| DocFind::new(&markdown, &query).found().1;
+        assert_eq!(count(query("foo", false, false)), 5);
+        assert_eq!(count(query("Foo", true, false)), 1);
+        assert_eq!(count(query("foo", false, true)), 4);
+        assert_eq!(count(query("absent", false, false)), 0);
+        assert_eq!(count(query("#", false, false)), 0);
+    }
+
+    #[test]
+    fn stepping_goes_round_the_places_found() {
+        let markdown = render(TEXT);
+        let mut found = DocFind::new(&markdown, &query("foo", false, true));
+        found.step(false);
+        assert_eq!(found.found(), (3, 4));
+        found.step(true);
+        assert_eq!(found.found(), (0, 4));
+        found.step(true);
+        assert_eq!(found.found(), (1, 4));
+    }
 }
