@@ -457,7 +457,7 @@ impl Surface for DeskPage {
 impl Workbench {
     fn hear(&mut self, heard: Heard, window: &mut Window, cx: &mut Context<Self>) {
         match heard {
-            Heard::Tabs => self.read_strips(),
+            Heard::Tabs => self.read_strips(cx),
             Heard::Downloaded(download) => {
                 #[cfg(feature = "drive")]
                 crate::drive::trace(format_args!(
@@ -481,7 +481,7 @@ impl Workbench {
                 }
             }
             Heard::Acting(agent) => {
-                self.read_strips();
+                self.read_strips(cx);
                 self.show_pages(&agent);
                 if !self.desk_in_sight(&agent) {
                     if let Some(engine) = self.desks.engine.clone() {
@@ -519,8 +519,9 @@ impl Workbench {
         }
     }
 
-    /// Reads every agent's tabs again, and brings out the desk of an agent that opened one.
-    fn read_strips(&mut self) {
+    /// Reads every agent's tabs again, bringing out the desk of an agent that opened one and
+    /// shutting the desk of one whose last tab closed.
+    fn read_strips(&mut self, cx: &mut Context<Self>) {
         let Some(engine) = self.desks.engine.clone() else {
             return;
         };
@@ -541,12 +542,43 @@ impl Workbench {
             };
             let now: HashSet<String> = strip.tabs.iter().map(|tab| tab.id.clone()).collect();
             let before = self.desks.known.insert(agent.clone(), now.clone());
-            let opened = before.is_some_and(|before| now.iter().any(|tab| !before.contains(tab)));
+            let opened =
+                (before.as_ref()).is_some_and(|before| now.iter().any(|tab| !before.contains(tab)));
+            let emptied = now.is_empty() && before.is_some_and(|before| !before.is_empty());
             if opened && !self.desk_open_anywhere(&agent) {
                 self.reveal_desk(&agent);
             }
-            self.desks.strips.insert(agent, strip);
+            self.desks.strips.insert(agent.clone(), strip);
+            if emptied {
+                self.shut_empty_desk(&agent, cx);
+            }
         }
+    }
+
+    /// Shuts the agent's desk once nothing is left on it, so no empty desk stays open.
+    fn shut_empty_desk(&mut self, agent: &str, cx: &mut Context<Self>) {
+        let empty = self.desk_kind(agent) != DeskKind::Simulator
+            && self.desks.items.get(agent).is_none_or(Vec::is_empty)
+            && (self.desks.strips.get(agent)).is_none_or(|strip| strip.tabs.is_empty());
+        if !empty {
+            return;
+        }
+        if let Some((strip, tab, desk)) = self.desk_place(agent) {
+            if !self.panes.desk_shutting(&desk) {
+                self.shut_desk(strip, tab, desk, cx);
+            }
+        }
+    }
+
+    /// The project tab holding the agent's desk, its strip and the desk's view there.
+    fn desk_place(&self, agent: &str) -> Option<(Strip, String, String)> {
+        let layout = &self.view.as_ref()?.layout;
+        layout.projects.iter().find_map(|(project, strip)| {
+            strip.tabs.iter().find_map(|tab| {
+                view_of(&tab.pane, PaneKind::Desk, agent)
+                    .map(|view| (Strip::Project(project.clone()), tab.id.clone(), view))
+            })
+        })
     }
 
     /// The project tab holding the agent, its strip and its view there, wherever it is.
@@ -704,7 +736,10 @@ impl Workbench {
         crate::editor::close_unsaved(
             self,
             closing,
-            move |bench, _| bench.take_off_desk(&agent, &item),
+            move |bench, cx| {
+                bench.take_off_desk(&agent, &item);
+                bench.shut_empty_desk(&agent, cx);
+            },
             cx,
         );
     }
