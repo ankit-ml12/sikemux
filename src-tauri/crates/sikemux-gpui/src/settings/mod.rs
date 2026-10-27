@@ -7,9 +7,9 @@ use std::time::{Duration, Instant};
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, div, px, AnyElement, App, AppContext, Context, Entity, FontWeight, InteractiveElement,
-    IntoElement, KeyBinding, MouseButton, MouseDownEvent, ParentElement, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
+    actions, div, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, FontWeight,
+    InteractiveElement, IntoElement, KeyBinding, MouseButton, MouseDownEvent, ParentElement,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
 
@@ -71,6 +71,9 @@ pub struct Settings {
     /// A place a search led to, lit for a moment.
     flash: Option<(&'static str, Instant)>,
     scroll: ScrollHandle,
+    /// Held while settings are open, so Escape and their other keys reach them wherever the
+    /// person clicked.
+    focus: FocusHandle,
     /// The list of pages on the left, which follows the page shown.
     nav: ScrollHandle,
     pages: pages::State,
@@ -112,6 +115,7 @@ pub fn open(bench: &mut Workbench, page: Page, window: &mut Window, cx: &mut Con
         chosen: 0,
         flash: None,
         scroll: ScrollHandle::new(),
+        focus: cx.focus_handle(),
         nav: ScrollHandle::new(),
         pages: pages::State::default(),
         behind: behind(bench),
@@ -501,35 +505,30 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
         ),
         false => (settings.page.name().into(), settings.page.about().into()),
     };
-    let header = div()
-        .flex()
-        .items_start()
-        .gap(px(12.))
-        .pb(px(2.))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(4.))
-                .child(ui::text(title, 20., FontWeight::SEMIBOLD).text_color(t.text_primary))
-                .child(
-                    div()
-                        .text_size(crate::theme::ui_text(12.5))
-                        .text_color(t.text_secondary)
-                        .child(about),
-                ),
+    let header = div().flex().items_start().gap(px(12.)).pb(px(2.)).child(
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .child(ui::text(title, 20., FontWeight::SEMIBOLD).text_color(t.text_primary))
+            .child(
+                div()
+                    .text_size(crate::theme::ui_text(12.5))
+                    .text_color(t.text_secondary)
+                    .child(about),
+            ),
+    );
+    let close_button = {
+        let this = this.clone();
+        ui::IconButton::new(
+            "settings-close",
+            Icon::Close,
+            format!("Close settings ({close_keys})"),
         )
-        .child({
-            let this = this.clone();
-            ui::IconButton::new(
-                "settings-close",
-                Icon::Close,
-                format!("Close settings ({close_keys})"),
-            )
-            .on_click(move |_, window, cx| this.update(cx, |bench, cx| close(bench, window, cx)))
-        });
+        .on_click(move |_, window, cx| this.update(cx, |bench, cx| close(bench, window, cx)))
+    };
 
     let body: Vec<AnyElement> = match searching {
         true if found.is_empty() => vec![div()
@@ -582,6 +581,17 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
 
     div()
         .key_context(CONTEXT)
+        .track_focus(&settings.focus)
+        .on_mouse_down(
+            MouseButton::Left,
+            window.listener_for(&this, |bench, _: &MouseDownEvent, window, cx| {
+                if let Some(settings) = &bench.settings {
+                    if !settings.focus.contains_focused(window, cx) {
+                        settings.focus.focus(window, cx);
+                    }
+                }
+            }),
+        )
         .on_action(
             window.listener_for(&this, |bench, _: &CloseSettings, window, cx| {
                 close(bench, window, cx)
@@ -602,21 +612,35 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
             ui::pane(cx).child(
                 div().size_full().flex().child(rail).child(
                     div()
-                        .id("settings-scroll")
-                        .track_scroll(&settings.scroll)
+                        .relative()
                         .flex_1()
                         .min_w_0()
-                        .overflow_y_scroll()
-                        .px(px(32.))
-                        .pt(px(26.))
-                        .pb(px(40.))
-                        .flex()
-                        .flex_col()
-                        .gap(px(16.))
-                        .child(div().w_full().max_w(px(760.)).mx_auto().child(header))
-                        .children(
-                            body.into_iter()
-                                .map(|part| div().w_full().max_w(px(760.)).mx_auto().child(part)),
+                        .h_full()
+                        .child(
+                            div()
+                                .id("settings-scroll")
+                                .size_full()
+                                .track_scroll(&settings.scroll)
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_y_scroll()
+                                .px(px(32.))
+                                .pt(px(26.))
+                                .pb(px(40.))
+                                .flex()
+                                .flex_col()
+                                .gap(px(16.))
+                                .child(div().w_full().max_w(px(760.)).mx_auto().child(header))
+                                .children(body.into_iter().map(|part| {
+                                    div().w_full().max_w(px(760.)).mx_auto().child(part)
+                                })),
+                        )
+                        .child(
+                            div()
+                                .absolute()
+                                .top(px(12.))
+                                .right(px(12.))
+                                .child(close_button),
                         ),
                 ),
             ),
