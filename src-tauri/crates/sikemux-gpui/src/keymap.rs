@@ -350,6 +350,9 @@ pub fn dispatch(id: &str, window: &mut Window, cx: &mut App) {
 /// Tells the core through `asks` each command the person runs, by its keys, the deck or a
 /// click, for the usage report. The core keeps count of only some of them.
 pub fn report_use(asks: mpsc::UnboundedSender<Ask>, cx: &mut App) {
+    if !cx.has_global::<Keymap>() {
+        return;
+    }
     let keymap = cx.global_mut::<Keymap>();
     if keymap.used.is_some() {
         return;
