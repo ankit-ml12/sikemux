@@ -102,7 +102,9 @@ fn read_scene(text: &str) -> anyhow::Result<Vec<Step>> {
                 });
             }
         }
-        let background = words.last().is_some_and(|word| !word.quoted && word.text == "&");
+        let background = words
+            .last()
+            .is_some_and(|word| !word.quoted && word.text == "&");
         if background {
             words.pop();
         }
@@ -271,7 +273,8 @@ impl World {
             ("onboardingComplete", json!(true)),
             ("lastSeenVersion", json!(version)),
         ] {
-            runtime.block_on(client.call("setPreference", json!({ "key": key, "value": value })))?;
+            runtime
+                .block_on(client.call("setPreference", json!({ "key": key, "value": value })))?;
         }
         Ok(Self {
             core,
@@ -307,7 +310,11 @@ impl World {
                 let from = self.scenes.join(step.text(1)?);
                 let path = self.work.join("projects").join(&name);
                 std::fs::create_dir_all(path.parent().unwrap_or(&self.work))?;
-                let copied = Command::new("cp").arg("-R").arg(&from).arg(&path).status()?;
+                let copied = Command::new("cp")
+                    .arg("-R")
+                    .arg(&from)
+                    .arg(&path)
+                    .status()?;
                 if !copied.success() {
                     bail!("could not copy {}", from.display());
                 }
@@ -487,7 +494,9 @@ fn in_out(p: f64) -> f64 {
 
 /// The camera's curve, CSS's cubic-bezier(0.2, 0.8, 0.2, 1): it starts fast and settles gently.
 fn lens_ease(p: f64) -> f64 {
-    let along = |t: f64, a: f64, b: f64| 3. * a * t * (1. - t).powi(2) + 3. * b * t * t * (1. - t) + t.powi(3);
+    let along = |t: f64, a: f64, b: f64| {
+        3. * a * t * (1. - t).powi(2) + 3. * b * t * t * (1. - t) + t.powi(3)
+    };
     let (mut low, mut high) = (0., 1.);
     for _ in 0..30 {
         let mid = (low + high) / 2.;
@@ -506,7 +515,10 @@ impl Director {
     }
 
     fn random(&mut self) -> f64 {
-        self.seed = self.seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        self.seed = self
+            .seed
+            .wrapping_mul(1_664_525)
+            .wrapping_add(1_013_904_223);
         self.seed as f64 / u32::MAX as f64
     }
 
@@ -587,8 +599,10 @@ impl Director {
             match &tween.motion {
                 Motion::Cursor { from, control, to } => {
                     let e = hand_ease(p) as f32;
-                    self.pointer.x = (1. - e).powi(2) * from.0 + 2. * (1. - e) * e * control.0 + e * e * to.0;
-                    self.pointer.y = (1. - e).powi(2) * from.1 + 2. * (1. - e) * e * control.1 + e * e * to.1;
+                    self.pointer.x =
+                        (1. - e).powi(2) * from.0 + 2. * (1. - e) * e * control.0 + e * e * to.0;
+                    self.pointer.y =
+                        (1. - e).powi(2) * from.1 + 2. * (1. - e) * e * control.1 + e * e * to.1;
                 }
                 Motion::Camera { from, to } => {
                     let e = lens_ease(p) as f32;
@@ -765,7 +779,10 @@ impl Director {
                     .save(&path)?;
                 println!("film: saved {}", path.display());
             }
-            if let Sink::Video { input: Some(input), .. } = &mut self.sink {
+            if let Sink::Video {
+                input: Some(input), ..
+            } = &mut self.sink
+            {
                 let encoding = Instant::now();
                 input.write_all(&frame)?;
                 self.spent[3] += encoding.elapsed();
@@ -794,7 +811,11 @@ impl Director {
 }
 
 impl Director {
-    fn place(&mut self, step: &Step, at: usize) -> anyhow::Result<((f32, f32), Option<(f32, f32, f32, f32)>)> {
+    fn place(
+        &mut self,
+        step: &Step,
+        at: usize,
+    ) -> anyhow::Result<((f32, f32), Option<(f32, f32, f32, f32)>)> {
         let word = step
             .words
             .get(at)
@@ -807,7 +828,9 @@ impl Director {
                 .update_window(self.window, |_, window, _| {
                     gpui_base::test_support::snapshots(window)
                         .iter()
-                        .filter(|element| element.visible() && element.label() == Some(label.as_str()))
+                        .filter(|element| {
+                            element.visible() && element.label() == Some(label.as_str())
+                        })
                         .map(|element| element.bounds())
                         .min_by(|a, b| {
                             (f32::from(a.size.width) * f32::from(a.size.height))
@@ -815,7 +838,13 @@ impl Director {
                         })
                 })
                 .map_err(|error| anyhow!("{error}"))?
-                .ok_or_else(|| anyhow!("line {}: nothing labelled {:?} is shown", step.line, word.text))?;
+                .ok_or_else(|| {
+                    anyhow!(
+                        "line {}: nothing labelled {:?} is shown",
+                        step.line,
+                        word.text
+                    )
+                })?;
             let rect = (
                 f32::from(found.origin.x),
                 f32::from(found.origin.y),
@@ -831,13 +860,19 @@ impl Director {
         }
     }
 
-    fn glide(&mut self, to: (f32, f32), duration: Option<f64>, background: bool) -> anyhow::Result<()> {
+    fn glide(
+        &mut self,
+        to: (f32, f32),
+        duration: Option<f64>,
+        background: bool,
+    ) -> anyhow::Result<()> {
         let from = (self.pointer.x, self.pointer.y);
         let distance = ((to.0 - from.0).powi(2) + (to.1 - from.1).powi(2)).sqrt();
         if distance < 1. {
             return Ok(());
         }
-        let duration = duration.unwrap_or((280. + 210. * (1. + distance as f64 / 70.).log2()) / 1000.);
+        let duration =
+            duration.unwrap_or((280. + 210. * (1. + distance as f64 / 70.).log2()) / 1000.);
         let bend = if self.random() < 0.5 { -1. } else { 1. } * (distance * 0.08).min(60.);
         let control = (
             (from.0 + to.0) / 2. + (to.1 - from.1) / distance * bend,
@@ -895,14 +930,26 @@ impl Director {
     fn zoom(&mut self, to: View, duration: f64, background: bool) -> anyhow::Result<()> {
         let change = self.view.width / to.width;
         if change > 1.15 {
-            self.mark("zoom-in", Some(json!({ "by": (change * 100.).round() / 100. })));
+            self.mark(
+                "zoom-in",
+                Some(json!({ "by": (change * 100.).round() / 100. })),
+            );
         } else if change < 1. / 1.15 {
-            self.mark("zoom-out", Some(json!({ "by": (100. / change).round() / 100. })));
+            self.mark(
+                "zoom-out",
+                Some(json!({ "by": (100. / change).round() / 100. })),
+            );
         }
         if let Some(lens) = self.lens.take() {
             self.tweens.retain(|tween| tween.id != lens);
         }
-        let id = self.tween(duration, Motion::Camera { from: self.view, to });
+        let id = self.tween(
+            duration,
+            Motion::Camera {
+                from: self.view,
+                to,
+            },
+        );
         self.lens = Some(id);
         if !background {
             self.until(id)?;
@@ -1055,17 +1102,19 @@ impl Director {
                     self.zoom(full, seconds(1).unwrap_or(0.7), background)?;
                 } else {
                     let (centre, rect) = self.place(step, 0)?;
-                    let (view, duration) = match (rect, step.words.get(0).is_some_and(|word| word.quoted)) {
-                        (Some(rect), false) => {
-                            let pad = 48.;
-                            let fit = (self.stage.0 / (rect.2 + pad * 2.)).min(self.stage.1 / (rect.3 + pad * 2.));
-                            (self.view_at(centre, fit), seconds(1))
-                        }
-                        _ => (
-                            self.view_at(centre, step.number(1).unwrap_or(1.6)),
-                            seconds(2),
-                        ),
-                    };
+                    let (view, duration) =
+                        match (rect, step.words.get(0).is_some_and(|word| word.quoted)) {
+                            (Some(rect), false) => {
+                                let pad = 48.;
+                                let fit = (self.stage.0 / (rect.2 + pad * 2.))
+                                    .min(self.stage.1 / (rect.3 + pad * 2.));
+                                (self.view_at(centre, fit), seconds(1))
+                            }
+                            _ => (
+                                self.view_at(centre, step.number(1).unwrap_or(1.6)),
+                                seconds(2),
+                            ),
+                        };
                     self.zoom(view, duration.unwrap_or(0.7), background)?;
                 }
             }
@@ -1202,24 +1251,48 @@ fn main() -> anyhow::Result<()> {
     let (sink, stills) = match &args.stills {
         Some(times) => {
             std::fs::create_dir_all(&args.out)?;
-            let frames = times.iter().map(|seconds| (seconds * FPS).round() as u64).collect();
+            let frames = times
+                .iter()
+                .map(|seconds| (seconds * FPS).round() as u64)
+                .collect();
             (Sink::Stills { frames }, args.out.clone())
         }
         None => {
             let partial = args.out.with_extension("partial.mp4");
             let mut ffmpeg = Command::new("ffmpeg")
-                .args(["-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba"])
+                .args([
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "rawvideo",
+                    "-pix_fmt",
+                    "rgba",
+                ])
                 .args(["-s", &format!("{output_width}x{output_height}")])
                 .args(["-framerate", &FPS.to_string(), "-i", "-"])
-                .args(["-c:v", "libx264", "-preset", if args.draft { "veryfast" } else { "slow" }])
-                .args(["-crf", if args.draft { "23" } else { "14" }, "-pix_fmt", "yuv420p"])
+                .args([
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    if args.draft { "veryfast" } else { "slow" },
+                ])
+                .args([
+                    "-crf",
+                    if args.draft { "23" } else { "14" },
+                    "-pix_fmt",
+                    "yuv420p",
+                ])
                 .args(["-profile:v", "high", "-movflags", "+faststart"])
                 .arg(&partial)
                 .stdin(Stdio::piped())
                 .spawn()
                 .context("starting ffmpeg")?;
             let input = ffmpeg.stdin.take();
-            let folder = args.out.parent().map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+            let folder = args
+                .out
+                .parent()
+                .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
             (
                 Sink::Video {
                     ffmpeg,
@@ -1308,7 +1381,11 @@ fn main() -> anyhow::Result<()> {
         let encoded = ffmpeg.wait()?;
         if played.is_ok() && encoded.success() {
             std::fs::rename(&partial, &out)?;
-            println!("film: wrote {} ({:.1} s)", out.display(), director.recorded as f64 / FPS);
+            println!(
+                "film: wrote {} ({:.1} s)",
+                out.display(),
+                director.recorded as f64 / FPS
+            );
         }
     }
     if let Some(events) = &args.events {

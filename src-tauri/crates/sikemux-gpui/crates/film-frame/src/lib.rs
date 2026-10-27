@@ -129,7 +129,8 @@ impl Compositor {
             );
             for y in 0..size.1 {
                 for x in 0..size.0 {
-                    alpha[y * size.0 + x] = coverage(x as f32 + 0.5, y as f32 + 0.5, rect, RADIUS * d);
+                    alpha[y * size.0 + x] =
+                        coverage(x as f32 + 0.5, y as f32 + 0.5, rect, RADIUS * d);
                 }
             }
             gaussian(&mut alpha, size.0, size.1, blur * d / 2.);
@@ -152,12 +153,16 @@ impl Compositor {
                 rim[at] = (1. - (edge + d * 0.5).abs() / (d * 0.5)).clamp(0., 1.) * 0.09;
             }
         }
-        let lockup = setup.lockup.and_then(|path| image::open(path).ok()).map(|picture| {
-            let picture = picture.to_rgba8();
-            let width = (setup.stage.0 * 0.3 * d) as u32;
-            let height = (picture.height() as f32 * width as f32 / picture.width() as f32) as u32;
-            imageops::resize(&picture, width, height, imageops::FilterType::Lanczos3)
-        });
+        let lockup = setup
+            .lockup
+            .and_then(|path| image::open(path).ok())
+            .map(|picture| {
+                let picture = picture.to_rgba8();
+                let width = (setup.stage.0 * 0.3 * d) as u32;
+                let height =
+                    (picture.height() as f32 * width as f32 / picture.width() as f32) as u32;
+                imageops::resize(&picture, width, height, imageops::FilterType::Lanczos3)
+            });
         let output = (setup.output.0 as usize, setup.output.1 as usize);
         Self {
             stage: setup.stage,
@@ -240,16 +245,17 @@ impl Compositor {
     fn paint_canvas(&mut self, window: &RgbaImage, end: f32) {
         let shown = 1. - smooth((end / 0.6).clamp(0., 1.));
         let card = smooth(((end - 0.35) / 0.65).clamp(0., 1.));
-        let window = if window.dimensions() == (self.window_size.0 as u32, self.window_size.1 as u32) {
-            std::borrow::Cow::Borrowed(window)
-        } else {
-            std::borrow::Cow::Owned(imageops::resize(
-                window,
-                self.window_size.0 as u32,
-                self.window_size.1 as u32,
-                imageops::FilterType::Triangle,
-            ))
-        };
+        let window =
+            if window.dimensions() == (self.window_size.0 as u32, self.window_size.1 as u32) {
+                std::borrow::Cow::Borrowed(window)
+            } else {
+                std::borrow::Cow::Owned(imageops::resize(
+                    window,
+                    self.window_size.0 as u32,
+                    self.window_size.1 as u32,
+                    imageops::FilterType::Triangle,
+                ))
+            };
         let row = self.size.0 * 4;
         let full = end > 0. || self.dirty;
         let (origin, window_size, plain, shadowed) =
@@ -301,7 +307,8 @@ impl Compositor {
                         let cover = source[3] as f32 / 255. * card;
                         for channel in 0..3 {
                             let under = pixel[channel] as f32;
-                            pixel[channel] = (under + (source[channel] as f32 - under) * cover).round() as u8;
+                            pixel[channel] =
+                                (under + (source[channel] as f32 - under) * cover).round() as u8;
                         }
                     }
                 }
@@ -371,9 +378,24 @@ impl Compositor {
             let (x, top) = on_screen(gx, 0.);
             let (_, bottom) = on_screen(gx, wh);
             let major = gx % 100. == 0.;
-            line(&mut self.frame, x, top, x, bottom, if major { 0.55 } else { 0.25 });
+            line(
+                &mut self.frame,
+                x,
+                top,
+                x,
+                bottom,
+                if major { 0.55 } else { 0.25 },
+            );
             if major {
-                digits(&mut self.frame, width, height, gx as u32, x + 3., top + 3., digit_size);
+                digits(
+                    &mut self.frame,
+                    width,
+                    height,
+                    gx as u32,
+                    x + 3.,
+                    top + 3.,
+                    digit_size,
+                );
             }
             gx += 50.;
         }
@@ -382,9 +404,24 @@ impl Compositor {
             let (left, y) = on_screen(0., gy);
             let (right, _) = on_screen(ww, gy);
             let major = gy % 100. == 0.;
-            line(&mut self.frame, left, y, right, y, if major { 0.55 } else { 0.25 });
+            line(
+                &mut self.frame,
+                left,
+                y,
+                right,
+                y,
+                if major { 0.55 } else { 0.25 },
+            );
             if major && gy > 0. {
-                digits(&mut self.frame, width, height, gy as u32, left + 3., y + 3., digit_size);
+                digits(
+                    &mut self.frame,
+                    width,
+                    height,
+                    gy as u32,
+                    left + 3.,
+                    y + 3.,
+                    digit_size,
+                );
             }
             gy += 50.;
         }
@@ -447,8 +484,8 @@ fn box_pass(
 fn wallpaper(path: Option<&Path>, size: (usize, usize)) -> Vec<u8> {
     if let Some(picture) = path.and_then(|path| image::open(path).ok()) {
         let picture = picture.to_rgba8();
-        let scale = (size.0 as f32 / picture.width() as f32)
-            .max(size.1 as f32 / picture.height() as f32);
+        let scale =
+            (size.0 as f32 / picture.width() as f32).max(size.1 as f32 / picture.height() as f32);
         let (w, h) = (
             (picture.width() as f32 * scale).ceil() as u32,
             (picture.height() as f32 * scale).ceil() as u32,
@@ -486,14 +523,21 @@ fn draw_pointer(shape: Shape, size: f32) -> Art {
     );
     let (w, h) = (width as usize, height as usize);
     let art = pixmap.data();
-    let mut shadow: Vec<f32> = art.chunks_exact(4).map(|pixel| pixel[3] as f32 / 255.).collect();
+    let mut shadow: Vec<f32> = art
+        .chunks_exact(4)
+        .map(|pixel| pixel[3] as f32 / 255.)
+        .collect();
     gaussian(&mut shadow, w, h, size);
     let drop = (1.5 * size).round() as usize;
     let mut pixels = vec![0u8; w * h * 4];
     for y in 0..h {
         for x in 0..w {
             let at = y * w + x;
-            let under = if y >= drop { shadow[at - drop * w] * 0.45 } else { 0. };
+            let under = if y >= drop {
+                shadow[at - drop * w] * 0.45
+            } else {
+                0.
+            };
             let source = &art[at * 4..at * 4 + 4];
             let alpha = source[3] as f32 / 255.;
             let out = &mut pixels[at * 4..at * 4 + 4];
