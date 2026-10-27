@@ -320,26 +320,27 @@ pub(crate) async fn pull_files(core: &Arc<Core>, client: ClientId, params: PullP
 }
 
 #[derive(Deserialize)]
-pub(crate) struct PullLinkParams {
+pub(crate) struct LinkParams {
     url: String,
 }
 
-/// The pull request a web address shows, with what clients show of its repository's host,
-/// when the address is one of a host Sikemux reads; else null.
-pub(crate) async fn pull_link(params: PullLinkParams) -> Value {
-    let Some((repo_url, number)) = pull_address(&params.url) else {
+/// The pull request, issue or run a web address shows, with what clients show of its
+/// repository's host, when the address is one of a host Sikemux reads; else null.
+pub(crate) async fn link(params: LinkParams) -> Value {
+    let Some((repo_url, item)) = linked(&params.url) else {
         return Value::Null;
     };
     match super::board::codehost::shown(&repo_url, &Default::default()).await {
-        Some(host) => json!({ "codeHost": host, "number": number }),
+        Some(host) => json!({ "codeHost": host, "item": item }),
         None => Value::Null,
     }
 }
 
-/// Splits a pull request's web address into its repository's address and its number, as
-/// GitHub (`/pull/12`), Bitbucket (`/pull-requests/12`) and GitLab (`/-/merge_requests/12`)
-/// write them.
-fn pull_address(address: &str) -> Option<(String, u64)> {
+/// Splits a web address into its repository's address and what it shows there: a pull
+/// request as GitHub (`/pull/12`), Bitbucket (`/pull-requests/12`) and GitLab
+/// (`/-/merge_requests/12`) write it, an issue (`/issues/12`, `/-/issues/12`), or a run
+/// of GitHub's Actions (`/actions/runs/34`).
+fn linked(address: &str) -> Option<(String, Value)> {
     let url = url::Url::parse(address).ok()?;
     if !matches!(url.scheme(), "http" | "https") {
         return None;
@@ -348,10 +349,24 @@ fn pull_address(address: &str) -> Option<(String, u64)> {
         .path_segments()?
         .filter(|part| !part.is_empty())
         .collect();
-    let marker = parts
-        .iter()
-        .position(|part| matches!(*part, "pull" | "pull-requests" | "merge_requests"))?;
-    let number = parts.get(marker + 1)?.parse().ok()?;
+    let (marker, item) = parts.iter().enumerate().find_map(|(at, part)| {
+        let next = parts.get(at + 1)?;
+        match *part {
+            "pull" | "pull-requests" | "merge_requests" => Some((
+                at,
+                json!({ "kind": "pull", "number": next.parse::<u64>().ok()? }),
+            )),
+            "issues" => Some((
+                at,
+                json!({ "kind": "issue", "number": next.parse::<u64>().ok()? }),
+            )),
+            "runs" if at > 0 && parts[at - 1] == "actions" => {
+                next.parse::<u64>().ok()?;
+                Some((at - 1, json!({ "kind": "run", "id": next })))
+            }
+            _ => None,
+        }
+    })?;
     let repo = match parts[..marker] {
         [ref repo @ .., "-"] => repo,
         ref repo => repo,
@@ -364,7 +379,7 @@ fn pull_address(address: &str) -> Option<(String, u64)> {
         origin.push('/');
         origin.push_str(part);
     }
-    Some((origin, number))
+    Some((origin, item))
 }
 
 pub(crate) async fn releases(core: &Arc<Core>, client: ClientId, params: ReleasesParams) -> Answer {

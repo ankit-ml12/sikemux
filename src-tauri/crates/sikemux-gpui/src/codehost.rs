@@ -169,27 +169,24 @@ pub struct HostArea {
     desk: Option<OnDesk>,
 }
 
-/// A pull request shown alone on an agent's desk, from a link to it.
+/// A pull request, issue or run shown alone on an agent's desk, from a link to it.
 struct OnDesk {
     agent: String,
     url: String,
-    view: &'static str,
-    files: &'static str,
 }
 
-/// The keys a desk's pull request is watched by. Watch keys live as long as the app, so
-/// each pull request opened on a desk makes its pair once.
-fn desk_keys(agent: &str, host: &str, repo: &str, number: u64) -> (&'static str, &'static str) {
+/// The key a desk's area watches what `base` names under, its own so it never meets the
+/// Git tab's. Watch keys live as long as the app, so each is made once.
+fn desk_key(agent: &str, url: &str, base: &'static str) -> &'static str {
     thread_local! {
-        static KEYS: std::cell::RefCell<std::collections::HashMap<String, (&'static str, &'static str)>> =
+        static KEYS: std::cell::RefCell<std::collections::HashMap<String, &'static str>> =
             Default::default();
     }
-    let name = format!("host-desk-{agent}-{host}-{repo}-{number}");
+    let name = format!("host-desk-{agent}-{url}-{base}");
     KEYS.with_borrow_mut(|keys| {
-        *keys.entry(name.clone()).or_insert_with(|| {
-            let leak = |key: String| -> &'static str { Box::leak(key.into_boxed_str()) };
-            (leak(format!("{name}-view")), leak(format!("{name}-files")))
-        })
+        *keys
+            .entry(name.clone())
+            .or_insert_with(|| Box::leak(name.into_boxed_str()))
     })
 }
 
@@ -247,9 +244,9 @@ impl HostArea {
         }
     }
 
-    /// Shows pull request `number` of `linked` alone, on `agent`'s desk, as the link `url`
-    /// named it. It is read through `project` when that is the project's own repository,
-    /// so it can be checked out there.
+    /// Shows what the link `url` named of `linked` alone, on `agent`'s desk: a pull request,
+    /// an issue or a run, as `item` says. It is read through `project` when that is the
+    /// project's own repository, so a pull request can be checked out there.
     #[allow(clippy::too_many_arguments)]
     pub fn on_desk(
         core: Target,
@@ -257,7 +254,7 @@ impl HostArea {
         agent: String,
         url: String,
         linked: ProjectCodeHost,
-        number: u64,
+        item: &Value,
         project: Option<&sikemux_wire::protocol::ProjectInfo>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -276,25 +273,38 @@ impl HostArea {
                 branch_of(project),
             )
         });
-        let (view, files) = desk_keys(&agent, &linked.host, &linked.repo, number);
         let mut area = Self::new(core, bench, folder, linked, account, branch);
         area.elsewhere = own.is_none().then(|| area.host.repo.clone());
-        area.desk = Some(OnDesk {
-            agent,
-            url,
-            view,
-            files,
-        });
-        area.show(Area::Pulls, cx);
-        area.open_pull(number, cx);
+        area.desk = Some(OnDesk { agent, url });
+        let number = item["number"].as_u64();
+        match (item["kind"].as_str(), number, item["id"].as_str()) {
+            (Some("issue"), Some(number), _) => {
+                area.show(Area::Issues, cx);
+                area.open_issue(number, cx);
+            }
+            (Some("run"), _, Some(id)) => {
+                area.show(Area::Actions, cx);
+                area.open_run(id.to_owned(), None, cx);
+            }
+            (_, Some(number), _) => {
+                area.show(Area::Pulls, cx);
+                area.open_pull(number, cx);
+            }
+            _ => {}
+        }
         area
     }
 
-    /// The keys the open pull request and its files are watched by.
-    fn pull_keys(&self) -> (&'static str, &'static str) {
+    /// Shows one thing alone on an agent's desk, with no way back to a list.
+    pub fn on_a_desk(&self) -> bool {
+        self.desk.is_some()
+    }
+
+    /// The key what `base` names is watched by: its own on a desk, else `base`.
+    fn key(&self, base: &'static str) -> &'static str {
         match &self.desk {
-            Some(desk) => (desk.view, desk.files),
-            None => (pull::VIEW, pull::FILES),
+            Some(desk) => desk_key(&desk.agent, &desk.url, base),
+            None => base,
         }
     }
 
@@ -309,30 +319,56 @@ impl HostArea {
         cx.defer(move |cx| {
             bench
                 .update(cx, |bench, cx| {
-                    bench.desk_pull_fell_back(&agent, shown, &url, cx)
+                    bench.desk_link_fell_back(&agent, shown, &url, cx)
                 })
                 .ok();
         });
     }
 
-    /// How a desk's tab names the pull request: its state's mark, and its number and title.
+    /// How a desk's tab names what it shows: its mark, and its number or name and its title.
     pub fn desk_face(&self, cx: &App) -> (AnyElement, String) {
         let t = Tokens::get(cx);
-        let Some(opened) = &self.pull else {
-            return (div().into_any_element(), String::new());
+        let quiet = |glyph: Icon| {
+            ui::icon(glyph, 13.)
+                .text_color(t.text_tertiary)
+                .flex_none()
+                .into_any_element()
         };
-        match opened.view.as_ref().and_then(|view| view.as_ref().ok()) {
-            Some(view) => (
-                pull_mark(view.state, 13., cx),
-                format!("#{} {}", opened.number, view.pull.title),
-            ),
-            None => (
-                ui::icon(Icon::PullRequest, 13.)
-                    .text_color(t.text_tertiary)
-                    .flex_none()
-                    .into_any_element(),
-                format!("#{}", opened.number),
-            ),
+        match self.area {
+            Area::Issues => {
+                let Some((number, issue)) = self.issues.shown() else {
+                    return (quiet(Icon::Issues), String::new());
+                };
+                match issue {
+                    Some(issue) => (
+                        issues::mark(issue, 13., cx),
+                        format!("#{number} {}", issue.title),
+                    ),
+                    None => (quiet(Icon::Issues), format!("#{number}")),
+                }
+            }
+            Area::Actions => match self.runs.open.as_ref() {
+                Some(opened) => match opened.view.as_ref().and_then(|view| view.as_ref().ok()) {
+                    Some(found) => (
+                        ui::status_of_run(outcome_word(found.run.outcome), 13., cx),
+                        format!("{} #{}", found.run.name, found.run.run_number),
+                    ),
+                    None => (quiet(Icon::Actions), "Run".to_owned()),
+                },
+                None => (quiet(Icon::Actions), String::new()),
+            },
+            _ => {
+                let Some(opened) = &self.pull else {
+                    return (quiet(Icon::PullRequest), String::new());
+                };
+                match opened.view.as_ref().and_then(|view| view.as_ref().ok()) {
+                    Some(view) => (
+                        pull_mark(view.state, 13., cx),
+                        format!("#{} {}", opened.number, view.pull.title),
+                    ),
+                    None => (quiet(Icon::PullRequest), format!("#{}", opened.number)),
+                }
+            }
         }
     }
 
@@ -378,15 +414,12 @@ impl HostArea {
     }
 
     fn unwatch_all(&self) {
-        if let Some(desk) = &self.desk {
-            self.core.unwatch(desk.view);
-            self.core.unwatch(desk.files);
-            return;
-        }
         for key in WATCHED {
-            self.core.unwatch(key);
+            self.core.unwatch(self.key(key));
         }
-        self.core.call("codeHostAway", json!({}));
+        if self.desk.is_none() {
+            self.core.call("codeHostAway", json!({}));
+        }
     }
 
     /// Opens pull request or issue `number` of `repo` in `area`.
@@ -433,9 +466,11 @@ impl HostArea {
 
     /// Takes a watched list's answer, under the key it was watched by.
     pub fn read(&mut self, key: &str, value: &Value, cx: &mut Context<Self>) {
-        let (view, files) = self.pull_keys();
+        let Some(key) = WATCHED.into_iter().find(|base| self.key(base) == key) else {
+            return;
+        };
         match key {
-            key if key == view => {
+            pull::VIEW => {
                 let Some(opened) = &mut self.pull else {
                     return;
                 };
@@ -453,12 +488,11 @@ impl HostArea {
                     self.fall_back(cx);
                 }
             }
-            key if key == files => {
+            pull::FILES => {
                 if let Some(opened) = &mut self.pull {
                     opened.take_files(answer(value));
                 }
             }
-            _ if self.desk.is_some() => return,
             pulls::KEY => self.pulls.list = Some(answer(value)),
             runs::LIST => self.runs.list = Some(answer(value)),
             releases::KEY => self.releases.list = Some(answer(value)),
@@ -467,6 +501,7 @@ impl HostArea {
                 self.follow_open_issue(cx);
             }
             runs::RUN => {
+                let first = (self.runs.open.as_ref()).is_some_and(|opened| opened.view.is_none());
                 if self.take_run(value) {
                     self.watch();
                 }
@@ -483,6 +518,11 @@ impl HostArea {
                     .map(|listed| listed.job.clone());
                 if let Some(job) = picked {
                     self.read_annotations(&job, cx);
+                }
+                let unread = (self.runs.open.as_ref())
+                    .is_some_and(|opened| matches!(opened.view, Some(Err(_))));
+                if first && unread {
+                    self.fall_back(cx);
                 }
             }
             logs::KEY => {
@@ -521,13 +561,17 @@ impl HostArea {
                 .filter(|opened| opened.tab == runs::Tab::Logs)
                 .and_then(|opened| Some((&opened.id, opened.job.as_ref()?)));
             if let Some((run, job)) = shown {
-                let params = json!({ "project": self.project, "runId": run, "jobId": job });
+                let mut params = self.located();
+                params["runId"] = json!(run);
+                params["jobId"] = json!(job);
                 self.ask_watch(logs::KEY, "codeHostJobLog", params);
             }
             return;
         }
         if self.area == Area::Issues {
-            self.watch_issues();
+            if self.desk.is_none() {
+                self.watch_issues();
+            }
             return;
         }
         if self.area == Area::Releases {
@@ -545,9 +589,8 @@ impl HostArea {
             Some(opened) => {
                 let mut params = self.located();
                 params["number"] = json!(opened.number);
-                let (view, files) = self.pull_keys();
-                self.ask_watch(view, "codeHostPull", params.clone());
-                self.ask_watch(files, "codeHostPullFiles", params);
+                self.ask_watch(pull::VIEW, "codeHostPull", params.clone());
+                self.ask_watch(pull::FILES, "codeHostPullFiles", params);
             }
             None => self.ask_watch(
                 pulls::KEY,
@@ -644,6 +687,9 @@ impl HostArea {
     /// Shows `area`, here and in the rail.
     fn set_area(&mut self, area: Area, cx: &mut Context<Self>) {
         self.area = area;
+        if self.desk.is_some() {
+            return;
+        }
         self.bench
             .update(cx, |bench, cx| {
                 bench.area = area;
@@ -668,7 +714,7 @@ impl HostArea {
             return;
         }
         self.core
-            .watch(key, Watch::new(method, params, &["codeHost"]));
+            .watch(self.key(key), Watch::new(method, params, &["codeHost"]));
     }
 }
 

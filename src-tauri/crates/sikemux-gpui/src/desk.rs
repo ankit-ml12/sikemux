@@ -100,7 +100,8 @@ pub struct Desks {
 }
 
 /// What a desk holds besides its pages: a file in an editor, the terminal of a task its
-/// agent started, or a pull request a link named, shown among its pages.
+/// agent started, or what a link named, shown among its pages: a pull request, issue or run,
+/// or a plugin's own item such as a Jira issue.
 #[derive(Clone, PartialEq)]
 pub enum DeskItem {
     File(PathBuf),
@@ -108,7 +109,8 @@ pub enum DeskItem {
         session: u64,
         title: String,
     },
-    Pull {
+    /// A pull request, issue or run, as the Git tab shows one.
+    Hosted {
         url: String,
         shown: Entity<HostArea>,
     },
@@ -124,7 +126,7 @@ impl DeskItem {
         match self {
             DeskItem::File(_) => DeskKind::Files,
             DeskItem::Terminal { .. } => DeskKind::Terminals,
-            DeskItem::Pull { .. } | DeskItem::Plugin { .. } => DeskKind::Pages,
+            DeskItem::Hosted { .. } | DeskItem::Plugin { .. } => DeskKind::Pages,
         }
     }
 
@@ -135,7 +137,7 @@ impl DeskItem {
                 DeskItem::Terminal { session: one, .. },
                 DeskItem::Terminal { session: other, .. },
             ) => one == other,
-            (DeskItem::Pull { url: one, .. }, DeskItem::Pull { url: other, .. })
+            (DeskItem::Hosted { url: one, .. }, DeskItem::Hosted { url: other, .. })
             | (DeskItem::Plugin { url: one, .. }, DeskItem::Plugin { url: other, .. }) => {
                 one == other
             }
@@ -693,7 +695,7 @@ impl Workbench {
     fn close_desk_item(&mut self, agent: &str, item: DeskItem, cx: &mut Context<Self>) {
         let closing = match &item {
             DeskItem::File(path) => vec![crate::editor::FileKey::new(self.place(), path)],
-            DeskItem::Terminal { .. } | DeskItem::Pull { .. } | DeskItem::Plugin { .. } => {
+            DeskItem::Terminal { .. } | DeskItem::Hosted { .. } | DeskItem::Plugin { .. } => {
                 Vec::new()
             }
         };
@@ -798,7 +800,9 @@ impl Workbench {
             .flatten()
             .filter_map(|item| match item {
                 DeskItem::File(path) => Some(path),
-                DeskItem::Terminal { .. } | DeskItem::Pull { .. } | DeskItem::Plugin { .. } => None,
+                DeskItem::Terminal { .. } | DeskItem::Hosted { .. } | DeskItem::Plugin { .. } => {
+                    None
+                }
             })
     }
 
@@ -971,7 +975,7 @@ impl Workbench {
                 true
             }
             _ => {
-                if let Some(linked @ (DeskItem::Pull { .. } | DeskItem::Plugin { .. })) =
+                if let Some(linked @ (DeskItem::Hosted { .. } | DeskItem::Plugin { .. })) =
                     self.desks.front.get(&agent).cloned()
                 {
                     self.close_desk_item(&agent, linked, cx);
@@ -1086,7 +1090,7 @@ impl Workbench {
         }
         let held = (self.desks.items.get(agent).into_iter().flatten())
             .find(|item| match item {
-                DeskItem::Pull { url: held, .. } | DeskItem::Plugin { url: held, .. } => {
+                DeskItem::Hosted { url: held, .. } | DeskItem::Plugin { url: held, .. } => {
                     held == url
                 }
                 _ => false,
@@ -1098,15 +1102,15 @@ impl Workbench {
             return true;
         }
         let target = self.chat_target(agent);
-        let pull = target.request("codeHostPullLink", json!({ "url": url }));
+        let hosted = target.request("codeHostLink", json!({ "url": url }));
         let plugin = target.request("pluginLink", json!({ "url": url }));
         let (agent, url) = (agent.to_owned(), url.to_owned());
         cx.spawn(async move |bench, cx| {
-            let pull = pull.await.ok().and_then(|found| {
+            let hosted = hosted.await.ok().and_then(|found| {
                 let host = serde_json::from_value(found["codeHost"].clone()).ok()?;
-                Some((host, found["number"].as_u64()?))
+                Some((host, found["item"].clone()))
             });
-            let plugin = match pull {
+            let plugin = match hosted {
                 Some(_) => None,
                 None => plugin.await.ok().and_then(|found| {
                     Some((found["plugin"].as_str()?.to_owned(), found["at"].clone()))
@@ -1114,9 +1118,9 @@ impl Workbench {
             };
             bench
                 .update(cx, |bench, cx| {
-                    match (pull, plugin) {
-                        (Some((host, number)), _) => {
-                            bench.open_pull_on_desk(&agent, &url, target, host, number, cx)
+                    match (hosted, plugin) {
+                        (Some((host, item)), _) => {
+                            bench.open_hosted_on_desk(&agent, &url, target, host, &item, cx)
                         }
                         (None, Some((plugin, at))) => {
                             bench.open_plugin_on_desk(&agent, &url, target, &plugin, &at, cx)
@@ -1133,14 +1137,15 @@ impl Workbench {
         true
     }
 
-    /// Puts pull request `number` of `host`'s repository on `agent`'s desk, in front.
-    fn open_pull_on_desk(
+    /// Puts the pull request, issue or run `item` names of `host`'s repository on `agent`'s
+    /// desk, in front.
+    fn open_hosted_on_desk(
         &mut self,
         agent: &str,
         url: &str,
         target: crate::core::Target,
         host: sikemux_wire::protocol::ProjectCodeHost,
-        number: u64,
+        item: &Value,
         cx: &mut Context<Self>,
     ) {
         let project = self.agent_by_id(agent).and_then(|row| {
@@ -1158,7 +1163,7 @@ impl Workbench {
                 agent_id,
                 link,
                 host,
-                number,
+                item,
                 project.as_ref(),
                 cx,
             )
@@ -1166,7 +1171,7 @@ impl Workbench {
         self.open_agent(agent);
         self.put_on_desk(
             agent,
-            DeskItem::Pull {
+            DeskItem::Hosted {
                 url: url.to_owned(),
                 shown,
             },
@@ -1216,9 +1221,9 @@ impl Workbench {
             .collect()
     }
 
-    /// Swaps the desk's pull request `shown` for the web page of its link, which the host
-    /// could not show here.
-    pub(crate) fn desk_pull_fell_back(
+    /// Swaps the desk's pull request, issue or run `shown` for the web page of its link, which
+    /// the host could not show here.
+    pub(crate) fn desk_link_fell_back(
         &mut self,
         agent: &str,
         shown: gpui_kit::EntityId,
@@ -1226,7 +1231,7 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         let held = (self.desks.items.get(agent).into_iter().flatten())
-            .find(|item| matches!(item, DeskItem::Pull { shown: held, .. } if held.entity_id() == shown))
+            .find(|item| matches!(item, DeskItem::Hosted { shown: held, .. } if held.entity_id() == shown))
             .cloned();
         let Some(held) = held else {
             return;
@@ -1240,7 +1245,7 @@ impl Workbench {
     pub(crate) fn read_desk_pulls(&self, key: &str, value: &Value, cx: &mut Context<Self>) {
         let shown: Vec<Entity<HostArea>> = (self.desks.items.values().flatten())
             .filter_map(|item| match item {
-                DeskItem::Pull { shown, .. } => Some(shown.clone()),
+                DeskItem::Hosted { shown, .. } => Some(shown.clone()),
                 _ => None,
             })
             .collect();
@@ -1428,7 +1433,7 @@ impl Workbench {
             DeskItem::Terminal { session, title } => {
                 json!({ "terminal": title, "session": session })
             }
-            DeskItem::Pull { url, .. } => json!({ "pull": url }),
+            DeskItem::Hosted { url, .. } => json!({ "pull": url }),
             DeskItem::Plugin { url, .. } => json!({ "plugin": url }),
         };
         let desk = |agent: &String| {
@@ -1772,7 +1777,7 @@ pub fn pane(
                     .into_any_element(),
                 title.clone(),
             ),
-            DeskItem::Pull { shown, .. } => shown.read(cx).desk_face(cx),
+            DeskItem::Hosted { shown, .. } => shown.read(cx).desk_face(cx),
             DeskItem::Plugin { shown, .. } => shown.read(cx).desk_face(),
         };
         let (pick_agent, pick_item) = (agent.to_owned(), item.clone());
@@ -1932,7 +1937,7 @@ pub fn pane(
                 &session.to_string(),
                 cx,
             ),
-            DeskItem::Pull { shown, .. } => {
+            DeskItem::Hosted { shown, .. } => {
                 div().size_full().child(shown.clone()).into_any_element()
             }
             DeskItem::Plugin { shown, .. } => {
@@ -2224,7 +2229,7 @@ fn tab_menu(
                     .item(close)
             }
             DeskTab::Page { url, .. }
-            | DeskTab::Item(DeskItem::Pull { url, .. })
+            | DeskTab::Item(DeskItem::Hosted { url, .. })
             | DeskTab::Item(DeskItem::Plugin { url, .. }) => popup
                 .item(
                     PopupMenuItem::new("Copy Link")

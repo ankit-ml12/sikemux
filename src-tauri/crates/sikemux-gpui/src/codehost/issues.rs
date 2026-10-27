@@ -33,6 +33,15 @@ pub struct Issues {
     working: HashSet<u64>,
 }
 
+impl Issues {
+    /// The open issue's number, and the issue once it has been read.
+    pub(super) fn shown(&self) -> Option<(u64, Option<&Issue>)> {
+        let open = self.open.as_ref()?;
+        let issue = open.issue.as_ref().and_then(|issue| issue.as_ref().ok());
+        Some((open.number, issue))
+    }
+}
+
 /// The side column's pages beside an open issue.
 #[derive(Clone, Copy, Default, PartialEq)]
 enum Side {
@@ -63,7 +72,7 @@ pub struct NewIssue {
     _typing: Subscription,
 }
 
-fn mark(issue: &Issue, size: f32, cx: &App) -> AnyElement {
+pub(super) fn mark(issue: &Issue, size: f32, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     let (glyph, ink, label) = match (issue.state.as_str(), issue.state_reason.as_deref()) {
         ("open", _) => (Icon::Issues, t.live, "Open"),
@@ -185,8 +194,12 @@ impl HostArea {
                         .cloned()
                         .collect();
                 }
+                let unread = open.issue.is_none() && matches!(issue, Some(Err(_)));
                 open.issue = issue;
                 open.thread = Some(items.map(thread::blocks));
+                if unread {
+                    area.fall_back(cx);
+                }
                 cx.notify();
             })
             .ok();
@@ -589,16 +602,18 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .flex()
         .items_center()
         .gap(px(8.))
-        .child(
-            IconButton::new("issue-back", Icon::Chevron, "Back to the issues")
-                .turned(std::f32::consts::PI)
-                .small()
-                .on_click(cx.listener(|area, _, _, cx| {
-                    area.issues.open = None;
-                    area.elsewhere = None;
-                    cx.notify();
-                })),
-        )
+        .when(!area.on_a_desk(), |head| {
+            head.child(
+                IconButton::new("issue-back", Icon::Chevron, "Back to the issues")
+                    .turned(std::f32::consts::PI)
+                    .small()
+                    .on_click(cx.listener(|area, _, _, cx| {
+                        area.issues.open = None;
+                        area.elsewhere = None;
+                        cx.notify();
+                    })),
+            )
+        })
         .children(found.map(|issue| mark(issue, 14., cx)))
         .child(ui::mono(format!("#{}", open.number), 12., cx).text_color(t.text_primary))
         .child(div().flex_1())

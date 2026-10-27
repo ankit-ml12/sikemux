@@ -92,7 +92,9 @@ impl HostArea {
     pub(super) fn watch_runs(&self) {
         match &self.runs.open {
             Some(opened) => {
-                let params = json!({ "project": self.project, "runId": opened.id, "attempt": opened.attempt });
+                let mut params = self.located();
+                params["runId"] = json!(opened.id);
+                params["attempt"] = json!(opened.attempt);
                 self.ask_watch(RUN, "codeHostRun", params);
             }
             None => {
@@ -534,7 +536,7 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                 .size_full()
                 .flex()
                 .flex_col()
-                .child(back_button(back, cx))
+                .children((!area.on_a_desk()).then(|| back_button(back, cx)))
                 .child(notice("Could not read the run", Some(error.clone()), cx))
                 .into_any_element()
         }
@@ -592,7 +594,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
         .flex()
         .items_center()
         .gap(px(8.))
-        .child(back_button(back, cx))
+        .children((!area.on_a_desk()).then(|| back_button(back, cx)))
         .child(ui::run_mark(
             format!("run-head-{}", run.id),
             outcome_word(run.outcome),

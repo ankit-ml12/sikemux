@@ -455,7 +455,7 @@ calls! { core, client, params;
     "codeHostReleases": Watch => answer(super::codehost::releases(&core, client.id, parse(params)?).await),
     "codeHostPull": Watch => answer(super::codehost::pull(&core, client.id, parse(params)?).await),
     "codeHostPullFiles": Watch => answer(super::codehost::pull_files(&core, client.id, parse(params)?).await),
-    "codeHostPullLink": Watch => answer(super::codehost::pull_link(parse(params)?).await),
+    "codeHostLink": Watch => answer(super::codehost::link(parse(params)?).await),
     "codeHostCheckout": Person => answer(super::codehost::checkout(&core, parse(params)?).await),
     "codeHostNewPull": Watch => answer(super::codehost::new_pull(&core, parse(params)?).await),
     "codeHostTrackedContext": Watch => answer(super::codehost::tracked_context(&core, parse(params)?).await),
