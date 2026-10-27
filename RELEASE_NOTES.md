@@ -1,21 +1,20 @@
-# Sikemux v0.6.0-nightly.6
+# Sikemux v0.6.0-nightly.7
 
-The sixth nightly of the new Sikemux app. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The seventh nightly of the new Sikemux app. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-Your phone needs the nightly phone app, 0.2.0-nightly.3 or later, from TestFlight on iPhone or the Google Play testing track on Android, and nightly hosts link only with other nightly hosts. 0.2.0-nightly.6 opens chats with long folded turns again.
+Your phone needs the nightly phone app, 0.2.0-nightly.3 or later, from TestFlight on iPhone or the Google Play testing track on Android, and nightly hosts link only with other nightly hosts.
 
-## New since nightly.5
+## New since nightly.6
 
-- **Lighter in the background.** A chat, Git tab, simulator or plugin pane out of front stops following the core, so agents streaming in other tabs no longer cost the one you're on. Terminals resize at most every 50ms, the file tree and Git review stop re-reading on every repository change, and the code host is asked at most every 5 seconds.
-- **A stuck core can be restarted.** A window whose core stopped answering offers Restart Sikemux instead of waiting forever, and a core that holds its lock but stopped answering can be found and stopped. A core no longer spins in a busy loop ten minutes after it starts.
-- **Agents stay out of your way.** An agent's preview or desk opens in its own tab without pulling you off the one you are on.
-- **Chats start sooner.** A message sent while the agent starts shows at once, a new chat's effort picker works before the first message, and a Claude chat's pickers name the model it runs instead of Default.
-- **Pasted pictures reach agents.** A picture pasted into a terminal is kept and its path typed, and a TIFF is kept as a PNG. Thanks to @ankit-ml12 (#171).
-- **Branches read like commits.** Branch rows show the tip's author, subject and age, Fetch, Pull and Push are disabled with the reason while git runs, and Actions lists every branch's runs.
-- **Lists show what matched.** Lists that narrow as you type mark the matched letters, and a double click in a chat selects a word, a triple click its paragraph.
-- Fixed crashes from a ⌘ shortcut pressed while a desk page has the keys, and from browser tool scripts that throw.
-- Diffs, search matches and markdown headings follow the theme, dialogs appear at once, and the context meter's tooltip is a card with tokens and session cost.
-- GPUI Kit 0.8.1, and the file editor rubber-bands at its ends again; ⌘⇧[ and ⌘⇧] move along the tab strip.
-- The leftovers of the old React UI and Tauri shell are gone.
+- **Bring your own model provider.** Add any provider with its base URL, an API key (kept in the Keychain) and a name, and OMP and OpenCode chats run on its models. The model picker groups models by who serves them, lists only what the picked agent can run, and adds a provider from its footer.
+- **Pull requests in the app read like GitHub's.** One layout at every width: the author's face and title, Conversation, Files, Commits and Checks tabs, a conversation line with faces, mentions and pushed commits, folding diffs, and merging pinned at the foot with its reviews, checks and a split Merge button. Pull requests close from beside Comment.
+- **Links open where you are.** A pull request, issue, Actions run or Jira issue link in an agent's reply opens on its desk as the app draws it, not as a web page.
+- **CI at a glance.** The top bar's CI chip stands for the branch's newest commit across every workflow, with a count, a spinning mark while runs go, and a card of every run on hover.
+- **Settings regrouped.** 23 pages in six groups, your account at the top, a flat search row, and Escape closes Settings from anywhere.
+- **A new chat greets you.** The agent's face asks "What are we making in" the project, with the composer at the foot of the pane.
+- OMP and OpenCode chats show tool-server calls, edits, searches and commands as their own rows, resume on the provider and model they last ran, and show their past conversation while waiting.
+- Clicking anywhere in the app takes the keyboard back from a page, so typing no longer beeps after clicking into a page in a chat.
+- Clicking a run in the CI card no longer crashes the app.
+- YOLO shows a filled bolt and SAFE a closed lock, code-host and plugin panes draw no grain behind them, and markdown follows Appearance › Text size.
 
-For the complete patch history, compare [`v0.6.0-nightly.5...v0.6.0-nightly.6`](https://github.com/nodelike/sikemux/compare/v0.6.0-nightly.5...v0.6.0-nightly.6).
+For the complete patch history, compare [`v0.6.0-nightly.6...v0.6.0-nightly.7`](https://github.com/nodelike/sikemux/compare/v0.6.0-nightly.6...v0.6.0-nightly.7).
