@@ -11,8 +11,9 @@ export function downloadedFile(item: StashItem): Promise<Attachment> {
 }
 
 /**
- * What picking stash items does to a message: links and text join its words, and `file` gets each
- * file ready to go with it. `words` are the ids that went into the words.
+ * What picking stash items does to a message: each item's note, then its link or text, join its words,
+ * as the host puts them in a draft, and `file` gets each file ready to go with it. `words` are the ids
+ * of items with no file, which leave the stash with the message's words.
  */
 export function intoMessage(
   items: readonly StashItem[],
@@ -21,8 +22,9 @@ export function intoMessage(
 ): { draft: string; words: string[]; files: Promise<Attachment[]> | null } {
   const said = items.filter((item) => !carriesFile(item));
   const filed = items.filter(carriesFile);
+  const added = items.flatMap((item) => [item.note?.trim(), itemText(item).trim()]).filter(Boolean);
   return {
-    draft: said.length ? [draft.trimEnd(), ...said.map(itemText)].filter(Boolean).join('\n\n') : draft,
+    draft: added.length ? [draft.trimEnd(), ...added].filter(Boolean).join('\n\n') : draft,
     words: said.map((item) => item.id),
     files: filed.length ? Promise.all(filed.map(file)) : null,
   };

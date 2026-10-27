@@ -21,9 +21,11 @@ export function itemPlace(item: StashItem): string {
   return `${what} · ${age === 'now' ? 'just now' : age}`;
 }
 
-/** What a link or text puts in the message. */
+/** What a link or text puts in the message; an item with a file puts none. */
 export function itemText(item: StashItem): string {
-  return item.kind === 'link' ? (item.url ?? '') : (item.text ?? '');
+  if (item.kind === 'link') return item.url ?? '';
+  if (item.kind === 'text') return item.text ?? '';
+  return '';
 }
 
 export const carriesFile = (item: StashItem) => item.kind === 'image' || item.kind === 'video' || item.kind === 'file';
