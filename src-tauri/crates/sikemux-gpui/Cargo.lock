@@ -2382,6 +2382,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "film-frame"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "resvg 0.45.1",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8953,6 +8961,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "core-foundation 0.10.1",
+ "film-frame",
  "flate2",
  "gpui-base",
  "gpui-component",

@@ -1,0 +1,53 @@
+# The DBML viewer in a chat: Claude answers with a ```dbml block, which draws itself as a
+# diagram while it streams in, and is then hovered, pinched and opened.
+replies replies.json
+project shop shop
+chat Wren
+settle 6
+cursor 1200,700
+record
+wait 0.5
+zoom 760,800 1.9 0.9 &
+move 600,768 1.0
+click
+type "draw the shop's schema so I can see how orders connect" 17
+wait 0.3
+key enter
+hold 0.5
+zoom 760,520 1.25 0.9 &
+wait 11
+move 318,600 0.8
+scroll 220 1.0
+wait 0.6
+zoom 360,230,760,480 0.9 &
+move 696,552 1.0
+wait 1.4
+still card-hover
+move 712,598 0.5
+wait 1.3
+still card-tip
+move 760,560 0.6
+pinch 1.45 0.9
+wait 0.8
+still card-pinched
+click 958,244
+wait 1.4
+still card-source
+click 909,244
+wait 0.8
+still back-to-diagram
+click 1030,244
+hold 1.5
+wait 0.6
+still after-open
+zoom 744,150,456,700 0.9 &
+move 952,511 1.0
+wait 0.3
+pinch 1.9 1.1
+wait 0.6
+move 980,560 0.6
+wait 1.2
+still desk
+zoom out 0.9 &
+move 1250,700 1.0
+end 2.2

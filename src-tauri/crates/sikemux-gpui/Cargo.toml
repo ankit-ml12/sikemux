@@ -89,6 +89,7 @@ zbus = "5"
 naga = { git = "https://github.com/gfx-rs/wgpu", rev = "3b3506ea31154edc04de64debda0e780cba2639c", features = ["wgsl-in", "msl-out"] }
 
 [dev-dependencies]
+film-frame = { path = "crates/film-frame" }
 sikemux-fold = { path = "../sikemux-fold" }
 gpui = { package = "gpui-pre", version = "=0.3.10", features = ["test-support"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.10", features = ["test-support", "bench-support"] }
@@ -100,6 +101,11 @@ gpui-component = { version = "=0.8.1", default-features = false, features = ["te
 debug = "line-tables-only"
 
 [profile.dev.package."*"]
+opt-level = 3
+debug = false
+
+# Frames films pixel by pixel; "*" covers only crates outside this workspace.
+[profile.dev.package.film-frame]
 opt-level = 3
 debug = false
 

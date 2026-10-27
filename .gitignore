@@ -38,3 +38,6 @@ docs/research/
 
 # The GPUI app builds in its own workspace.
 src-tauri/crates/sikemux-gpui/target/
+
+# Scratch renders of film/film.sh
+/film/out/

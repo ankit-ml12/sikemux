@@ -1,0 +1,10 @@
+[package]
+name = "film-frame"
+version = "0.1.0"
+edition = "2021"
+description = "Frames a filmed window for posts: the wallpaper, the window's shadow, a camera, a drawn cursor and the closing card"
+publish = false
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+resvg = "0.45"
