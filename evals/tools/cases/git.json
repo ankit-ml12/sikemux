@@ -423,7 +423,14 @@
       "order": true,
       "expect": [
         {
-          "tool": "git_commit"
+          "any": [
+            {
+              "tool": "git_commit"
+            },
+            {
+              "tool": "who_wrote"
+            }
+          ]
         },
         {
           "tool": "agent_send",

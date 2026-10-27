@@ -9,6 +9,7 @@ let readable = URL(fileURLWithPath: arguments[2], isDirectory: true)
 let width = CGFloat(Double(arguments[3]) ?? 756)
 let picture = arguments[4]
 let script = arguments.count > 5 ? arguments[5] : ""
+let tallest = arguments.count > 6 ? CGFloat(Double(arguments[6]) ?? 14_400) : 14_400
 
 let console = """
 window.__messages = [];
@@ -77,7 +78,7 @@ final class Preview: NSObject, WKNavigationDelegate {
       var report: [String: Any] = ["contentHeight": height, "messages": measured["messages"] ?? []]
       if let result { report["script"] = result }
       guard !picture.isEmpty else { return self.finish(report) }
-      self.view.frame = NSRect(x: 0, y: 0, width: width, height: min(height, 14_400))
+      self.view.frame = NSRect(x: 0, y: 0, width: width, height: min(height, tallest))
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
         let shot = WKSnapshotConfiguration()
         shot.rect = self.view.bounds

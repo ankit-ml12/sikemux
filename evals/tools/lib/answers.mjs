@@ -66,6 +66,7 @@ export function answerer(fixture, project, previewProfile) {
   state.active = state.tabs[0] ?? null;
 
   return (tool, args) => {
+    if (tool === 'browser_viewport' && state.active) state.active.viewport = sized(args);
     const rule = rules.find(
       (candidate) =>
         toolMatches(candidate.tool, tool) &&
@@ -204,9 +205,9 @@ function builtIn(tool, args, { state, pages, agents, project, fixture, previewPr
     case 'browser_evaluate':
       return needTab(() => ({ result: null }));
     case 'browser_screenshot':
-      return needTab(() => ({ data: picture(1280, 800), mimeType: 'image/png', title: tab.page.title, url: tab.page.url }));
+      return needTab(() => ({ ...screenshot(tab, args, previewProfile), title: tab.page.title, url: tab.page.url }));
     case 'browser_viewport':
-      return needTab(() => ({ viewport: { width: args.width ?? 1280, height: args.height ?? 900, preset: args.preset ?? null }, ...where(tab) }));
+      return needTab(() => ({ viewport: { ...sized(args), preset: args.preset ?? null }, ...where(tab) }));
     case 'browser_switch_tab': {
       const target = state.tabs.find((candidate) => candidate.tabId === args.tabId);
       if (args.tabId && !target) return { error: `No tab ${args.tabId}` };
@@ -407,9 +408,7 @@ function preview(args, repo, profile) {
   const shot = join(folder, 'shot.png');
   writeFileSync(copy, themed(path));
   try {
-    const drawn = JSON.parse(
-      execFileSync('/usr/bin/sandbox-exec', ['-f', profile, previewer(), copy, '/', String(width), args.picture === false ? '' : shot, args.script ?? ''], { encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'ignore'] }) || '{}',
-    );
+    const drawn = draw(profile, copy, width, args.picture === false ? '' : shot, args.script);
     if (drawn.error) return { error: drawn.error };
     const value = {
       width,
@@ -425,6 +424,57 @@ function preview(args, repo, profile) {
 }
 
 const PREVIEWERS = '/private/tmp/sikemux-tool-eval-previewers';
+
+function draw(profile, page, width, shot, script = '', tallest = 14_400) {
+  const output = execFileSync('/usr/bin/sandbox-exec', ['-f', profile, previewer(), page, '/', String(width), shot, script, String(tallest)], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  return JSON.parse(output || '{}');
+}
+
+const PRESETS = { desktop: [1280, 800], tablet: [820, 1180], mobile: [390, 844] };
+
+function sized(args) {
+  const [width, height] = PRESETS[args.preset] ?? [args.width ?? 1280, args.height ?? 800];
+  return { width: args.width ?? width, height: args.height ?? height };
+}
+
+const escape = (text) => String(text).replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
+
+// A plain drawing of a fixture page, from its own html or from its elements and text.
+function pageHtml(page) {
+  if (page.html) return page.html;
+  const parts = page.elements.map((line) => {
+    const [, tag = 'div', label = ''] = line.replace(/^\[\d+\]\s*/, '').match(/^<(\w+)[^>]*>\s*(.*)$/) ?? [null, 'div', line];
+    const text = escape(label.replace(/\s*\([^)]*\)$/, ''));
+    if (/^h[1-6]$/.test(tag)) return `<${tag}>${text}</${tag}>`;
+    if (tag === 'button') return `<p><button>${text}</button></p>`;
+    if (tag === 'a') return `<p><a href="#">${text}</a></p>`;
+    if (tag === 'input' || tag === 'textarea') return `<p><input placeholder="${text}" style="width:60%"></p>`;
+    if (tag === 'img') return `<div style="width:240px;height:120px;background:#ccd" title="${text}"></div>`;
+    return `<p>${text}</p>`;
+  });
+  const prose = (page.text ?? '').split(/\n+/).filter(Boolean).map((line) => `<p>${escape(line)}</p>`);
+  return `<!doctype html><title>${escape(page.title)}</title><body style="font:15px -apple-system, sans-serif;margin:24px;color:#1d1d1f;background:#fff">${[...parts, ...prose].join('')}</body>`;
+}
+
+function screenshot(tab, args, profile) {
+  const { width, height } = tab.viewport ?? sized({});
+  const folder = mkdtempSync(join(tmpdir(), 'shot-'));
+  try {
+    const page = join(folder, 'page.html');
+    const shot = join(folder, 'shot.png');
+    writeFileSync(page, pageHtml(tab.page));
+    draw(profile, page, width, shot, '', args.fullPage ? 14_400 : height);
+    return { data: readFileSync(shot).toString('base64'), mimeType: 'image/png' };
+  } catch {
+    return { data: picture(width, height), mimeType: 'image/png' };
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+}
 
 // The WebKit previewer, compiled once for each version of its source.
 function previewer() {
