@@ -8,7 +8,6 @@ export const BANNED = {
   'send-message': { tool: ['SendMessage', 'ListAgents'], why: "used the CLI's own agent messaging instead of agent_*" },
   'raw-git-commit': { ...bash('/\\bgit\\s+(?:-C\\s+\\S+\\s+)?commit\\b/'), why: 'ran git commit instead of git_commit' },
   'git-sweep': { ...bash('/\\bgit\\s+(?:add\\s+(?:-A|--all|\\.(?:\\s|$))|stash\\b|reset\\s+--hard)/m'), why: 'ran git add -A, git stash or git reset --hard' },
-  gh: { ...bash('/(?:^|[\\s;&|(])gh\\s+(?:pr|run|api|issue|repo|workflow|release|search)\\b/m'), why: 'used the gh CLI' },
   'sleep-poll': { ...bash('/(?:^|[;&|]\\s*)sleep\\s+\\d+(?:\\.\\d+)?\\s*(?:;|&&|$)/m'), why: 'waited by sleeping' },
 };
 

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "bloat-01",
+    "from": ["err_tools_mkt-031", "err_tools_mkt-029"],
+    "category": "list_bloat",
+    "severity": "med",
+    "tools": ["jira_search"],
+    "prompt": "Before I raise a ticket for retrying failed uploads, check PROJ for an existing ticket that already covers it.",
+    "fixture": {
+      "project": "work",
+      "rivals": ["atlassian"],
+      "answers": [
+        {
+          "tool": "jira_search",
+          "args": { "jql": "/retr|upload/i" },
+          "reply": {
+            "issues": [
+              { "key": "PROJ-77", "summary": "Retry uploads after a network failure", "status": "In Progress", "priority": "High", "assignee": "a teammate", "updated": "2026-10-24" },
+              { "key": "PROJ-64", "summary": "Upload progress bar jumps back", "status": "To Do", "priority": "Low", "assignee": null, "updated": "2026-10-02" },
+              { "key": "PROJ-12", "summary": "Resumable uploads for large files", "status": "Done", "priority": "Medium", "assignee": "a teammate", "updated": "2026-08-30" }
+            ],
+            "next": null
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [{ "tool": "jira_search", "args": { "jql": "/PROJ/" } }],
+      "forbid": [
+        { "tool": "jira_search", "args": { "limit": "/^(2[1-9]|[3-9]\\d|\\d{3,})$/" }, "why": "asked for more than 20 results for a duplicate check" },
+        { "tool": "jira_search", "args": { "comments": true }, "why": "pulled every result's comments into a duplicate check" }
+      ],
+      "limit": [{ "tool": "jira_search", "max": 3 }, { "tool": "jira_issue", "max": 2 }],
+      "reply": "/PROJ-77/",
+      "replyWhy": "did not point at PROJ-77 as the likely duplicate"
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "bloat-02",
+    "from": ["err_tools_sikemux-045"],
+    "category": "list_bloat",
+    "severity": "low",
+    "tools": [],
+    "skip": "The oversized result came from the rea MCP server's process capture, which is not part of sikemux-tools and has no rival in the harness."
+  }
+]

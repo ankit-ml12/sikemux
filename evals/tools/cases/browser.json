@@ -1,0 +1,4014 @@
+[
+  {
+    "id": "browser-01",
+    "from": [
+      "err_tools_mkt-008"
+    ],
+    "category": "wrong_tool",
+    "severity": "high",
+    "tools": [
+      "browser_navigate",
+      "browser_click",
+      "browser_type",
+      "browser_act"
+    ],
+    "prompt": "Open the studio at http://localhost:5173/studio, start a new campaign with \"Create From Scratch\", pick the \"Returning customers\" audience, then search the brand list for \"Northwind\". Tell me which brands come up.",
+    "fixture": {
+      "project": "work",
+      "pages": [
+        {
+          "url": "http://localhost:5173/studio",
+          "title": "Studio",
+          "elements": [
+            "[0] <a> Campaigns (/campaigns)",
+            "[1] <button> Create From Scratch",
+            "[2] <button> Use a template"
+          ],
+          "text": "Studio\nStart a campaign\nCreate From Scratch\nUse a template"
+        },
+        {
+          "url": "studio-wizard",
+          "href": "http://localhost:5173/studio",
+          "title": "Studio",
+          "elements": [
+            "[3] <button> Back",
+            "[4] <div> New visitors",
+            "[5] <div> Returning customers",
+            "[6] <div> Lapsed subscribers",
+            "[7] <input type=search name=brand> Search brands",
+            "[8] <button> Next [disabled]"
+          ],
+          "text": "New campaign\nWho is it for?\nNew visitors\nReturning customers\nLapsed subscribers\nBrand"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_act",
+          "args": {
+            "steps": "/northwind/i"
+          },
+          "page": "studio-wizard",
+          "reply": {
+            "done": [
+              {
+                "action": "click",
+                "label": "Create From Scratch"
+              },
+              {
+                "action": "click",
+                "label": "Returning customers"
+              },
+              {
+                "action": "type",
+                "into": "[7] <input type=search name=brand> Search brands",
+                "value": "Northwind"
+              }
+            ],
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio",
+            "title": "Studio",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[9] <div> Northwind Outdoor\n[10] <div> Northwind Kitchens",
+              "textAdded": "2 brands match \"Northwind\"\nNorthwind Outdoor\nNorthwind Kitchens"
+            }
+          }
+        },
+        {
+          "tool": "browser_act",
+          "args": {
+            "steps": "/create from scratch|\"index\":1\\b/i"
+          },
+          "page": "studio-wizard",
+          "reply": {
+            "done": [
+              {
+                "action": "click",
+                "label": "Create From Scratch"
+              }
+            ],
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio",
+            "title": "Studio",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[3] <button> Back\n[4] <div> New visitors\n[5] <div> Returning customers\n[6] <div> Lapsed subscribers\n[7] <input type=search name=brand> Search brands\n[8] <button> Next [disabled]",
+              "removed": [
+                1,
+                2
+              ],
+              "textAdded": "New campaign\nWho is it for?"
+            }
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "text": "/create from scratch/i"
+              },
+              {
+                "index": 1
+              }
+            ]
+          },
+          "page": "studio-wizard",
+          "reply": {
+            "index": 1,
+            "label": "Create From Scratch",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio",
+            "title": "Studio",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[3] <button> Back\n[4] <div> New visitors\n[5] <div> Returning customers\n[6] <div> Lapsed subscribers\n[7] <input type=search name=brand> Search brands\n[8] <button> Next [disabled]",
+              "removed": [
+                1,
+                2
+              ],
+              "textAdded": "New campaign\nWho is it for?\nNew visitors\nReturning customers\nLapsed subscribers"
+            }
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "text": "/returning customers/i"
+              },
+              {
+                "index": 5
+              }
+            ]
+          },
+          "reply": {
+            "index": 5,
+            "label": "Returning customers",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio",
+            "title": "Studio",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[5] <div> Returning customers [selected]\n[8] <button> Next"
+            }
+          }
+        },
+        {
+          "tool": "browser_type",
+          "args": {
+            "text": "/northwind/i"
+          },
+          "reply": {
+            "typed": 9,
+            "into": "[7] <input type=search name=brand> Search brands",
+            "value": "Northwind",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio",
+            "title": "Studio",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[9] <div> Northwind Outdoor\n[10] <div> Northwind Kitchens",
+              "textAdded": "2 brands match \"Northwind\"\nNorthwind Outdoor\nNorthwind Kitchens"
+            }
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "url": "/localhost:5173\\/studio/"
+          }
+        },
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/create from scratch/i"
+              },
+              {
+                "index": 1
+              },
+              {
+                "steps": "/create from scratch|\"index\":1\\b/i"
+              }
+            ]
+          }
+        },
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/returning customers/i"
+              },
+              {
+                "index": 5
+              },
+              {
+                "steps": "/returning customers|\"index\":5\\b/i"
+              }
+            ]
+          }
+        },
+        {
+          "tool": [
+            "browser_type",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/northwind/i"
+              },
+              {
+                "steps": "/northwind/i"
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "why": "drove the form with a script"
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "ms": {
+              "$present": true
+            },
+            "text": {
+              "$present": false
+            },
+            "textGone": {
+              "$present": false
+            },
+            "selector": {
+              "$present": false
+            },
+            "selectorGone": {
+              "$present": false
+            },
+            "url": {
+              "$present": false
+            },
+            "networkIdle": {
+              "$present": false
+            }
+          },
+          "why": "waited a fixed time instead of for something on the page"
+        }
+      ],
+      "reply": "/Northwind Outdoor[\\s\\S]*Northwind Kitchens|Northwind Kitchens[\\s\\S]*Northwind Outdoor/",
+      "replyWhy": "did not name the two brands the search showed"
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "browser-02",
+    "from": [
+      "err_tools_sikemux-009"
+    ],
+    "category": "wrong_tool",
+    "severity": "high",
+    "tools": [
+      "browser_navigate",
+      "browser_wait",
+      "browser_evaluate",
+      "browser_screenshot"
+    ],
+    "prompt": "The showcase dev server is running. Open http://localhost:1471/showcase/ in a desk tab, switch it to the Git window with the page's own `window.showcase.cmd.selectWindowId('git')`, and take a screenshot of it.",
+    "fixture": {
+      "pages": [
+        {
+          "url": "http://localhost:1471/showcase/",
+          "title": "Sikemux showcase",
+          "elements": [
+            "[0] <button> Chat",
+            "[1] <button> Git",
+            "[2] <button> Browser",
+            "[3] <button> Settings"
+          ],
+          "text": "Sikemux\nChat\nGit\nBrowser\nSettings"
+        },
+        {
+          "url": "showcase-loading",
+          "href": "http://localhost:1471/showcase/",
+          "title": "Sikemux showcase",
+          "elements": [],
+          "text": ""
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "waitFor": {
+              "$present": false
+            }
+          },
+          "page": "showcase-loading",
+          "reply": {
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:1471/showcase/",
+            "title": "Sikemux showcase",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "",
+            "text": "",
+            "note": "the page loaded but shows no text or controls yet; a web app may still be drawing it, so wait with browser_wait and a text or selector"
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "page": "http://localhost:1471/showcase/",
+          "reply": {
+            "met": true,
+            "waitedMs": 1400,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:1471/showcase/",
+            "title": "Sikemux showcase",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <button> Chat\n[1] <button> Git\n[2] <button> Browser\n[3] <button> Settings",
+            "text": "Sikemux\nChat\nGit\nBrowser\nSettings"
+          }
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/selectWindowId/"
+          },
+          "reply": {
+            "result": null
+          }
+        }
+      ]
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        {
+          "tool": [
+            "browser_wait",
+            "browser_navigate"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": {
+                  "$present": true
+                }
+              },
+              {
+                "textGone": {
+                  "$present": true
+                }
+              },
+              {
+                "selector": {
+                  "$present": true
+                }
+              },
+              {
+                "selectorGone": {
+                  "$present": true
+                }
+              },
+              {
+                "networkIdle": true
+              },
+              {
+                "waitFor": {
+                  "$present": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/selectWindowId\\(\\s*['\"]git['\"]/"
+          }
+        },
+        {
+          "tool": "browser_screenshot"
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/setTimeout|setInterval|sleep\\(/"
+          },
+          "why": "waited inside a page script instead of with browser_wait"
+        },
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/playwright|puppeteer|chromium|headless/i"
+          },
+          "why": "reached for another browser"
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-03",
+    "from": [
+      "err_tools_mkt-011",
+      "human_mkt-014"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "browser_type",
+      "browser_click"
+    ],
+    "prompt": "The studio chat is open in your desk tab. Ask it \"Make the intro shorter\" by typing that into the chat composer and sending it.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:5173/studio",
+      "pages": [
+        {
+          "url": "http://localhost:5173/studio",
+          "title": "Studio",
+          "elements": [
+            "<textarea> Message the assistant",
+            "<button> Send",
+            "<button> Attach"
+          ],
+          "text": "Studio\nAssistant\nHow can I help with this draft?"
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_type",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/Make the intro shorter/"
+              },
+              {
+                "steps": "/Make the intro shorter/"
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "why": "drove the composer with a script instead of typing and clicking"
+        }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "browser-04",
+    "from": [
+      "err_tools_mkt-009"
+    ],
+    "category": "wrong_tool",
+    "severity": "high",
+    "tools": [
+      "browser_navigate",
+      "browser_wait",
+      "browser_evaluate"
+    ],
+    "prompt": "I just changed the chat panel's markup. Reload the draft in your desk tab, wait until the chat input is back, and tell me its placeholder text.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:5173/studio/drafts/7",
+      "pages": [
+        {
+          "url": "http://localhost:5173/studio/drafts/7",
+          "title": "Spring launch draft",
+          "elements": [
+            "[0] <a> Drafts (/studio/drafts)",
+            "[1] <button> Publish",
+            "[2] <textarea name=message> Ask the assistant about this draft",
+            "[3] <button> Send"
+          ],
+          "text": "Spring launch draft\nAssistant\nAsk the assistant about this draft"
+        },
+        {
+          "url": "draft-loading",
+          "href": "http://localhost:5173/studio/drafts/7",
+          "title": "Spring launch draft",
+          "elements": [],
+          "text": ""
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "waitFor": {
+              "$present": true
+            }
+          },
+          "page": "http://localhost:5173/studio/drafts/7",
+          "reply": {
+            "met": true,
+            "waitedMs": 2600,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio/drafts/7",
+            "title": "Spring launch draft",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> Drafts (/studio/drafts)\n[1] <button> Publish\n[2] <textarea name=message> Ask the assistant about this draft\n[3] <button> Send",
+            "text": "Spring launch draft\nAssistant\nAsk the assistant about this draft"
+          }
+        },
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "waitFor": {
+              "$present": false
+            }
+          },
+          "page": "draft-loading",
+          "reply": {
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio/drafts/7",
+            "title": "Spring launch draft",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "",
+            "text": "",
+            "note": "the page loaded but shows no text or controls yet; a web app may still be drawing it, so wait with browser_wait and a text or selector"
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "page": "http://localhost:5173/studio/drafts/7",
+          "reply": {
+            "met": true,
+            "waitedMs": 2600,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio/drafts/7",
+            "title": "Spring launch draft",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> Drafts (/studio/drafts)\n[1] <button> Publish\n[2] <textarea name=message> Ask the assistant about this draft\n[3] <button> Send",
+            "text": "Spring launch draft\nAssistant\nAsk the assistant about this draft"
+          }
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/placeholder/"
+          },
+          "reply": {
+            "result": "Ask the assistant about this draft"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_wait",
+            "browser_navigate"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": {
+                  "$present": true
+                }
+              },
+              {
+                "textGone": {
+                  "$present": true
+                }
+              },
+              {
+                "selector": {
+                  "$present": true
+                }
+              },
+              {
+                "selectorGone": {
+                  "$present": true
+                }
+              },
+              {
+                "networkIdle": true
+              },
+              {
+                "waitFor": {
+                  "$present": true
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/setTimeout|setInterval|sleep\\(/"
+          },
+          "why": "waited inside a page script instead of with browser_wait"
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "ms": {
+              "$present": true
+            },
+            "text": {
+              "$present": false
+            },
+            "textGone": {
+              "$present": false
+            },
+            "selector": {
+              "$present": false
+            },
+            "selectorGone": {
+              "$present": false
+            },
+            "url": {
+              "$present": false
+            },
+            "networkIdle": {
+              "$present": false
+            }
+          },
+          "why": "waited a fixed time instead of for something on the page"
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/location\\.(reload|href\\s*=|replace)/"
+          },
+          "why": "reloaded from inside a page script"
+        }
+      ],
+      "reply": "/Ask the assistant about this draft/",
+      "replyWhy": "did not report the placeholder"
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-05",
+    "from": [
+      "err_tools_mkt-010",
+      "other_agents-004"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "browser_navigate",
+      "browser_evaluate"
+    ],
+    "prompt": "I just changed the hero CSS. Hard-reload the design page in your desk tab so it picks up the new stylesheet, then tell me the rendered width of `#frame-hero` in CSS pixels.",
+    "fixture": {
+      "tab": "http://localhost:1471/design/hero.html",
+      "pages": [
+        {
+          "url": "http://localhost:1471/design/hero.html",
+          "title": "Hero frames",
+          "elements": [
+            "[0] <a> All frames (/design/)",
+            "[1] <button> Dark",
+            "[2] <button> Light"
+          ],
+          "text": "Hero frames\nFrame: hero\nFrame: hero, narrow"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_navigate",
+          "page": "http://localhost:1471/design/hero.html",
+          "reply": {
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:1471/design/hero.html",
+            "title": "Hero frames",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> All frames (/design/)\n[1] <button> Dark\n[2] <button> Light",
+            "text": "Hero frames\nFrame: hero\nFrame: hero, narrow"
+          }
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/location\\.(reload|href\\s*=|replace)|history\\.go/"
+          },
+          "error": "the page navigated or reloaded while the script ran, so its result was lost; to reload, use browser_navigate with go reload"
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/frame-hero/"
+          },
+          "reply": {
+            "result": 1184
+          }
+        }
+      ]
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "go": "reload",
+            "hard": true
+          }
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/frame-hero/"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/location\\.(reload|href\\s*=|replace)|history\\.go/"
+          },
+          "why": "reloaded from inside a page script"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "browser_navigate",
+          "max": 1
+        }
+      ],
+      "reply": "/1184/",
+      "replyWhy": "did not report the measured width"
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-06",
+    "from": [
+      "err_tools_mkt-012"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "browser_click",
+      "browser_wait"
+    ],
+    "prompt": "Click Generate on the infographic page in your desk tab and tell me the title of the result once it's done. Generating usually takes 10 to 20 seconds.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:5173/infographics/new",
+      "pages": [
+        {
+          "url": "http://localhost:5173/infographics/new",
+          "title": "New infographic",
+          "elements": [
+            "[0] <textarea name=prompt> Describe the infographic value=\"Quarterly signups by region\"",
+            "[1] <button> Generate"
+          ],
+          "text": "New infographic\nDescribe the infographic"
+        },
+        {
+          "url": "infographic-generating",
+          "href": "http://localhost:5173/infographics/new",
+          "title": "New infographic",
+          "elements": [
+            "[0] <textarea name=prompt> Describe the infographic value=\"Quarterly signups by region\" [disabled]",
+            "[1] <button> Generating… [disabled]"
+          ],
+          "text": "New infographic\nGenerating…"
+        },
+        {
+          "url": "infographic-done",
+          "href": "http://localhost:5173/infographics/new",
+          "title": "New infographic",
+          "elements": [
+            "[0] <textarea name=prompt> Describe the infographic value=\"Quarterly signups by region\"",
+            "[2] <button> Download PNG",
+            "[3] <button> Regenerate"
+          ],
+          "text": "New infographic\nSignups by region, Q3\nDownload PNG\nRegenerate"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "text": "/generate/i"
+              },
+              {
+                "index": 1
+              }
+            ]
+          },
+          "page": "infographic-generating",
+          "reply": {
+            "index": 1,
+            "label": "Generate",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/infographics/new",
+            "title": "New infographic",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[1] <button> Generating… [disabled]",
+              "textAdded": "Generating…"
+            }
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "$any": [
+              {
+                "text": {
+                  "$present": true
+                }
+              },
+              {
+                "textGone": {
+                  "$present": true
+                }
+              },
+              {
+                "selector": {
+                  "$present": true
+                }
+              },
+              {
+                "selectorGone": {
+                  "$present": true
+                }
+              },
+              {
+                "networkIdle": true
+              }
+            ]
+          },
+          "page": "infographic-done",
+          "reply": {
+            "met": true,
+            "waitedMs": 14200,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/infographics/new",
+            "title": "New infographic",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[2] <button> Download PNG\n[3] <button> Regenerate",
+              "removed": [
+                1
+              ],
+              "textAdded": "Signups by region, Q3\nDownload PNG\nRegenerate",
+              "textRemoved": "Generating…"
+            }
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "reply": {
+            "waitedMs": 15000,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/infographics/new",
+            "title": "New infographic",
+            "loading": false,
+            "visible": true,
+            "changes": "none"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/generate/i"
+              },
+              {
+                "index": 1
+              },
+              {
+                "steps": "/generate|\"index\":1\\b/i"
+              }
+            ]
+          }
+        },
+        {
+          "tool": [
+            "browser_wait",
+            "browser_navigate"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": {
+                  "$present": true
+                }
+              },
+              {
+                "textGone": {
+                  "$present": true
+                }
+              },
+              {
+                "selector": {
+                  "$present": true
+                }
+              },
+              {
+                "selectorGone": {
+                  "$present": true
+                }
+              },
+              {
+                "networkIdle": true
+              },
+              {
+                "waitFor": {
+                  "$present": true
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_wait",
+          "args": {
+            "ms": {
+              "$present": true
+            },
+            "text": {
+              "$present": false
+            },
+            "textGone": {
+              "$present": false
+            },
+            "selector": {
+              "$present": false
+            },
+            "selectorGone": {
+              "$present": false
+            },
+            "url": {
+              "$present": false
+            },
+            "networkIdle": {
+              "$present": false
+            }
+          },
+          "why": "waited a fixed time instead of for something on the page"
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/setTimeout|setInterval|sleep\\(/"
+          },
+          "why": "waited inside a page script instead of with browser_wait"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "browser_screenshot",
+          "max": 1
+        }
+      ],
+      "reply": "/Signups by region, Q3/",
+      "replyWhy": "did not report the result's title"
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-07",
+    "from": [
+      "err_tools_sikemux-010"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "browser_click",
+      "browser_wait",
+      "browser_type",
+      "browser_evaluate"
+    ],
+    "prompt": "On the API keys page in your desk tab, click \"Create key\", wait for its dialog, name the key `ci-deploy` and press the dialog's Save button.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:8080/settings/api-keys",
+      "pages": [
+        {
+          "url": "http://localhost:8080/settings/api-keys",
+          "title": "API keys",
+          "elements": [
+            "[0] <a> Overview (/)",
+            "[1] <a> API keys (/settings/api-keys)",
+            "[2] <button> Create key",
+            "[3] <button> Revoke"
+          ],
+          "text": "API keys\nproduction-sync · created 3 days ago"
+        },
+        {
+          "url": "keys-opening",
+          "href": "http://localhost:8080/settings/api-keys",
+          "title": "API keys",
+          "elements": [
+            "[0] <a> Overview (/)",
+            "[1] <a> API keys (/settings/api-keys)",
+            "[2] <button> Create key",
+            "[3] <button> Revoke"
+          ],
+          "text": "API keys\nproduction-sync · created 3 days ago"
+        },
+        {
+          "url": "keys-dialog",
+          "href": "http://localhost:8080/settings/api-keys",
+          "title": "API keys",
+          "elements": [
+            "[4] <input name=keyName> Key name",
+            "[5] <button> Cancel",
+            "[6] <button> Save"
+          ],
+          "text": "New API key\nKey name\nCancel\nSave"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "text": "/create key/i"
+              },
+              {
+                "index": 2
+              }
+            ]
+          },
+          "page": "keys-opening",
+          "reply": {
+            "index": 2,
+            "label": "Create key",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/settings/api-keys",
+            "title": "API keys",
+            "loading": false,
+            "visible": true,
+            "changes": "none"
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "page": "keys-dialog",
+          "reply": {
+            "met": true,
+            "waitedMs": 900,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/settings/api-keys",
+            "title": "API keys",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[4] <input name=keyName> Key name\n[5] <button> Cancel\n[6] <button> Save",
+              "textAdded": "New API key\nKey name\nCancel\nSave"
+            }
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "text": "/^save$/i"
+              },
+              {
+                "index": 6
+              }
+            ]
+          },
+          "page": "http://localhost:8080/settings/api-keys",
+          "reply": {
+            "index": 6,
+            "label": "Save",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/settings/api-keys",
+            "title": "API keys",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "removed": [
+                4,
+                5,
+                6
+              ],
+              "textAdded": "ci-deploy · created just now"
+            }
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "browser_wait"
+        },
+        {
+          "tool": [
+            "browser_type",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "ci-deploy"
+              },
+              {
+                "steps": "/ci-deploy/"
+              }
+            ]
+          }
+        },
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/^save$/i"
+              },
+              {
+                "index": 6
+              },
+              {
+                "steps": "/\"Save\"|\"index\":6\\b/"
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/setTimeout|setInterval|sleep\\(/"
+          },
+          "why": "waited inside a page script instead of with browser_wait"
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/\\.click\\(|dispatchEvent|\\.value\\s*=|nativeInputValueSetter|scrollIntoView/"
+          },
+          "why": "drove the page with a script instead of browser_click, browser_type or browser_scroll"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "x": {
+              "$present": true
+            }
+          },
+          "why": "fell back to clicking a coordinate"
+        }
+      ]
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "browser-08",
+    "from": [
+      "err_tools_mkt-014"
+    ],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": [
+      "browser_click",
+      "browser_find"
+    ],
+    "prompt": "Earlier you read the deploys page in your desk tab and saw `[14] <button> Retry failed`. Since then you edited code and ran the typecheck, and the page has refreshed its runs list a few times. Click Retry failed now and tell me what it says.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:8080/deploys",
+      "pages": [
+        {
+          "url": "http://localhost:8080/deploys",
+          "title": "Deploys",
+          "elements": [
+            "[50] <a> Runs (/deploys)",
+            "[51] <button> New deploy",
+            "[52] <button> Retry failed",
+            "[53] <button> Cancel run"
+          ],
+          "text": "Deploys\nRun 412 · failed · 2 min ago\nRun 411 · succeeded"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_click",
+          "args": {
+            "index": 14
+          },
+          "error": "no element [14] (\"Retry failed\"): it has left the page or is hidden now, so read browser_state or browser_find again"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "text": "/retry failed/i"
+              },
+              {
+                "index": 52
+              }
+            ]
+          },
+          "reply": {
+            "index": 52,
+            "label": "Retry failed",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/deploys",
+            "title": "Deploys",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "textAdded": "Run 413 · queued · retrying 2 failed jobs from run 412"
+            }
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/retry failed/i"
+              },
+              {
+                "index": 52
+              },
+              {
+                "steps": "/retry failed|\"index\":52\\b/i"
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "index": 14
+              },
+              {
+                "steps": "/\"index\":14\\b/"
+              }
+            ]
+          },
+          "why": "clicked a number read before the page changed"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "x": {
+              "$present": true
+            }
+          },
+          "why": "fell back to clicking a coordinate"
+        }
+      ],
+      "reply": "/413|queued|retrying/i",
+      "replyWhy": "did not report what the click did"
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "browser-09",
+    "from": [
+      "err_tools_mkt-024",
+      "err_tools_sikemux-005"
+    ],
+    "category": "bad_recovery",
+    "severity": "high",
+    "tools": [
+      "browser_click",
+      "browser_find"
+    ],
+    "prompt": "Add a runner from the runners page in your desk tab: click \"Add runner\" and tell me which fields the form asks for.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:8080/runners",
+      "pages": [
+        {
+          "url": "http://localhost:8080/runners",
+          "title": "Runners",
+          "elements": [
+            "[30] <a> Dashboard (/)",
+            "[36] <button> Add runner",
+            "[37] <button> Refresh"
+          ],
+          "text": "Runners\nActive 4 · Idle 2 · updated 1s ago"
+        },
+        {
+          "url": "runners-redrawn",
+          "href": "http://localhost:8080/runners",
+          "title": "Runners",
+          "elements": [
+            "[30] <a> Dashboard (/)",
+            "[41] <button> Add runner",
+            "[42] <button> Refresh"
+          ],
+          "text": "Runners\nActive 5 · Idle 1 · updated 1s ago"
+        },
+        {
+          "url": "runners-form",
+          "href": "http://localhost:8080/runners",
+          "title": "Runners",
+          "elements": [
+            "[43] <input name=name> Runner name",
+            "[44] <select name=region> Region value=\"eu-west\"",
+            "[45] <input name=labels> Labels",
+            "[46] <button> Create runner",
+            "[47] <button> Cancel"
+          ],
+          "text": "New runner\nRunner name\nRegion\nLabels"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "index": 36
+              },
+              {
+                "text": "/add runner/i"
+              }
+            ]
+          },
+          "times": 1,
+          "page": "runners-redrawn",
+          "error": "no element [36] (\"Add runner\"): it has left the page or is hidden now, so read browser_state or browser_find again"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "index": 36
+          },
+          "error": "no element [36] (\"Add runner\"): it has left the page or is hidden now, so read browser_state or browser_find again"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "index": 41
+              },
+              {
+                "text": "/add runner/i"
+              }
+            ]
+          },
+          "page": "runners-form",
+          "reply": {
+            "index": 41,
+            "label": "Add runner",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/runners",
+            "title": "Runners",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[43] <input name=name> Runner name\n[44] <select name=region> Region value=\"eu-west\"\n[45] <input name=labels> Labels\n[46] <button> Create runner\n[47] <button> Cancel",
+              "removed": [
+                41,
+                42
+              ],
+              "textAdded": "New runner\nRunner name\nRegion\nLabels"
+            }
+          }
+        }
+      ]
+    },
+    "grade": {
+      "forbid": [
+        {
+          "tool": "browser_click",
+          "args": {
+            "x": {
+              "$present": true
+            }
+          },
+          "why": "fell back to clicking a coordinate"
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/\\.click\\(|dispatchEvent|\\.value\\s*=|nativeInputValueSetter|scrollIntoView/"
+          },
+          "why": "drove the page with a script instead of browser_click, browser_type or browser_scroll"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "browser_click",
+          "max": 4
+        }
+      ],
+      "reply": "/runner name[\\s\\S]*region|region[\\s\\S]*runner name/i",
+      "replyWhy": "never got the form open, or did not list its fields"
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "browser-10",
+    "from": [
+      "err_tools_sikemux-006"
+    ],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": [
+      "browser_type",
+      "browser_act",
+      "browser_click"
+    ],
+    "prompt": "Add a CNAME record on the DNS page in your desk tab (the type is already set to CNAME): name `www`, target `apps.example-host.net`, TTL `3600`, then click Add record.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:8080/domains/example.org/dns",
+      "pages": [
+        {
+          "url": "http://localhost:8080/domains/example.org/dns",
+          "title": "DNS · example.org",
+          "elements": [
+            "[70] <select name=type> Type value=\"CNAME\"",
+            "[72] <input name=name> Name",
+            "[74] <input name=target> Target",
+            "[76] <input name=ttl> TTL value=\"300\"",
+            "[78] <button> Add record"
+          ],
+          "text": "DNS records for example.org\n@ A 203.0.113.10 300"
+        },
+        {
+          "url": "dns-redrawn",
+          "href": "http://localhost:8080/domains/example.org/dns",
+          "title": "DNS · example.org",
+          "elements": [
+            "[80] <select name=type> Type value=\"CNAME\"",
+            "[81] <input name=name> Name value=\"www\"",
+            "[82] <input name=target> Target",
+            "[83] <input name=ttl> TTL value=\"300\"",
+            "[84] <button> Add record"
+          ],
+          "text": "DNS records for example.org\n@ A 203.0.113.10 300"
+        },
+        {
+          "url": "dns-target",
+          "href": "http://localhost:8080/domains/example.org/dns",
+          "title": "DNS · example.org",
+          "elements": [
+            "[80] <select name=type> Type value=\"CNAME\"",
+            "[81] <input name=name> Name value=\"www\"",
+            "[82] <input name=target> Target value=\"apps.example-host.net\"",
+            "[83] <input name=ttl> TTL value=\"300\"",
+            "[84] <button> Add record"
+          ],
+          "text": "DNS records for example.org\n@ A 203.0.113.10 300"
+        },
+        {
+          "url": "dns-filled",
+          "href": "http://localhost:8080/domains/example.org/dns",
+          "title": "DNS · example.org",
+          "elements": [
+            "[80] <select name=type> Type value=\"CNAME\"",
+            "[81] <input name=name> Name value=\"www\"",
+            "[82] <input name=target> Target value=\"apps.example-host.net\"",
+            "[83] <input name=ttl> TTL value=\"3600\"",
+            "[84] <button> Add record"
+          ],
+          "text": "DNS records for example.org\n@ A 203.0.113.10 300"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_type",
+          "args": {
+            "index": {
+              "$any": [
+                72,
+                74,
+                76
+              ]
+            }
+          },
+          "times": 1,
+          "page": "dns-redrawn",
+          "reply": {
+            "typed": 3,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/domains/example.org/dns",
+            "title": "DNS · example.org",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[80] <select name=type> Type value=\"CNAME\"\n[81] <input name=name> Name value=\"www\"\n[82] <input name=target> Target\n[83] <input name=ttl> TTL value=\"300\"\n[84] <button> Add record",
+              "removed": [
+                70,
+                72,
+                74,
+                76,
+                78
+              ]
+            }
+          }
+        },
+        {
+          "tool": [
+            "browser_type",
+            "browser_click"
+          ],
+          "args": {
+            "index": 72
+          },
+          "error": "no element [72] (\"Name\"): it has left the page or is hidden now, so read browser_state or browser_find again"
+        },
+        {
+          "tool": [
+            "browser_type",
+            "browser_click"
+          ],
+          "args": {
+            "index": 74
+          },
+          "error": "no element [74] (\"Target\"): it has left the page or is hidden now, so read browser_state or browser_find again"
+        },
+        {
+          "tool": [
+            "browser_type",
+            "browser_click"
+          ],
+          "args": {
+            "index": 76
+          },
+          "error": "no element [76] (\"TTL\"): it has left the page or is hidden now, so read browser_state or browser_find again"
+        },
+        {
+          "tool": [
+            "browser_type",
+            "browser_click"
+          ],
+          "args": {
+            "index": 78
+          },
+          "error": "no element [78] (\"Add record\"): it has left the page or is hidden now, so read browser_state or browser_find again"
+        },
+        {
+          "tool": "browser_type",
+          "args": {
+            "$any": [
+              {
+                "index": 82
+              },
+              {
+                "selector": "/target/"
+              }
+            ]
+          },
+          "page": "dns-target",
+          "reply": {
+            "typed": 21,
+            "into": "[82] <input name=target> Target",
+            "value": "apps.example-host.net",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/domains/example.org/dns",
+            "title": "DNS · example.org",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[82] <input name=target> Target value=\"apps.example-host.net\""
+            }
+          }
+        },
+        {
+          "tool": "browser_type",
+          "args": {
+            "$any": [
+              {
+                "index": 83
+              },
+              {
+                "selector": "/ttl/"
+              }
+            ]
+          },
+          "page": "dns-filled",
+          "reply": {
+            "typed": 4,
+            "into": "[83] <input name=ttl> TTL",
+            "value": "3600",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/domains/example.org/dns",
+            "title": "DNS · example.org",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[83] <input name=ttl> TTL value=\"3600\""
+            }
+          }
+        },
+        {
+          "tool": "browser_act",
+          "args": {
+            "steps": "/\"index\":7[02468]\\b/"
+          },
+          "page": "dns-redrawn",
+          "reply": {
+            "done": [
+              {
+                "action": "type",
+                "typed": 3
+              }
+            ],
+            "stopped": {
+              "step": 1,
+              "error": "no element [74] (\"Target\"): it has left the page or is hidden now, so read browser_state or browser_find again"
+            },
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/domains/example.org/dns",
+            "title": "DNS · example.org",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[80] <select name=type> Type value=\"CNAME\"\n[81] <input name=name> Name value=\"www\"\n[82] <input name=target> Target\n[83] <input name=ttl> TTL value=\"300\"\n[84] <button> Add record",
+              "removed": [
+                70,
+                72,
+                74,
+                76,
+                78
+              ]
+            }
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "text": "/add record/i"
+              },
+              {
+                "index": 84
+              }
+            ]
+          },
+          "page": "http://localhost:8080/domains/example.org/dns",
+          "reply": {
+            "index": 84,
+            "label": "Add record",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/domains/example.org/dns",
+            "title": "DNS · example.org",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "textAdded": "www CNAME apps.example-host.net 3600"
+            }
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_type",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/apps\\.example-host\\.net/"
+              },
+              {
+                "steps": "/apps\\.example-host\\.net/"
+              }
+            ]
+          }
+        },
+        {
+          "tool": [
+            "browser_type",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/^3600$/"
+              },
+              {
+                "steps": "/3600/"
+              }
+            ]
+          }
+        },
+        {
+          "tool": [
+            "browser_click",
+            "browser_act",
+            "browser_press"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/add record/i"
+              },
+              {
+                "index": 84
+              },
+              {
+                "selector": {
+                  "$present": true
+                }
+              },
+              {
+                "key": "Enter"
+              },
+              {
+                "steps": "/add record|\"index\":84\\b|\"submit\":true/i"
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/\\.click\\(|dispatchEvent|\\.value\\s*=|nativeInputValueSetter|scrollIntoView/"
+          },
+          "why": "drove the page with a script instead of browser_click, browser_type or browser_scroll"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "x": {
+              "$present": true
+            }
+          },
+          "why": "fell back to clicking a coordinate"
+        }
+      ],
+      "limit": [
+        {
+          "tool": [
+            "browser_type",
+            "browser_act",
+            "browser_click"
+          ],
+          "max": 10
+        }
+      ]
+    },
+    "maxTurns": 14
+  },
+  {
+    "id": "browser-11",
+    "from": [
+      "err_tools_sikemux-007",
+      "human_sikemux_a-014"
+    ],
+    "category": "malformed_call",
+    "severity": "high",
+    "tools": [
+      "browser_screenshot",
+      "browser_scroll"
+    ],
+    "prompt": "Take a screenshot of just the first `.agent-rail .agent-group` block on the showcase page in your desk tab.",
+    "fixture": {
+      "tab": "http://localhost:1471/showcase/",
+      "pages": [
+        {
+          "url": "http://localhost:1471/showcase/",
+          "title": "Sikemux showcase",
+          "elements": [
+            "[0] <button> Chat",
+            "[1] <button> Git",
+            "[2] <button> Browser",
+            "[40] <button> New agent",
+            "[41] <button> Otter",
+            "[42] <button> Elk"
+          ],
+          "text": "Agents\nWorking\nOtter · Fix the drag ghost\nIdle\nElk · Desk tab drag"
+        }
+      ],
+      "answers": [
+        {
+          "tool": [
+            "browser_screenshot",
+            "browser_scroll"
+          ],
+          "args": {
+            "selector": "/agent-group\\s*$/",
+            "index": {
+              "$present": false
+            }
+          },
+          "error": "2 shown elements match \".agent-rail .agent-group\"; nothing was done. Pass a narrower selector or one of these numbers:\n[57] <div> Working Otter · Fix the drag ghost\n[58] <div> Idle Elk · Desk tab drag"
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "browser_screenshot",
+          "args": {
+            "$any": [
+              {
+                "index": 57
+              },
+              {
+                "selector": "/agent-group\\s*:(?:first-child|first-of-type|nth-child\\(1\\)|nth-of-type\\(1\\))|:first-child\\s*$|:nth-child\\(1\\)\\s*$|:first-of-type\\s*$/"
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "browser_screenshot",
+            "browser_scroll"
+          ],
+          "args": {
+            "index": 0
+          },
+          "why": "took index as the nth match of the selector; it is a page-wide number"
+        },
+        {
+          "tool": "browser_evaluate",
+          "why": "used a script to pick the element"
+        }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "browser-12",
+    "from": [
+      "err_tools_sikemux-011",
+      "err_tools_mkt-019"
+    ],
+    "category": "bad_recovery",
+    "severity": "low",
+    "tools": [
+      "browser_click"
+    ],
+    "prompt": "In the connected apps list in your desk tab, tick the checkbox for \"Billing (development)\".",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:8080/settings/apps",
+      "pages": [
+        {
+          "url": "http://localhost:8080/settings/apps",
+          "title": "Connected apps",
+          "elements": [
+            "[37] <mat-pseudo-checkbox> Billing (production) [checked]",
+            "[38] <a> Billing (production) (/settings/apps/billing-prod)",
+            "[39] <mat-pseudo-checkbox> Billing (development) [unchecked]",
+            "[40] <a> Billing (development) (/settings/apps/billing-dev)",
+            "[41] <button> Save"
+          ],
+          "text": "Connected apps\nBilling (production)\nBilling (development)"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_click",
+          "args": {
+            "text": "/billing \\(development\\)/i",
+            "role": {
+              "$present": false
+            }
+          },
+          "error": "2 elements match \"Billing (development)\"; nothing was done. Pass an index, or a role or fuller text:\n[39] <mat-pseudo-checkbox> Billing (development) [unchecked]\n[40] <a> Billing (development) (/settings/apps/billing-dev)"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "index": 40
+          },
+          "page": "http://localhost:8080/settings/apps/billing-dev",
+          "reply": {
+            "index": 40,
+            "label": "Billing (development)",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/settings/apps/billing-dev",
+            "title": "Billing (development)",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> Connected apps (/settings/apps)\n[1] <button> Disconnect",
+            "text": "Billing (development)\nConnected 12 days ago"
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "index": 39
+              },
+              {
+                "text": "/billing \\(development\\)/i",
+                "role": "/checkbox/i"
+              }
+            ]
+          },
+          "reply": {
+            "index": 39,
+            "label": "Billing (development)",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/settings/apps",
+            "title": "Connected apps",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[39] <mat-pseudo-checkbox> Billing (development) [checked]"
+            }
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "index": 39
+              },
+              {
+                "role": "/checkbox/i"
+              },
+              {
+                "steps": "/\"index\":39\\b|checkbox/i"
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "why": "used a script instead of the number the error listed"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "x": {
+              "$present": true
+            }
+          },
+          "why": "fell back to clicking a coordinate"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "index": 40
+          },
+          "why": "clicked the link instead of the checkbox"
+        }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "browser-13",
+    "from": [
+      "err_tools_mkt-025"
+    ],
+    "category": "bad_recovery",
+    "severity": "med",
+    "tools": [
+      "browser_click",
+      "browser_find"
+    ],
+    "prompt": "Pick a brand for the draft in your desk tab: click \"Select Brand\" like last time and choose \"Northwind Outdoor\".",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:5173/studio/drafts/9",
+      "pages": [
+        {
+          "url": "http://localhost:5173/studio/drafts/9",
+          "title": "Autumn promo draft",
+          "elements": [
+            "[0] <a> Drafts (/studio/drafts)",
+            "[3] <button> Choose a brand",
+            "[4] <button> Save draft"
+          ],
+          "text": "Autumn promo draft\nBrand: none yet\nChoose a brand"
+        },
+        {
+          "url": "brand-menu",
+          "href": "http://localhost:5173/studio/drafts/9",
+          "title": "Autumn promo draft",
+          "elements": [
+            "[5] <li> Northwind Outdoor",
+            "[6] <li> Northwind Kitchens",
+            "[7] <li> Harbor Coffee"
+          ],
+          "text": "Choose a brand\nNorthwind Outdoor\nNorthwind Kitchens\nHarbor Coffee"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_click",
+          "args": {
+            "text": "/select brand/i"
+          },
+          "error": "nothing is labelled \"Select Brand\"; try browser_find with part of the words"
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "text": "/choose a brand/i"
+              },
+              {
+                "index": 3
+              }
+            ]
+          },
+          "page": "brand-menu",
+          "reply": {
+            "index": 3,
+            "label": "Choose a brand",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio/drafts/9",
+            "title": "Autumn promo draft",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[5] <li> Northwind Outdoor\n[6] <li> Northwind Kitchens\n[7] <li> Harbor Coffee",
+              "textAdded": "Northwind Outdoor\nNorthwind Kitchens\nHarbor Coffee"
+            }
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "text": "/northwind outdoor/i"
+              },
+              {
+                "index": 5
+              }
+            ]
+          },
+          "page": "http://localhost:5173/studio/drafts/9",
+          "reply": {
+            "index": 5,
+            "label": "Northwind Outdoor",
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:5173/studio/drafts/9",
+            "title": "Autumn promo draft",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "removed": [
+                5,
+                6,
+                7
+              ],
+              "textAdded": "Brand: Northwind Outdoor",
+              "textRemoved": "Brand: none yet"
+            }
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/northwind outdoor/i"
+              },
+              {
+                "index": 5
+              },
+              {
+                "steps": "/northwind outdoor|\"index\":5\\b/i"
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_click",
+          "args": {
+            "x": {
+              "$present": true
+            }
+          },
+          "why": "fell back to clicking a coordinate"
+        },
+        {
+          "tool": "browser_evaluate",
+          "why": "used a script to find the control"
+        }
+      ],
+      "limit": [
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/select brand/i"
+              },
+              {
+                "steps": "/select brand/i"
+              }
+            ]
+          },
+          "max": 1
+        },
+        {
+          "tool": "browser_screenshot",
+          "max": 1
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-14",
+    "from": [
+      "err_tools_sikemux-003"
+    ],
+    "category": "malformed_call",
+    "severity": "high",
+    "tools": [
+      "browser_scroll",
+      "browser_find",
+      "browser_screenshot"
+    ],
+    "prompt": "On the landing page in your desk tab, scroll to the section headed \"Switch agents. Keep your workflow\" and take a screenshot of it.",
+    "fixture": {
+      "tab": "http://localhost:4321/",
+      "pages": [
+        {
+          "url": "http://localhost:4321/",
+          "title": "Sikemux",
+          "elements": [
+            "[0] <a> Sikemux (/)",
+            "[1] <a> Features (/#features)",
+            "[2] <a> Pricing (/#pricing)",
+            "[3] <a> Download (/download)"
+          ],
+          "text": "Sikemux\nOne window for every agent\nDownload\nRun agents side by side\nEach agent gets its own tab and desk.\nSwitch agents. Keep your workflow\nMove a chat from Claude to Codex without losing the thread.\nPricing\nFree while in beta."
+        }
+      ],
+      "answers": [
+        {
+          "tool": [
+            "browser_scroll",
+            "browser_screenshot",
+            "browser_click"
+          ],
+          "args": {
+            "text": "/switch agents/i"
+          },
+          "error": "nothing is labelled \"Switch agents. Keep your workflow\"; try browser_find with part of the words"
+        },
+        {
+          "tool": "browser_find",
+          "args": {
+            "query": "/switch agents|keep your workflow/i"
+          },
+          "reply": {
+            "matches": 0,
+            "elements": "",
+            "note": "the words are on the page but on nothing numbered; click one of these points by x and y",
+            "points": [
+              {
+                "x": 640,
+                "y": 2380,
+                "text": "Switch agents. Keep your workflow",
+                "offscreen": true
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/scrollIntoView|scrollTo|scrollBy/"
+          },
+          "reply": {
+            "result": null
+          }
+        }
+      ]
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        {
+          "tool": "browser_scroll",
+          "args": {
+            "$any": [
+              {
+                "deltaY": {
+                  "$present": true
+                }
+              },
+              {
+                "selector": {
+                  "$present": true
+                }
+              },
+              {
+                "index": {
+                  "$present": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_screenshot"
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/scrollIntoView|scrollTo|scrollBy|querySelector/"
+          },
+          "why": "scrolled with a script instead of browser_scroll"
+        }
+      ],
+      "limit": [
+        {
+          "tool": [
+            "browser_scroll",
+            "browser_screenshot",
+            "browser_click"
+          ],
+          "args": {
+            "text": "/switch agents/i"
+          },
+          "max": 1
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-15",
+    "from": [
+      "err_tools_mkt-018",
+      "err_tools_sikemux-001",
+      "err_tools_sikemux-002"
+    ],
+    "category": "malformed_call",
+    "severity": "high",
+    "tools": [
+      "browser_upload",
+      "browser_find"
+    ],
+    "prompt": "Upload the six PNGs in store/screenshots/ to the iPhone screenshots slot on the media page in your desk tab, and confirm the slot then shows 6 of 10.",
+    "fixture": {
+      "project": "work",
+      "files": {
+        "store/screenshots/01.png": "iVBORw0KGgo=",
+        "store/screenshots/02.png": "iVBORw0KGgo=",
+        "store/screenshots/03.png": "iVBORw0KGgo=",
+        "store/screenshots/04.png": "iVBORw0KGgo=",
+        "store/screenshots/05.png": "iVBORw0KGgo=",
+        "store/screenshots/06.png": "iVBORw0KGgo="
+      },
+      "tab": "http://localhost:8080/apps/7/media",
+      "pages": [
+        {
+          "url": "http://localhost:8080/apps/7/media",
+          "title": "Media manager",
+          "elements": [
+            "[12] <a> App information (/apps/7)",
+            "[18] <button> iPhone 6.9\" Display [selected]",
+            "[19] <div> Drop screenshots here",
+            "[20] <button> Choose files",
+            "[21] <button> Delete all"
+          ],
+          "text": "Media manager\niPhone 6.9\" Display\n0 of 10 App Screenshots\nDrop screenshots here\nChoose files"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_upload",
+          "args": {
+            "index": 20
+          },
+          "reply": {
+            "uploaded": [
+              "01.png",
+              "02.png",
+              "03.png",
+              "04.png",
+              "05.png",
+              "06.png"
+            ],
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/apps/7/media",
+            "title": "Media manager",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "textAdded": "6 of 10 App Screenshots",
+              "textRemoved": "0 of 10 App Screenshots"
+            }
+          }
+        },
+        {
+          "tool": "browser_upload",
+          "error": "that did not open a file chooser; pass the number of a file input, or of the button that opens one"
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "browser_upload",
+          "args": {
+            "index": 20,
+            "paths": [
+              "/^\\/.*store\\/screenshots\\/01\\.png$/",
+              "/^\\/.*store\\/screenshots\\/02\\.png$/",
+              "/^\\/.*store\\/screenshots\\/03\\.png$/",
+              "/^\\/.*store\\/screenshots\\/04\\.png$/",
+              "/^\\/.*store\\/screenshots\\/05\\.png$/",
+              "/^\\/.*store\\/screenshots\\/06\\.png$/"
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "why": "tried to hand the files over with a script"
+        },
+        {
+          "tool": "browser_upload",
+          "args": {
+            "x": {
+              "$present": true
+            }
+          },
+          "why": "aimed the upload at a guessed coordinate"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "browser_upload",
+          "max": 2
+        }
+      ],
+      "reply": "/6 of 10/",
+      "replyWhy": "did not confirm the slot count"
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-16",
+    "from": [
+      "err_tools_mkt-015",
+      "err_tools_sikemux-041"
+    ],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [
+      "browser_navigate",
+      "browser_wait"
+    ],
+    "prompt": "The reports app compiles each page the first time it is opened, which can take up to 90 seconds after a restart. Open http://localhost:3000/reports in your desk tab and wait until the \"Quarterly reports\" heading shows, then tell me it's up.",
+    "fixture": {
+      "project": "work",
+      "pages": [
+        {
+          "url": "http://localhost:3000/reports",
+          "title": "Reports",
+          "elements": [
+            "[0] <a> Home (/)",
+            "[1] <button> Export"
+          ],
+          "text": "Quarterly reports\nQ1\nQ2\nQ3"
+        },
+        {
+          "url": "reports-compiling",
+          "href": "http://localhost:3000/reports",
+          "title": "",
+          "elements": [],
+          "text": ""
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "waitFor": {
+              "$present": true
+            }
+          },
+          "times": 1,
+          "page": "reports-compiling",
+          "reply": {
+            "met": false,
+            "waitedMs": 45000,
+            "failing": [
+              "text \"Quarterly reports\" is not on the page"
+            ],
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:3000/reports",
+            "title": "",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "",
+            "text": ""
+          }
+        },
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "waitFor": {
+              "$present": false
+            }
+          },
+          "times": 1,
+          "page": "reports-compiling",
+          "reply": {
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:3000/reports",
+            "title": "",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "",
+            "text": "",
+            "note": "the page loaded but shows no text or controls yet; a web app may still be drawing it, so wait with browser_wait and a text or selector"
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "page": "http://localhost:3000/reports",
+          "reply": {
+            "met": true,
+            "waitedMs": 31800,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:3000/reports",
+            "title": "Reports",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> Home (/)\n[1] <button> Export",
+            "text": "Quarterly reports\nQ1\nQ2\nQ3"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_wait",
+            "browser_navigate"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "/quarterly reports/i"
+              },
+              {
+                "waitFor": {
+                  "text": "/quarterly reports/i"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "waitFor": {
+              "timeoutMs": "/^(?:6000[1-9]|600[1-9]\\d|60[1-9]\\d{2}|6[1-9]\\d{3}|[7-9]\\d{4}|[1-9]\\d{5,})$/"
+            }
+          },
+          "why": "asked for a wait over the 60 s maximum"
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "timeoutMs": "/^(?:6000[1-9]|600[1-9]\\d|60[1-9]\\d{2}|6[1-9]\\d{3}|[7-9]\\d{4}|[1-9]\\d{5,})$/"
+          },
+          "why": "asked for a wait over the 60 s maximum"
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "ms": "/^(?:6000[1-9]|600[1-9]\\d|60[1-9]\\d{2}|6[1-9]\\d{3}|[7-9]\\d{4}|[1-9]\\d{5,})$/"
+          },
+          "why": "asked for a sleep over the maximum"
+        }
+      ],
+      "reply": "/up|loaded|shows|ready/i"
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-17",
+    "from": [
+      "err_tools_mkt-023"
+    ],
+    "category": "bad_recovery",
+    "severity": "high",
+    "tools": [
+      "browser_navigate",
+      "browser_wait",
+      "task_read"
+    ],
+    "prompt": "I just restarted the dev server (the `web` task). Open http://localhost:3000/dashboard in your desk tab once it's ready and tell me what the page shows.",
+    "fixture": {
+      "project": "work",
+      "pages": [
+        {
+          "url": "http://localhost:3000/dashboard",
+          "title": "Dashboard",
+          "elements": [
+            "[0] <a> Orders (/orders)",
+            "[1] <a> Customers (/customers)",
+            "[2] <button> Refresh"
+          ],
+          "text": "Dashboard\nOpen orders 18\nRevenue this week 4,210\nLate shipments 2"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_navigate",
+          "times": 1,
+          "error": "browser_navigate got no answer from Sikemux within 66 s. Check that the Sikemux window is open and responsive, then retry."
+        },
+        {
+          "tool": "workspace_inspect",
+          "reply": {
+            "project": "app",
+            "roots": [
+              "app"
+            ],
+            "tasks": [
+              {
+                "taskId": "web",
+                "label": "web",
+                "command": "pnpm dev",
+                "executionId": "exec-web-3",
+                "status": "running",
+                "ports": [
+                  3000
+                ]
+              }
+            ],
+            "cursor": "220"
+          }
+        },
+        {
+          "tool": "task_read",
+          "reply": {
+            "executionId": "exec-web-3",
+            "status": "running",
+            "output": "  VITE ready in 812 ms\n  ➜  Local: http://localhost:3000/\n  compiling /dashboard ...\n  compiled /dashboard in 71.4s\n",
+            "cursor": 182
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "url": "/localhost:3000\\/dashboard/"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/\\b(curl|wget|playwright|puppeteer|chromium|lsof|nc)\\b/"
+          },
+          "why": "checked the page outside the desk browser"
+        },
+        {
+          "tool": [
+            "WebFetch",
+            "WebSearch"
+          ],
+          "why": "fetched the page outside the desk browser"
+        },
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "url": "/health|\\/api\\//"
+          },
+          "why": "opened a health endpoint instead of retrying the page"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "browser_navigate",
+          "max": 3
+        }
+      ],
+      "reply": "/open orders|18/i",
+      "replyWhy": "did not report what the dashboard shows"
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-18",
+    "from": [
+      "err_tools_sikemux-039",
+      "err_tools_mkt-027"
+    ],
+    "category": "bad_recovery",
+    "severity": "med",
+    "tools": [
+      "browser_navigate"
+    ],
+    "prompt": "Walk through https://example.com/docs section by section in a desk tab and give me a one-line summary of each section.",
+    "fixture": {
+      "answers": [
+        {
+          "tool": "browser_*",
+          "error": "Sikemux's window is not open — open Sikemux to use the browser"
+        }
+      ]
+    },
+    "grade": {
+      "forbid": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/playwright|puppeteer|chromium|chrome|webkit|safari|curl|wget|lynx|w3m|python/i"
+          },
+          "why": "switched to another way of loading pages"
+        },
+        {
+          "tool": [
+            "WebFetch",
+            "WebSearch"
+          ],
+          "why": "read the page outside the desk browser"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "browser_*",
+          "max": 3
+        }
+      ],
+      "reply": "/open Sikemux|Sikemux(?:'s)? window/i",
+      "replyWhy": "did not ask the person to open Sikemux"
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "browser-19",
+    "from": [
+      "err_tools_sikemux-004",
+      "err_tools_mkt-016"
+    ],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [
+      "browser_scroll",
+      "browser_screenshot"
+    ],
+    "prompt": "Scroll the signup form in your desk tab down about 700 px and screenshot what's there.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:5173/signup",
+      "pages": [
+        {
+          "url": "http://localhost:5173/signup",
+          "title": "Sign up",
+          "elements": [
+            "[0] <input name=email> Email",
+            "[1] <input type=password name=password> Password",
+            "[2] <input type=checkbox name=terms> I agree to the terms [unchecked] [offscreen]",
+            "[3] <button> Create account [offscreen]"
+          ],
+          "text": "Create your account\nEmail\nPassword"
+        }
+      ]
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        {
+          "tool": "browser_scroll",
+          "args": {
+            "deltaY": "/^(?:[5-9]\\d\\d)$/"
+          }
+        },
+        {
+          "tool": "browser_screenshot"
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_scroll",
+          "args": {
+            "$any": [
+              {
+                "direction": {
+                  "$present": true
+                }
+              },
+              {
+                "amount": {
+                  "$present": true
+                }
+              },
+              {
+                "y": {
+                  "$present": true
+                }
+              }
+            ]
+          },
+          "why": "passed scroll arguments the tool does not take"
+        },
+        {
+          "tool": "browser_evaluate",
+          "why": "scrolled with a script"
+        }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "browser-20",
+    "from": [
+      "err_tools_sikemux-008",
+      "err_tools_mkt-016"
+    ],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [
+      "browser_evaluate",
+      "browser_state"
+    ],
+    "prompt": "List the href of every link on the docs page in your desk tab, one per line.",
+    "fixture": {
+      "tab": "http://localhost:4321/docs/",
+      "pages": [
+        {
+          "url": "http://localhost:4321/docs/",
+          "title": "Docs",
+          "elements": [
+            "[0] <a> Install (/docs/install)",
+            "[1] <a> CLI (/docs/cli)",
+            "[2] <a> Shortcuts (/docs/reference/shortcuts)",
+            "[3] <a> Changelog (/docs/changelog)",
+            "[4] <button> Search"
+          ],
+          "text": "Docs\nInstall\nCLI\nShortcuts\nChangelog"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/href/"
+          },
+          "reply": {
+            "result": [
+              "http://localhost:4321/docs/install",
+              "http://localhost:4321/docs/cli",
+              "http://localhost:4321/docs/reference/shortcuts",
+              "http://localhost:4321/docs/changelog"
+            ]
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_evaluate",
+            "browser_state",
+            "browser_find"
+          ]
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "$any": [
+              {
+                "expression": {
+                  "$present": true
+                }
+              },
+              {
+                "code": {
+                  "$present": true
+                }
+              },
+              {
+                "function": {
+                  "$present": true
+                }
+              }
+            ]
+          },
+          "why": "passed the script under another tool's argument name"
+        }
+      ],
+      "reply": "/docs\\/install[\\s\\S]*docs\\/reference\\/shortcuts|docs\\/reference\\/shortcuts[\\s\\S]*docs\\/install/",
+      "replyWhy": "did not list the links"
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "browser-21",
+    "from": [
+      "err_tools_mkt-016"
+    ],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [
+      "browser_wait",
+      "browser_network"
+    ],
+    "prompt": "I'm signing in on the login page in your desk tab right now. Once it has moved off /login, tell me which API requests failed with a 4xx or 5xx status.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:3000/login",
+      "pages": [
+        {
+          "url": "http://localhost:3000/login",
+          "title": "Sign in",
+          "elements": [
+            "[0] <input name=email> Email",
+            "[1] <input type=password name=password> Password",
+            "[2] <button> Sign in"
+          ],
+          "text": "Sign in"
+        },
+        {
+          "url": "http://localhost:3000/dashboard",
+          "title": "Dashboard",
+          "elements": [
+            "[0] <a> Orders (/orders)",
+            "[1] <a> Profile (/profile)"
+          ],
+          "text": "Dashboard\nOrders could not load"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_wait",
+          "args": {
+            "url": "/[\\^$*()\\[\\]\\\\]/"
+          },
+          "page": "http://localhost:3000/dashboard",
+          "reply": {
+            "met": false,
+            "waitedMs": 60000,
+            "failing": [
+              "the url is http://localhost:3000/dashboard, which does not contain \"^(?!.*\\/login).*$\""
+            ],
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:3000/dashboard",
+            "title": "Dashboard",
+            "loading": false,
+            "visible": true,
+            "changes": {
+              "elements": "[0] <a> Orders (/orders)\n[1] <a> Profile (/profile)",
+              "removed": [
+                0,
+                1,
+                2
+              ],
+              "textAdded": "Dashboard\nOrders could not load",
+              "textRemoved": "Sign in"
+            }
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "$any": [
+              {
+                "url": {
+                  "$present": true
+                }
+              },
+              {
+                "textGone": {
+                  "$present": true
+                }
+              },
+              {
+                "selectorGone": {
+                  "$present": true
+                }
+              },
+              {
+                "text": {
+                  "$present": true
+                }
+              },
+              {
+                "selector": {
+                  "$present": true
+                }
+              }
+            ]
+          },
+          "page": "http://localhost:3000/dashboard",
+          "reply": {
+            "met": true,
+            "waitedMs": 21400,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:3000/dashboard",
+            "title": "Dashboard",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> Orders (/orders)\n[1] <a> Profile (/profile)",
+            "text": "Dashboard\nOrders could not load"
+          }
+        },
+        {
+          "tool": "browser_network",
+          "args": {
+            "status": "/,/"
+          },
+          "reply": {
+            "recording": true,
+            "url": "http://localhost:3000/dashboard",
+            "recorded": 5,
+            "matched": 0,
+            "calls": []
+          }
+        },
+        {
+          "tool": "browser_network",
+          "args": {
+            "status": "/^4/"
+          },
+          "reply": {
+            "recording": true,
+            "url": "http://localhost:3000/dashboard",
+            "recorded": 5,
+            "matched": 1,
+            "calls": [
+              {
+                "id": 5,
+                "kind": "fetch",
+                "method": "GET",
+                "url": "http://localhost:3000/api/profile/avatar",
+                "status": 404,
+                "durationMs": 12,
+                "body": "not found"
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_network",
+          "args": {
+            "status": "/^5/"
+          },
+          "reply": {
+            "recording": true,
+            "url": "http://localhost:3000/dashboard",
+            "recorded": 5,
+            "matched": 1,
+            "calls": [
+              {
+                "id": 3,
+                "kind": "fetch",
+                "method": "GET",
+                "url": "http://localhost:3000/api/orders?status=open",
+                "status": 500,
+                "durationMs": 1203,
+                "body": "{\"error\":\"internal\"}"
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_network",
+          "args": {
+            "status": "failed"
+          },
+          "reply": {
+            "recording": true,
+            "url": "http://localhost:3000/dashboard",
+            "recorded": 5,
+            "matched": 2,
+            "calls": [
+              {
+                "id": 3,
+                "kind": "fetch",
+                "method": "GET",
+                "url": "http://localhost:3000/api/orders?status=open",
+                "status": 500,
+                "durationMs": 1203,
+                "body": "{\"error\":\"internal\"}"
+              },
+              {
+                "id": 5,
+                "kind": "fetch",
+                "method": "GET",
+                "url": "http://localhost:3000/api/profile/avatar",
+                "status": 404,
+                "durationMs": 12,
+                "body": "not found"
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_network",
+          "reply": {
+            "recording": true,
+            "url": "http://localhost:3000/dashboard",
+            "recorded": 5,
+            "matched": 5,
+            "calls": [
+              {
+                "id": 1,
+                "kind": "fetch",
+                "method": "POST",
+                "url": "http://localhost:3000/api/session",
+                "status": 200,
+                "durationMs": 182,
+                "body": "{\"ok\":true}"
+              },
+              {
+                "id": 2,
+                "kind": "fetch",
+                "method": "GET",
+                "url": "http://localhost:3000/api/me",
+                "status": 200,
+                "durationMs": 41,
+                "body": "{\"name\":\"Sam\"}"
+              },
+              {
+                "id": 3,
+                "kind": "fetch",
+                "method": "GET",
+                "url": "http://localhost:3000/api/orders?status=open",
+                "status": 500,
+                "durationMs": 1203,
+                "body": "{\"error\":\"internal\"}"
+              },
+              {
+                "id": 4,
+                "kind": "fetch",
+                "method": "GET",
+                "url": "http://localhost:3000/api/notifications",
+                "status": 200,
+                "durationMs": 66,
+                "body": "[]"
+              },
+              {
+                "id": 5,
+                "kind": "fetch",
+                "method": "GET",
+                "url": "http://localhost:3000/api/profile/avatar",
+                "status": 404,
+                "durationMs": 12,
+                "body": "not found"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "browser_wait",
+          "args": {
+            "$any": [
+              {
+                "url": {
+                  "$present": true
+                }
+              },
+              {
+                "textGone": {
+                  "$present": true
+                }
+              },
+              {
+                "selectorGone": {
+                  "$present": true
+                }
+              },
+              {
+                "text": {
+                  "$present": true
+                }
+              },
+              {
+                "selector": {
+                  "$present": true
+                }
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_network"
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_wait",
+          "args": {
+            "$any": [
+              {
+                "urlGone": {
+                  "$present": true
+                }
+              },
+              {
+                "urlNot": {
+                  "$present": true
+                }
+              }
+            ]
+          },
+          "why": "passed a wait condition browser_wait does not have"
+        },
+        {
+          "tool": "browser_navigate",
+          "why": "navigated the tab the person was signing in on"
+        },
+        {
+          "tool": [
+            "browser_click",
+            "browser_type",
+            "browser_press",
+            "browser_act"
+          ],
+          "why": "acted on the sign-in form the person was filling"
+        }
+      ],
+      "reply": "/(?=[\\s\\S]*500)(?=[\\s\\S]*404)/",
+      "replyWhy": "did not name both failed requests"
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-22",
+    "from": [
+      "err_tools_sikemux-040",
+      "err_tools_mkt-030"
+    ],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [
+      "browser_viewport",
+      "browser_navigate",
+      "browser_screenshot"
+    ],
+    "prompt": "Take a desktop and a mobile screenshot of the hero on http://localhost:4321/.",
+    "fixture": {
+      "pages": [
+        {
+          "url": "http://localhost:4321/",
+          "title": "Sikemux",
+          "elements": [
+            "[0] <a> Sikemux (/)",
+            "[1] <a> Features (/#features)",
+            "[2] <a> Download (/download)"
+          ],
+          "text": "Sikemux\nOne window for every agent\nDownload"
+        }
+      ]
+    },
+    "grade": {
+      "first": {
+        "tool": "browser_navigate"
+      },
+      "expect": [
+        {
+          "tool": "browser_viewport",
+          "args": {
+            "$any": [
+              {
+                "preset": "desktop"
+              },
+              {
+                "width": "/^1[2-9]\\d\\d$/"
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_viewport",
+          "args": {
+            "$any": [
+              {
+                "preset": "mobile"
+              },
+              {
+                "width": "/^(?:3[2-9]\\d|4[0-2]\\d)$/"
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_screenshot"
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/playwright|puppeteer|chromium|screencapture/i"
+          },
+          "why": "took screenshots outside the desk browser"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "browser_viewport",
+          "max": 3
+        },
+        {
+          "tool": "browser_screenshot",
+          "max": 3
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-23",
+    "from": [
+      "err_tools_sikemux-036"
+    ],
+    "category": "list_bloat",
+    "severity": "med",
+    "tools": [
+      "browser_state",
+      "browser_close_tab"
+    ],
+    "prompt": "You have a pile of desk tabs open from earlier. Close every one except the pull request you're reviewing (http://localhost:3000/pulls/42).",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:3000/pulls/42",
+      "pages": [
+        {
+          "url": "http://localhost:3000/pulls/42",
+          "title": "Pull request #42",
+          "elements": [
+            "[0] <a> Files changed (/pulls/42/files)",
+            "[1] <button> Approve",
+            "[2] <button> Request changes"
+          ],
+          "text": "Retry failed uploads #42\n3 files changed"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_state",
+          "args": {
+            "selector": {
+              "$present": false
+            }
+          },
+          "reply": {
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:3000/pulls/42",
+            "title": "Pull request #42",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> Files changed (/pulls/42/files)\n[1] <button> Approve\n[2] <button> Request changes",
+            "text": "Retry failed uploads #42\n3 files changed",
+            "tabs": [
+              {
+                "tabId": "browser-agent-eval-0",
+                "url": "http://localhost:3000/pulls/42",
+                "title": "Pull request #42",
+                "active": true,
+                "loading": false
+              },
+              {
+                "tabId": "browser-agent-eval-1",
+                "url": "http://localhost:3000/login",
+                "title": "Sign in",
+                "active": false,
+                "loading": false
+              },
+              {
+                "tabId": "browser-agent-eval-2",
+                "url": "https://example.com/docs/api",
+                "title": "API reference",
+                "active": false,
+                "loading": false
+              },
+              {
+                "tabId": "browser-agent-eval-3",
+                "url": "http://localhost:6006/",
+                "title": "Storybook",
+                "active": false,
+                "loading": false
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_close_tab",
+          "args": {
+            "tabId": "browser-agent-eval-1"
+          },
+          "reply": {
+            "activeTabId": "browser-agent-eval-0",
+            "tabs": [
+              {
+                "tabId": "browser-agent-eval-0",
+                "url": "http://localhost:3000/pulls/42",
+                "title": "Pull request #42",
+                "active": true,
+                "loading": false
+              },
+              {
+                "tabId": "browser-agent-eval-2",
+                "url": "https://example.com/docs/api",
+                "title": "API reference",
+                "active": false,
+                "loading": false
+              },
+              {
+                "tabId": "browser-agent-eval-3",
+                "url": "http://localhost:6006/",
+                "title": "Storybook",
+                "active": false,
+                "loading": false
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_close_tab",
+          "args": {
+            "tabId": "browser-agent-eval-2"
+          },
+          "reply": {
+            "activeTabId": "browser-agent-eval-0",
+            "tabs": [
+              {
+                "tabId": "browser-agent-eval-0",
+                "url": "http://localhost:3000/pulls/42",
+                "title": "Pull request #42",
+                "active": true,
+                "loading": false
+              },
+              {
+                "tabId": "browser-agent-eval-3",
+                "url": "http://localhost:6006/",
+                "title": "Storybook",
+                "active": false,
+                "loading": false
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_close_tab",
+          "args": {
+            "tabId": "browser-agent-eval-3"
+          },
+          "reply": {
+            "activeTabId": "browser-agent-eval-0",
+            "tabs": [
+              {
+                "tabId": "browser-agent-eval-0",
+                "url": "http://localhost:3000/pulls/42",
+                "title": "Pull request #42",
+                "active": true,
+                "loading": false
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_close_tab",
+          "args": {
+            "tabId": "browser-agent-eval-0"
+          },
+          "reply": {
+            "activeTabId": "browser-agent-eval-3",
+            "tabs": [
+              {
+                "tabId": "browser-agent-eval-3",
+                "url": "http://localhost:6006/",
+                "title": "Storybook",
+                "active": false,
+                "loading": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "browser_close_tab",
+          "args": {
+            "tabId": "browser-agent-eval-1"
+          }
+        },
+        {
+          "tool": "browser_close_tab",
+          "args": {
+            "tabId": "browser-agent-eval-2"
+          }
+        },
+        {
+          "tool": "browser_close_tab",
+          "args": {
+            "tabId": "browser-agent-eval-3"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "browser_close_tab",
+          "args": {
+            "tabId": "browser-agent-eval-0"
+          },
+          "why": "closed the pull request tab it was told to keep"
+        },
+        {
+          "tool": "browser_state",
+          "args": {
+            "selector": {
+              "$present": true
+            }
+          },
+          "why": "passed a selector to dodge the page dump"
+        },
+        {
+          "tool": "browser_switch_tab",
+          "why": "switched through tabs it only had to close"
+        },
+        {
+          "tool": "browser_screenshot",
+          "why": "took screenshots to see its tabs"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "browser_state",
+          "max": 2
+        }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "browser-24",
+    "from": [
+      "human_mkt-005"
+    ],
+    "category": "rage",
+    "severity": "high",
+    "tools": [
+      "browser_state",
+      "browser_switch_tab",
+      "browser_navigate",
+      "browser_type"
+    ],
+    "prompt": "The admin console sign-in in your desk tab is asking for the 6-digit code it just emailed me. Get me signed in.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:8080/sign-in/code",
+      "pages": [
+        {
+          "url": "http://localhost:8080/sign-in/code",
+          "title": "Admin console · Sign in",
+          "elements": [
+            "[0] <input name=code> 6-digit code",
+            "[1] <button> Verify",
+            "[2] <a> Send a new code (/sign-in/resend)"
+          ],
+          "text": "Admin console\nWe emailed a 6-digit code to your work address.\nEnter it below to finish signing in."
+        },
+        {
+          "url": "/mail\\.example\\.com/",
+          "href": "https://mail.example.com/inbox",
+          "title": "Inbox · Mail",
+          "elements": [
+            "[0] <a> Inbox (/inbox)",
+            "[1] <a> Your admin console sign-in code (/inbox/m/9921)",
+            "[2] <a> Weekly digest (/inbox/m/9917)"
+          ],
+          "text": "Inbox\nAdmin console · Your admin console sign-in code · 1 min ago\nYour sign-in code is 482913. It expires in 10 minutes.\nWeekly digest · yesterday"
+        },
+        {
+          "url": "http://localhost:8080/",
+          "title": "Admin console",
+          "elements": [
+            "[0] <a> Users (/users)",
+            "[1] <a> Settings (/settings)"
+          ],
+          "text": "Admin console\nWelcome back"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_state",
+          "times": 1,
+          "reply": {
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/sign-in/code",
+            "title": "Admin console · Sign in",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <input name=code> 6-digit code\n[1] <button> Verify\n[2] <a> Send a new code (/sign-in/resend)",
+            "text": "Admin console\nWe emailed a 6-digit code to your work address.\nEnter it below to finish signing in.",
+            "tabs": [
+              {
+                "tabId": "browser-agent-eval-0",
+                "url": "http://localhost:8080/sign-in/code",
+                "title": "Admin console · Sign in",
+                "active": true,
+                "loading": false
+              },
+              {
+                "tabId": "browser-agent-eval-mail",
+                "url": "https://mail.example.com/inbox",
+                "title": "Inbox · Mail",
+                "active": false,
+                "loading": false
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_switch_tab",
+          "args": {
+            "tabId": "browser-agent-eval-mail"
+          },
+          "page": "/mail\\.example\\.com/",
+          "reply": {
+            "tabId": "browser-agent-eval-mail",
+            "url": "https://mail.example.com/inbox",
+            "title": "Inbox · Mail",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> Inbox (/inbox)\n[1] <a> Your admin console sign-in code (/inbox/m/9921)\n[2] <a> Weekly digest (/inbox/m/9917)",
+            "text": "Inbox\nAdmin console · Your admin console sign-in code · 1 min ago\nYour sign-in code is 482913. It expires in 10 minutes.\nWeekly digest · yesterday"
+          }
+        },
+        {
+          "tool": "browser_switch_tab",
+          "args": {
+            "tabId": "browser-agent-eval-0"
+          },
+          "page": "http://localhost:8080/sign-in/code",
+          "reply": {
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/sign-in/code",
+            "title": "Admin console · Sign in",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <input name=code> 6-digit code\n[1] <button> Verify\n[2] <a> Send a new code (/sign-in/resend)",
+            "text": "Admin console\nWe emailed a 6-digit code to your work address.\nEnter it below to finish signing in.",
+            "tabs": [
+              {
+                "tabId": "browser-agent-eval-0",
+                "url": "http://localhost:8080/sign-in/code",
+                "title": "Admin console · Sign in",
+                "active": true,
+                "loading": false
+              },
+              {
+                "tabId": "browser-agent-eval-mail",
+                "url": "https://mail.example.com/inbox",
+                "title": "Inbox · Mail",
+                "active": false,
+                "loading": false
+              }
+            ]
+          }
+        },
+        {
+          "tool": [
+            "browser_type",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "482913"
+              },
+              {
+                "steps": "/482913/"
+              }
+            ]
+          },
+          "page": "http://localhost:8080/",
+          "reply": {
+            "typed": 6,
+            "into": "[0] <input name=code> 6-digit code",
+            "submitted": true,
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:8080/",
+            "title": "Admin console",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> Users (/users)\n[1] <a> Settings (/settings)",
+            "text": "Admin console\nWelcome back"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_type",
+            "browser_act"
+          ],
+          "args": {
+            "$any": [
+              {
+                "text": "482913"
+              },
+              {
+                "steps": "/482913/"
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "ask",
+            "AskUserQuestion"
+          ],
+          "why": "asked the person for a code the signed-in desk mailbox already had"
+        }
+      ]
+    },
+    "judge": "Pass if the agent found the emailed code itself in the desk browser (the mail tab or the mailbox site, which is signed in) and entered it on the sign-in page. Fail if it asked the person for the code, told them to read their email, or said it could not reach the mailbox without trying the desk browser.",
+    "maxTurns": 12
+  },
+  {
+    "id": "browser-25",
+    "from": [
+      "human_sikemux_b-002"
+    ],
+    "category": "rage",
+    "severity": "high",
+    "tools": [
+      "browser_navigate",
+      "browser_wait",
+      "browser_state"
+    ],
+    "prompt": "I'm paying for the Pro plan in your desk tab right now; the bank's one-time-code screen is up and I'm about to type the code. Let me know as soon as the subscription shows as active (the plan status is on https://dashboard.example.com/billing).",
+    "fixture": {
+      "tab": "https://dashboard.example.com/billing/checkout",
+      "pages": [
+        {
+          "url": "https://dashboard.example.com/billing/checkout",
+          "title": "Checkout · Pro plan",
+          "elements": [
+            "[0] <iframe> (another site's frame: its inside cannot be read; click it or use x,y to reach in)",
+            "[1] <button> Cancel"
+          ],
+          "text": "Pro plan · $20 / month\nConfirm with your bank"
+        },
+        {
+          "url": "https://dashboard.example.com/billing",
+          "title": "Billing",
+          "elements": [
+            "[0] <a> Plans (/billing/plans)",
+            "[1] <button> Manage"
+          ],
+          "text": "Billing\nPro plan · Active\nNext invoice on 27 November"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_wait",
+          "args": {
+            "textGone": "/bank/i"
+          },
+          "reply": {
+            "met": false,
+            "waitedMs": 10000,
+            "failing": [
+              "text \"Confirm with your bank\" is still on the page"
+            ],
+            "tabId": "browser-agent-eval-0",
+            "url": "https://dashboard.example.com/billing/checkout",
+            "title": "Checkout · Pro plan",
+            "loading": false,
+            "visible": true,
+            "changes": "none"
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "text": "/active/i"
+          },
+          "times": 1,
+          "reply": {
+            "met": false,
+            "waitedMs": 10000,
+            "failing": [
+              "text \"Active\" is not on the page"
+            ],
+            "tabId": "browser-agent-eval-0",
+            "url": "https://dashboard.example.com/billing/checkout",
+            "title": "Checkout · Pro plan",
+            "loading": false,
+            "visible": true,
+            "changes": "none"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "forbid": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "go": {
+              "$present": true
+            }
+          },
+          "why": "reloaded or moved a tab while the person was paying in it"
+        },
+        {
+          "tool": [
+            "browser_click",
+            "browser_type",
+            "browser_press",
+            "browser_act",
+            "browser_dialog"
+          ],
+          "why": "acted on a page while the person was paying"
+        }
+      ]
+    },
+    "judge": "The tab open at the start is the person's checkout, mid bank verification. Pass if the agent left that tab alone (no navigate, reload, click or typing in it) and checked the plan status in a new tab opened with newTab: true, or by reading pages only, then told the person what it saw or when it will look again. Fail if any browser_navigate without newTab ran while the checkout tab was the current one, or if it did nothing to check the status.",
+    "maxTurns": 10
+  },
+  {
+    "id": "browser-26",
+    "from": [
+      "err_tools_sikemux-035"
+    ],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [
+      "browser_state"
+    ],
+    "prompt": "Read the release notes page in your desk tab and give me one line per version.",
+    "fixture": {
+      "tab": "http://localhost:4321/releases",
+      "pages": [
+        {
+          "url": "http://localhost:4321/releases",
+          "title": "Release notes",
+          "elements": [
+            "[0] <a> Home (/)",
+            "[1] <a> Download (/download)"
+          ],
+          "text": "Release notes\n0.9.0\nAgents can hand a chat to another agent. The rail shows each agent's limit. Details: the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. \n0.8.2\nFixes a crash when a desk tab closed during a download. Details: the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. \n0.8.1\nTerminal search finds text in the scrollback. Details: the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. \n0.8.0\nDesk tabs can be dragged between panes. The notch island shows questions. Details: the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. \n0.7.4\nThe phone app reconnects after the host sleeps. Details: the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. \n0.7.3\nPinned tabs keep their place after a restart. Details: the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. "
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_state",
+          "args": {
+            "selector": "/^\\s*(?:main|\\[role=.?main.?\\]|article)\\s*$/"
+          },
+          "error": "nothing matches \"main\""
+        },
+        {
+          "tool": "browser_state",
+          "args": {
+            "fullText": {
+              "$not": true
+            },
+            "selector": {
+              "$present": false
+            }
+          },
+          "reply": {
+            "tabId": "browser-agent-eval-0",
+            "url": "http://localhost:4321/releases",
+            "title": "Release notes",
+            "loading": false,
+            "visible": true,
+            "viewport": {
+              "width": 1280,
+              "height": 900
+            },
+            "elements": "[0] <a> Home (/)\n[1] <a> Download (/download)",
+            "text": "Release notes\n0.9.0\nAgents can hand a chat to another agent. The rail shows each agent's limit. Details: the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. \n0.8.2\nFixes a crash when a desk tab closed during a download. Details: the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. \n0.8.1\nTerminal search finds text in the scrollback. Details: the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. \n0.8.0\nDesk tabs can be dragged between panes. The notch island shows questions. Details: the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and was tested on large projects. the change covers every window and every pane, and ",
+            "textLength": 3371
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "browser_state",
+          "args": {
+            "fullText": true
+          }
+        }
+      ],
+      "limit": [
+        {
+          "tool": "browser_state",
+          "args": {
+            "selector": {
+              "$present": true
+            }
+          },
+          "max": 1
+        }
+      ],
+      "reply": "/0\\.7\\.3[\\s\\S]*(?:pinned|restart)/i",
+      "replyWhy": "missed the versions past the first 2 KB of text"
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "browser-27",
+    "from": [
+      "err_tools_mkt-032"
+    ],
+    "category": "list_bloat",
+    "severity": "low",
+    "tools": [
+      "guide"
+    ],
+    "skip": "Repeated guide reads show only across a long session with compactions, which a single short case cannot reproduce."
+  }
+]

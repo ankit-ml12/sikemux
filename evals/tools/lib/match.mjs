@@ -30,10 +30,12 @@ export function valueMatches(expected, actual) {
 }
 
 export function callMatches(matcher, call) {
+  if (matcher.any) return matcher.any.some((one) => callMatches(one, call));
   return toolMatches(matcher.tool, call.tool) && (!matcher.args || valueMatches(matcher.args, call.args));
 }
 
 export function describe(matcher) {
+  if (matcher.any) return matcher.any.map(describe).join(' or ');
   const args = matcher.args ? ` ${JSON.stringify(matcher.args)}` : '';
   return `${[matcher.tool].flat().join('|')}${args}`;
 }

@@ -156,7 +156,7 @@ async function runVariant(variant) {
 async function runCase(variant, testCase) {
   const dir = join(runDir, variant.label.replace(/\W+/g, '-'), testCase.id);
   mkdirSync(dir, { recursive: true });
-  const sandbox = prepareCase(dir, testCase, at);
+  const sandbox = prepareCase(dir, testCase, { at, host: HOST });
   const fixture = testCase.fixture ?? {};
   const surface = loadSurface(fixture.plugins ?? SIGNED_IN_PLUGINS, at);
   const endpoint = join(dir, 'endpoint.json');

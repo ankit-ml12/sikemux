@@ -1,0 +1,91 @@
+[
+  {
+    "id": "sim-01",
+    "from": ["err_tools_sikemux-026"],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": ["sim_install", "sim_launch", "task_start"],
+    "prompt": "A simulator is attached on your desk. Build the phone app for it (mobile/app/ios, workspace SikemuxDev.xcworkspace, scheme SikemuxDev, bundle id com.nodelike.sikemux.dev), install it and launch it.",
+    "fixture": {
+      "files": {
+        "mobile/app/.gitignore": "ios/build/\nios/Pods/\n",
+        "mobile/app/ios/SikemuxDev.xcworkspace/contents.xcworkspacedata": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Workspace version = \"1.0\">\n   <FileRef location = \"group:SikemuxDev.xcodeproj\"></FileRef>\n</Workspace>\n",
+        "mobile/app/ios/SikemuxDev.xcodeproj/project.pbxproj": "// !$*UTF8*$!\n{\n\tarchiveVersion = 1;\n\tobjectVersion = 56;\n\tobjects = {\n\t};\n\trootObject = 13B07F961A680F5B00A75B9A;\n}\n",
+        "mobile/app/ios/build/Build/Products/Debug-iphonesimulator/SikemuxDev.app/Info.plist": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\">\n<dict>\n\t<key>CFBundleIdentifier</key>\n\t<string>com.nodelike.sikemux.dev</string>\n\t<key>CFBundleName</key>\n\t<string>Sikemux Dev</string>\n</dict>\n</plist>\n",
+        "mobile/app/app.json": "{\n  \"expo\": {\n    \"name\": \"Sikemux Dev\",\n    \"slug\": \"sikemux\",\n    \"ios\": { \"bundleIdentifier\": \"com.nodelike.sikemux.dev\" }\n  }\n}\n"
+      },
+      "taskOutput": "Build settings from command line:\n    SDK = iphonesimulator\n\n** BUILD SUCCEEDED **\n",
+      "answers": [
+        {
+          "tool": "sim_install",
+          "args": { "path": "/^(~|\\$HOME|\\/(?!.*\\/proj\\/app\\/))/" },
+          "error": "the app must be inside the project; build it into the project's folder, such as with xcodebuild -derivedDataPath build"
+        },
+        { "tool": "sim_install", "reply": { "device": "iPhone 17", "installed": "com.nodelike.sikemux.dev" } },
+        {
+          "tool": "sim_launch",
+          "reply": { "device": "iPhone 17", "app": "Sikemux Dev", "bundleId": "com.nodelike.sikemux.dev", "elements": "0 StaticText \"Sikemux\" at (201, 120)\n1 Button \"Add host\" at (201, 700)" }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": ["task_start", "Bash"],
+          "args": { "command": "/xcodebuild[^\\n]*-derivedDataPath[ =]+(?![ =\"']*([\\/~]|\\$(HOME|TMPDIR)))|xcodebuild[^\\n]*-derivedDataPath[ =]+[\"']?\\S*\\/proj\\/app\\//" }
+        },
+        { "tool": "sim_install", "args": { "path": { "$not": "/^(~|\\$HOME|\\/(?!.*\\/proj\\/app\\/))/" } } },
+        { "tool": "sim_launch", "args": { "bundleId": "com.nodelike.sikemux.dev" } }
+      ],
+      "forbid": [
+        { "tool": "sim_install", "args": { "path": "/^(~|\\$HOME|\\/(?!.*\\/proj\\/app\\/))/" }, "why": "installed a build from outside the project, such as Xcode's DerivedData" },
+        {
+          "tool": ["Bash", "BashOutput"],
+          "args": { "command": "/\\b(cp|ditto|rsync)\\b[^\\n]*DerivedData|expo\\s+run:ios|react-native\\s+run-ios|simctl\\s+install/" },
+          "why": "copied the build out of DerivedData by hand or installed it another way"
+        }
+      ]
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "sim-02",
+    "from": ["err_tools_sikemux-027"],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": ["sim_tap", "sim_state"],
+    "prompt": "In the phone app on the simulator you tapped Add host a moment ago, and the sheet was still sliding up when you last read the screen: Connect was element 4 then. Tap Connect on that sheet and tell me what the screen shows after.",
+    "fixture": {
+      "answers": [
+        {
+          "tool": "sim_state",
+          "reply": {
+            "app": "Sikemux Dev",
+            "elements": "9 StaticText \"Add a host\" at (201, 430)\n10 TextField \"Host address\" at (201, 500)\n11 Button \"Cancel\" at (80, 610)\n12 Button \"Connect\" at (300, 610)"
+          }
+        },
+        { "tool": "sim_tap", "args": { "index": 4 }, "error": "element 4 is not on the screen now; the screen changed since you read it, so read it again with sim_state" },
+        {
+          "tool": "sim_tap",
+          "args": { "$any": [{ "index": 12 }, { "label": "/^connect$/i" }] },
+          "reply": {
+            "app": "Sikemux Dev",
+            "changes": { "elements": "14 StaticText \"Waiting for the host to approve this phone\" at (201, 460)\n15 Button \"Cancel\" at (201, 560)", "removed": "9, 10, 11, 12" }
+          }
+        },
+        { "tool": "sim_tap", "error": "no element on screen is labelled as given; it may be scrolled out of view, so scroll and read the screen again" }
+      ]
+    },
+    "grade": {
+      "expect": [{ "tool": "sim_tap", "args": { "$any": [{ "index": 12 }, { "label": "/^connect$/i" }] } }],
+      "forbid": [
+        { "tool": "sim_tap", "args": { "x": { "$present": true } }, "why": "tapped a point instead of the element's number or label" },
+        { "tool": ["Bash", "BashOutput"], "args": { "command": "/\\b(xcrun|simctl|idb)\\b/" }, "why": "drove the simulator outside sim_*" }
+      ],
+      "limit": [{ "tool": "sim_tap", "max": 2 }],
+      "reply": "/approve|waiting/i",
+      "replyWhy": "did not report the waiting-for-approval screen"
+    },
+    "maxTurns": 8
+  }
+]

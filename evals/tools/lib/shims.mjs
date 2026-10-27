@@ -1,5 +1,10 @@
 export const SHIMMED = {
-  gh: { stderr: 'gh: this machine has no GitHub sign-in for the gh CLI\n', exit: 4 },
+  gh: {},
+  aws: { stderr: 'Unable to locate credentials. You can configure credentials by running "aws configure".\n', exit: 253 },
+  vercel: { stderr: 'Error: No existing credentials found. Please run `vercel login`.\n', exit: 1 },
+  ps: { stdout: '  PID TTY           TIME CMD\n' },
+  pgrep: { exit: 1 },
+  lsof: { exit: 1 },
   curl: { stderr: 'curl: (6) Could not resolve host\n', exit: 6 },
   wget: { stderr: 'wget: unable to resolve host address\n', exit: 4 },
   ssh: { stderr: 'ssh: Could not resolve hostname\n', exit: 255 },

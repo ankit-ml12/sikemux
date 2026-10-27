@@ -1,0 +1,1547 @@
+[
+  {
+    "id": "agents-01",
+    "from": [
+      "err_tools_sikemux-030",
+      "human_sikemux_a-013"
+    ],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": [
+      "agent_send"
+    ],
+    "prompt": "Tell Elk to rebase its branch onto main before it lands, and to message me when it has.",
+    "fixture": {
+      "agents": [
+        {
+          "name": "Elk",
+          "title": "Desk tab drag",
+          "status": "working"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Elk",
+            "agentId": "agent-eval-1",
+            "delivery": "steered"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^elk$/i",
+            "text": "/rebase/i"
+          }
+        }
+      ],
+      "limit": [
+        {
+          "tool": "agent_send",
+          "max": 1
+        }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "agents-02",
+    "from": [
+      "human_mkt-013",
+      "human_sikemux_b-013"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "agent_list",
+      "agent_send"
+    ],
+    "prompt": "Let the agent working on the release script know that the CI fix it was waiting for landed on main as 4f2c9e1.",
+    "fixture": {
+      "agents": [
+        {
+          "name": "Heron",
+          "title": "Release script: notarize step",
+          "status": "working"
+        },
+        {
+          "name": "Moss",
+          "title": "Docs: shortcuts page",
+          "status": "idle"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Heron",
+            "agentId": "agent-eval-1",
+            "delivery": "steered"
+          }
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-2$/"
+          },
+          "reply": {
+            "to": "Moss",
+            "agentId": "agent-eval-2",
+            "delivery": "newTurn"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^(heron|agent-eval-1)$/i",
+            "text": "/4f2c9e1/"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/moss/i"
+          },
+          "why": "messaged an agent that does not own the release script"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "agent_send",
+          "max": 1
+        }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "agents-03",
+    "from": [
+      "err_tools_mkt-022"
+    ],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [
+      "agent_send",
+      "agent_list",
+      "agent_sessions"
+    ],
+    "prompt": "Pass this on to the agent at sikemux://agent/claude/7c1e5a90-2b4d-4f6e-9a31-0d8e6b2f4c17?project=/Users/me/proj/tooling : the shared lint config now lives in config/lint.json, so it can drop its own copy.",
+    "fixture": {
+      "agents": [
+        {
+          "name": "Wren",
+          "title": "Lint setup for the tooling repo",
+          "status": "idle",
+          "project": "/Users/me/proj/tooling"
+        },
+        {
+          "name": "Ash",
+          "title": "Release notes",
+          "status": "working",
+          "project": "/Users/me/proj/site"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^sikemux:/"
+          },
+          "error": "No open agent is called sikemux://agent/claude/7c1e5a90-2b4d-4f6e-9a31-0d8e6b2f4c17?project=/Users/me/proj/tooling; agent_list shows the agents you can message"
+        },
+        {
+          "tool": "agent_sessions",
+          "reply": {
+            "sessions": [
+              {
+                "title": "Lint setup for the tooling repo",
+                "cli": "claude",
+                "project": "/Users/me/proj/tooling",
+                "date": "2026-10-27",
+                "sessionId": "7c1e5a90-2b4d-4f6e-9a31-0d8e6b2f4c17",
+                "snippets": [
+                  "…moved eslint and prettier settings into the tooling repo…"
+                ],
+                "openNow": {
+                  "name": "Wren",
+                  "agentId": "agent-eval-1"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Wren",
+            "agentId": "agent-eval-1",
+            "delivery": "newTurn"
+          }
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-2$/"
+          },
+          "reply": {
+            "to": "Ash",
+            "agentId": "agent-eval-2",
+            "delivery": "steered"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^(wren|agent-eval-1)$/i",
+            "text": "/lint\\.json/"
+          }
+        }
+      ],
+      "limit": [
+        {
+          "tool": "agent_send",
+          "max": 2
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "agents-04",
+    "from": [
+      "err_tools_sikemux-031"
+    ],
+    "category": "bad_recovery",
+    "severity": "med",
+    "tools": [
+      "agent_send",
+      "agent_sessions",
+      "agent_spawn"
+    ],
+    "prompt": "Ask Sumac to add a shuffle button to the music player it built in the side rail.",
+    "fixture": {
+      "agents": [
+        {
+          "name": "Birch",
+          "title": "Settings search",
+          "status": "working"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/sumac/i"
+          },
+          "error": "No open agent is called Sumac; agent_list shows the agents you can message"
+        },
+        {
+          "tool": "agent_sessions",
+          "reply": {
+            "sessions": [
+              {
+                "title": "Music player in the side rail",
+                "cli": "claude",
+                "project": "/Users/me/proj/sikemux",
+                "date": "2026-10-26",
+                "sessionId": "5b0c2e71-9d3a-4f18-b6e4-0a7c5d2f8e93",
+                "snippets": [
+                  "…play, pause and skip in the rail's music row, named Sumac…"
+                ],
+                "openNow": null
+              }
+            ]
+          }
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Birch",
+            "agentId": "agent-eval-1",
+            "delivery": "steered"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "agent_spawn",
+          "args": {
+            "resume": "/5b0c2e71/",
+            "prompt": "/shuffle/i"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit",
+            "NotebookEdit"
+          ],
+          "why": "built the shuffle button itself instead of resuming Sumac"
+        },
+        {
+          "tool": [
+            "WebSearch",
+            "WebFetch"
+          ],
+          "why": "went off researching instead of resuming Sumac"
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/birch/i"
+          },
+          "why": "handed Sumac's work to an agent that does not own it"
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "agents-05",
+    "from": [
+      "err_tools_sikemux-032"
+    ],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": [
+      "agent_spawn"
+    ],
+    "prompt": "For the mixed-CLI demo, start a teammate on Codex that writes a short section in README.md on running the checks.",
+    "fixture": {
+      "answers": [
+        {
+          "tool": "agent_spawn",
+          "args": {
+            "cli": "/codex/i"
+          },
+          "error": "cli must be one of claude, claude, hermes, opencode, omp, grok, muse"
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "agent_spawn",
+          "args": {
+            "cli": "/codex/i"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "agent_spawn",
+          "args": {
+            "cli": "/^(claude|hermes|opencode|omp|grok|muse)$/i"
+          },
+          "why": "swapped the demo to another CLI without asking the person"
+        }
+      ],
+      "reply": "/codex/i"
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "agents-06",
+    "from": [
+      "err_tools_sikemux-033"
+    ],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [
+      "ask"
+    ],
+    "prompt": "Build the pricing table in src/pricing/Table.tsx from the plan in docs/pricing.md. Whether monthly or yearly prices show first is not settled yet: get the person's choice, but don't stop for it; go with monthly until you hear otherwise.",
+    "fixture": {
+      "project": "work",
+      "lead": "Marketer",
+      "agents": [
+        {
+          "name": "Marketer",
+          "title": "Pricing page",
+          "status": "working"
+        }
+      ],
+      "files": {
+        "docs/pricing.md": "# Pricing\n\nThree plans: Starter $9/month ($90/year), Team $29/month ($290/year), Business $99/month ($990/year).\nA toggle switches between monthly and yearly prices.\n",
+        "src/pricing/Table.tsx": "export function PricingTable() {\n  return null;\n}\n"
+      },
+      "answers": [
+        {
+          "tool": "ask",
+          "args": {
+            "for": {
+              "$present": true
+            }
+          },
+          "error": "Marketer has no question waiting on you; leave out for to ask the person something yourself"
+        },
+        {
+          "tool": "ask",
+          "args": {
+            "assumption": {
+              "$present": true
+            },
+            "blocked": {
+              "$not": false
+            }
+          },
+          "error": "assumption goes with blocked: false, when you carry on without the answer"
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Marketer",
+            "agentId": "agent-eval-1",
+            "delivery": "steered"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        {
+          "tool": "ask",
+          "args": {
+            "blocked": false,
+            "assumption": {
+              "$present": true
+            },
+            "for": {
+              "$present": false
+            }
+          }
+        },
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit"
+          ],
+          "args": {
+            "file_path": "/Table\\.tsx$/"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "AskUserQuestion",
+          "why": "used the CLI's question tool, which cannot carry an assumption, instead of ask"
+        }
+      ]
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "agents-07",
+    "from": [
+      "human_sikemux_b-009",
+      "err_tools_sikemux-034"
+    ],
+    "category": "rage",
+    "severity": "med",
+    "tools": [
+      "ask"
+    ],
+    "prompt": "make the git pane file row 26 to 30",
+    "fixture": {
+      "files": {
+        "src-tauri/crates/sikemux-gpui/src/git/side_files.rs": "use gpui::{div, px, IntoElement, ParentElement, Styled};\n\npub const FILE_ROW_HEIGHT: f32 = 26.0;\n\npub fn file_row(path: &str) -> impl IntoElement {\n    div().h(px(FILE_ROW_HEIGHT)).child(path.to_owned())\n}\n",
+        "src-tauri/crates/sikemux-gpui/src/git/diff_header.rs": "use gpui::{div, px, IntoElement, ParentElement, Styled};\n\npub const FILE_HEADER_HEIGHT: f32 = 26.0;\n\npub fn file_header(path: &str) -> impl IntoElement {\n    div().h(px(FILE_HEADER_HEIGHT)).child(path.to_owned())\n}\n"
+      }
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "ask",
+            "AskUserQuestion"
+          ]
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit"
+          ],
+          "args": {
+            "file_path": "/git\\/(?:side_files|diff_header)\\.rs$/"
+          },
+          "why": "picked one of the two file rows and changed it without asking which"
+        },
+        {
+          "tool": "git_commit",
+          "why": "committed a guess"
+        }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "agents-08",
+    "from": [
+      "err_tools_sikemux-046"
+    ],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [
+      "agent_send"
+    ],
+    "prompt": "Maple asked you earlier (question question-7f2c) whether amounts are stored in cents. Answer it: yes, cents, as src/billing/totals.ts already does.",
+    "fixture": {
+      "agents": [
+        {
+          "name": "Maple",
+          "title": "Billing totals",
+          "status": "idle",
+          "startedBy": "Juniper"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "answers": {
+              "$present": true
+            }
+          },
+          "error": "Maple has no open question question-7f2c that it asked you; it was answered already, or leave out answers to send this as a plain message"
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Maple",
+            "agentId": "agent-eval-1",
+            "delivery": "newTurn"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^(maple|agent-eval-1)$/i",
+            "answers": {
+              "$present": false
+            },
+            "text": "/cent/i"
+          }
+        }
+      ],
+      "limit": [
+        {
+          "tool": "agent_send",
+          "max": 2
+        }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "agents-09",
+    "from": [
+      "human_sikemux_a-001",
+      "human_sikemux_a-002"
+    ],
+    "category": "wrong_tool",
+    "severity": "high",
+    "tools": [
+      "who_wrote",
+      "agent_send",
+      "agent_spawn"
+    ],
+    "prompt": "CI's failing on main. Report it to the relevant agents and get it fixed.",
+    "fixture": {
+      "agents": [
+        {
+          "name": "Briar",
+          "title": "Editor: language picker",
+          "status": "idle"
+        }
+      ],
+      "files": {
+        "src/editor/codemirror.ts": "export function languageFor(path: string): { name: string } | undefined {\n  if (path.endsWith('.ts')) return { name: 'typescript' };\n  return undefined;\n}\n",
+        "src/editor/codemirror.test.ts": "import { describe, expect, it } from 'vitest';\nimport { languageFor } from './codemirror';\n\ndescribe('languageFor', () => {\n  it('finds TypeScript by extension', () => {\n    expect(languageFor('a.ts')?.name).toBe('typescript');\n  });\n\n  it('highlights a file it has no language for as plain text', () => {\n    expect(languageFor('notes.unknownext')?.name).toBe('plain');\n  });\n});\n"
+      },
+      "answers": [
+        {
+          "tool": "who_wrote",
+          "reply": {
+            "target": "ci",
+            "path": null,
+            "guess": null,
+            "run": {
+              "workflow": "CI",
+              "url": "https://github.com/nodelike/sikemux/actions/runs/18803311",
+              "commit": "5d7e8f1",
+              "branch": "main",
+              "conclusion": "failure",
+              "at": "2026-10-27T09:12:00Z",
+              "failedJobs": [
+                "Frontend"
+              ]
+            },
+            "lastPassed": {
+              "commit": "77ab01c",
+              "url": "https://github.com/nodelike/sikemux/actions/runs/18802950"
+            },
+            "error": "FAIL src/editor/codemirror.test.ts > languageFor > highlights a file it has no language for as plain text\nAssertionError: expected undefined to be 'plain'",
+            "commits": [
+              {
+                "commit": "9c1d2e4",
+                "subject": "feat(editor): files pick their language from the first line",
+                "date": "2026-10-27",
+                "lines": null,
+                "why": "changed src/editor/codemirror.ts, which the failing test reads",
+                "owners": [
+                  {
+                    "kind": "agent",
+                    "name": "Quill",
+                    "cli": "claude",
+                    "model": "claude-opus-5-5",
+                    "title": "Editor: first-line language detection",
+                    "openNow": null,
+                    "sessionId": "3f9a6c2e-8d41-4b7a-a0c5-61e2f9d8b304",
+                    "action": "resume",
+                    "how": "agent_spawn with cli claude and resume 3f9a6c2e-8d41-4b7a-a0c5-61e2f9d8b304"
+                  }
+                ]
+              },
+              {
+                "commit": "5d7e8f1",
+                "subject": "test(editor): unknown extensions fall back to plain text",
+                "date": "2026-10-27",
+                "lines": null,
+                "why": "changed src/editor/codemirror.test.ts, which the failing job's error names",
+                "owners": [
+                  {
+                    "kind": "agent",
+                    "name": "Briar",
+                    "cli": "claude",
+                    "model": "claude-sonnet-5-5",
+                    "title": "Editor: language picker",
+                    "openNow": "agent-eval-1",
+                    "sessionId": "c2b7e0d4-1a9f-4c63-8e25-9f0d3b6a7c11",
+                    "action": "message",
+                    "how": "agent_send to agent-eval-1"
+                  }
+                ]
+              }
+            ],
+            "note": ""
+          }
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Briar",
+            "agentId": "agent-eval-1",
+            "delivery": "newTurn"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "who_wrote"
+        },
+        {
+          "tool": "agent_spawn",
+          "args": {
+            "resume": "/3f9a6c2e/"
+          }
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^(briar|agent-eval-1)$/i"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit",
+            "NotebookEdit"
+          ],
+          "why": "fixed the build itself instead of getting its authors to"
+        },
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/\\.claude\\/projects|\\.jsonl|\\bps\\s+(?:aux|-ef|-A)/"
+          },
+          "why": "searched transcripts or processes for the agent instead of who_wrote"
+        }
+      ]
+    },
+    "judge": "The run's error and both commits came from who_wrote. Pass if the agent resumed Quill's closed session and messaged Briar, each with what failed (the test and its error), and left the fix to them. Fail if it fixed the code itself, reached only one of the two, or sent them nothing they could act on.",
+    "maxTurns": 14
+  },
+  {
+    "id": "agents-10",
+    "from": [
+      "err_tools_sikemux-018"
+    ],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": [
+      "who_wrote",
+      "agent_send"
+    ],
+    "prompt": "CI on main fails in src/editor/codemirror.test.ts, in the test \"highlights a file it has no language for as plain text\". Find who broke it and send them the failure.",
+    "fixture": {
+      "agents": [
+        {
+          "name": "Quill",
+          "title": "Editor: language picker",
+          "status": "idle"
+        }
+      ],
+      "files": {
+        "src/editor/codemirror.ts": "export function languageFor(path: string): { name: string } | undefined {\n  if (path.endsWith('.ts')) return { name: 'typescript' };\n  return undefined;\n}\n"
+      },
+      "commits": [
+        {
+          "message": "test(editor): unknown extensions fall back to plain text",
+          "files": {
+            "src/editor/codemirror.test.ts": "import { describe, expect, it } from 'vitest';\nimport { languageFor } from './codemirror';\n\ndescribe('languageFor', () => {\n  it('finds TypeScript by extension', () => {\n    expect(languageFor('a.ts')?.name).toBe('typescript');\n  });\n\n  it('highlights a file it has no language for as plain text', () => {\n    expect(languageFor('notes.unknownext')?.name).toBe('plain');\n  });\n});\n"
+          }
+        }
+      ],
+      "answers": [
+        {
+          "tool": "who_wrote",
+          "args": {
+            "target": "/codemirror\\.test\\.ts[\"'`]?\\s+[\"'`]?highlights/i"
+          },
+          "error": "src/editor/codemirror.test.ts \"highlights a file it has no language for as plain text\" is not a commit or a file here, and no file mentions src/editor/codemirror.test.ts \"highlights a file it has no language for as plain text"
+        },
+        {
+          "tool": "who_wrote",
+          "reply": {
+            "target": "file",
+            "path": "src/editor/codemirror.test.ts",
+            "guess": null,
+            "commits": [
+              {
+                "commit": "5d7e8f1",
+                "subject": "test(editor): unknown extensions fall back to plain text",
+                "date": "2026-10-27",
+                "lines": null,
+                "why": null,
+                "owners": [
+                  {
+                    "kind": "agent",
+                    "name": "Quill",
+                    "cli": "claude",
+                    "model": "claude-sonnet-5-5",
+                    "title": "Editor: language picker",
+                    "openNow": "agent-eval-1",
+                    "sessionId": "c2b7e0d4-1a9f-4c63-8e25-9f0d3b6a7c11",
+                    "action": "message",
+                    "how": "agent_send to agent-eval-1"
+                  }
+                ]
+              }
+            ],
+            "note": ""
+          }
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Quill",
+            "agentId": "agent-eval-1",
+            "delivery": "newTurn"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^(quill|agent-eval-1)$/i",
+            "text": "/plain|highlights|codemirror/i"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit",
+            "NotebookEdit"
+          ],
+          "why": "fixed the test itself instead of sending its author the failure"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "who_wrote",
+          "max": 3
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "agents-11",
+    "from": [
+      "err_tools_sikemux-020"
+    ],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [
+      "who_wrote"
+    ],
+    "prompt": "Who wrote line 71 of src-tauri/crates/sikemux-gpui/src/ui/menus.rs?",
+    "fixture": {
+      "files": {
+        "src-tauri/crates/sikemux-gpui/src/ui/menus.rs": "use gpui::{div, px, IntoElement, ParentElement, Styled};\n\npub fn item_1() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 1\")\n}\n\npub fn item_2() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 2\")\n}\n\npub fn item_3() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 3\")\n}\n\npub fn item_4() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 4\")\n}\n\npub fn item_5() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 5\")\n}\n\npub fn item_6() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 6\")\n}\n\npub fn item_7() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 7\")\n}\n\npub fn item_8() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 8\")\n}\n\npub fn item_9() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 9\")\n}\n\npub fn item_10() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 10\")\n}\n\npub fn item_11() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 11\")\n}\n\npub fn item_12() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 12\")\n}\n\npub fn item_13() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 13\")\n}\n\npub fn item_14() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 14\")\n}\n\npub fn item_15() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 15\")\n}\n\npub fn item_16() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 16\")\n}\n\npub fn item_17() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 17\")\n}\n\npub fn item_18() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 18\")\n}\n\npub fn item_19() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 19\")\n}\n\npub fn item_20() -> impl IntoElement {\n    div().h(px(24.0)).child(\"Item 20\")\n}\n\n"
+      },
+      "answers": [
+        {
+          "tool": "who_wrote",
+          "args": {
+            "target": "/menus\\.rs:71(?:\\D|$)/"
+          },
+          "reply": {
+            "target": "lines",
+            "path": "src-tauri/crates/sikemux-gpui/src/ui/menus.rs",
+            "guess": null,
+            "commits": [
+              {
+                "commit": "9d01fec",
+                "subject": "feat(gpui): menu items take keyboard focus",
+                "date": "2026-10-24",
+                "lines": "71",
+                "why": null,
+                "owners": [
+                  {
+                    "kind": "agent",
+                    "name": "Sorrel",
+                    "cli": "codex",
+                    "model": "gpt-5.5",
+                    "title": "Menu keyboard focus",
+                    "openNow": null,
+                    "sessionId": "e41c9a07-6b2d-4f85-93ae-2d7f0c18b5e6",
+                    "action": "resume",
+                    "how": "agent_spawn with cli codex and resume e41c9a07-6b2d-4f85-93ae-2d7f0c18b5e6"
+                  }
+                ]
+              }
+            ],
+            "note": ""
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "who_wrote",
+          "args": {
+            "target": "/menus\\.rs:71(?:\\D|$)/"
+          }
+        }
+      ],
+      "limit": [
+        {
+          "tool": "who_wrote",
+          "max": 2
+        }
+      ],
+      "reply": "/sorrel/i"
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "agents-12",
+    "from": [
+      "err_tools_sikemux-021"
+    ],
+    "category": "wrong_tool",
+    "severity": "low",
+    "tools": [
+      "who_wrote"
+    ],
+    "prompt": "Who broke the latest CI run on main?",
+    "fixture": {
+      "answers": [
+        {
+          "tool": "who_wrote",
+          "error": "sign in to GitHub in Sikemux with an account that can reach nodelike/sikemux"
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "who_wrote"
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "WebFetch",
+            "WebSearch"
+          ],
+          "why": "went around the missing GitHub sign-in"
+        },
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/\\bcurl\\b[^\\n]*github|api\\.github\\.com/"
+          },
+          "why": "called GitHub's API by hand instead of telling the person to sign in"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "who_wrote",
+          "max": 2
+        }
+      ],
+      "reply": "/sign(?:ed)?[ -]?in/i",
+      "replyWhy": "did not tell the person that GitHub needs signing in to in Sikemux"
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "agents-13",
+    "from": [
+      "human_sikemux_a-003"
+    ],
+    "category": "rage",
+    "severity": "med",
+    "tools": [
+      "agent_list",
+      "agent_send"
+    ],
+    "prompt": "The project rows in the side rail cut off the branch name on the right. Text on the right side of a row should never truncate.",
+    "fixture": {
+      "agents": [
+        {
+          "name": "Rose",
+          "title": "Side rail project rows",
+          "status": "idle",
+          "startedBy": "Juniper"
+        }
+      ],
+      "files": {
+        "src-tauri/crates/sikemux-gpui/src/rail/project_row.rs": "use gpui::{div, IntoElement, ParentElement, Styled};\n\npub fn project_row(name: &str, branch: &str) -> impl IntoElement {\n    div().flex().child(name.to_owned()).child(div().truncate().child(branch.to_owned()))\n}\n"
+      },
+      "answers": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Rose",
+            "agentId": "agent-eval-1",
+            "delivery": "newTurn"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^(rose|agent-eval-1)$/i",
+            "text": "/truncat|cut off|cuts off/i"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit",
+            "NotebookEdit"
+          ],
+          "why": "started the fix itself instead of handing it to Rose, who owns the rail rows"
+        },
+        {
+          "tool": "agent_spawn",
+          "why": "started a new agent although Rose owns the rail rows"
+        }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "agents-14",
+    "from": [
+      "human_sikemux_b-012",
+      "err_tools_sikemux-019"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "who_wrote",
+      "agent_list",
+      "agent_send"
+    ],
+    "prompt": "Make the git pane header controls roomier: 28px buttons with 6px between them.",
+    "fixture": {
+      "agents": [
+        {
+          "name": "Tapir",
+          "title": "Git pane header: branch and sync controls",
+          "status": "working"
+        }
+      ],
+      "files": {
+        "src/codehost/strip.css": ".codehost-strip {\n  display: flex;\n  gap: 4px;\n}\n\n.codehost-strip button {\n  height: 24px;\n  padding: 0 6px;\n}\n"
+      },
+      "dirty": {
+        "src/codehost/strip.css": ".codehost-strip {\n  display: flex;\n  gap: 4px;\n  align-items: center;\n}\n\n.codehost-strip button {\n  height: 24px;\n  padding: 0 6px;\n}\n\n.codehost-strip .branch-picker {\n  min-width: 120px;\n}\n\n.codehost-strip .sync {\n  margin-left: auto;\n}\n"
+      },
+      "answers": [
+        {
+          "tool": "who_wrote",
+          "reply": {
+            "target": "file",
+            "path": "src/codehost/strip.css",
+            "guess": null,
+            "commits": [],
+            "note": "Lines 4, 13-19 are not committed yet."
+          }
+        },
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Tapir",
+            "agentId": "agent-eval-1",
+            "delivery": "steered"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^(tapir|agent-eval-1)$/i",
+            "text": "/28/"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit"
+          ],
+          "args": {
+            "file_path": "/strip\\.css$/"
+          },
+          "why": "edited the header CSS that Tapir is working on instead of passing the request to it"
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "agents-15",
+    "from": [
+      "human_sikemux_a-011"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "agent_spawn"
+    ],
+    "prompt": "Make the Jira plugin pane look like the real Jira board open in your desk tab, all of it: kanban columns per status, swimlanes grouped by epic like the board, the same card density with key, avatar and points. It's a big polish job, keep going until it matches.",
+    "fixture": {
+      "tab": "https://example.atlassian.net/jira/software/projects/PROJ/boards/1",
+      "pages": [
+        {
+          "url": "https://example.atlassian.net/jira/software/projects/PROJ/boards/1",
+          "title": "PROJ board - Jira",
+          "elements": [
+            "<h1> PROJ board",
+            "<button> Group by: Epic",
+            "<region> To Do (4)",
+            "<article> PROJ-12 Retry failed uploads  avatar: AK  3 points",
+            "<region> In Progress (2)",
+            "<article> PROJ-9 Export to CSV  avatar: MR  5 points",
+            "<region> In Review (1)",
+            "<region> Done (7)"
+          ],
+          "text": "Board with columns To Do, In Progress, In Review and Done; swimlanes grouped by epic; compact cards with key, summary, avatar and story points."
+        }
+      ],
+      "files": {
+        "src-tauri/crates/sikemux-gpui/src/plugins/jira_pane.rs": "use gpui::{div, IntoElement, ParentElement};\n\npub fn jira_pane(issues: &[String]) -> impl IntoElement {\n    div().children(issues.iter().cloned())\n}\n"
+      }
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "agent_spawn",
+          "args": {
+            "prompt": "/jira/i"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "Agent",
+            "Task"
+          ],
+          "args": {
+            "run_in_background": true
+          },
+          "why": "handed the long job to its own background subagent instead of a Sikemux teammate"
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "agents-16",
+    "from": [
+      "human_sikemux_a-021"
+    ],
+    "category": "list_bloat",
+    "severity": "low",
+    "tools": [
+      "agent_send"
+    ],
+    "prompt": "<agent-message from=\"Maple\" agent-id=\"agent-eval-1\" cli=\"claude\" note=\"Maple started you. Your final answer goes to Maple by itself each time your turn ends.\">\nRun `pnpm typecheck`, then `cargo check --manifest-path src-tauri/Cargo.toml`. Once both pass, tag HEAD as v0.6.1-nightly.3 (do not push the tag). Tell me when the tag is made.\n</agent-message>",
+    "fixture": {
+      "lead": "Maple",
+      "agents": [
+        {
+          "name": "Maple",
+          "title": "Nightly release",
+          "status": "working"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "agent_send",
+          "args": {
+            "to": "/^agent-eval-1$/"
+          },
+          "reply": {
+            "to": "Maple",
+            "agentId": "agent-eval-1",
+            "delivery": "steered"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/\\bgit\\s+tag\\b[^\\n]*v0\\.6\\.1-nightly\\.3/"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/\\bgit\\s+push\\b/"
+          },
+          "why": "pushed although Maple said not to"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "agent_send",
+          "max": 1
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "agents-17",
+    "from": [
+      "human_mkt-015",
+      "human_sikemux_b-019"
+    ],
+    "category": "rage",
+    "severity": "med",
+    "tools": [
+      "jira_create",
+      "board_add"
+    ],
+    "prompt": "Do all of this, don't stop halfway: 1) delete the unused legacyExport function from src/export.ts, 2) add a csv connector to config/connectors.json next to the others, 3) rename the plan tiers Bronze, Silver and Gold to Starter, Team and Business in src/tiers.ts, 4) raise a Jira ticket in PROJ to add retries to the csv connector.",
+    "fixture": {
+      "project": "work",
+      "files": {
+        "src/export.ts": "export function exportRows(rows: string[]): string {\n  return rows.join('\\n');\n}\n\nexport function legacyExport(rows: string[]): string {\n  return rows.map((row) => `\"${row}\"`).join(',');\n}\n",
+        "config/connectors.json": "{\n  \"connectors\": [\n    { \"name\": \"postgres\", \"kind\": \"database\" },\n    { \"name\": \"s3\", \"kind\": \"bucket\" }\n  ]\n}\n",
+        "src/tiers.ts": "export const tiers = [\n  { id: 'bronze', label: 'Bronze', seats: 1 },\n  { id: 'silver', label: 'Silver', seats: 5 },\n  { id: 'gold', label: 'Gold', seats: 25 },\n];\n"
+      }
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit"
+          ],
+          "args": {
+            "file_path": "/src\\/export\\.ts$/"
+          }
+        },
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit"
+          ],
+          "args": {
+            "file_path": "/connectors\\.json$/"
+          }
+        },
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit"
+          ],
+          "args": {
+            "file_path": "/tiers\\.ts$/"
+          }
+        },
+        {
+          "tool": "jira_create",
+          "args": {
+            "project": "PROJ",
+            "summary": "/retr/i"
+          }
+        }
+      ]
+    },
+    "judge": "Pass if the agent did all four parts (removed legacyExport, added a csv connector, renamed all three tiers, created the PROJ ticket) and its reply accounts for each one as done or says exactly what blocked it. Fail if it skipped or half-did a part, or ended by asking which part to do next.",
+    "maxTurns": 14
+  },
+  {
+    "id": "agents-18",
+    "from": [
+      "human_sikemux_b-008"
+    ],
+    "category": "rage",
+    "severity": "med",
+    "tools": [],
+    "prompt": "Why does the Actions panel show two runs for every push? Also remove the 'This branch' filter from the Actions panel.",
+    "fixture": {
+      "files": {
+        "src-tauri/crates/sikemux-gpui/src/actions/panel.rs": "use gpui::{div, IntoElement, ParentElement};\n\npub struct Run {\n    pub workflow: String,\n    pub branch: String,\n}\n\npub fn filters(this_branch_only: bool) -> impl IntoElement {\n    div()\n        .child(\"All runs\")\n        .child(if this_branch_only { \"This branch (on)\" } else { \"This branch\" })\n}\n\npub fn runs(runs: &[Run], branch: &str, this_branch_only: bool) -> Vec<String> {\n    runs.iter()\n        .filter(|run| !this_branch_only || run.branch == branch)\n        .map(|run| format!(\"{} on {}\", run.workflow, run.branch))\n        .collect()\n}\n",
+        ".github/workflows/ci.yml": "name: CI\non:\n  push:\n  pull_request:\njobs:\n  check:\n    runs-on: macos-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: pnpm check\n",
+        ".github/workflows/e2e.yml": "name: E2E\non:\n  push:\njobs:\n  e2e:\n    runs-on: macos-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: pnpm e2e\n"
+      }
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "Edit",
+            "Write",
+            "MultiEdit"
+          ],
+          "args": {
+            "file_path": "/actions\\/panel\\.rs$/"
+          }
+        }
+      ]
+    },
+    "judge": "Pass if the agent both answered why two runs show for a push (two workflows, CI and E2E, run on push) and removed the This branch filter from the panel code. Fail if it answered only the question or only made the change.",
+    "maxTurns": 12
+  },
+  {
+    "id": "agents-19",
+    "from": [
+      "other_agents-005"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "agent_sessions",
+      "agent_read",
+      "browser_navigate"
+    ],
+    "prompt": "What was the agent at sikemux://agent/claude/2d8f4b16-5c3a-4e7d-b9f0-7a1c6e3d5b28?project=/Users/me/work/app working on? Open the page it was looking at in the browser.",
+    "fixture": {
+      "project": "work",
+      "pages": [
+        {
+          "url": "/localhost:3000\\/pricing/",
+          "href": "http://localhost:3000/pricing",
+          "title": "Pricing",
+          "elements": [
+            "<h1> Pricing",
+            "<article> Starter",
+            "<article> Team",
+            "<article> Business"
+          ]
+        }
+      ],
+      "answers": [
+        {
+          "tool": "agent_read",
+          "args": {
+            "agent": "/^sikemux:/"
+          },
+          "error": "No open agent is called sikemux://agent/claude/2d8f4b16-5c3a-4e7d-b9f0-7a1c6e3d5b28?project=/Users/me/work/app; agent_list shows the agents you can message"
+        },
+        {
+          "tool": "agent_read",
+          "args": {
+            "agent": "/^2d8f4b16-5c3a-4e7d-b9f0-7a1c6e3d5b28$/"
+          },
+          "error": "No open agent is called 2d8f4b16-5c3a-4e7d-b9f0-7a1c6e3d5b28; agent_list shows the agents you can message"
+        },
+        {
+          "tool": "agent_sessions",
+          "reply": {
+            "sessions": [
+              {
+                "title": "Pricing cards wrap too early",
+                "cli": "claude",
+                "project": "/Users/me/work/app",
+                "date": "2026-10-26",
+                "sessionId": "2d8f4b16-5c3a-4e7d-b9f0-7a1c6e3d5b28",
+                "snippets": [
+                  "…the cards on http://localhost:3000/pricing wrap to two rows at 1024px; trying a minmax grid…"
+                ],
+                "openNow": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "agent_sessions",
+            "agent_read"
+          ]
+        },
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "url": "/localhost:3000\\/pricing/"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/\\.claude\\/projects|\\.jsonl\\b/"
+          },
+          "why": "parsed CLI transcripts instead of agent_sessions"
+        },
+        {
+          "tool": [
+            "Read",
+            "Grep",
+            "Glob"
+          ],
+          "args": {
+            "$any": [
+              {
+                "file_path": "/\\.claude\\//"
+              },
+              {
+                "path": "/\\.claude\\//"
+              }
+            ]
+          },
+          "why": "read CLI transcripts instead of agent_sessions"
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "agents-20",
+    "from": [
+      "other_agents-006"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "workspace_inspect"
+    ],
+    "prompt": "The assistant chat at http://localhost:5173/assistant answers every question with \"I can only help with orders.\" Why does it say that?",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:5173/assistant",
+      "pages": [
+        {
+          "url": "http://localhost:5173/assistant",
+          "title": "Assistant",
+          "elements": [
+            "<h1> Assistant",
+            "<p> I can only help with orders.",
+            "<textarea> Ask something",
+            "<button> Send"
+          ]
+        }
+      ],
+      "answers": [
+        {
+          "tool": "workspace_inspect",
+          "reply": {
+            "tasks": [
+              {
+                "label": "dev",
+                "command": "pnpm dev",
+                "status": "running",
+                "cwd": "/Users/me/work/app-worktrees/assistant-guardrails",
+                "ports": [
+                  5173
+                ],
+                "note": "runs from another git worktree of this repository, on branch assistant-guardrails"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "workspace_inspect"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "Grep",
+          "max": 4
+        },
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/\\b(?:rg|grep|ag)\\b/"
+          },
+          "max": 4
+        }
+      ],
+      "reply": "/worktree|assistant-guardrails/i",
+      "replyWhy": "never found that the page is served from another worktree"
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "agents-21",
+    "from": [
+      "human_sikemux_a-018"
+    ],
+    "category": "rage",
+    "severity": "low",
+    "tools": [],
+    "skip": "Needs real release builds of the window and the core to measure that the move copied the plugins instead of moving them."
+  },
+  {
+    "id": "agents-22",
+    "from": [
+      "human_sikemux_b-011"
+    ],
+    "category": "rage",
+    "severity": "med",
+    "tools": [],
+    "skip": "A design-rule judgment (selection uses the neutral lift, never the accent) about how mockups look, not a choice of tool."
+  },
+  {
+    "id": "agents-23",
+    "from": [
+      "human_sikemux_b-020"
+    ],
+    "category": "rage",
+    "severity": "low",
+    "tools": [],
+    "skip": "About what the agent infers from the account email the CLI injects, not tool use, and a replay would carry the person's real account into the case."
+  },
+  {
+    "id": "agents-24",
+    "from": [
+      "other_agents-012"
+    ],
+    "category": "rage",
+    "severity": "low",
+    "tools": [
+      "guide"
+    ],
+    "skip": "Needs the Pi CLI, which the eval does not run, and is about the CLI knowing itself rather than a sikemux-tools call."
+  }
+]

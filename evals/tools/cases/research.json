@@ -1,0 +1,223 @@
+[
+  {
+    "id": "research-01",
+    "from": ["human_sikemux_b-015"],
+    "category": "wrong_tool",
+    "severity": "low",
+    "tools": ["browser_navigate", "browser_type", "browser_state"],
+    "prompt": "How much does GitHub Actions charge per minute for macOS runners on private repos right now, and did that change this year?",
+    "fixture": {
+      "instructions": "# Web research\n\nFor any web search or research, use the signed-in Grok (grok.com) in the Sikemux browser through the sikemux-tools `browser_*` tools. Do not use the built-in WebSearch or WebFetch. Open it in a tab of your own, never one the person is using, and give subagents that need to research the same instruction.\n",
+      "pages": [
+        {
+          "url": "https://grok.com/c/eval-1",
+          "title": "macOS runner pricing - Grok",
+          "elements": [
+            "<p> GitHub-hosted macOS runners on private repositories are billed at $0.062 per minute for the standard 3-core runner.",
+            "<p> The price dropped from $0.08 per minute on 1 January this year; the larger M-series runners kept their old rates.",
+            "<textarea> Ask a follow-up",
+            "<button> Submit"
+          ],
+          "text": "GitHub-hosted macOS runners on private repositories are billed at $0.062 per minute for the standard 3-core runner. The price dropped from $0.08 per minute on 1 January this year; the larger M-series runners kept their old rates."
+        },
+        {
+          "url": "/grok\\.com/",
+          "href": "https://grok.com/",
+          "title": "Grok",
+          "elements": ["<textarea> Ask anything", "<button> Submit", "<a> New chat", "<a> History"],
+          "text": "What do you want to know?"
+        }
+      ],
+      "answers": [
+        { "tool": "browser_press", "args": { "key": "/^(enter|return)$/i" }, "page": "https://grok.com/c/eval-1", "reply": { "pressed": "Enter", "url": "https://grok.com/c/eval-1", "title": "macOS runner pricing - Grok", "loading": false } },
+        { "tool": "browser_click", "args": { "$any": [{ "text": "/submit|send/i" }, { "index": 1 }] }, "page": "https://grok.com/c/eval-1", "reply": { "action": "clicked", "label": "Submit", "url": "https://grok.com/c/eval-1", "title": "macOS runner pricing - Grok", "loading": false } },
+        { "tool": "browser_type", "args": { "submit": true }, "page": "https://grok.com/c/eval-1", "reply": { "typed": true, "submitted": true, "url": "https://grok.com/c/eval-1", "title": "macOS runner pricing - Grok", "loading": false } },
+        { "tool": "browser_act", "page": "https://grok.com/c/eval-1", "reply": { "done": true, "url": "https://grok.com/c/eval-1", "title": "macOS runner pricing - Grok", "loading": false } }
+      ]
+    },
+    "grade": {
+      "expect": [
+        { "tool": "browser_navigate", "args": { "url": "/grok\\.com/" } },
+        { "tool": ["browser_type", "browser_act"] }
+      ],
+      "forbid": [
+        { "tool": ["WebSearch", "WebFetch"], "why": "researched with WebSearch or WebFetch instead of Grok in a desk tab" },
+        { "tool": "Bash", "args": { "command": "/\\b(curl|wget)\\b/" }, "why": "researched with curl instead of Grok in a desk tab" }
+      ],
+      "reply": "/0\\.062/",
+      "replyWhy": "did not report the price Grok gave"
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "research-02",
+    "from": ["human_mkt-003"],
+    "category": "wrong_tool",
+    "severity": "high",
+    "tools": ["browser_type", "browser_press", "browser_wait", "browser_find"],
+    "prompt": "I pasted your research brief into Grok in your desk tab and it compared the three tools. Ask it a follow-up: which of them can be self-hosted, and roughly what self-hosting costs. Then tell me what it says.",
+    "fixture": {
+      "project": "work",
+      "instructions": "# Web research\n\nFor any web search or research, use the signed-in Grok (grok.com) in the Sikemux browser through the sikemux-tools `browser_*` tools. Do not use the built-in WebSearch or WebFetch. Open it in a tab of your own, never one the person is using, and give subagents that need to research the same instruction.\n",
+      "tab": "https://grok.com/c/brief-1",
+      "pages": [
+        {
+          "url": "https://grok.com/c/brief-1",
+          "title": "Tool comparison - Grok",
+          "elements": [
+            "<p> Compare Alpha, Beacon and Corva for a small team running scheduled data jobs.",
+            "<p> Alpha is the cheapest hosted option, Beacon has the best scheduling, Corva has the most connectors.",
+            "<textarea> Ask a follow-up",
+            "<button> Submit"
+          ],
+          "text": "You: Compare Alpha, Beacon and Corva for a small team running scheduled data jobs.\nGrok: Alpha is the cheapest hosted option, Beacon has the best scheduling, Corva has the most connectors."
+        },
+        {
+          "url": "https://grok.com/c/brief-1#followup",
+          "href": "https://grok.com/c/brief-1",
+          "title": "Tool comparison - Grok",
+          "elements": [
+            "<p> Compare Alpha, Beacon and Corva for a small team running scheduled data jobs.",
+            "<p> Alpha is the cheapest hosted option, Beacon has the best scheduling, Corva has the most connectors.",
+            "<p> Only Beacon can be self-hosted: its open-source edition is free, and a small team typically spends about $40 a month on the server it runs on. Alpha and Corva are hosted only.",
+            "<textarea> Ask a follow-up",
+            "<button> Submit"
+          ],
+          "text": "Grok: Only Beacon can be self-hosted: its open-source edition is free, and a small team typically spends about $40 a month on the server it runs on. Alpha and Corva are hosted only."
+        }
+      ],
+      "answers": [
+        { "tool": "browser_press", "args": { "key": "/^(enter|return)$/i" }, "page": "https://grok.com/c/brief-1#followup", "reply": { "pressed": "Enter", "url": "https://grok.com/c/brief-1", "title": "Tool comparison - Grok", "loading": false } },
+        { "tool": "browser_click", "args": { "$any": [{ "text": "/submit|send/i" }, { "index": 3 }] }, "page": "https://grok.com/c/brief-1#followup", "reply": { "action": "clicked", "label": "Submit", "url": "https://grok.com/c/brief-1", "title": "Tool comparison - Grok", "loading": false } },
+        { "tool": "browser_type", "args": { "submit": true }, "page": "https://grok.com/c/brief-1#followup", "reply": { "typed": true, "submitted": true, "url": "https://grok.com/c/brief-1", "title": "Tool comparison - Grok", "loading": false } },
+        { "tool": "browser_act", "page": "https://grok.com/c/brief-1#followup", "reply": { "done": true, "url": "https://grok.com/c/brief-1", "title": "Tool comparison - Grok", "loading": false } }
+      ]
+    },
+    "grade": {
+      "expect": [
+        { "tool": ["browser_type", "browser_act"], "args": { "$any": [{ "text": "/self.?host/i" }, { "steps": "/self.?host/i" }] } }
+      ],
+      "forbid": [
+        { "tool": ["WebSearch", "WebFetch"], "why": "researched with WebSearch or WebFetch instead of asking Grok" }
+      ],
+      "reply": "/Beacon/",
+      "replyWhy": "did not report Grok's answer"
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "research-03",
+    "from": ["human_mkt-004"],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": ["browser_navigate", "browser_type"],
+    "prompt": "Look up how Warp, Ghostty and WezTerm handle split panes: the default shortcut to split, and whether splits come back after a restart. A short table is fine.",
+    "fixture": {
+      "instructions": "# Web research\n\nFor any web search or research, use the signed-in Grok (grok.com) in the Sikemux browser through the sikemux-tools `browser_*` tools. Do not use the built-in WebSearch or WebFetch. Open it in a tab of your own, never one the person is using, and give subagents that need to research the same instruction.\n",
+      "pages": [
+        {
+          "url": "https://grok.com/c/eval-1",
+          "title": "Split panes - Grok",
+          "elements": [
+            "<p> Warp: Cmd+D splits right, Cmd+Shift+D splits down; splits are restored with the session.",
+            "<p> Ghostty: Cmd+D splits right, Cmd+Shift+D splits down; splits are restored on macOS when window state saving is on.",
+            "<p> WezTerm: no default split shortcut on macOS beyond Cmd+Shift+Alt+%; splits are not restored unless a plugin saves the layout.",
+            "<textarea> Ask a follow-up",
+            "<button> Submit"
+          ],
+          "text": "Warp: Cmd+D splits right, Cmd+Shift+D splits down; splits are restored with the session. Ghostty: Cmd+D splits right, Cmd+Shift+D splits down; splits are restored on macOS when window state saving is on. WezTerm: no default split shortcut on macOS beyond Cmd+Shift+Alt+%; splits are not restored unless a plugin saves the layout."
+        },
+        {
+          "url": "/grok\\.com/",
+          "href": "https://grok.com/",
+          "title": "Grok",
+          "elements": ["<textarea> Ask anything", "<button> Submit", "<a> New chat", "<a> History"],
+          "text": "What do you want to know?"
+        }
+      ],
+      "answers": [
+        { "tool": "browser_press", "args": { "key": "/^(enter|return)$/i" }, "page": "https://grok.com/c/eval-1", "reply": { "pressed": "Enter", "url": "https://grok.com/c/eval-1", "title": "Split panes - Grok", "loading": false } },
+        { "tool": "browser_click", "args": { "$any": [{ "text": "/submit|send/i" }, { "index": 1 }] }, "page": "https://grok.com/c/eval-1", "reply": { "action": "clicked", "label": "Submit", "url": "https://grok.com/c/eval-1", "title": "Split panes - Grok", "loading": false } },
+        { "tool": "browser_type", "args": { "submit": true }, "page": "https://grok.com/c/eval-1", "reply": { "typed": true, "submitted": true, "url": "https://grok.com/c/eval-1", "title": "Split panes - Grok", "loading": false } },
+        { "tool": "browser_act", "page": "https://grok.com/c/eval-1", "reply": { "done": true, "url": "https://grok.com/c/eval-1", "title": "Split panes - Grok", "loading": false } }
+      ]
+    },
+    "grade": {
+      "expect": [{ "tool": "browser_navigate", "args": { "url": "/grok\\.com/" } }],
+      "forbid": [
+        { "tool": ["WebSearch", "WebFetch"], "why": "researched with WebSearch or WebFetch (itself or in a subagent) instead of Grok in a desk tab" },
+        { "tool": "Bash", "args": { "command": "/\\b(curl|wget)\\b/" }, "why": "researched with curl instead of Grok in a desk tab" }
+      ]
+    },
+    "maxTurns": 14
+  },
+  {
+    "id": "research-04",
+    "from": ["human_sikemux_a-007"],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": ["browser_navigate", "browser_type"],
+    "prompt": "I want to rethink the settings window so it works like our agent desk. Before you change anything, tell me in a few lines what you'd take from it, and look at how other apps do side panes if that helps.",
+    "fixture": {
+      "instructions": "# Web research\n\nFor any web search or research, use the signed-in Grok (grok.com) in the Sikemux browser through the sikemux-tools `browser_*` tools. Do not use the built-in WebSearch or WebFetch. Open it in a tab of your own, never one the person is using, and give subagents that need to research the same instruction.\n",
+      "files": {
+        "src-tauri/crates/sikemux-gpui/src/settings/window.rs": "use gpui::{div, px, IntoElement, ParentElement, Styled};\n\npub fn settings_window(pages: Vec<&'static str>, current: usize) -> impl IntoElement {\n    div()\n        .flex()\n        .child(div().w(px(200.0)).children(pages.iter().map(|page| div().h(px(28.0)).child(*page))))\n        .child(div().flex_1().child(pages[current]))\n}\n"
+      },
+      "pages": [
+        {
+          "url": "https://grok.com/c/eval-1",
+          "title": "Side panes - Grok",
+          "elements": [
+            "<p> Most editors keep one side pane with tabs for files, terminals and previews; the pane keeps its width per window and tabs can be dragged out.",
+            "<textarea> Ask a follow-up",
+            "<button> Submit"
+          ],
+          "text": "Most editors keep one side pane with tabs for files, terminals and previews; the pane keeps its width per window and tabs can be dragged out."
+        },
+        {
+          "url": "/grok\\.com/",
+          "href": "https://grok.com/",
+          "title": "Grok",
+          "elements": ["<textarea> Ask anything", "<button> Submit", "<a> New chat", "<a> History"],
+          "text": "What do you want to know?"
+        }
+      ],
+      "answers": [
+        { "tool": "browser_press", "args": { "key": "/^(enter|return)$/i" }, "page": "https://grok.com/c/eval-1", "reply": { "pressed": "Enter", "url": "https://grok.com/c/eval-1", "title": "Side panes - Grok", "loading": false } },
+        { "tool": "browser_type", "args": { "submit": true }, "page": "https://grok.com/c/eval-1", "reply": { "typed": true, "submitted": true, "url": "https://grok.com/c/eval-1", "title": "Side panes - Grok", "loading": false } }
+      ]
+    },
+    "grade": {
+      "forbid": [
+        { "tool": ["WebSearch", "WebFetch"], "why": "researched with WebSearch or WebFetch instead of Grok in a desk tab" },
+        { "tool": "Bash", "args": { "command": "/\\b(curl|wget)\\b/" }, "why": "fetched outside references with curl" }
+      ]
+    },
+    "judge": "Pass if the agent reads 'our agent desk' as Sikemux's own desk (the pane beside the agent holding its browser, file and terminal tabs), for example by reading the desk code or the guide, or asks which desk is meant, and any outside research it does goes through Grok in a desk tab. Fail if it treats 'Agent Desk' as some third-party product, or researches with WebSearch, WebFetch or curl.",
+    "maxTurns": 14
+  },
+  {
+    "id": "research-05",
+    "from": ["err_tools_sikemux-044"],
+    "category": "wrong_tool",
+    "severity": "low",
+    "tools": ["browser_navigate"],
+    "prompt": "Is api.sikemux.com/health answering right now?",
+    "fixture": {
+      "instructions": "# Web research\n\nFor any web search or research, use the signed-in Grok (grok.com) in the Sikemux browser through the sikemux-tools `browser_*` tools. Do not use the built-in WebSearch or WebFetch. Open it in a tab of your own, never one the person is using, and give subagents that need to research the same instruction.\n",
+      "shell": [
+        { "match": "/curl.*api\\.sikemux\\.com\\/health/", "stdout": "{\"status\":\"ok\",\"version\":\"2026.10.26\"}\n" }
+      ],
+      "pages": [
+        { "url": "/api\\.sikemux\\.com\\/health/", "href": "https://api.sikemux.com/health", "title": "", "elements": [], "text": "{\"status\":\"ok\",\"version\":\"2026.10.26\"}" }
+      ]
+    },
+    "grade": {
+      "expect": [
+        { "tool": ["Bash", "browser_navigate"], "args": { "$any": [{ "command": "/curl.*api\\.sikemux\\.com\\/health/" }, { "url": "/api\\.sikemux\\.com\\/health/" }] } }
+      ],
+      "forbid": [{ "tool": ["WebSearch", "WebFetch"], "why": "used WebFetch or WebSearch against the person's standing rule" }]
+    },
+    "maxTurns": 8
+  }
+]

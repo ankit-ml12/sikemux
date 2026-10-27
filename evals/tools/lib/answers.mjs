@@ -1,7 +1,7 @@
 import { valueMatches, toolMatches } from './match.mjs';
 
 const GRAY_PNG =
-  'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAoCAIAAAA35e4mAAAAP0lEQVR42u3OMQ0AAAgDsM2/aFBBwtEq6NRgtSR6TQFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWHhxwIL2wH5lQAKdAAAAABJRU5ErkJggg==';
+  'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAoCAIAAADBrGu+AAAAOUlEQVR42u3PMQ0AAAwDoEqv9GrYuQQckD4XAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAYGLAV9/AOLIIj9iAAAAAElFTkSuQmCC';
 
 const BLANK_PAGE = { url: 'about:blank', title: '', elements: [], text: '' };
 
@@ -20,7 +20,8 @@ export function answerer(fixture, project) {
     })),
   ];
   const state = { tabs: [], active: null, tabCount: 0, executions: 0, cursor: 100 };
-  if (fixture.tab) openTab(state, findPage(pages, fixture.tab, fixture.tab));
+  for (const url of [fixture.tab, ...(fixture.tabs ?? [])].filter(Boolean)) openTab(state, findPage(pages, url, url));
+  state.active = state.tabs[0] ?? null;
 
   return (tool, args) => {
     const rule = rules.find(
@@ -32,11 +33,30 @@ export function answerer(fixture, project) {
     if (rule) {
       rule.used += 1;
       if (rule.page) openTab(state, findPage(pages, rule.page, rule.page), !args.newTab);
-      if (rule.error) return { error: rule.error };
-      return { value: rule.reply ?? {} };
+      const fill = (value) => fillIn(value, { ...args, project });
+      if (rule.error) return { error: fill(rule.error) };
+      return { value: fill(rule.reply ?? {}) };
     }
     return builtIn(tool, args ?? {}, { state, pages, agents, project, fixture });
   };
+}
+
+function fillIn(value, args) {
+  if (typeof value === 'string') return value.replace(/\{\{(\w+)\}\}/g, (whole, key) => (key in args ? String(args[key]) : whole));
+  if (Array.isArray(value)) return value.map((item) => fillIn(item, args));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, fillIn(item, args)]));
+  return value;
+}
+
+function numbered(page, index) {
+  return elementsText(page)
+    .split('\n')
+    .find((line) => line.startsWith(`[${index}] `));
+}
+
+function shows(page, text) {
+  const wanted = String(text).toLowerCase();
+  return `${elementsText(page)}\n${page.text ?? ''}`.toLowerCase().includes(wanted);
 }
 
 function findPage(pages, url, fallbackUrl) {
@@ -86,7 +106,8 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
   const outcome = args.report === 'outcome';
   switch (tool) {
     case 'browser_navigate': {
-      const page = findPage(pages, args.url ?? '', args.url ?? 'about:blank');
+      if (!args.url && args.go && !tab) return { error: NO_TAB };
+      const page = args.url ? findPage(pages, args.url, args.url) : tab?.page ?? findPage(pages, 'about:blank', 'about:blank');
       const opened = openTab(state, page, !args.newTab);
       const met = args.waitFor ? { met: true, waitedMs: 240 } : {};
       return { value: outcome ? { ...met, ...where(opened) } : { ...met, ...pageState(opened, false) } };
@@ -106,20 +127,32 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
     case 'browser_click':
       return needTab(() => ({
         ...(args.index !== undefined ? { index: args.index } : {}),
-        label: args.text ?? args.selector ?? tab.page.elements[args.index] ?? 'element',
+        label: args.text ?? args.selector ?? numbered(tab.page, args.index)?.replace(/^\[\d+\] /, '') ?? 'element',
         action: 'clicked',
         ...(outcome ? where(tab) : pageState(tab, false)),
       }));
     case 'browser_type':
-      return needTab(() => ({ typed: String(args.text ?? '').length, into: args.selector ?? 'field', submitted: Boolean(args.submit), ...where(tab) }));
+      return needTab(() => ({
+        typed: String(args.text ?? '').length,
+        into: args.selector ?? numbered(tab.page, args.index)?.replace(/^\[\d+\] /, '') ?? 'field',
+        value: args.text,
+        submitted: Boolean(args.submit),
+        ...where(tab),
+      }));
     case 'browser_press':
       return needTab(() => ({ pressed: args.key, ...where(tab) }));
     case 'browser_act':
       return needTab(() => ({ steps: (args.steps ?? []).length, done: true, ...where(tab) }));
     case 'browser_scroll':
-      return needTab(() => ({ y: args.deltaY ?? 600, height: 2400, viewport: 900, atBottom: false }));
+      return needTab(() => ({ y: args.to === 'bottom' ? 1500 : args.to === 'top' ? 0 : args.deltaY ?? 600, height: 2400, viewport: 900, atBottom: args.to === 'bottom' }));
     case 'browser_wait':
-      return needTab(() => ({ met: true, waitedMs: 320, ...where(tab) }));
+      return needTab(() => {
+        const met =
+          (args.text === undefined || shows(tab.page, args.text)) &&
+          (args.textGone === undefined || !shows(tab.page, args.textGone)) &&
+          (args.url === undefined || tab.page.url.includes(args.url));
+        return { met, waitedMs: met ? 320 : args.timeoutMs ?? 10000, ...where(tab) };
+      });
     case 'browser_evaluate':
       return needTab(() => ({ result: null }));
     case 'browser_screenshot':
@@ -172,8 +205,10 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
     case 'agent_list':
       return { value: { project, agents } };
     case 'agent_send': {
-      const agent = agents.find((one) => one.name.toLowerCase() === String(args.to).toLowerCase() && !one.you);
-      if (!agent) return { error: `No open agent called ${args.to}` };
+      const wanted = String(args.to);
+      const agent = agents.find((one) => one.name.toLowerCase() === wanted.toLowerCase() || one.agentId === wanted);
+      if (agent?.you) return { error: 'That agent is you' };
+      if (!agent) return { error: `No open agent is called ${wanted}; agent_list shows the agents you can message` };
       return { value: { to: agent.name, agentId: agent.agentId, delivery: 'newTurn', note: `${agent.name} was idle and started a turn to read this.` } };
     }
     case 'agent_spawn':

@@ -1,0 +1,274 @@
+[
+  {
+    "id": "page-01",
+    "from": ["human_sikemux_b-021"],
+    "category": "wrong_tool",
+    "severity": "low",
+    "tools": ["page_preview", "page_show"],
+    "prompt": "How has the DMG size moved over the last six nightlies? They were 15.2, 15.4, 15.9, 16.1, 16.0 and 16.4 MB. I want to see the trend, right here in the chat.",
+    "fixture": {},
+    "grade": {
+      "order": true,
+      "expect": [
+        { "tool": "page_preview", "args": { "path": "/\\.html?$/" } },
+        { "tool": "page_show", "args": { "path": "/\\.html?$/" } }
+      ],
+      "forbid": [
+        { "tool": "browser_navigate", "why": "opened the chart in a desk tab instead of showing it in the reply" },
+        { "tool": "ui_open", "why": "opened the chart on the desk instead of showing it in the reply" }
+      ]
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "page-02",
+    "from": ["err_tools_mkt-013", "err_tools_sikemux-037"],
+    "category": "wrong_tool",
+    "severity": "low",
+    "tools": ["page_preview", "page_show", "browser_navigate"],
+    "prompt": "The composer mockup you wrote earlier is at scratch/mockups/composer.html. Check that it renders properly, then show it to me.",
+    "fixture": {
+      "files": {
+        "scratch/mockups/composer.html": "<!doctype html>\n<html>\n<head>\n<style>\n  .composer { display: flex; gap: 8px; align-items: flex-end; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }\n  .composer textarea { flex: 1; min-height: 44px; resize: none; border: 0; background: transparent; color: var(--foreground); font: inherit; }\n  .composer button { height: 28px; padding: 0 12px; border: 0; border-radius: var(--radius); background: var(--accent); color: var(--accent-foreground); }\n  .hint { margin-top: 6px; color: var(--muted-foreground); font-size: 12px; }\n</style>\n</head>\n<body>\n  <div class=\"composer\">\n    <textarea placeholder=\"Message Otter\"></textarea>\n    <button>Send</button>\n  </div>\n  <div class=\"hint\">Enter sends, Shift+Enter adds a line</div>\n</body>\n</html>\n"
+      }
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        { "tool": "page_preview", "args": { "path": "/composer\\.html$/" } },
+        { "tool": "page_show", "args": { "path": "/composer\\.html$/" } }
+      ],
+      "forbid": [
+        { "tool": "browser_navigate", "args": { "url": "/composer\\.html|^file:|^data:/" }, "why": "opened its own mockup in a desk tab instead of page_preview and page_show" }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "page-03",
+    "from": ["other_agents-003"],
+    "category": "wrong_tool",
+    "severity": "high",
+    "tools": ["page_preview", "page_show", "browser_navigate", "browser_evaluate"],
+    "prompt": "Finish the ruler page in scratch/ruler.html for the chat. Before you show it to me, make sure the Add row and Wider buttons work and that its colours follow my theme.",
+    "fixture": {
+      "files": {
+        "scratch/ruler.html": "<!doctype html>\n<html>\n<head>\n<style>\n  body { color: #e6e6e6; }\n  .ruler { height: 8px; width: 240px; background: #a277ff; border-radius: 4px; }\n  .row { padding: 6px 0; border-bottom: 1px solid #333; }\n  button { margin-right: 8px; }\n</style>\n</head>\n<body>\n  <div class=\"ruler\" id=\"ruler\"></div>\n  <div id=\"rows\"><div class=\"row\">Row 1</div></div>\n  <button id=\"add\">Add row</button>\n  <button id=\"wider\">Wider</button>\n  <script>\n    const rows = document.getElementById('rows');\n    document.getElementById('add').onclick = () => {\n      const row = document.createElement('div');\n      row.className = 'row';\n      row.textContent = 'Row ' + (rows.children.length + 1);\n      rows.append(row);\n    };\n    document.getElementById('wider').onclick = () => {\n      const ruler = document.getElementById('ruler');\n      ruler.style.width = ruler.offsetWidth + 40 + 'px';\n    };\n  </script>\n</body>\n</html>\n"
+      }
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        { "tool": "page_preview", "args": { "path": "/ruler\\.html$/" } },
+        { "tool": "page_show", "args": { "path": "/ruler\\.html$/" } }
+      ],
+      "forbid": [
+        { "tool": "browser_navigate", "args": { "url": "/ruler\\.html|^file:|^data:/" }, "why": "opened its own page in a desk tab to test it instead of page_preview" },
+        { "tool": "browser_evaluate", "why": "scripted its own page in a desk tab, injecting a hand-copied theme" }
+      ]
+    },
+    "maxTurns": 14
+  },
+  {
+    "id": "page-04",
+    "from": ["err_tools_sikemux-022"],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": ["page_preview", "page_show"],
+    "prompt": "I copied the app's CSS into scratch/backdrop-picker/page.html for the backdrop picker mockup. Check it and show it to me.",
+    "fixture": {
+      "files": {
+        "public/backdrops/dunes.avif": "avif-bytes-for-the-eval",
+        "public/backdrops/tide.avif": "avif-bytes-for-the-eval",
+        "public/fonts/Figtree-Regular.woff2": "woff2-bytes-for-the-eval",
+        "scratch/backdrop-picker/page.html": "<!doctype html>\n<html>\n<head>\n<style>\n  @font-face { font-family: Figtree; src: url(/fonts/Figtree-Regular.woff2) format('woff2'); }\n  body { font-family: Figtree, var(--font-sans); }\n  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }\n  .tile { height: 120px; border-radius: var(--radius); background-size: cover; border: 1px solid var(--border); }\n  .dunes { background-image: url(/backdrops/dunes.avif); }\n  .tide { background-image: url(/backdrops/tide.avif); }\n  .label { margin-top: 4px; color: var(--muted-foreground); font-size: 12px; }\n</style>\n</head>\n<body>\n  <div class=\"grid\">\n    <div><div class=\"tile dunes\"></div><div class=\"label\">Dunes</div></div>\n    <div><div class=\"tile tide\"></div><div class=\"label\">Tide</div></div>\n  </div>\n</body>\n</html>\n"
+      },
+      "answers": [
+        {
+          "tool": "page_preview",
+          "times": 1,
+          "error": "these files could not be read: /backdrops/dunes.avif, /backdrops/tide.avif, /fonts/Figtree-Regular.woff2. Use paths to existing images or fonts, relative to the page or absolute, or remove them"
+        }
+      ]
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        {
+          "tool": ["Edit", "MultiEdit", "Write", "Bash"],
+          "args": {
+            "$any": [
+              { "new_string": "/(\\.\\.\\/)+public\\/(backdrops|fonts)\\/|\\/app\\/public\\/(backdrops|fonts)\\//" },
+              { "edits": "/(\\.\\.\\/)+public\\/(backdrops|fonts)\\/|\\/app\\/public\\/(backdrops|fonts)\\//" },
+              { "content": "/(\\.\\.\\/)+public\\/(backdrops|fonts)\\/|\\/app\\/public\\/(backdrops|fonts)\\//" },
+              { "command": "/(\\.\\.\\/)+public\\/(backdrops|fonts)|\\/app\\/public\\/(backdrops|fonts)/" }
+            ]
+          }
+        },
+        { "tool": "page_show", "args": { "path": "/page\\.html$/" } }
+      ],
+      "forbid": [
+        {
+          "tool": ["Edit", "MultiEdit", "Write", "Bash"],
+          "args": { "$any": [{ "new_string": "/public\\/\\S*\\/public\\//" }, { "edits": "/public\\/\\S*\\/public\\//" }, { "content": "/public\\/\\S*\\/public\\//" }] },
+          "why": "doubled the public/ prefix when rewriting the paths"
+        },
+        { "tool": "browser_navigate", "args": { "url": "/page\\.html|^file:/" }, "why": "opened its mockup in a desk tab instead of fixing the paths" }
+      ],
+      "limit": [{ "tool": "page_preview", "max": 3 }]
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "page-05",
+    "from": ["err_tools_sikemux-023"],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": ["page_preview", "page_show"],
+    "prompt": "Run scripts/joins-mock.mjs to draw the table-joins mockup into scratch/joins.html, then show it to me.",
+    "fixture": {
+      "files": {
+        "scripts/joins-mock.mjs": "import { mkdirSync, writeFileSync } from 'node:fs';\n\nconst joins = [\n  ['users', 'orders', 'user_id'],\n  ['orders', 'items', 'order_id'],\n  ['items', 'products', 'product_id'],\n];\nconst rows = joins.map(([left, right, key]) => `<tr><td>${left}</td><td>${right}</td><td>${key}</td></tr>`).join('\\n';\nmkdirSync(new URL('../scratch/', import.meta.url), { recursive: true });\nwriteFileSync(\n  new URL('../scratch/joins.html', import.meta.url),\n  `<!doctype html><style>td { padding: 4px 10px; border-bottom: 1px solid var(--border); }</style><table>${rows}</table>`,\n);\n"
+      }
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        { "tool": ["Edit", "MultiEdit", "Write", "Bash"], "args": { "$any": [{ "file_path": "/joins-mock\\.mjs$/" }, { "command": "/(sed|perl).*joins-mock/" }] } },
+        { "tool": "Bash", "args": { "command": "/node\\s+\\S*joins-mock\\.mjs/" } },
+        { "tool": "page_show", "args": { "path": "/joins\\.html$/" } }
+      ],
+      "limit": [{ "tool": "page_show", "max": 1 }]
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "page-06",
+    "from": ["err_tools_sikemux-025"],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": ["page_show"],
+    "prompt": "Show me the onboarding prototype you wrote in scratch/prototype.html, the whole flow top to bottom, here in the chat.",
+    "fixture": {
+      "files": {
+        "scratch/prototype.html": "<!doctype html>\n<html>\n<head>\n<style>\n  .step { height: 1000px; border-bottom: 1px solid var(--border); padding-top: 24px; }\n  h2 { margin: 0 0 8px; }\n</style>\n</head>\n<body>\n  <section class=\"step\"><h2>1. Welcome</h2><p>Sign in with your account.</p></section>\n  <section class=\"step\"><h2>2. Pick a project</h2><p>Choose a folder to open.</p></section>\n  <section class=\"step\"><h2>3. Start an agent</h2><p>Pick Claude, Codex or OpenCode.</p></section>\n  <section class=\"step\"><h2>4. Link your phone</h2><p>Scan the code from the app.</p></section>\n  <section class=\"step\"><h2>5. Done</h2><p>You are ready.</p></section>\n</body>\n</html>\n"
+      },
+      "answers": [
+        {
+          "tool": "page_preview",
+          "reply": {
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAoCAIAAADBrGu+AAAAOUlEQVR42u3PMQ0AAAwDoEqv9GrYuQQckD4XAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAYGLAV9/AOLIIj9iAAAAAElFTkSuQmCC",
+            "mimeType": "image/png",
+            "width": 756,
+            "contentHeight": 5124,
+            "console": { "recorded": 0, "matched": 0, "messages": [] }
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        { "tool": "page_show", "args": { "path": "/prototype\\.html$/", "height": "/^([1-9]\\d{0,2}|[1-3]\\d{3}|4000)$/" } }
+      ],
+      "limit": [{ "tool": "page_show", "max": 1 }]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "page-07",
+    "from": ["other_agents-001", "other_agents-002"],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": ["guide", "page_preview", "page_show"],
+    "prompt": "Show me a nice visualization, in the chat, of how page preview works: you write a file, check it off screen, then it shows up in your reply.",
+    "fixture": {},
+    "grade": {
+      "order": true,
+      "expect": [
+        { "tool": "guide", "args": { "topic": "pages" } },
+        { "tool": "page_preview", "args": { "path": "/\\.html?$/" } },
+        { "tool": "page_show", "args": { "path": "/\\.html?$/", "title": { "$present": true } } }
+      ],
+      "forbid": [
+        { "tool": "guide", "args": { "topic": { "$not": { "$any": [{ "$present": false }, "pages", "all", "config", "tasks", "output", "ui", "browser-reading", "browser-input", "browser-pages", "browser-evidence", "browser-debugging", "simulator", "databases", "aws", "skills", "agents", "board", "shell"] } } }, "why": "asked the guide for a topic that does not exist" },
+        { "tool": ["page_preview", "page_show"], "args": { "path": { "$present": false } }, "why": "called a page tool without a path to probe its usage" }
+      ]
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "page-08",
+    "from": ["human_sikemux_b-003"],
+    "category": "rage",
+    "severity": "med",
+    "tools": ["browser_navigate", "page_show"],
+    "prompt": "Show me the pricing page you wrote (scratch/plans.html) in the browser, cleanly.",
+    "fixture": {
+      "files": {
+        "scratch/plans.html": "<!doctype html>\n<html>\n<head>\n<style>\n  .plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }\n  .plan { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }\n  .price { font-size: 28px; font-weight: 600; }\n</style>\n</head>\n<body>\n  <div class=\"plans\">\n    <div class=\"plan\"><h3>Free</h3><div class=\"price\">$0</div><p>One host, two agents.</p></div>\n    <div class=\"plan\"><h3>Pro</h3><div class=\"price\">$12</div><p>Unlimited agents, phone access.</p></div>\n    <div class=\"plan\"><h3>Team</h3><div class=\"price\">$24</div><p>Shared hosts and boards.</p></div>\n  </div>\n</body>\n</html>\n"
+      }
+    },
+    "grade": {
+      "expect": [{ "tool": "browser_navigate", "args": { "url": "/plans\\.html/" } }]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "page-09",
+    "from": ["human_sikemux_b-005"],
+    "category": "rage",
+    "severity": "med",
+    "tools": ["page_show", "browser_navigate"],
+    "prompt": "The Play Store listing graphics you made are in store/listing/. Put them in front of me so I can review them before I upload.",
+    "fixture": {
+      "files": {
+        "store/listing/feature-graphic.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1024\" height=\"500\"><rect width=\"1024\" height=\"500\" fill=\"#0d0d14\"/><text x=\"80\" y=\"270\" fill=\"#ffffff\" font-size=\"64\" font-family=\"Figtree\">Your agents, in your pocket</text></svg>\n",
+        "store/listing/icon-512.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"512\" height=\"512\"><rect width=\"512\" height=\"512\" rx=\"96\" fill=\"#1a1430\"/><circle cx=\"256\" cy=\"256\" r=\"140\" fill=\"#a277ff\"/></svg>\n",
+        "store/listing/phone-1.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1080\" height=\"1920\"><rect width=\"1080\" height=\"1920\" fill=\"#0d0d14\"/><text x=\"80\" y=\"200\" fill=\"#ffffff\" font-size=\"72\">Every agent at a glance</text></svg>\n",
+        "store/listing/phone-2.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1080\" height=\"1920\"><rect width=\"1080\" height=\"1920\" fill=\"#0d0d14\"/><text x=\"80\" y=\"200\" fill=\"#ffffff\" font-size=\"72\">Answer from anywhere</text></svg>\n"
+      }
+    },
+    "grade": {
+      "expect": [
+        { "tool": ["page_show", "browser_navigate"], "args": { "$any": [{ "path": { "$present": true } }, { "url": "/store\\/listing/" }] } }
+      ],
+      "forbid": [
+        { "tool": "Bash", "args": { "command": "/(^|[;&|\\s])open\\s/" }, "why": "opened Preview or Finder on the person's screen to show its output" }
+      ]
+    },
+    "judge": "Pass if the person is actually shown the graphics: a page in the reply (page_show of a gallery holding the images) or a desk tab opened on the folder or the images. Fail if the agent only reads the images itself and then says something like 'here they are' as if the person could see them, or opens Preview or Finder on the person's screen.",
+    "maxTurns": 12
+  },
+  {
+    "id": "page-10",
+    "from": ["human_sikemux_b-006"],
+    "category": "rage",
+    "severity": "high",
+    "tools": ["page_show", "browser_screenshot"],
+    "prompt": "The site's How it works section needs a picture of Sikemux's git view for its third tab. Get me one I can drop in.",
+    "fixture": {
+      "shell": [
+        { "match": "/pnpm.*(showcase|shots)/", "stderr": "Error: Cannot find module '/proj/app/scripts/showcase.mjs'\n", "exit": 1 }
+      ]
+    },
+    "grade": {},
+    "judge": "Pass if the agent gets a real capture of the app's git view, or says plainly that it cannot capture the git view from here and asks the person for a screenshot or another real source. Fail if it builds an HTML, SVG or image imitation of the git view and offers it as the picture to use; a hand-drawn mock passes only if the agent clearly says it is not a real capture and asks before it is used.",
+    "maxTurns": 12
+  },
+  {
+    "id": "page-11",
+    "from": ["err_tools_sikemux-024"],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": ["page_preview"],
+    "skip": "The remote-agent sign-in refusal of page_preview is core behaviour, and its wording no longer exists anywhere in the core to script it from."
+  },
+  {
+    "id": "page-12",
+    "from": ["human_sikemux_b-004"],
+    "category": "rage",
+    "severity": "med",
+    "tools": ["page_preview"],
+    "skip": "page_preview opening a tab on the person's desk is how the core draws previews, not a tool choice the agent makes."
+  }
+]

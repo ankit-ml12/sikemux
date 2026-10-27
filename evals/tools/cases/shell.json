@@ -1,0 +1,211 @@
+[
+  {
+    "id": "shell-01",
+    "from": ["err_bash-005"],
+    "category": "malformed_call",
+    "severity": "high",
+    "tools": [],
+    "prompt": "Find every place under src-tauri that mentions gamma or smoothing, in both the Rust and the Metal shader files, and list them by file.",
+    "fixture": {
+      "files": {
+        "src-tauri/crates/sikemux-gpui/src/text/raster.rs": "pub const LIGHT_TEXT_GAMMA: f32 = 1.5;\n\npub fn stem_smoothing(enabled: bool) -> f32 {\n    if enabled { 0.25 } else { 0.0 }\n}\n",
+        "src-tauri/crates/sikemux-gpui/src/text/shaders.metal": "fragment float4 glyph(float coverage [[stage_in]]) {\n    float gamma = 1.5;\n    return float4(pow(coverage, 1.0 / gamma));\n}\n",
+        "src-tauri/crates/sikemux-gpui/src/theme.rs": "pub struct Theme {\n    pub text_gamma: f32,\n}\n"
+      }
+    },
+    "grade": {
+      "forbid": [
+        { "tool": "Bash", "args": { "command": "/--include=\\{?\\*|--glob[= ]\\*|(^|\\s)-g\\s+\\*|-i?name\\s+\\*/" }, "why": "left a file glob unquoted, which zsh expands and aborts on with \"no matches found\"" }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "shell-02",
+    "from": ["err_bash-006"],
+    "category": "malformed_call",
+    "severity": "high",
+    "tools": [],
+    "prompt": "Does showcase/ have its own tsconfig? Also show me the scripts in showcase/package.json.",
+    "fixture": {
+      "files": {
+        "showcase/package.json": "{\n  \"name\": \"showcase\",\n  \"private\": true,\n  \"scripts\": {\n    \"serve\": \"vite --port 5199\",\n    \"shots\": \"node shots.mjs\"\n  }\n}\n",
+        "showcase/vite.config.ts": "import { defineConfig } from 'vite';\n\nexport default defineConfig({ server: { port: 5199 } });\n",
+        "showcase/src/main.ts": "document.body.dataset.showcase = 'ready';\n"
+      }
+    },
+    "grade": {
+      "forbid": [
+        { "tool": "Bash", "args": { "command": "/(^|[\\s;&|(=])(\\.\\/)?showcase\\/tsconfig[^\\s'\";&|)]*\\*|-i?name\\s+tsconfig[^\\s'\";&|)]*\\*/" }, "why": "left a glob that matches nothing unquoted, so zsh aborted the whole command line with \"no matches found\"" }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "shell-03",
+    "from": ["err_bash-007"],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": [],
+    "prompt": "Give me a quick status in one go: the current branch, the last three commits and anything uncommitted.",
+    "fixture": {
+      "commits": [
+        { "message": "feat(gpui): desk tabs keep their order after a drag", "files": { "src-tauri/crates/sikemux-gpui/src/desk/tabs.rs": "pub fn keep_order() {}\n" } },
+        { "message": "fix(gpui): list rows are 28 px tall", "files": { "src-tauri/crates/sikemux-gpui/src/ui/lists.rs": "pub const ROW_HEIGHT: f32 = 28.0;\n" } }
+      ],
+      "dirty": { "README.md": "# Sikemux\n\nA workspace for agents.\n" }
+    },
+    "grade": {
+      "forbid": [
+        { "tool": "Bash", "args": { "command": "/(^|[;&|{(]\\s*|\\n\\s*)echo\\s+(-[en]+\\s+)?=/" }, "why": "printed an unquoted separator starting with =, which zsh expands as a command path and fails on" }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "shell-04",
+    "from": ["err_bash-009"],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [],
+    "prompt": "The local dev database runs in the docker container `app-db` (Postgres, user `app`, database `app`). Use psql in that container to tell me how many users there are, how many orders, and the newest order's date.",
+    "fixture": {
+      "project": "work",
+      "shell": [
+        { "match": "/^docker\\b(?=[\\s\\S]*\\busers\\b)(?=[\\s\\S]*\\bmax\\b)/i", "stdout": "1284\n5310\n2026-10-25 14:02:11+00\n" },
+        { "match": "/^docker\\b(?=[\\s\\S]*\\busers\\b)(?=[\\s\\S]*\\borders\\b)/i", "stdout": "1284\n5310\n" },
+        { "match": "/^docker\\b[\\s\\S]*\\bmax\\b/i", "stdout": "2026-10-25 14:02:11+00\n" },
+        { "match": "/^docker\\b[\\s\\S]*\\busers\\b/i", "stdout": "1284\n" },
+        { "match": "/^docker\\b[\\s\\S]*\\borders\\b/i", "stdout": "5310\n" },
+        { "match": "/^docker\\s+ps\\b/", "stdout": "CONTAINER ID   IMAGE         STATUS         NAMES\n3f2a1b9c8d7e   postgres:16   Up 3 hours     app-db\n" },
+        { "match": "/^docker\\s+exec\\b/", "stdout": "" }
+      ]
+    },
+    "grade": {
+      "forbid": [
+        { "tool": "Bash", "args": { "command": "/\\b([A-Za-z_]\\w*)=([\"'])(docker|psql)\\b[^\"']*\\s[^\"']*\\2[\\s\\S]*\\$\\{?\\1\\b/" }, "why": "kept a whole command line in a variable and ran it as $VAR, which zsh does not split into words" }
+      ],
+      "reply": "/(?=[\\s\\S]*1,?284)(?=[\\s\\S]*5,?310)/",
+      "replyWhy": "did not report both counts"
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "shell-05",
+    "from": ["err_bash-010"],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [],
+    "skip": "The clash came from the person's own zsh aliases (g, rd), and the eval's bare temporary HOME has no .zshrc, so no alias exists to collide with."
+  },
+  {
+    "id": "shell-06",
+    "from": ["err_bash-011"],
+    "category": "malformed_call",
+    "severity": "med",
+    "tools": ["task_start"],
+    "prompt": "Run `pnpm showcase`, and give up on it if it hasn't finished within five minutes.",
+    "fixture": {},
+    "grade": {
+      "expect": [
+        { "tool": ["Bash", "task_start"], "args": { "command": "/pnpm\\s+(-s\\s+)?(run\\s+)?showcase\\b/" } }
+      ],
+      "forbid": [
+        { "tool": "Bash", "args": { "command": "/(^|[\\s;&|(])g?timeout\\s+-?\\d/" }, "why": "used GNU timeout, which macOS does not have, instead of the shell tool's own timeout or a task" }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "shell-07",
+    "from": ["err_bash-014"],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [],
+    "prompt": "The chats in `testdata/App Support/chats/` are JSON files with a `messages` array. List the ones with more than 10 messages, newest file first.",
+    "fixture": {
+      "files": {
+        "testdata/App Support/chats/chat-a1.json": "{\"title\":\"Tab drag\",\"messages\":[1,2,3,4,5,6,7,8,9,10,11,12]}\n",
+        "testdata/App Support/chats/chat-b2.json": "{\"title\":\"Notch rows\",\"messages\":[1,2,3]}\n",
+        "testdata/App Support/chats/chat-c3.json": "{\"title\":\"Theme colours\",\"messages\":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}\n",
+        "testdata/App Support/chats/chat-d4.json": "{\"title\":\"Release notes\",\"messages\":[1,2,3,4,5,6,7,8,9,10]}\n"
+      }
+    },
+    "grade": {
+      "forbid": [
+        { "tool": "Bash", "args": { "command": "/\\$\\(\\s*ls\\b|`\\s*ls\\b|(^|[\\s=(])testdata\\/App Support/" }, "why": "split a path with a space in it, by looping over $(ls …) or leaving it unquoted" }
+      ],
+      "reply": "/(?=[\\s\\S]*chat-a1)(?=[\\s\\S]*chat-c3)(?![\\s\\S]*chat-b2)/",
+      "replyWhy": "did not list exactly the chats over 10 messages"
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "shell-08",
+    "from": ["err_bash-018"],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [],
+    "prompt": "Rename the helper `fetchRows` to `loadRows` everywhere under src/.",
+    "fixture": {
+      "project": "work",
+      "files": {
+        "src/db/rows.ts": "export async function fetchRows(table: string) {\n  return fetch(`/api/${table}`).then((response) => response.json());\n}\n",
+        "src/routes/orders.tsx": "import { fetchRows } from '../db/rows';\n\nexport const loadOrders = () => fetchRows('orders');\n",
+        "src/routes/users.tsx": "import { fetchRows } from '../db/rows';\n\nexport const loadUsers = () => fetchRows('users');\n",
+        "src/routes/reports.tsx": "import { fetchRows } from '../db/rows';\n\nexport const loadReports = () => fetchRows('reports');\n",
+        "src/routes/invoices.tsx": "import { fetchRows } from '../db/rows';\n\nexport const loadInvoices = () => fetchRows('invoices');\n",
+        "src/routes/teams.tsx": "import { fetchRows } from '../db/rows';\n\nexport const loadTeams = () => fetchRows('teams');\n"
+      }
+    },
+    "grade": {
+      "forbid": [
+        { "tool": "Bash", "args": { "command": "/\\bsed\\s+(-[a-zA-Z]+\\s+)*-i(''|\"\")?\\s+(-e\\s|['\"]?s[\\/|#,])/" }, "why": "used GNU sed -i without a suffix argument, which BSD sed on macOS rejects or misreads" }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "shell-09",
+    "from": ["err_bash-019"],
+    "category": "malformed_call",
+    "severity": "low",
+    "tools": [],
+    "prompt": "In the sikemux-gpui crate, run cargo check, then cargo clippy, then list what's in its src/ui folder. Run them one at a time so I can see each result.",
+    "fixture": {},
+    "grade": {
+      "limit": [
+        { "tool": "Bash", "args": { "command": "/^\\s*cd\\s+[\"']?(\\.\\/)?src-tauri\\/crates\\/sikemux-gpui/" }, "max": 1 }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "shell-10",
+    "from": ["other_agents-011"],
+    "category": "bad_recovery",
+    "severity": "low",
+    "tools": [],
+    "prompt": "Run the typecheck and tell me if it's clean.",
+    "fixture": {
+      "instructions": "- Run shell commands through `rtk` to keep their output short, for example `rtk pnpm typecheck` or `rtk git status`."
+    },
+    "grade": {
+      "expect": [
+        { "tool": ["Bash", "task_start"], "args": { "$any": [{ "command": "/^(?![\\s\\S]*\\brtk\\b)[\\s\\S]*\\b(typecheck|tsc)\\b/" }, { "taskId": "typecheck" }] } }
+      ],
+      "limit": [
+        { "tool": "Bash", "args": { "command": "/(^|[;&|(]\\s*)rtk\\s/" }, "max": 2 }
+      ]
+    },
+    "maxTurns": 8
+  },
+  {
+    "id": "shell-11",
+    "from": ["human_sikemux_b-018"],
+    "category": "rage",
+    "severity": "high",
+    "tools": [],
+    "skip": "ps and pgrep are not shimmed, so a replay would list the real machine's processes and could print real environments and tokens into the run folder; it needs a ps shim first."
+  }
+]

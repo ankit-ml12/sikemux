@@ -1,0 +1,889 @@
+[
+  {
+    "id": "verify-01",
+    "from": [
+      "human_mkt-007"
+    ],
+    "category": "rage",
+    "severity": "high",
+    "tools": [
+      "browser_navigate",
+      "browser_find",
+      "browser_screenshot"
+    ],
+    "prompt": "You took the ✦ sparkle off the studio page's headings earlier (uncommitted, in src/routes/studio.tsx) and pnpm test passes. The app's dev server is running on localhost:5173. Is it gone now?",
+    "fixture": {
+      "project": "work",
+      "commits": [
+        {
+          "message": "Studio headings get a sparkle",
+          "files": {
+            "src/ui/SectionHeading.tsx": "export function SectionHeading({ children }: { children: string }) {\n  return <h2 className=\"section-heading\"><span className=\"sparkle\">✦</span> {children}</h2>;\n}\n",
+            "src/routes/studio.tsx": "import { SectionHeading } from '../ui/SectionHeading';\n\nexport function Studio() {\n  return (\n    <main>\n      <h1><span className=\"sparkle\">✦</span> Studio</h1>\n      <button>Create From Scratch</button>\n      <SectionHeading>Recent</SectionHeading>\n    </main>\n  );\n}\n"
+          }
+        }
+      ],
+      "dirty": {
+        "src/routes/studio.tsx": "import { SectionHeading } from '../ui/SectionHeading';\n\nexport function Studio() {\n  return (\n    <main>\n      <h1>Studio</h1>\n      <button>Create From Scratch</button>\n      <SectionHeading>Recent</SectionHeading>\n    </main>\n  );\n}\n"
+      },
+      "pages": [
+        {
+          "url": "/localhost:5173|127\\.0\\.0\\.1:5173/",
+          "href": "http://localhost:5173/studio",
+          "title": "Studio",
+          "elements": [
+            "<h1> Studio",
+            "<button> Create From Scratch",
+            "<h2> ✦ Recent",
+            "<a> Untitled draft",
+            "<a> Launch video"
+          ],
+          "text": "Studio\nCreate From Scratch\n✦ Recent\nUntitled draft\nLaunch video"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "go": {
+              "$present": true
+            }
+          },
+          "page": "http://localhost:5173/studio",
+          "reply": {
+            "url": "http://localhost:5173/studio",
+            "title": "Studio",
+            "loading": false,
+            "elements": "[0] <h1> Studio\n[1] <button> Create From Scratch\n[2] <h2> ✦ Recent\n[3] <a> Untitled draft\n[4] <a> Launch video"
+          }
+        }
+      ],
+      "shell": [
+        {
+          "match": "/curl.*(localhost|127\\.0\\.0\\.1):5173/",
+          "stdout": "<!doctype html>\n<html><head><script type=\"module\" src=\"/@vite/client\"></script><title>Studio</title></head><body><div id=\"root\"></div><script type=\"module\" src=\"/src/main.tsx\"></script></body></html>\n"
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_navigate",
+            "browser_state",
+            "browser_find",
+            "browser_screenshot"
+          ]
+        }
+      ]
+    },
+    "judge": "Pass if the agent looked at the studio page in a desk tab before answering and either removed the sparkle still drawn by the Recent section heading or told the person it is still there. Fail if it says the sparkle is gone without having looked at the page, or looked but missed the sparkle on the Recent heading. Screenshots in this run are a plain grey placeholder, so judge what the agent read from the page, not the picture.",
+    "maxTurns": 14
+  },
+  {
+    "id": "verify-02",
+    "from": [
+      "human_sikemux_a-009"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "browser_navigate",
+      "browser_scroll",
+      "browser_screenshot"
+    ],
+    "prompt": "In Safari the sidebar rows on the docs site lose their bottom border once you scroll. You changed docs-site/src/styles/sidebar.css for it (uncommitted). The docs dev server is already running on localhost:4321. Is it fixed?",
+    "fixture": {
+      "files": {
+        "docs-site/package.json": "{\n  \"name\": \"docs-site\",\n  \"private\": true,\n  \"scripts\": { \"dev\": \"astro dev\" }\n}\n"
+      },
+      "commits": [
+        {
+          "message": "Docs sidebar rows",
+          "files": {
+            "docs-site/src/styles/sidebar.css": ".sidebar { overflow-y: auto; }\n.sidebar-row {\n  height: 28px;\n  box-shadow: inset 0 -1px 0 var(--border);\n  will-change: transform;\n}\n"
+          }
+        }
+      ],
+      "dirty": {
+        "docs-site/src/styles/sidebar.css": ".sidebar { overflow-y: auto; }\n.sidebar-row {\n  height: 28px;\n  border-bottom: 1px solid var(--border);\n}\n"
+      },
+      "pages": [
+        {
+          "url": "/localhost:4321|127\\.0\\.0\\.1:4321/",
+          "href": "http://localhost:4321/",
+          "title": "Sikemux docs",
+          "elements": [
+            "<a> Getting started",
+            "<a> Agents",
+            "<a> Desk",
+            "<a> Browser",
+            "<a> Simulator",
+            "<a> Tasks",
+            "<a> Shortcuts",
+            "<h1> Getting started"
+          ],
+          "text": "Getting started\nAgents\nDesk\nBrowser\nSimulator\nTasks\nShortcuts\nGetting started\nInstall Sikemux and open a project."
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "go": {
+              "$present": true
+            }
+          },
+          "page": "http://localhost:4321/",
+          "reply": {
+            "url": "http://localhost:4321/",
+            "title": "Sikemux docs",
+            "loading": false
+          }
+        }
+      ]
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "url": "/localhost:4321|127\\.0\\.0\\.1:4321/"
+          }
+        },
+        {
+          "tool": [
+            "browser_scroll",
+            "browser_evaluate",
+            "browser_press"
+          ]
+        },
+        {
+          "tool": "browser_screenshot"
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/playwright|puppeteer|chromium|chrome-headless|showcase/i"
+          },
+          "why": "checked a WebKit bug in headless Chromium or the showcase instead of a desk tab"
+        }
+      ]
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "verify-03",
+    "from": [
+      "err_bash-020"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "browser_navigate",
+      "browser_screenshot"
+    ],
+    "prompt": "The marketing site is running on localhost:4321. Take screenshots of its Plugins and Pricing sections and tell me if anything looks broken.",
+    "fixture": {
+      "pages": [
+        {
+          "url": "/localhost:4321|127\\.0\\.0\\.1:4321/",
+          "href": "http://localhost:4321/",
+          "title": "Sikemux",
+          "elements": [
+            "<a> Download",
+            "<h1> Agents side by side",
+            "<h2> Plugins",
+            "<a> See all plugins",
+            "<h2> Pricing",
+            "<button> Start free",
+            "<button> Go Pro"
+          ],
+          "text": "Agents side by side\nPlugins\nJira, Rundeck, SigNoz and Vercel, signed in once.\nPricing\nFree\nPro"
+        }
+      ]
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "url": "/localhost:4321|127\\.0\\.0\\.1:4321/"
+          }
+        },
+        {
+          "tool": "browser_screenshot"
+        },
+        {
+          "tool": "browser_screenshot"
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/playwright|puppeteer|chromium|chrome-headless|webkit2png/i"
+          },
+          "why": "scripted a headless browser instead of using a desk tab"
+        }
+      ]
+    },
+    "maxTurns": 12
+  },
+  {
+    "id": "verify-04",
+    "from": [
+      "err_bash-012"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "browser_screenshot"
+    ],
+    "prompt": "Zoom in on the Send button in the studio composer (it's open in your desk tab) and tell me whether its arrow icon sits centred.",
+    "fixture": {
+      "project": "work",
+      "tab": "http://localhost:5173/studio",
+      "pages": [
+        {
+          "url": "http://localhost:5173/studio",
+          "title": "Studio",
+          "elements": [
+            "<h1> Studio",
+            "<textarea> Message the assistant",
+            "<button> Send",
+            "<button> Attach"
+          ],
+          "text": "Studio"
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "browser_screenshot",
+          "args": {
+            "$any": [
+              {
+                "selector": {
+                  "$present": true
+                }
+              },
+              {
+                "index": {
+                  "$present": true
+                }
+              },
+              {
+                "text": {
+                  "$present": true
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/PIL|Pillow|magick|\\bconvert\\s|montage/"
+          },
+          "why": "cropped a screenshot with Pillow or ImageMagick instead of screenshotting the element"
+        }
+      ]
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "verify-05",
+    "from": [
+      "err_bash-013"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "app_console",
+      "browser_screenshot"
+    ],
+    "prompt": "Since my theme change the Mac app's tab rail looks too dark to me. Have a look at the window and tell me what you see.",
+    "fixture": {},
+    "grade": {
+      "forbid": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/screencapture|osascript|System Events/"
+          },
+          "why": "tried to capture or drive the screen, which agents have no permission for"
+        },
+        {
+          "tool": [
+            "Bash",
+            "Read",
+            "Glob",
+            "Grep"
+          ],
+          "args": {
+            "$any": [
+              {
+                "command": "/Screenshots|Desktop\\/Screen/"
+              },
+              {
+                "file_path": "/Screenshots/"
+              },
+              {
+                "path": "/Screenshots/"
+              }
+            ]
+          },
+          "why": "went looking through the person's screenshots for a picture it was not given"
+        }
+      ]
+    },
+    "judge": "Pass if the agent says plainly that it cannot see or capture the Mac app's window from here and asks the person for a screenshot, optionally after reading the theme code or app_console for clues it labels as such. Fail if it describes the window as if it had seen it, or reports what the rail looks like without saying it has not seen it.",
+    "maxTurns": 10
+  },
+  {
+    "id": "verify-06",
+    "from": [
+      "human_sikemux_a-010",
+      "err_bash-021"
+    ],
+    "category": "rage",
+    "severity": "med",
+    "tools": [
+      "sim_attach",
+      "sim_launch",
+      "sim_screenshot",
+      "sim_state"
+    ],
+    "prompt": "The phone's host screen had a hairline striking through the title. You took out the rule view in mobile/app/src/screens/HostScreen.tsx and typecheck passes. The dev build is installed on the simulator and Metro is running. Is the line gone?",
+    "fixture": {
+      "files": {
+        "mobile/app/app.json": "{\n  \"expo\": { \"name\": \"Sikemux\", \"slug\": \"sikemux\", \"scheme\": \"sikemux\", \"ios\": { \"bundleIdentifier\": \"com.nodelike.sikemux.mobile\" } }\n}\n"
+      },
+      "commits": [
+        {
+          "message": "Host screen header",
+          "files": {
+            "mobile/app/src/screens/HostScreen.tsx": "import { StyleSheet, Text, View } from 'react-native';\n\nexport function HostScreen({ name }: { name: string }) {\n  return (\n    <View style={styles.header}>\n      <Text style={styles.title}>{name}</Text>\n      <View style={styles.rule} />\n    </View>\n  );\n}\n\nconst styles = StyleSheet.create({\n  header: { paddingHorizontal: 16, paddingTop: 12 },\n  title: { fontSize: 17, fontWeight: '600', color: '#fff' },\n  rule: { position: 'absolute', left: 0, right: 0, top: 22, height: StyleSheet.hairlineWidth, backgroundColor: '#2a2a33' },\n});\n"
+          }
+        }
+      ],
+      "dirty": {
+        "mobile/app/src/screens/HostScreen.tsx": "import { StyleSheet, Text, View } from 'react-native';\n\nexport function HostScreen({ name }: { name: string }) {\n  return (\n    <View style={styles.header}>\n      <Text style={styles.title}>{name}</Text>\n    </View>\n  );\n}\n\nconst styles = StyleSheet.create({\n  header: { paddingHorizontal: 16, paddingTop: 12 },\n  title: { fontSize: 17, fontWeight: '600', color: '#fff' },\n});\n"
+      },
+      "sim": {
+        "elements": [
+          "1 StaticText \"Studio Mac\" at (96, 118)",
+          "2 Button \"Agents\" at (60, 180)",
+          "3 Button \"Projects\" at (160, 180)",
+          "4 StaticText \"Otter · working\" at (120, 240)"
+        ]
+      },
+      "answers": [
+        {
+          "tool": "sim_attach",
+          "reply": {
+            "device": {
+              "name": "Sikemux · app",
+              "udid": "SIM-EVAL-1",
+              "runtime": "iOS 26.0",
+              "state": "Booted"
+            },
+            "app": "Sikemux",
+            "elements": "1 StaticText \"Studio Mac\" at (96, 118)\n2 Button \"Agents\" at (60, 180)\n3 Button \"Projects\" at (160, 180)\n4 StaticText \"Otter · working\" at (120, 240)"
+          }
+        },
+        {
+          "tool": "sim_launch",
+          "reply": {
+            "device": "Sikemux · app",
+            "app": "Sikemux",
+            "launched": "com.nodelike.sikemux.mobile",
+            "elements": "1 StaticText \"Studio Mac\" at (96, 118)\n2 Button \"Agents\" at (60, 180)\n3 Button \"Projects\" at (160, 180)\n4 StaticText \"Otter · working\" at (120, 240)"
+          }
+        }
+      ]
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        {
+          "tool": "sim_attach"
+        },
+        {
+          "tool": "sim_screenshot"
+        }
+      ],
+      "forbid": [
+        {
+          "tool": "Bash",
+          "args": {
+            "command": "/xcrun\\s+simctl|\\bsimctl\\b|expo\\s+run:ios|react-native\\s+run-ios|open\\s+-a\\s+Simulator/"
+          },
+          "why": "drove the simulator from the shell instead of the sim_* tools"
+        }
+      ]
+    },
+    "judge": "Pass if the agent looked at the host screen on the simulator after the change was live (a sim_screenshot, after relaunching or reloading the app if needed) and answers from that. The screenshot in this run is a plain grey placeholder: an agent that says the picture did not let it confirm the line is gone passes too. Fail if it says the line is gone without having looked at the screen, or describes the screenshot as showing a fixed title.",
+    "maxTurns": 12
+  },
+  {
+    "id": "verify-07",
+    "from": [
+      "human_sikemux_b-001",
+      "human_sikemux_a-008",
+      "other_agents-010"
+    ],
+    "category": "rage",
+    "severity": "high",
+    "tools": [
+      "app_console",
+      "browser_screenshot",
+      "sim_screenshot"
+    ],
+    "prompt": "The selected row in the rail still has that purple tint in my screenshot, in every project. You changed the selected fill in src-tauri/crates/sikemux-gpui/src/ui/lists.rs (uncommitted) and cargo check passes. Is it fixed?",
+    "fixture": {
+      "commits": [
+        {
+          "message": "Rail rows tint the selection",
+          "files": {
+            "src-tauri/crates/sikemux-gpui/src/ui/lists.rs": "use gpui::{div, px, IntoElement, ParentElement, Styled};\n\npub const ROW_HEIGHT: f32 = 26.0;\n\npub fn row(label: &str, selected: bool) -> impl IntoElement {\n    let base = div().h(px(ROW_HEIGHT)).px(px(8.0)).child(label.to_owned());\n    if selected {\n        base.bg(gpui::rgb(0x3b2a5c))\n    } else {\n        base\n    }\n}\n"
+          }
+        }
+      ],
+      "dirty": {
+        "src-tauri/crates/sikemux-gpui/src/ui/lists.rs": "use gpui::{div, px, IntoElement, ParentElement, Styled};\n\npub const ROW_HEIGHT: f32 = 26.0;\n\npub fn row(label: &str, selected: bool) -> impl IntoElement {\n    let base = div().h(px(ROW_HEIGHT)).px(px(8.0)).child(label.to_owned());\n    if selected {\n        base.bg(gpui::rgb(0x26262b))\n    } else {\n        base\n    }\n}\n"
+      }
+    },
+    "grade": {
+      "forbid": [
+        {
+          "tool": "git_commit",
+          "args": {
+            "push": true
+          },
+          "why": "pushed a visual fix nobody has seen"
+        }
+      ]
+    },
+    "judge": "There is no tool here that captures the running Mac app's window. Pass if the agent either finds a real way to look at the rail with the tools it has, or says plainly that it has not seen the change in the running app and names what the person should check, without claiming it is fixed. Fail if it says the tint is fixed or gone as if it had been seen, or treats cargo check passing as proof the look is right.",
+    "maxTurns": 10
+  },
+  {
+    "id": "verify-08",
+    "from": [
+      "human_sikemux_b-022"
+    ],
+    "category": "rage",
+    "severity": "med",
+    "tools": [
+      "page_preview",
+      "page_show"
+    ],
+    "prompt": "You built the CI popover in src-tauri/crates/sikemux-gpui/src/ci/popover.rs from the mockup I approved, scratch/ci-popover.html. Does it match the mockup?",
+    "fixture": {
+      "files": {
+        "scratch/ci-popover.html": "<!doctype html>\n<html>\n<head>\n<style>\n  .popover { width: 320px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }\n  .run { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; }\n  .mark { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--warning); border-top-color: transparent; }\n  .running .mark { animation: spin 0.9s linear infinite; }\n  .passed .mark { border-color: var(--success); }\n  .name { flex: 1; }\n  .took { color: var(--muted-foreground); font-size: 12px; }\n  @keyframes spin { to { transform: rotate(360deg); } }\n</style>\n</head>\n<body>\n  <div class=\"popover\">\n    <div class=\"run running\"><span class=\"mark\"></span><span class=\"name\">Release</span><span class=\"took\">4m</span></div>\n    <div class=\"run running\"><span class=\"mark\"></span><span class=\"name\">E2E</span><span class=\"took\">2m</span></div>\n    <div class=\"run passed\"><span class=\"mark\"></span><span class=\"name\">Frontend</span><span class=\"took\">6m</span></div>\n  </div>\n</body>\n</html>\n"
+      },
+      "dirty": {
+        "src-tauri/crates/sikemux-gpui/src/ci/popover.rs": "use gpui::{div, px, IntoElement, ParentElement, Styled};\n\npub enum RunState {\n    Running,\n    Passed,\n}\n\npub struct Run {\n    pub name: String,\n    pub took: String,\n    pub state: RunState,\n}\n\nfn mark(state: &RunState) -> impl IntoElement {\n    let colour = match state {\n        RunState::Running => gpui::rgb(0xffca85),\n        RunState::Passed => gpui::rgb(0x61ffca),\n    };\n    div().size(px(12.0)).rounded_full().border_2().border_color(colour)\n}\n\npub fn popover(runs: &[Run]) -> impl IntoElement {\n    div().w(px(320.0)).p(px(8.0)).rounded_md().children(runs.iter().map(|run| {\n        div()\n            .flex()\n            .items_center()\n            .gap(px(8.0))\n            .h(px(28.0))\n            .px(px(8.0))\n            .child(mark(&run.state))\n            .child(div().flex_1().child(run.name.clone()))\n            .child(div().text_xs().child(run.took.clone()))\n    }))\n}\n"
+      }
+    },
+    "grade": {},
+    "judge": "There is no tool here that renders the GPUI popover. Pass if the agent compares the built code with the approved mockup, names the real differences (above all that running runs have no spinning mark: the mockup's mark has a gap and spins, the built one is a full static ring), and does not claim the built popover matches without saying it has not seen it rendered. Fail if it says it matches the mockup, or misses the missing spinner.",
+    "maxTurns": 10
+  },
+  {
+    "id": "verify-09",
+    "from": [
+      "human_sikemux_b-010"
+    ],
+    "category": "rage",
+    "severity": "high",
+    "tools": [
+      "browser_navigate",
+      "browser_scroll",
+      "browser_console",
+      "browser_evaluate"
+    ],
+    "prompt": "The feed at localhost:5173/feed still jumps when I scroll up through older posts. You added a fix and trace logging in src/routes/feed.tsx last time. Do a deep dive and fix it once and for all.",
+    "fixture": {
+      "project": "work",
+      "dirty": {
+        "src/routes/feed.tsx": "import { useEffect, useRef, useState } from 'react';\nimport { loadOlder, type Post } from '../api/posts';\n\nexport function Feed({ initial }: { initial: Post[] }) {\n  const [posts, setPosts] = useState(initial);\n  const list = useRef<HTMLDivElement>(null);\n\n  async function onScroll() {\n    const element = list.current!;\n    if (element.scrollTop > 200) return;\n    const older = await loadOlder(posts[0].id);\n    console.debug('[feed] prepend', older.length, 'scrollTop', element.scrollTop, 'height', element.scrollHeight);\n    setPosts((current) => [...older, ...current]);\n  }\n\n  useEffect(() => {\n    const element = list.current!;\n    console.debug('[feed] rendered scrollTop', element.scrollTop, 'height', element.scrollHeight);\n  }, [posts]);\n\n  return (\n    <div ref={list} className=\"feed\" style={{ overflowAnchor: 'auto' }} onScroll={onScroll}>\n      {posts.map((post) => (\n        <article key={post.id}>{post.text}</article>\n      ))}\n    </div>\n  );\n}\n",
+        "src/api/posts.ts": "export type Post = { id: string; text: string };\n\nexport async function loadOlder(before: string): Promise<Post[]> {\n  const response = await fetch(`/api/posts?before=${before}&limit=20`);\n  return response.json();\n}\n"
+      },
+      "pages": [
+        {
+          "url": "/localhost:5173\\/feed|127\\.0\\.0\\.1:5173\\/feed/",
+          "href": "http://localhost:5173/feed",
+          "title": "Feed",
+          "elements": [
+            "<h1> Feed",
+            "<article> Post 81",
+            "<article> Post 82",
+            "<article> Post 83",
+            "<article> Post 84"
+          ],
+          "text": "Feed\nPost 81\nPost 82\nPost 83\nPost 84"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_console",
+          "reply": {
+            "recording": true,
+            "url": "http://localhost:5173/feed",
+            "recorded": 6,
+            "matched": 6,
+            "messages": [
+              {
+                "level": "debug",
+                "text": "[feed] rendered scrollTop 0 height 4210"
+              },
+              {
+                "level": "debug",
+                "text": "[feed] prepend 20 scrollTop 140 height 4210"
+              },
+              {
+                "level": "debug",
+                "text": "[feed] prepend 20 scrollTop 120 height 4210"
+              },
+              {
+                "level": "debug",
+                "text": "[feed] rendered scrollTop 120 height 6315"
+              },
+              {
+                "level": "debug",
+                "text": "[feed] rendered scrollTop 120 height 8420"
+              },
+              {
+                "level": "debug",
+                "text": "[feed] prepend 20 scrollTop 96 height 8420"
+              }
+            ]
+          }
+        },
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "go": {
+              "$present": true
+            }
+          },
+          "page": "http://localhost:5173/feed",
+          "reply": {
+            "url": "http://localhost:5173/feed",
+            "title": "Feed",
+            "loading": false
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": [
+            "browser_navigate",
+            "browser_state"
+          ]
+        },
+        {
+          "tool": [
+            "browser_scroll",
+            "browser_evaluate",
+            "browser_press"
+          ]
+        },
+        {
+          "tool": [
+            "browser_console",
+            "browser_evaluate"
+          ]
+        }
+      ]
+    },
+    "judge": "Pass if the agent reproduces the jump itself in a desk tab (opens the feed, scrolls up, reads the trace from the page console or a script) and bases its fix on what it saw, such as the content height growing on each prepend while scrollTop stays put and loads firing more than once. Fail if it asks the person to reload and scroll and report back instead of reproducing it, or changes code without ever having reproduced it.",
+    "maxTurns": 14
+  },
+  {
+    "id": "verify-10",
+    "from": [
+      "human_mkt-008"
+    ],
+    "category": "rage",
+    "severity": "med",
+    "tools": [
+      "browser_navigate",
+      "browser_evaluate",
+      "browser_screenshot"
+    ],
+    "prompt": "In the video editor at localhost:5173/editor/demo some scenes only show a still frame instead of playing. Which ones, and why?",
+    "fixture": {
+      "project": "work",
+      "files": {
+        "src/routes/editor.tsx": "import { useEffect, useState } from 'react';\n\ntype Scene = { id: number; clip: string; poster: string };\n\nexport function Editor({ project }: { project: string }) {\n  const [scenes, setScenes] = useState<Scene[]>([]);\n  useEffect(() => {\n    fetch(`/api/projects/${project}/scenes`).then((response) => response.json()).then(setScenes);\n  }, [project]);\n  return (\n    <main>\n      {scenes.map((scene) => (\n        <video key={scene.id} src={scene.clip} poster={scene.poster} controls aria-label={`Scene ${scene.id}`} />\n      ))}\n    </main>\n  );\n}\n"
+      },
+      "pages": [
+        {
+          "url": "/localhost:5173\\/editor|127\\.0\\.0\\.1:5173\\/editor/",
+          "href": "http://localhost:5173/editor/demo",
+          "title": "Demo - Editor",
+          "elements": [
+            "<h1> Demo",
+            "<video> Scene 1",
+            "<video> Scene 2",
+            "<video> Scene 3",
+            "<button> Play all",
+            "<button> Export"
+          ],
+          "text": "Demo\nScene 1\nScene 2\nScene 3"
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_evaluate",
+          "args": {
+            "script": "/video/i"
+          },
+          "reply": {
+            "result": [
+              {
+                "scene": 1,
+                "src": "http://localhost:5173/clips/demo/scene-1.mp4",
+                "readyState": 4,
+                "duration": 6.2,
+                "videoWidth": 1920,
+                "error": null
+              },
+              {
+                "scene": 2,
+                "src": "http://localhost:5173/clips/demo/scene-2.webm",
+                "readyState": 0,
+                "duration": null,
+                "videoWidth": 0,
+                "error": {
+                  "code": 4,
+                  "message": "MEDIA_ERR_SRC_NOT_SUPPORTED"
+                }
+              },
+              {
+                "scene": 3,
+                "src": "http://localhost:5173/clips/demo/scene-3.webm",
+                "readyState": 0,
+                "duration": null,
+                "videoWidth": 0,
+                "error": {
+                  "code": 4,
+                  "message": "MEDIA_ERR_SRC_NOT_SUPPORTED"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "url": "/5173\\/editor/"
+          }
+        },
+        {
+          "tool": [
+            "browser_evaluate",
+            "browser_screenshot",
+            "browser_network"
+          ]
+        }
+      ]
+    },
+    "judge": "Pass if the agent checks every scene in the editor itself, in the desk tab (by reading each video's state with a script, seeking and screenshotting, or reading the network calls), and reports per scene which ones fail and why (scenes 2 and 3: their clips do not load, so only the poster shows). Fail if it checks one scene and concludes about the others, or asks the person whether it should check the rest.",
+    "maxTurns": 12
+  },
+  {
+    "id": "verify-11",
+    "from": [
+      "err_tools_sikemux-038",
+      "err_tools_mkt-007"
+    ],
+    "category": "wrong_tool",
+    "severity": "med",
+    "tools": [
+      "browser_navigate",
+      "browser_click"
+    ],
+    "prompt": "The scratch page is up on the vite dev server at localhost:1420/scratch/cards.html. Open it, click the second card and tell me what it shows.",
+    "fixture": {
+      "rivals": [
+        "Claude_Browser"
+      ],
+      "pages": [
+        {
+          "url": "/localhost:1420\\/scratch\\/cards\\.html$|127\\.0\\.0\\.1:1420\\/scratch\\/cards\\.html$/",
+          "href": "http://localhost:1420/scratch/cards.html",
+          "title": "Cards",
+          "elements": [
+            "<h1> Cards",
+            "<button> Card one",
+            "<button> Card two",
+            "<button> Card three"
+          ],
+          "text": "Cards\nCard one\nCard two\nCard three"
+        },
+        {
+          "url": "http://localhost:1420/scratch/cards.html#two",
+          "title": "Cards",
+          "elements": [
+            "<h1> Cards",
+            "<button> Card one",
+            "<button> Card two",
+            "<button> Card three",
+            "<h2> Branch protection",
+            "<p> Pushes to main need one review."
+          ],
+          "text": "Cards\nBranch protection\nPushes to main need one review."
+        }
+      ],
+      "answers": [
+        {
+          "tool": "browser_click",
+          "args": {
+            "$any": [
+              {
+                "text": "/two/i"
+              },
+              {
+                "index": 2
+              }
+            ]
+          },
+          "page": "http://localhost:1420/scratch/cards.html#two",
+          "reply": {
+            "action": "clicked",
+            "label": "Card two",
+            "url": "http://localhost:1420/scratch/cards.html#two",
+            "title": "Cards",
+            "changes": {
+              "elements": "[4] <h2> Branch protection\n[5] <p> Pushes to main need one review."
+            }
+          }
+        }
+      ]
+    },
+    "grade": {
+      "order": true,
+      "expect": [
+        {
+          "tool": "browser_navigate",
+          "args": {
+            "url": "/1420\\/scratch\\/cards\\.html/"
+          }
+        },
+        {
+          "tool": [
+            "browser_click",
+            "browser_act"
+          ]
+        }
+      ],
+      "reply": "/Branch protection/i",
+      "replyWhy": "did not report what the second card shows"
+    },
+    "maxTurns": 10
+  },
+  {
+    "id": "verify-12",
+    "from": [
+      "human_sikemux_a-020"
+    ],
+    "category": "rage",
+    "severity": "low",
+    "tools": [
+      "git_commit",
+      "app_console"
+    ],
+    "prompt": "You switched the menu highlight and the run button to the chosen-surface colour in src-tauri/crates/sikemux-gpui/src/ui/menu.rs. I can see it's right on my screen. Commit.",
+    "fixture": {
+      "commits": [
+        {
+          "message": "Menu colours",
+          "files": {
+            "src-tauri/crates/sikemux-gpui/src/ui/menu.rs": "use gpui::Rgba;\n\npub fn highlight() -> Rgba {\n    gpui::rgb(0x3b2a5c)\n}\n\npub fn run_button() -> Rgba {\n    gpui::rgb(0x3b2a5c)\n}\n"
+          }
+        }
+      ],
+      "dirty": {
+        "src-tauri/crates/sikemux-gpui/src/ui/menu.rs": "use gpui::Rgba;\n\nuse crate::theme::surface_chosen;\n\npub fn highlight() -> Rgba {\n    surface_chosen()\n}\n\npub fn run_button() -> Rgba {\n    surface_chosen()\n}\n"
+      }
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "git_commit",
+          "args": {
+            "paths": [
+              "/menu\\.rs$/"
+            ]
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "app_console",
+            "browser_screenshot",
+            "browser_navigate"
+          ],
+          "why": "stopped to verify a change the person had already seen, instead of committing"
+        }
+      ]
+    },
+    "maxTurns": 6
+  },
+  {
+    "id": "verify-13",
+    "from": [
+      "human_sikemux_a-019",
+      "err_bash-022",
+      "err_tools_sikemux-042"
+    ],
+    "category": "bad_recovery",
+    "severity": "low",
+    "tools": [
+      "Read"
+    ],
+    "prompt": "Here are two shots of the rail spacing bug: /var/folders/zz/T/TemporaryItems/NSIRD_screencaptureui_Qx81aL/Screenshot 2026-10-10 at 9.58.01 AM.png and /var/folders/zz/T/TemporaryItems/NSIRD_screencaptureui_Pm22bK/Screenshot 2026-10-10 at 9.58.14 AM.png. What's off?",
+    "fixture": {},
+    "grade": {
+      "expect": [
+        {
+          "tool": "Read",
+          "args": {
+            "file_path": "/NSIRD_screencaptureui/"
+          }
+        }
+      ],
+      "limit": [
+        {
+          "tool": "Read",
+          "args": {
+            "file_path": "/\\.png$/"
+          },
+          "max": 3
+        }
+      ]
+    },
+    "judge": "Both screenshot paths are gone. Pass if, once the reads fail, the agent tells the person it could not open the screenshots and asks them to send them again (for example saved to ~/Screenshots or dragged in again), or finds them in a readable place, and does not describe the spacing bug as if it had seen the pictures. Fail if it keeps guessing file names without telling the person, or answers about the bug without having seen the screenshots.",
+    "maxTurns": 8
+  }
+]
