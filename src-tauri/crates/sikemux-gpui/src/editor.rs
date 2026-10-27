@@ -400,9 +400,12 @@ pub fn pane(
                     markdown: markdown.clone(),
                 }))
             }
-            (preview::Mode::Preview, Some(Rendered::Diagram(diagram))) => {
-                pane.child(div().flex_1().min_h_0().child(diagram.clone()))
-            }
+            (preview::Mode::Preview, Some(Rendered::Diagram(diagram))) => pane.child(
+                div().flex_1().min_h_0().child(
+                    gpui_kit::AnyView::from(diagram.clone())
+                        .cached(gpui_kit::StyleRefinement::default().size_full()),
+                ),
+            ),
             _ => pane.child(
                 div()
                     .relative()

@@ -1,16 +1,17 @@
 //! A DBML file drawn as its tables on a canvas that pans and zooms, with a line from each
 //! column that refers to another to the column it names.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, point, px, quad, App, BorderStyle, Bounds, ContentMask, Context, Corners,
     CursorStyle, DispatchPhase, Font, FontWeight, Hitbox, HitboxBehavior, Hsla, InteractiveElement,
     IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    PathBuilder, PinchEvent, Pixels, Point, Render, ScrollEvent, SharedString,
+    PathBuilder, PinchEvent, Pixels, Point, Render, RenderImage, ScrollEvent, SharedString,
     StatefulInteractiveElement, Styled, TextAlign, TextRun, WeakEntity, Window,
 };
 
@@ -37,12 +38,16 @@ const STUB: f32 = 24.;
 const TALLEST_STACK: f32 = 900.;
 const MIN_ZOOM: f32 = 0.12;
 const MAX_ZOOM: f32 = 2.5;
+/// Below this zoom a table shows only its name and nothing of its columns.
+const BARS_ZOOM: f32 = 0.25;
 /// Below this zoom a table shows only its name, its columns as quiet bars.
 const DETAIL_ZOOM: f32 = 0.45;
 const MAP_WIDTH: f32 = 176.;
 const MAP_HEIGHT: f32 = 116.;
 const MAP_MARGIN: f32 = 12.;
 const GROUP_PAD: f32 = 26.;
+/// How many measured widths a diagram keeps before it starts again.
+const MEASURED_MAX: usize = 4096;
 const EMBEDDED_HEIGHT: std::ops::Range<f32> = 240.0..560.0;
 
 /// Where a table sits and how big it is, in the diagram's own units.
@@ -52,6 +57,8 @@ struct Card {
     y: f32,
     w: f32,
     h: f32,
+    /// How wide the table's name is at its own size.
+    name_w: f32,
     placed: bool,
 }
 
@@ -120,6 +127,9 @@ pub(crate) struct Diagram {
     /// Whether the person moved, panned or zoomed it; until they do, it lays itself out
     /// again whenever its text changes.
     touched: bool,
+    /// How wide each name and type measured, so text that grows as an agent writes it is
+    /// measured once rather than on every change.
+    widths: HashMap<(String, u8), f32>,
 }
 
 impl Diagram {
@@ -153,6 +163,7 @@ impl Diagram {
             engaged: false,
             inside: false,
             touched: false,
+            widths: HashMap::new(),
         };
         diagram.read(source);
         diagram
@@ -199,9 +210,16 @@ impl Diagram {
 
     /// Sizes each table to its longest line, then places the tables that have no place yet.
     fn measure(&mut self, window: &mut Window) {
-        let width = |text: &str, font: Font, size: f32| -> f32 {
+        if self.widths.len() > MEASURED_MAX {
+            self.widths.clear();
+        }
+        let widths = &mut self.widths;
+        let mut width = |text: &str, kind: u8, font: Font, size: f32| -> f32 {
             if text.is_empty() {
                 return 0.;
+            }
+            if let Some(width) = widths.get(&(text.to_owned(), kind)) {
+                return *width;
             }
             let run = TextRun {
                 len: text.len(),
@@ -217,17 +235,25 @@ impl Diagram {
                 &[run],
                 None,
             );
-            f32::from(line.width)
+            let width = f32::from(line.width);
+            widths.insert((text.to_owned(), kind), width);
+            width
         };
         for (table, card) in self.schema.tables.iter().zip(self.cards.iter_mut()) {
             let dot = if table.color.is_some() { 14. } else { 0. };
-            let mut w = PAD * 2. + dot + width(&table.name, name_font(), NAME_SIZE) + 28.;
+            card.name_w = width(&table.name, 0, name_font(), NAME_SIZE);
+            let mut w = PAD * 2. + dot + card.name_w + 28.;
             for column in &table.columns {
                 let line = PAD * 2.
                     + KEY_SPACE
-                    + width(&column.name, column_font(column.pk), COLUMN_SIZE)
+                    + width(
+                        &column.name,
+                        1 + column.pk as u8,
+                        column_font(column.pk),
+                        COLUMN_SIZE,
+                    )
                     + 28.
-                    + width(&column.kind, type_font(), TYPE_SIZE);
+                    + width(&column.kind, 3, type_font(), TYPE_SIZE);
                 w = w.max(line);
             }
             card.w = w.clamp(MIN_WIDTH, MAX_WIDTH).ceil();
@@ -259,6 +285,22 @@ impl Diagram {
         let column = (row >= 0. && (row as usize) < self.schema.tables[table].columns.len())
             .then_some(row as usize);
         Some(Spot { table, column })
+    }
+
+    /// Whether pointing at `spot` shows a tip, which follows the pointer.
+    fn tells(&self, spot: Spot) -> bool {
+        let table = &self.schema.tables[spot.table];
+        match spot.column.and_then(|column| table.columns.get(column)) {
+            Some(column) => {
+                column.pk
+                    || column.not_null
+                    || column.unique
+                    || column.increment
+                    || column.default.is_some()
+                    || column.note.is_some()
+            }
+            None => table.note.is_some(),
+        }
     }
 
     fn zoom_at(&mut self, at: Point<Pixels>, factor: f32, cx: &mut Context<Self>) {
@@ -310,7 +352,7 @@ impl Diagram {
 
     /// How tall an embedded diagram draws: as tall as its tables need at the width it has,
     /// within bounds a reader can scroll past.
-    fn height(&self) -> f32 {
+    pub(crate) fn height(&self) -> f32 {
         let width = f32::from(self.viewport.get().size.width);
         let Some(extent) = extent(&self.cards).filter(|_| width > 0.) else {
             return EMBEDDED_HEIGHT.start;
@@ -413,7 +455,9 @@ impl Diagram {
                 }
                 let spot = hovered.then(|| self.spot_at(event.position)).flatten();
                 let pointer = hovered.then_some(event.position);
-                if spot != self.hover || (spot.is_some() && pointer != self.pointer) {
+                let tip_moves =
+                    pointer != self.pointer && spot.is_some_and(|spot| self.tells(spot));
+                if spot != self.hover || tip_moves {
                     self.hover = spot;
                     self.pointer = pointer;
                     cx.notify();
@@ -771,8 +815,14 @@ impl Frame {
         })
     }
 
+    /// Paints what falls inside the window's view of the canvas; a diagram scrolled out of a
+    /// chat paints nothing.
     fn paint(&self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
-        self.paint_dots(bounds, window);
+        let seen = window.content_mask().bounds;
+        if seen.size.width <= px(0.) || seen.size.height <= px(0.) {
+            return;
+        }
+        self.paint_dots(bounds, seen, window);
         self.paint_groups(bounds, window, cx);
         let lit: Vec<bool> = self.schema.refs.iter().map(|r| self.lit(r)).collect();
         let any_lit = lit.iter().any(|lit| *lit);
@@ -793,12 +843,12 @@ impl Frame {
         };
         for (index, lit) in lit.iter().enumerate() {
             if !lit {
-                self.paint_wire(bounds, index, quiet, 1.2, window);
+                self.paint_wire(bounds, seen, index, quiet, 1.2, window);
             }
         }
         for (index, lit) in lit.iter().enumerate() {
             if *lit {
-                self.paint_wire(bounds, index, self.t.accent, 1.8, window);
+                self.paint_wire(bounds, seen, index, self.t.accent, 1.8, window);
             }
         }
         let linked: HashSet<(usize, usize)> = (self.schema.refs.iter())
@@ -808,7 +858,7 @@ impl Frame {
             })
             .collect();
         for &table in &self.order {
-            self.paint_card(bounds, table, &related, &linked, window, cx);
+            self.paint_card(bounds, seen, table, &related, &linked, window, cx);
         }
         self.paint_tip(bounds, window, cx);
         let map = (self.map).then(|| minimap(&self.cards, bounds, self.pan, self.zoom));
@@ -817,7 +867,7 @@ impl Frame {
         }
     }
 
-    fn paint_dots(&self, bounds: Bounds<Pixels>, window: &mut Window) {
+    fn paint_dots(&self, bounds: Bounds<Pixels>, seen: Bounds<Pixels>, window: &mut Window) {
         let mut step = 24. * self.zoom;
         while step < 12. {
             step *= 2.;
@@ -826,26 +876,35 @@ impl Frame {
             a: self.t.line_soft.a.max(0.08) * 1.6,
             ..self.t.line_soft
         };
-        let (width, height) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
-        let size = (1.6 * self.zoom.sqrt()).clamp(1., 2.);
-        let mut x = self.pan.x.rem_euclid(step);
-        while x < width {
-            let mut y = self.pan.y.rem_euclid(step);
-            while y < height {
-                window.paint_quad(quad(
-                    Bounds {
-                        origin: bounds.origin + point(px(x - size / 2.), px(y - size / 2.)),
-                        size: gpui_kit::size(px(size), px(size)),
-                    },
-                    px(size / 2.),
-                    dot,
-                    px(0.),
-                    Hsla::transparent_black(),
-                    BorderStyle::Solid,
-                ));
-                y += step;
+        let Some(tile) = dot_tile(dot) else {
+            return;
+        };
+        let span = step * TILE_DOTS as f32;
+        let origin = bounds.origin + point(px(self.pan.x - step / 2.), px(self.pan.y - step / 2.));
+        let from = seen.origin - origin;
+        let first = |offset: Pixels| (f32::from(offset) / span).floor();
+        let (columns, rows) = (first(from.x), first(from.y));
+        let (right, bottom) = (seen.right(), seen.bottom());
+        let mut row = rows;
+        loop {
+            let y = origin.y + px(row * span);
+            if y >= bottom {
+                break;
             }
-            x += step;
+            let mut column = columns;
+            loop {
+                let x = origin.x + px(column * span);
+                if x >= right {
+                    break;
+                }
+                let at = Bounds {
+                    origin: point(x, y),
+                    size: gpui_kit::size(px(span), px(span)),
+                };
+                let _ = window.paint_image(at, at, Corners::default(), tile.clone(), 0, false);
+                column += 1.;
+            }
+            row += 1.;
         }
     }
 
@@ -944,6 +1003,7 @@ impl Frame {
     fn paint_wire(
         &self,
         bounds: Bounds<Pixels>,
+        seen: Bounds<Pixels>,
         index: usize,
         ink: Hsla,
         width: f32,
@@ -953,6 +1013,16 @@ impl Frame {
         let (corners, from_side, to_side) = self.route(index);
         let points: Vec<Point<Pixels>> =
             corners.iter().map(|at| self.screen(bounds, *at)).collect();
+        let reach = px(16. * self.zoom);
+        let (mut low, mut high) = (points[0], points[0]);
+        for at in &points {
+            low = point(low.x.min(at.x), low.y.min(at.y));
+            high = point(high.x.max(at.x), high.y.max(at.y));
+        }
+        let around = Bounds::from_corners(low - point(reach, reach), high + point(reach, reach));
+        if !around.intersects(&seen) {
+            return;
+        }
         let mut path = PathBuilder::stroke(px(width));
         path.move_to(points[0]);
         for index in 1..points.len() - 1 {
@@ -1016,9 +1086,11 @@ impl Frame {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn paint_card(
         &self,
         bounds: Bounds<Pixels>,
+        seen: Bounds<Pixels>,
         index: usize,
         related: &HashSet<(usize, Option<usize>)>,
         linked: &HashSet<(usize, usize)>,
@@ -1029,7 +1101,7 @@ impl Frame {
         let card = self.cards[index];
         let table = &self.schema.tables[index];
         let frame = self.rect(bounds, card.x, card.y, card.w, card.h);
-        if !frame.intersects(&bounds) {
+        if !frame.intersects(&seen) {
             return;
         }
         let hovered = self.hover.is_some_and(|spot| spot.table == index);
@@ -1073,7 +1145,12 @@ impl Frame {
             BorderStyle::Solid,
         ));
         if z < DETAIL_ZOOM {
-            for row in 0..table.columns.len() {
+            let rows = if z < BARS_ZOOM {
+                0
+            } else {
+                table.columns.len()
+            };
+            for row in 0..rows {
                 let bar = self.rect(
                     bounds,
                     card.x + PAD,
@@ -1095,8 +1172,8 @@ impl Frame {
             }
             let room = (card.w - PAD * 2.) * z;
             let mut size = (NAME_SIZE * z).max(11.);
-            if let Some(shaped) = shaped(&table.name, name_font(), size, t.text_primary, window) {
-                size *= (room / f32::from(shaped.width)).min(1.);
+            if card.name_w > 0. {
+                size *= (room / (card.name_w * size / NAME_SIZE)).min(1.);
             }
             let origin =
                 header.origin + point(px(PAD * z), (header.size.height - px(size * 1.3)) / 2.);
@@ -1717,6 +1794,44 @@ fn paint_key(bounds: Bounds<Pixels>, ink: Hsla, window: &mut Window) {
     }
 }
 
+/// How many dots a side of the background's tile holds, and how far apart they are in it.
+const TILE_DOTS: u32 = 8;
+const TILE_STEP: u32 = 48;
+
+/// The canvas's background dots as one tile of them in `ink`, painted a few dozen times
+/// rather than a dot at a time; made once for each colour.
+fn dot_tile(ink: Hsla) -> Option<Arc<RenderImage>> {
+    thread_local! {
+        static TILE: RefCell<Option<(Hsla, Arc<RenderImage>)>> = const { RefCell::new(None) };
+    }
+    TILE.with(|tile| {
+        if let Some((kept, image)) = &*tile.borrow() {
+            if *kept == ink {
+                return Some(image.clone());
+            }
+        }
+        let side = TILE_DOTS * TILE_STEP;
+        let rgba = gpui_kit::Rgba::from(ink);
+        let radius = 1.9f32;
+        let pixels = image::RgbaImage::from_fn(side, side, |x, y| {
+            let centre = TILE_STEP as f32 / 2.;
+            let dx = (x % TILE_STEP) as f32 + 0.5 - centre;
+            let dy = (y % TILE_STEP) as f32 + 0.5 - centre;
+            let cover = (radius + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0., 1.) * rgba.a;
+            let channel = |value: f32| (value * cover * 255.).round() as u8;
+            image::Rgba([
+                channel(rgba.b),
+                channel(rgba.g),
+                channel(rgba.r),
+                (cover * 255.).round() as u8,
+            ])
+        });
+        let image = Arc::new(RenderImage::new([image::Frame::new(pixels)]));
+        *tile.borrow_mut() = Some((ink, image.clone()));
+        Some(image)
+    })
+}
+
 fn name_font() -> Font {
     Font {
         weight: FontWeight::SEMIBOLD,
@@ -1788,6 +1903,9 @@ fn shaped(
     if said.is_empty() || size < 2. {
         return None;
     }
+    // Zooming would otherwise shape every line and draw every glyph again at a new size
+    // each frame; half-point steps let consecutive frames reuse them.
+    let size = (size * 2.).round() / 2.;
     let run = TextRun {
         len: said.len(),
         font,

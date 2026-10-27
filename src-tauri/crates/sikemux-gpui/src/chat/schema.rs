@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Div, ElementId, Entity, Hsla, InteractiveElement,
-    IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    WeakEntity, Window,
+    div, px, AnyElement, AnyView, App, AppContext, Div, ElementId, Entity, Hsla,
+    InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
+    StatefulInteractiveElement, StyleRefinement, Styled, WeakEntity, Window,
 };
 use gpui_transcript::{Fence, Fences};
 
@@ -126,7 +126,13 @@ fn block(
         .child(title)
         .map(|frame| match source {
             true => frame.child(fence.lines),
-            false => frame.child(diagram),
+            false => {
+                let height = diagram.read(cx).height();
+                frame.child(
+                    AnyView::from(diagram)
+                        .cached(StyleRefinement::default().w_full().h(px(height))),
+                )
+            }
         })
         .into_any_element()
 }
