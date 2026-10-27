@@ -5,10 +5,10 @@ project shop shop
 chat Wren
 settle 6
 cursor 1200,700
-zoom 760,610 1.45 0.1
 record
-wait 0.2
-move 600,768 0.7
+wait 1.0
+zoom 760,610 1.45 1.0 &
+move 600,768 1.0
 click
 type "draw the shop's schema so I can see how orders connect" 26
 key enter
