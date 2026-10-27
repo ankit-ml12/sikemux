@@ -10,7 +10,7 @@ use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, radians, AnyElement, App, AppContext, ClickEvent, Context, Div, ElementId, Entity,
-    FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
+    FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
     StatefulInteractiveElement, Styled, Subscription, Transformation, WeakEntity, Window,
 };
 use serde_json::{json, Value};
@@ -531,7 +531,7 @@ impl Database {
             0,
             Some(open),
             false,
-            Some(Icon::Database),
+            Some((Icon::Database, Tokens::get(cx).text_tertiary)),
             connection.name.clone(),
             cx,
         )
@@ -615,7 +615,7 @@ impl Database {
                 1,
                 Some(open),
                 false,
-                Some(Icon::Stack),
+                Some((Icon::Stack, Tokens::get(cx).warn)),
                 schema.name.clone(),
                 cx,
             )
@@ -671,7 +671,7 @@ impl Database {
                 2,
                 Some(open),
                 false,
-                Some(Icon::Folder),
+                Some((Icon::Folder, Tokens::get(cx).live)),
                 group.name.clone(),
                 cx,
             )
@@ -707,8 +707,8 @@ impl Database {
         };
         let current = self.front.as_ref() == Some(&tab);
         let icon = match table.kind {
-            TableKind::Table | TableKind::ForeignTable => Icon::Table,
-            TableKind::View | TableKind::MaterializedView => Icon::Eye,
+            TableKind::Table | TableKind::ForeignTable => (Icon::Table, t.git_renamed),
+            TableKind::View | TableKind::MaterializedView => (Icon::Eye, t.cmd),
         };
         let opening = tab.clone();
         let pane = cx.weak_entity();
@@ -792,7 +792,7 @@ impl Database {
                 for column in columns {
                     let mark = column
                         .primary_key
-                        .then(|| ui::caps("PK", cx).into_any_element());
+                        .then(|| ui::caps("PK", cx).text_color(t.warn).into_any_element());
                     let detail = div()
                         .flex()
                         .items_center()
@@ -1414,7 +1414,7 @@ fn node(
     depth: usize,
     open: Option<bool>,
     current: bool,
-    icon: Option<Icon>,
+    icon: Option<(Icon, Hsla)>,
     label: impl Into<SharedString>,
     cx: &App,
 ) -> Stateful<Div> {
@@ -1440,7 +1440,7 @@ fn node(
         .when(current, |row| row.bg(t.surface_chosen))
         .when(!current, |row| row.hover(move |row| row.bg(hover)))
         .child(div().w(px(10.)).flex_none().children(chevron))
-        .children(icon.map(|icon| ui::icon(icon, 13.).text_color(t.text_tertiary)))
+        .children(icon.map(|(icon, tint)| ui::icon(icon, 13.).text_color(tint)))
         .child(
             ui::text(label, 12., FontWeight::NORMAL)
                 .text_color(t.text_primary)
