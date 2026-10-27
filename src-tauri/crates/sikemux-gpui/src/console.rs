@@ -85,7 +85,7 @@ fn keep(line: String) {
 /// The latest lines, as `app_console` asks for them: `limit` of them, or only problems with `errors`.
 pub fn read(params: &Value) -> Result<Value, String> {
     let limit = match params.get("limit") {
-        None | Some(Value::Null) => 50,
+        None | Some(Value::Null) => 20,
         Some(limit) => limit
             .as_u64()
             .filter(|limit| (1..=200).contains(limit))

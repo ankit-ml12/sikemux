@@ -593,7 +593,7 @@ page that made them.
 each message's `level` (`log`, `info`, `warn`, `error`, `debug`, `uncaught`
 for a thrown error nobody caught, `unhandled rejection` for a failed promise)
 and its text. `errors: true` drops the log, info and debug noise. Up to 200
-messages are kept, and the newest 50 are returned unless you pass `limit`.
+messages are kept, and the newest 20 are returned unless you pass `limit`.
 
 `app_console` reads the Sikemux app's own window the same way, not a tab.
 Its levels add `swallowed`, for errors the app caught and kept quiet, and

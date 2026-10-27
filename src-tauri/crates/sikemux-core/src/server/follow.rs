@@ -25,7 +25,7 @@ const MAX_AGENTS: usize = 8;
 /// Turns read when no cursor says where to start.
 const RECENT_TURNS: usize = 3;
 /// About how much one read answers with.
-const MAX_READ_BYTES: usize = 32 * 1024;
+const MAX_READ_BYTES: usize = 16 * 1024;
 const MAX_ASKED_CHARS: usize = 600;
 const MAX_SAID_BYTES: usize = 2 * 1024;
 const MAX_ANSWER_BYTES: usize = 8 * 1024;

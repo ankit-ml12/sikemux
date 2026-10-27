@@ -24,6 +24,8 @@ use crate::trailers::Commit;
 const ATTEMPTS: usize = 4;
 /// Files a commit's answer lists as left out; the rest are counted.
 const MAX_LEFT: usize = 12;
+/// Files a commit's answer lists as taken; the rest are counted.
+const MAX_LISTED: usize = 20;
 const INDEX_LOCKED_TRIES: usize = 5;
 
 #[derive(Serialize)]
@@ -31,6 +33,8 @@ pub(crate) struct Committed {
     commit: String,
     branch: String,
     files: Vec<Taken>,
+    #[serde(rename = "moreFiles", skip_serializing_if = "is_zero")]
+    more_files: usize,
     left: Vec<Left>,
     #[serde(rename = "moreLeft", skip_serializing_if = "is_zero")]
     more_left: usize,
@@ -312,8 +316,10 @@ pub(crate) fn commit(
                 return Ok(Committed {
                     commit,
                     branch,
+                    more_files: changes.len().saturating_sub(MAX_LISTED),
                     files: changes
                         .into_iter()
+                        .take(MAX_LISTED)
                         .map(|change| Taken {
                             path: change.path,
                             added: change.added,

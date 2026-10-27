@@ -34,12 +34,15 @@
         const matched = byUrl.filter((entry) => (!wantedMethod || entry.method === wantedMethod) && statusMatches(entry));
         const keep = Math.max(1, Math.min(100, Number(limit) || 20));
         const clipBody = (text) => (text != null && text.length > LIST_BODY ? `${text.slice(0, LIST_BODY)}…` : text);
-        const calls = matched.slice(-keep).map((entry) => ({
-            ...entry,
-            body: clipBody(entry.body),
-            requestBody: clipBody(entry.requestBody),
-            ...(entry.body != null && entry.body.length > LIST_BODY ? { bodyLength: entry.body.length } : {}),
-        }));
+        const filled = (call) => Object.fromEntries(Object.entries(call).filter(([, value]) => value != null && value !== ""));
+        const calls = matched.slice(-keep).map((entry) =>
+            filled({
+                ...entry,
+                body: clipBody(entry.body),
+                requestBody: clipBody(entry.requestBody),
+                ...(entry.body != null && entry.body.length > LIST_BODY ? { bodyLength: entry.body.length } : {}),
+            }),
+        );
         let size = JSON.stringify(calls).length;
         let omitted = 0;
         while (calls.length > 1 && size > BUDGET) {
@@ -66,7 +69,7 @@
         const all = recorder.entries();
         const matched = errorsOnly ? all.filter((entry) => entry.level !== "log" && entry.level !== "info" && entry.level !== "debug") : all;
         const BUDGET = 24000;
-        const keep = Math.max(1, Math.min(200, Number(limit) || 50));
+        const keep = Math.max(1, Math.min(200, Number(limit) || 20));
         const messages = matched.slice(-keep);
         let size = JSON.stringify(messages).length;
         let omitted = 0;
