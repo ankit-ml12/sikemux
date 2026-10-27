@@ -1,0 +1,26 @@
+name: Setup Rust
+description: Installs the toolchain rust-toolchain.toml pins and removes every other one the runner image carries.
+inputs:
+  components:
+    description: Extra components, separated by spaces
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    # rust-cache keys its caches on every installed toolchain, and runner images differ in which
+    # ones they carry, so a stray one would split the cache between images.
+    - name: Install the pinned toolchain alone
+      shell: bash
+      env:
+        COMPONENTS: ${{ inputs.components }}
+      run: |
+        channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+        flags=()
+        for component in $COMPONENTS; do flags+=(--component "$component"); done
+        rustup toolchain install "$channel" --profile minimal --no-self-update "${flags[@]}"
+        rustup default "$channel"
+        for toolchain in $(rustup toolchain list --quiet); do
+          [[ "$toolchain" == "$channel"-* ]] || rustup toolchain uninstall "$toolchain"
+        done
+        rustup toolchain list
