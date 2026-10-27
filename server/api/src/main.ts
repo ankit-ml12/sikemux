@@ -10,6 +10,7 @@ import { openDatabase } from "./db.ts";
 import { createLogger } from "./log.ts";
 import { migrate, readMigrations } from "./migrations.ts";
 import { startServer } from "./server.ts";
+import { checkStashFiles, StashFiles } from "./stash/files.ts";
 import { purgeStash } from "./stash/purge.ts";
 import {
   promoteUpdate,
@@ -155,10 +156,23 @@ if (command === "serve") {
   } finally {
     await database.close();
   }
+} else if (command === "check-stash") {
+  const log = startLogging("info");
+  const [dir, ...ids] = process.argv.slice(3);
+  const key = process.env.STASH_KEY?.trim() ?? "";
+  if (!dir || !/^[0-9a-f]{64}$/.test(key)) {
+    log.fatal("usage: STASH_KEY=<hex> check-stash <folder> <item id>...");
+    process.exitCode = 2;
+  } else {
+    const files = new StashFiles({ dir, key: Buffer.from(key, "hex") });
+    if (await checkStashFiles(files, ids, log))
+      log.info({ files: ids.length }, "the stashed files decrypt");
+    else process.exitCode = 1;
+  }
 } else {
   startLogging("info").fatal(
     { command },
-    `unknown command; use serve, migrate, purge or ${UPDATE_COMMANDS.join(", ")}`,
+    `unknown command; use serve, migrate, purge, check-stash or ${UPDATE_COMMANDS.join(", ")}`,
   );
   process.exitCode = 2;
 }

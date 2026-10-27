@@ -3,7 +3,8 @@
 Every night at 03:30 India time (plus up to 20 minutes), `sikemux-backup.timer` on citadel
 dumps the `sikemux` database, encrypts it with [age](https://age-encryption.org) and uploads
 it to the Cloudflare R2 bucket `sikemux-backups`. Backups are kept 30 days, as the privacy
-policy promises. Phone update assets are not backed up: they are rebuilt from the git tags.
+policy promises. The same run copies the stash's files (see [The stash](#the-stash)). Phone
+update assets are not backed up: they are rebuilt from the git tags.
 
 Citadel holds only the age public key. It can write a backup but never read one: the private
 key stays offline with the owner, and the restore drill takes it on stdin, never from disk.
@@ -14,6 +15,7 @@ key stays offline with the owner, and the restore drill takes it on stdin, never
 | ------------------- | ------------------------------------------------ | -------------------------------- |
 | Backup script       | `/usr/local/lib/sikemux/backup-database`         | `server/deploy/backup-database`  |
 | Restore script      | `/usr/local/lib/sikemux/restore-database`        | `server/deploy/restore-database` |
+| Stash restore       | `/usr/local/lib/sikemux/restore-stash`           | `server/deploy/restore-stash`    |
 | R2 setup both share | `/usr/local/lib/sikemux/lib.sh`                  | `server/deploy/lib.sh`           |
 | Units               | `sikemux-backup.service`, `sikemux-backup.timer` | `server/deploy/`                 |
 | R2 credentials      | `/etc/sikemux/backup.env` (root, 600)            | written by hand                  |
@@ -100,3 +102,30 @@ sudo systemctl start sikemux-api sikemux-purge.timer
 
 The restored tables keep their owner, `sikemux`, so the API and its migrations work as before.
 Drop `sikemux_broken` once the API is healthy.
+
+## The stash
+
+Stashed files live in `/var/lib/sikemux-stash`, each already encrypted with the stash key in
+`/etc/sikemux/stash.key`. The nightly run copies new files to `stash/files` in the bucket as they
+are; a file deleted on citadel moves to `stash/deleted/<date>` and is deleted there after 30
+days. The stash key goes up as `stash/key.age`, sealed to the same age keys as the database, so
+the files can be read back without citadel. The `expire-backups` rule covers only `sikemux/`, so
+it never touches `stash/files`.
+
+The monthly drill checks the stash too:
+
+```sh
+sudo /usr/local/lib/sikemux/restore-stash   # paste the same key, then Ctrl-D
+```
+
+It opens `stash/key.age` and fails unless it matches citadel's key, copies every file into a
+scratch folder, compares the count with the live folder and with the items that have a file,
+decrypts 20 of them at random with the API's `check-stash`, and deletes the folder.
+
+To recover on a new citadel, install `age` and `rclone`, copy `server/deploy` and `backup.env`
+there, then run the script from that copy before `setup-citadel.sh`, so setup keeps the restored
+key instead of making one and hands the files to the API:
+
+```sh
+sudo BACKUP_ENV=./backup.env ./restore-stash --dir /var/lib/sikemux-stash --keep
+```

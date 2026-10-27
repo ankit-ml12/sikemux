@@ -147,6 +147,26 @@ export class StashFiles {
   }
 }
 
+/** Whether every id's file decrypts whole, as a backup is checked; logs each that does not. */
+export async function checkStashFiles(
+  files: StashFiles,
+  ids: readonly string[],
+  log: Logger,
+): Promise<boolean> {
+  let whole = true;
+  for (const id of ids) {
+    try {
+      const stream = await files.read(id, log);
+      if (!stream) throw new Error("the file is missing");
+      for await (const _ of stream);
+    } catch (error) {
+      log.error({ err: error, id }, "a stashed file does not decrypt");
+      whole = false;
+    }
+  }
+  return whole;
+}
+
 export async function removeStashFiles(
   dir: string,
   ids: readonly string[],

@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# Restores the stash's files and key from R2 into a scratch folder, checks them against the live
+# stash and deletes the folder again. Run as root on citadel; the age private key comes in on
+# stdin and never touches the disk:
+#   restore-stash [--dir PATH] [--keep]
+# --keep leaves the restored files in place and, when citadel has no stash key yet, writes the
+# restored one to /etc/sikemux/stash.key, for recovering instead of drilling.
+set -euo pipefail
+export LC_ALL=C
+# shellcheck source=lib.sh
+. "$(dirname "$0")/lib.sh"
+
+backup_env="${BACKUP_ENV:-/etc/sikemux/backup.env}"
+recipients="${BACKUP_RECIPIENTS:-/etc/sikemux/backup-recipients.txt}"
+stash_dir="${STASH_DIR:-/var/lib/sikemux-stash}"
+key_file="${STASH_KEY_FILE:-/etc/sikemux/stash.key}"
+api="${SIKEMUX_API:-/srv/sikemux/current/api/dist/main.mjs}"
+live_os_user="${LIVE_OS_USER-sikemux-backup}"
+live_role="${LIVE_ROLE:-sikemux_backup}"
+# How many restored files are decrypted whole, picked at random.
+sample=20
+dir=""
+keep=no
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dir) dir="${2:?--dir needs a folder}"; shift 2 ;;
+    --keep) keep=yes; shift ;;
+    *) sed -n '2,7s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+  esac
+done
+if [ -n "$dir" ] && [ -e "$dir" ] && [ "$keep" = no ]; then
+  echo "a drill restores into a new folder, which it deletes afterwards; pass --keep to restore into $dir" >&2
+  exit 2
+fi
+
+if [ -f "$backup_env" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$backup_env"
+  set +a
+fi
+use_r2
+
+live_psql() {
+  if [ -n "$live_os_user" ]; then
+    runuser -u "$live_os_user" -- psql --no-psqlrc --no-password -v ON_ERROR_STOP=1 -U "$live_role" -d sikemux "$@"
+  else
+    psql --no-psqlrc --no-password -v ON_ERROR_STOP=1 -U "$live_role" -d sikemux "$@"
+  fi
+}
+
+if [ -t 0 ]; then
+  echo "paste the age private key (AGE-SECRET-KEY-1...), then press Ctrl-D" >&2
+fi
+identity="$(cat)"
+case "$identity" in
+  *AGE-SECRET-KEY-1*) ;;
+  *) echo "no age private key on stdin" >&2; exit 1 ;;
+esac
+if [ -f "$recipients" ]; then
+  public="$(age-keygen -y <(printf '%s\n' "$identity"))"
+  grep -qx "$public" "$recipients" ||
+    echo "warning: this key's public half, $public, is not in $recipients; the backed-up key may not open with it" >&2
+fi
+
+failed=no
+key="$(rclone cat "r2:$R2_BUCKET/stash/key.age" | age --decrypt --identity <(printf '%s\n' "$identity"))"
+unset identity
+[[ "$key" =~ ^[0-9a-f]{64}$ ]] || { echo "stash/key.age does not hold a stash key" >&2; exit 1; }
+if [ -f "$key_file" ]; then
+  if [ "$(cat "$key_file")" = "$key" ]; then
+    echo "the backed-up key is $key_file's"
+  else
+    echo "FAIL: the backed-up key is not $key_file's" >&2
+    failed=yes
+  fi
+elif [ "$keep" = yes ]; then
+  (umask 077 && printf '%s\n' "$key" >"$key_file")
+  echo "wrote the backed-up key to $key_file; setup-citadel.sh puts it in api.env"
+fi
+
+if [ -z "$dir" ]; then
+  dir="$(mktemp -d /var/tmp/sikemux-stash-restore.XXXXXX)"
+fi
+if [ "$keep" = no ]; then
+  trap 'rm -rf "$dir"' EXIT
+fi
+mkdir -p "$dir"
+echo "restoring the stash into $dir"
+rclone copy "r2:$R2_BUCKET/stash/files" "$dir"
+
+restored="$(find "$dir" -maxdepth 1 -type f -name '[A-Za-z0-9_-]*' | wc -l | tr -d ' ')"
+short="$(find "$dir" -maxdepth 1 -type f -name '[A-Za-z0-9_-]*' -size -29c | wc -l | tr -d ' ')"
+items="$(live_psql -Atc 'select count(*) from stash_items where size is not null' 2>/dev/null || echo unknown)"
+live="$( [ -d "$stash_dir" ] && find "$stash_dir" -maxdepth 1 -type f -name '[A-Za-z0-9_-]*' | wc -l | tr -d ' ' || echo none)"
+printf '\n%-28s %10s\n' "files restored" "$restored"
+printf '%-28s %10s\n' "files in $stash_dir" "$live"
+printf '%-28s %10s\n\n' "items with a file" "$items"
+
+if [ "$short" != 0 ]; then
+  echo "FAIL: $short restored files are too short to be stashed files" >&2
+  failed=yes
+fi
+if [ "$restored" = 0 ] && [ "$items" != unknown ] && [ "$items" -gt 0 ]; then
+  echo "FAIL: the backup holds no files while $items items have one" >&2
+  failed=yes
+fi
+
+if [ "$restored" != 0 ]; then
+  if [ -f "$api" ]; then
+    mapfile -t picked < <(find "$dir" -maxdepth 1 -type f -name '[A-Za-z0-9_-]*' -printf '%f\n' | shuf -n "$sample")
+    if STASH_KEY="$key" node "$api" check-stash "$dir" "${picked[@]}"; then
+      echo "decrypted ${#picked[@]} restored files whole"
+    else
+      echo "FAIL: restored files do not decrypt with the backed-up key" >&2
+      failed=yes
+    fi
+  else
+    echo "note: no API build at $api, so no restored file was decrypted" >&2
+  fi
+fi
+unset key
+
+if [ "$keep" = yes ]; then
+  if getent group sikemux-stash >/dev/null; then
+    chown -R sikemux:sikemux-stash "$dir"
+    chmod 2750 "$dir"
+    find "$dir" -maxdepth 1 -type f -exec chmod 640 {} +
+  fi
+  echo "kept the restored files in $dir"
+else
+  echo "deleting $dir"
+fi
+[ "$failed" = no ] || exit 1
+echo "stash restore drill passed: $restored files in the backup, $items items with a file live"

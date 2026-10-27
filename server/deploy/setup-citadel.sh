@@ -68,6 +68,9 @@ step "stash: files written by the API, encrypted with a key kept in /etc/sikemux
 # the folder hands its group to every file in it.
 getent group sikemux-stash >/dev/null || groupadd --system sikemux-stash
 install -d -m 2750 -o sikemux -g sikemux-stash /var/lib/sikemux-stash
+# Files restore-stash put back before this group existed.
+find /var/lib/sikemux-stash -maxdepth 1 -type f ! -user sikemux \
+  -exec chown sikemux:sikemux-stash {} + -exec chmod 640 {} +
 stash_changed=0
 if [ ! -f /etc/sikemux/stash.key ]; then
   (umask 077 && openssl rand -hex 32 >/etc/sikemux/stash.key)
@@ -149,6 +152,7 @@ id sikemux-backup >/dev/null 2>&1 ||
   useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin sikemux-backup
 install -D -m 755 -o root -g root "$here/backup-database" /usr/local/lib/sikemux/backup-database
 install -D -m 755 -o root -g root "$here/restore-database" /usr/local/lib/sikemux/restore-database
+install -D -m 755 -o root -g root "$here/restore-stash" /usr/local/lib/sikemux/restore-stash
 if [ ! -f /etc/sikemux/backup.env ]; then
   cat >/etc/sikemux/backup.env <<'EOF'
 R2_ACCOUNT_ID=
