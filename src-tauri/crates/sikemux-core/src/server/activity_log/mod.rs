@@ -1,9 +1,10 @@
 //! What agents did on this host, for the Activity page: the sessions they
 //! opened, the turns they ran, the commits made and the tokens their
-//! transcripts report, kept in one database in the core's data folder and
+//! transcripts or answers report, kept in one database in the core's data folder and
 //! priced from the model feed and the person's own prices.
 
 mod pricing;
+mod report;
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -23,6 +24,7 @@ use crate::launch::model_feed::Feed;
 use crate::launch::named_account;
 pub(crate) use pricing::PriceOverride;
 use pricing::{Prices, PricingInfo};
+pub(crate) use report::{ReportedDay, ReportedTokens};
 
 use super::transcript;
 use super::Core;
@@ -581,6 +583,63 @@ impl ActivityLog {
                 )?;
             }
             Ok(())
+        });
+    }
+}
+
+/// Claude and Codex report a turn's tokens only in the transcript their CLI
+/// writes. Every other chat agent says them in its answer to the prompt.
+fn counts_from_transcript(kind: AgentKind) -> bool {
+    matches!(kind, AgentKind::Claude | AgentKind::Codex)
+}
+
+impl ActivityLog {
+    /// Counts the tokens a chat's agent said its turn used, in the ACP shape
+    /// every chat driver answers a prompt with.
+    pub(crate) fn turn_answered(
+        self: &Arc<Self>,
+        launch: &crate::protocol::ChatLaunch,
+        answer: &Value,
+    ) {
+        let kind = AgentKind::from_name(&launch.provider);
+        if kind.is_some_and(counts_from_transcript) {
+            return;
+        }
+        let Some(usage) = answer.get("usage").filter(|usage| usage.is_object()) else {
+            return;
+        };
+        let field = |key: &str| usage[key].as_u64().unwrap_or(0);
+        let count = TokenCount {
+            input: field("inputTokens"),
+            output: field("outputTokens"),
+            cache_read: field("cachedReadTokens"),
+            cache_write: field("cachedWriteTokens"),
+        };
+        if count.is_empty() {
+            return;
+        }
+        let agent = kind.map_or_else(|| launch.provider.clone(), |kind| kind.as_str().to_owned());
+        let project = launch.cwd.to_string_lossy().into_owned();
+        let model = launch.model.clone().unwrap_or_default();
+        let at_ms = epoch_ms() as i64;
+        let log = self.clone();
+        in_background(move || {
+            log.with_database(|db| {
+                db.execute(
+                    "INSERT INTO tokens (at_ms, agent, project, input, output, cache_read, cache_write, model, speed)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'standard')",
+                    params![
+                        at_ms,
+                        agent,
+                        project,
+                        count.input as i64,
+                        count.output as i64,
+                        count.cache_read as i64,
+                        count.cache_write as i64,
+                        model
+                    ],
+                )
+            });
         });
     }
 }

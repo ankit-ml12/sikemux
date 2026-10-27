@@ -242,6 +242,15 @@ impl Sink {
             chat.stop_running();
             let _ = self.settled.send(turn);
         };
+        let answer = match &end {
+            TurnEnd::Completed(payload) => Some(payload),
+            TurnEnd::Failed { response, .. } => response.as_ref(),
+            _ => None,
+        };
+        if let (Some(answer), Some(core)) = (answer, chat.core.upgrade()) {
+            core.activity_log
+                .turn_answered(&chat.current_launch(), answer);
+        }
         match end {
             TurnEnd::Completed(payload) => {
                 settle();

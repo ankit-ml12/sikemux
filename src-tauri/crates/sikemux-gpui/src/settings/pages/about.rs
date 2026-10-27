@@ -118,7 +118,7 @@ pub fn render(
     };
     let privacy = rows::row(
         "Share anonymous usage",
-        Some("Once a day, sends a random install ID and a one-way hash of your account with the app version, update channel and system version. Never your files, commands or projects."),
+        Some("Once a day, sends a random install ID and a one-way hash of your account with the app version, update channel and system version, and the day before's totals: tokens by agent and model, turns, sessions and commits. Never your files, prompts, commands or projects."),
         rows::switch("share-usage", "shareUsageData", preferences.share_usage_data, this),
         cx,
     );

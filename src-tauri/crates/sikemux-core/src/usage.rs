@@ -1,5 +1,7 @@
-//! One anonymous `app_active` event a day for each install. Only builds the
-//! release workflow publishes send anything; local builds stay silent.
+//! One anonymous `app_active` event a day for each install, and once a UTC day
+//! is over, how much its agents did that day: tokens by agent and model,
+//! turns, sessions and commits, never which projects or what was said. Only
+//! builds the release workflow publishes send anything; local builds stay silent.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,13 +15,17 @@ use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
 use crate::protocol::{BuildChannel, Preferences, UpdateChannel};
+use crate::server::activity_log::{ReportedDay, ReportedTokens};
 use crate::server::Core;
 
 const CAPTURE_ENDPOINT: &str = "https://eu.i.posthog.com/i/v0/e/";
+const BATCH_ENDPOINT: &str = "https://eu.i.posthog.com/batch/";
 const PROJECT_TOKEN: &str = "phc_yGaffnPw38wHvQKgusATcKtYmkyDCbNNGpTo3sK9pQoD";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const SECONDS_PER_DAY: u64 = 86_400;
 const HOST_CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60);
+/// How far back an install's first report reaches into the activity it kept before.
+const FIRST_REPORT_DAYS: u64 = 400;
 
 /// What was installed: the desktop app, or the core alone on a host with no screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,6 +49,7 @@ impl Install {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Active<'a> {
     pub install: Install,
     pub version: &'a str,
@@ -57,6 +64,9 @@ pub struct Active<'a> {
 struct UsageRecord {
     install_id: String,
     last_reported_day: Option<u64>,
+    /// The last whole day whose activity was reported, or passed over while
+    /// the person did not share usage.
+    last_activity_day: Option<u64>,
 }
 
 impl UsageRecord {
@@ -64,6 +74,7 @@ impl UsageRecord {
         Self {
             install_id: uuid::Uuid::new_v4().to_string(),
             last_reported_day: None,
+            last_activity_day: None,
         }
     }
 }
@@ -75,12 +86,14 @@ struct Platform {
     arch: &'static str,
 }
 
+/// Reports to the record one at a time, so two reports never both send.
+static IN_FLIGHT: Mutex<()> = Mutex::const_new(());
+
 /// Sends today's event unless this install already sent it.
 pub async fn report_active(data_dir: &Path, active: Active<'_>) -> Result<(), String> {
     if !active.install.published() {
         return Ok(());
     }
-    static IN_FLIGHT: Mutex<()> = Mutex::const_new(());
     let _one_at_a_time = IN_FLIGHT.lock().await;
 
     let path = data_dir.join("usage.json");
@@ -100,6 +113,57 @@ pub async fn report_active(data_dir: &Path, active: Active<'_>) -> Result<(), St
         .map_err(|error| format!("usage report: {error}"))?;
 
     record.last_reported_day = Some(today);
+    save_record(&path, &record)
+}
+
+/// Sends each whole day's activity since the last one reported. `days` reads
+/// the days with activity from the first up to but not including the second.
+async fn report_activity(
+    data_dir: &Path,
+    active: &Active<'_>,
+    days: impl FnOnce(u64, u64) -> Vec<ReportedDay> + Send + 'static,
+) -> Result<(), String> {
+    let _one_at_a_time = IN_FLIGHT.lock().await;
+    let path = data_dir.join("usage.json");
+    let mut record = load_record(&path)?;
+    let today = utc_day(SystemTime::now());
+    let first = record
+        .last_activity_day
+        .map_or(today.saturating_sub(FIRST_REPORT_DAYS), |day| day + 1);
+    if first >= today {
+        return Ok(());
+    }
+    let days = tokio::task::spawn_blocking(move || days(first, today))
+        .await
+        .map_err(|error| error.to_string())?;
+    let platform = platform();
+    let batch: Vec<Value> = days
+        .iter()
+        .flat_map(|day| activity_events(&record.install_id, active, &platform, day))
+        .collect();
+    if !batch.is_empty() {
+        client()
+            .post(BATCH_ENDPOINT)
+            .json(&json!({ "api_key": PROJECT_TOKEN, "batch": batch }))
+            .send()
+            .await
+            .and_then(|response| response.error_for_status())
+            .map_err(|error| format!("activity report: {error}"))?;
+    }
+    record.last_activity_day = Some(today - 1);
+    save_record(&path, &record)
+}
+
+/// Days the person did not share stay unreported, even once they share again.
+async fn pass_over_activity(data_dir: &Path) -> Result<(), String> {
+    let _one_at_a_time = IN_FLIGHT.lock().await;
+    let path = data_dir.join("usage.json");
+    let mut record = load_record(&path)?;
+    let yesterday = utc_day(SystemTime::now()).checked_sub(1);
+    if record.last_activity_day >= yesterday {
+        return Ok(());
+    }
+    record.last_activity_day = yesterday;
     save_record(&path, &record)
 }
 
@@ -124,6 +188,11 @@ pub(crate) async fn serve(core: Arc<Core>, data_dir: PathBuf) {
             _ = core.usage_wake.notified() => {}
         }
         let preferences = core.preferences.get();
+        if !preferences.share_usage_data {
+            if let Err(error) = pass_over_activity(&data_dir).await {
+                eprintln!("sikemux core: {error}");
+            }
+        }
         let Some(channel) =
             reported_channel(install, &preferences, core.window.is_open(), host.channel)
         else {
@@ -137,6 +206,11 @@ pub(crate) async fn serve(core: Arc<Core>, data_dir: PathBuf) {
             account: account.as_deref(),
         };
         if let Err(error) = report_active(&data_dir, active).await {
+            eprintln!("sikemux core: {error}");
+        }
+        let log = core.activity_log.clone();
+        let days = move |first: u64, end: u64| log.reported_days(first as i64, end as i64);
+        if let Err(error) = report_activity(&data_dir, &active, days).await {
             eprintln!("sikemux core: {error}");
         }
     }
@@ -190,20 +264,113 @@ fn active_event(install_id: &str, active: &Active<'_>, platform: &Platform) -> V
         "api_key": PROJECT_TOKEN,
         "event": "app_active",
         "distinct_id": install_id,
-        "properties": {
-            "$process_person_profile": false,
-            "$lib": "sikemux",
-            "source": "app",
-            "install": active.install.name(),
-            "user": active.account.map(account_hash),
-            "version": active.version,
-            "update_channel": active.channel.name(),
-            "os": platform.os,
-            "os_version": platform.os_version,
-            "distro": platform.distro,
-            "arch": platform.arch,
-        },
+        "properties": common_properties(active, platform),
     })
+}
+
+/// The properties every event carries, beside its own.
+fn common_properties(active: &Active<'_>, platform: &Platform) -> Value {
+    json!({
+        "$process_person_profile": false,
+        "$lib": "sikemux",
+        "source": "app",
+        "install": active.install.name(),
+        "user": active.account.map(account_hash),
+        "version": active.version,
+        "update_channel": active.channel.name(),
+        "os": platform.os,
+        "os_version": platform.os_version,
+        "distro": platform.distro,
+        "arch": platform.arch,
+    })
+}
+
+/// One `activity_day` event for the day, and one `tokens_day` for each agent,
+/// model and speed that used tokens, all dated at the day's middle.
+fn activity_events(
+    install_id: &str,
+    active: &Active<'_>,
+    platform: &Platform,
+    day: &ReportedDay,
+) -> Vec<Value> {
+    let midday_ms = day.day * 86_400_000 + 43_200_000;
+    let timestamp = time::OffsetDateTime::from_unix_timestamp(midday_ms / 1000)
+        .ok()
+        .and_then(|at| {
+            at.format(&time::format_description::well_known::Rfc3339)
+                .ok()
+        });
+    let date = timestamp.as_deref().map(|at| at[..10].to_owned());
+    let event = |name: &str, own: Value| {
+        let mut properties = common_properties(active, platform);
+        properties["day"] = json!(date);
+        if let (Some(properties), Value::Object(own)) = (properties.as_object_mut(), own) {
+            properties.extend(own);
+        }
+        json!({
+            "event": name,
+            "distinct_id": install_id,
+            "timestamp": timestamp,
+            "uuid": event_id(install_id, name, day.day, &properties),
+            "properties": properties,
+        })
+    };
+    let total = |tokens: &ReportedTokens| {
+        tokens.input + tokens.output + tokens.cache_read + tokens.cache_write
+    };
+    let priced: Vec<f64> = day
+        .tokens
+        .iter()
+        .filter_map(|tokens| tokens.cost_usd)
+        .collect();
+    let mut events = vec![event(
+        "activity_day",
+        json!({
+            "sessions": day.sessions,
+            "resumed_sessions": day.resumed,
+            "chat_sessions": day.chat_sessions,
+            "terminal_sessions": day.terminal_sessions,
+            "turns": day.turns,
+            "agent_ms": day.agent_ms,
+            "peak_agents": day.peak_agents,
+            "commits": day.commits,
+            "agent_commits": day.agent_commits,
+            "tokens": day.tokens.iter().map(total).sum::<i64>(),
+            "cost_usd": priced.iter().sum::<f64>(),
+        }),
+    )];
+    events.extend(day.tokens.iter().map(|tokens| {
+        event(
+            "tokens_day",
+            json!({
+                "agent": tokens.agent,
+                "model": (!tokens.model.is_empty()).then_some(&tokens.model),
+                "speed": tokens.speed,
+                "input_tokens": tokens.input,
+                "output_tokens": tokens.output,
+                "cache_read_tokens": tokens.cache_read,
+                "cache_write_tokens": tokens.cache_write,
+                "tokens": total(tokens),
+                "cost_usd": tokens.cost_usd,
+            }),
+        )
+    }));
+    events
+}
+
+/// The same day's event from the same install keeps its id, so PostHog drops
+/// a report sent again after its answer was lost.
+fn event_id(install_id: &str, name: &str, day: i64, properties: &Value) -> String {
+    let key = [
+        &properties["agent"],
+        &properties["model"],
+        &properties["speed"],
+    ]
+    .map(|value| value.as_str().unwrap_or_default());
+    let digest = Sha256::digest(format!("{install_id}|{name}|{day}|{}", key.join("|")));
+    uuid::Builder::from_random_bytes(digest[..16].try_into().expect("16 bytes"))
+        .into_uuid()
+        .to_string()
 }
 
 fn platform() -> Platform {
