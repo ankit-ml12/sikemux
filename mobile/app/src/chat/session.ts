@@ -122,6 +122,22 @@ const KEPT_DETAILS = 40;
  */
 const PERMISSION_GRACE_MS = 2000;
 
+/** How long typing rests before the draft is saved on the host. */
+const DRAFT_SAVE_MS = 600;
+
+/** A file the host's draft holds, known here only by where the host keeps it. */
+function hostFile(path: string): Attachment {
+  return {
+    id: `draft:${path}`,
+    kind: 'file',
+    name: path.split('/').pop() || path,
+    mime: 'application/octet-stream',
+    uri: path,
+    size: 0,
+    path,
+  };
+}
+
 function readFile(uri: string): Promise<ArrayBuffer> {
   return new File(uri).arrayBuffer();
 }
@@ -171,6 +187,13 @@ export class ChatSession {
   private mode: string | null = null;
   private changingMode = false;
   private draft = '';
+  /** The host's revision of this chat's draft that the composer last took in. */
+  private draftRev: number | undefined;
+  /** What the host's draft carries beside its text and files, which only the Mac reads; saved back as it came. */
+  private draftExtra: Record<string, unknown> = {};
+  /** Changes made here since the draft was last saved, which the host's draft must not replace. */
+  private edits = 0;
+  private saving: ReturnType<typeof setTimeout> | undefined;
   /** When this phone saw the running turn begin, for a turn the host has no time for. */
   private turnSince: number;
 
@@ -227,6 +250,7 @@ export class ChatSession {
     this.mark = { feed: kept.mark.feed, seq: BigInt(kept.mark.seq) };
     this.taken = this.mark.seq;
     this.attached = 'live';
+    this.takeDraft();
   }
 
   subscribe = (listener: () => void) => {
@@ -243,6 +267,7 @@ export class ChatSession {
   setDraft = (text: string) => {
     if (text === this.draft) return;
     this.draft = text;
+    this.edited();
     this.notify();
   };
 
@@ -285,6 +310,7 @@ export class ChatSession {
     const { fits, notice } = fitting(this.attachments.length, picked);
     this.attachments = [...this.attachments, ...fits];
     this.notice = notice;
+    this.edited();
     this.emit();
   };
 
@@ -312,6 +338,7 @@ export class ChatSession {
   removeAttachment = (id: string) => {
     if (this.uploading()) return;
     this.attachments = this.attachments.filter((attachment) => attachment.id !== id);
+    this.edited();
     this.emit();
   };
 
@@ -324,6 +351,7 @@ export class ChatSession {
     this.notice = null;
     const files = this.attachments;
     this.attachments = [];
+    this.edited();
     if (this.outbox.some((outgoing) => outgoing.waiting)) this.deliver(text, files, true);
     else if (this.busy()) this.queue(text, files);
     else this.deliver(text, files);
@@ -383,6 +411,7 @@ export class ChatSession {
         return attachment ? [{ ...attachment, path }] : [];
       });
       this.attachments = [...sent, ...this.attachments];
+      this.edited();
     }
     this.notice = null;
     if (this.chat.running) this.stoppingTurn = true;
@@ -711,6 +740,59 @@ export class ChatSession {
       }
     }
     this.settleOutbox(before.running && !this.chat.running);
+    if (this.chat.draft !== before.draft) this.takeDraft();
+  }
+
+  /** The draft changed here: it is saved on the host once typing rests. */
+  private edited() {
+    this.edits += 1;
+    clearTimeout(this.saving);
+    this.saving = setTimeout(() => void this.saveDraft(), DRAFT_SAVE_MS);
+  }
+
+  /**
+   * Saves the draft as the chat's own on the host, naming the revision last taken in, so the host keeps
+   * whatever it put in the draft since. A save that fails waits for the next change or attach.
+   */
+  private async saveDraft() {
+    const connection = this.connection;
+    if (!this.edits || !connection?.isOpen() || this.attached !== 'live') return;
+    const edits = this.edits;
+    const paths = pathsOf(this.attachments);
+    const { attachments: _, ...rest } = this.draftExtra;
+    const draft = {
+      key: `chat:${this.agentId}`,
+      text: this.draft,
+      extra: paths.length ? { ...rest, attachments: paths } : rest,
+      ...(this.draftRev === undefined ? {} : { rev: this.draftRev }),
+    };
+    try {
+      await connection.call('setDraft', JSON.stringify(draft));
+    } catch {
+      return;
+    }
+    if (this.edits !== edits) return;
+    this.edits = 0;
+    this.takeDraft();
+  }
+
+  /** Takes in the host's draft, unless changes made here are still to be saved over it. */
+  private takeDraft() {
+    if (this.edits) return;
+    const host = this.chat.draft;
+    if (host?.rev === this.draftRev && host) return;
+    const extra = host?.extra && typeof host.extra === 'object' ? (host.extra as Record<string, unknown>) : {};
+    const { attachments, ...rest } = extra;
+    const paths = Array.isArray(attachments) ? attachments.filter((path): path is string => typeof path === 'string') : [];
+    const kept = new Map(this.attachments.flatMap((attachment) => (attachment.path ? [[attachment.path, attachment] as const] : [])));
+    this.draftRev = host?.rev;
+    this.draftExtra = rest;
+    this.draft = host?.text ?? '';
+    this.attachments = [
+      ...paths.map((path) => kept.get(path) ?? hostFile(path)),
+      ...this.attachments.filter((attachment) => !attachment.path),
+    ];
+    this.emit();
   }
 
   /** Lets go of queued messages the host has taken, now that its own queue or turn says where they went. */
@@ -855,6 +937,7 @@ export class ChatSession {
         this.attached = 'live';
         this.take(waiting);
         this.pushWaiting();
+        void this.saveDraft();
         this.emit();
       })
       .catch((error: unknown) => {

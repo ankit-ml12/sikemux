@@ -64,7 +64,7 @@ export function ComposerAttachments({
                 {attachment.kind === 'image' ? (
                   <Image source={{ uri: attachment.uri }} style={styles.thumbImage} resizeMode="cover" />
                 ) : (
-                  <FileChip name={attachment.name} size={attachment.size} tall />
+                  <FileChip name={attachment.name} size={attachment.size || undefined} tall />
                 )}
               </View>
               {sending || broken ? (
