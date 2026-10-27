@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { serve } from "@hono/node-server";
 import type { Server } from "node:http";
 
@@ -17,6 +18,7 @@ import { FcmProvider } from "./push/fcm.ts";
 import { Pusher } from "./push/send.ts";
 import { RelayAccess } from "./relay/access.ts";
 import { attachShares } from "./share/server.ts";
+import { StashFiles } from "./stash/files.ts";
 
 /** How long a stop waits for requests in flight before closing them anyway. */
 const DRAIN_MS = 25_000;
@@ -98,6 +100,12 @@ export function startServer(config: Config, log: Logger) {
     log.warn(
       "RELAY_ACCESS_TOKEN is not set: the relay is refused every device it asks about",
     );
+  if (config.stash)
+    mkdirSync(config.stash.dir, { recursive: true, mode: 0o700 });
+  else
+    log.warn(
+      "STASH_DIR and STASH_KEY are not set: the stash answers unavailable",
+    );
   const relayAccess = new RelayAccess(database.db);
   const app = createApp({
     database,
@@ -114,6 +122,7 @@ export function startServer(config: Config, log: Logger) {
     join: config.join,
     places,
     relayAccessToken: config.relayAccessToken,
+    stash: config.stash ? new StashFiles(config.stash) : null,
   });
   const server = serve(
     { fetch: app.fetch, hostname: config.host, port: config.port },

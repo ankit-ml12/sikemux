@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import type { Network } from "@sikemux/protocol";
 import type { Level } from "pino";
 
@@ -12,6 +13,17 @@ import { version } from "./version.ts";
 export interface MigrationConfig {
   databaseUrl: string;
   logLevel: Level;
+}
+
+export interface PurgeConfig extends MigrationConfig {
+  /** Where stashed files are kept, so purging can delete them with their items; null without a stash. */
+  stashDir: string | null;
+}
+
+/** Where stashed files are kept and the key they are encrypted with. */
+export interface StashSettings {
+  dir: string;
+  key: Buffer;
 }
 
 export interface Config extends MigrationConfig {
@@ -38,6 +50,8 @@ export interface Config extends MigrationConfig {
   placesDir: string | null;
   /** What the relay sends to ask whether a device may use it; null leaves the relay's question unanswered. */
   relayAccessToken: string | null;
+  /** Null when STASH_DIR and STASH_KEY are not set, and the stash answers that it is not set up. */
+  stash: StashSettings | null;
 }
 
 const LEVELS: readonly Level[] = [
@@ -59,18 +73,33 @@ function reader(env: NodeJS.ProcessEnv) {
     return databaseUrl;
   };
   const readLogLevel = () => settings.oneOf("LOG_LEVEL", LEVELS, "info");
+  const readStashDir = () => {
+    const dir = settings.optional("STASH_DIR") ?? null;
+    if (dir !== null && !isAbsolute(dir))
+      problems.push("STASH_DIR is not an absolute path");
+    return dir;
+  };
   const finish = <T>(config: T): T => {
     if (problems.length)
       throw new Error(`The API cannot start: ${problems.join("; ")}.`);
     return config;
   };
-  return { ...settings, readDatabaseUrl, readLogLevel, finish };
+  return { ...settings, readDatabaseUrl, readLogLevel, readStashDir, finish };
 }
 
 /** Reads only what migrating needs, so a deploy can migrate without the server's settings. */
 export function loadMigrationConfig(env: NodeJS.ProcessEnv): MigrationConfig {
   const { readDatabaseUrl, readLogLevel, finish } = reader(env);
   return finish({ databaseUrl: readDatabaseUrl(), logLevel: readLogLevel() });
+}
+
+export function loadPurgeConfig(env: NodeJS.ProcessEnv): PurgeConfig {
+  const { readDatabaseUrl, readLogLevel, readStashDir, finish } = reader(env);
+  return finish({
+    databaseUrl: readDatabaseUrl(),
+    logLevel: readLogLevel(),
+    stashDir: readStashDir(),
+  });
 }
 
 /**
@@ -88,6 +117,7 @@ export function loadConfig(
     port: readPort,
     readDatabaseUrl,
     readLogLevel,
+    readStashDir,
     finish,
   } = reader(env);
 
@@ -129,6 +159,16 @@ export function loadConfig(
   const relayAccessToken = optional("RELAY_ACCESS_TOKEN") ?? null;
   if (relayAccessToken !== null && relayAccessToken.length < 32)
     problems.push("RELAY_ACCESS_TOKEN is shorter than 32 characters");
+  const stashDir = readStashDir();
+  const stashKey = optional("STASH_KEY") ?? null;
+  if (stashKey !== null && !/^[0-9a-f]{64}$/.test(stashKey))
+    problems.push("STASH_KEY is not 32 bytes in lowercase hex");
+  if ((stashDir === null) !== (stashKey === null))
+    problems.push("STASH_DIR and STASH_KEY are set together or not at all");
+  const stash =
+    stashDir && stashKey
+      ? { dir: stashDir, key: Buffer.from(stashKey, "hex") }
+      : null;
 
   return finish({
     host,
@@ -145,6 +185,7 @@ export function loadConfig(
     join: join as JoinSigner,
     placesDir,
     relayAccessToken,
+    stash,
     logLevel,
   });
 }

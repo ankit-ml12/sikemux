@@ -1,0 +1,111 @@
+import type {
+  AccountEventType,
+  StashItem,
+  StashKind,
+  StashPreview,
+  StashTarget,
+} from "@sikemux/protocol";
+import type { Kysely, Selectable, Transaction } from "kysely";
+
+import type { Tables } from "../db.ts";
+import { appendEvent } from "../events/log.ts";
+import { ApiFailure, badRequest } from "../http.ts";
+
+export const ITEM_ID = /^[A-Za-z0-9_-]{22}$/;
+export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const MAX_ACCOUNT_BYTES = 1024 * 1024 * 1024;
+export const TAKEN_KEPT_DAYS = 30;
+
+export type ItemRow = Selectable<Tables["stash_items"]>;
+
+export function toItem(row: ItemRow): StashItem {
+  const item: StashItem = {
+    id: row.id,
+    kind: row.kind as StashKind,
+    preview: (row.preview as StashPreview | null) ?? null,
+    target: (row.target as StashTarget | null) ?? null,
+    createdAt: row.created_at.toISOString(),
+    takenAt: row.taken_at?.toISOString() ?? null,
+    fromDevice: row.from_device,
+  };
+  if (row.url !== null) item.url = row.url;
+  if (row.text !== null) item.text = row.text;
+  if (row.note !== null) item.note = row.note;
+  if (row.name !== null) item.name = row.name;
+  if (row.mime !== null) item.mime = row.mime;
+  if (row.size !== null) item.size = Number(row.size);
+  return item;
+}
+
+/** Refuses a target that is not a chat, or a new chat in a project, on one of the account's hosts. */
+export async function checkTarget(
+  db: Kysely<Tables>,
+  userId: string,
+  target: StashTarget,
+): Promise<void> {
+  const chat = target.chatId !== undefined;
+  const newChat = target.projectPath !== undefined && target.newChat === true;
+  if (chat === newChat)
+    throw badRequest(
+      "A target is a chatId, or a projectPath with newChat true.",
+    );
+  const host = await db
+    .selectFrom("devices")
+    .select("key")
+    .where("key", "=", target.hostKey)
+    .where("user_id", "=", userId)
+    .where("role", "=", "host")
+    .executeTakeFirst();
+  if (!host) throw badRequest("The target's host is not on your account.");
+}
+
+/** Tells the account's hosts, phones and the web app that an item changed. */
+export async function announce(
+  trx: Transaction<Tables>,
+  userId: string,
+  type: Extract<AccountEventType, `stash.${string}`>,
+  id: string,
+): Promise<void> {
+  await appendEvent(trx, { userId, type, subject: id });
+}
+
+/**
+ * Makes sure the account has its row, since a web sign-in may stash before any device is added,
+ * and holds it until the transaction ends, so two uploads cannot both fit its last space.
+ */
+export async function holdAccount(
+  trx: Transaction<Tables>,
+  userId: string,
+): Promise<void> {
+  await trx
+    .insertInto("users")
+    .values({ id: userId })
+    .onConflict((oc) => oc.column("id").doNothing())
+    .execute();
+  await trx
+    .selectFrom("users")
+    .select("id")
+    .where("id", "=", userId)
+    .forUpdate()
+    .executeTakeFirstOrThrow();
+}
+
+export async function checkSpace(
+  db: Kysely<Tables>,
+  userId: string,
+  bytes: number,
+): Promise<void> {
+  const { used } = await db
+    .selectFrom("stash_items")
+    .select((eb) =>
+      eb.fn.coalesce(eb.fn.sum<string>("size"), eb.lit(0)).as("used"),
+    )
+    .where("user_id", "=", userId)
+    .executeTakeFirstOrThrow();
+  if (Number(used) + bytes > MAX_ACCOUNT_BYTES)
+    throw new ApiFailure(
+      413,
+      "payload_too_large",
+      "The stash is full: an account keeps at most 1 GB. Delete items to make room.",
+    );
+}

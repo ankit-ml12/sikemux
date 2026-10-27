@@ -41,6 +41,7 @@ describe("loadConfig", () => {
       },
       placesDir: null,
       relayAccessToken: null,
+      stash: null,
       logLevel: "info",
     });
   });

@@ -5,11 +5,12 @@ import { fileURLToPath } from "node:url";
 import type { Level } from "pino";
 
 import { purgeAccounts, pruneHistory } from "./account/purge.ts";
-import { loadConfig, loadMigrationConfig } from "./config.ts";
+import { loadConfig, loadMigrationConfig, loadPurgeConfig } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createLogger } from "./log.ts";
 import { migrate, readMigrations } from "./migrations.ts";
 import { startServer } from "./server.ts";
+import { purgeStash } from "./stash/purge.ts";
 import {
   promoteUpdate,
   publishUpdate,
@@ -141,12 +142,13 @@ if (command === "serve") {
     await database.close();
   }
 } else if (command === "purge") {
-  const config = loadMigrationConfig(process.env);
+  const config = loadPurgeConfig(process.env);
   const log = startLogging(config.logLevel);
   const database = openDatabase(config.databaseUrl, log);
   try {
     await purgeAccounts(database.db, log);
     await pruneHistory(database.db, log);
+    await purgeStash(database.db, config.stashDir, log);
   } catch (error) {
     log.fatal({ err: error }, "purging failed");
     process.exitCode = 1;

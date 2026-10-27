@@ -1,6 +1,5 @@
 import type { Network } from "@sikemux/protocol";
 import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 
 import type { AppleSignIn } from "./account/apple.ts";
@@ -12,7 +11,13 @@ import type { Database } from "./db.ts";
 import { deviceRoutes } from "./devices/routes.ts";
 import { healthRoutes } from "./health/routes.ts";
 import { hostSignInRoutes } from "./host/routes.ts";
-import { ApiFailure, errorResponse, requestContext, type Env } from "./http.ts";
+import {
+  ApiFailure,
+  errorResponse,
+  limitBody,
+  requestContext,
+  type Env,
+} from "./http.ts";
 import type { JoinSigner } from "./join/signer.ts";
 import { clientAddress, limit, RateLimiter } from "./limits.ts";
 import type { Logger } from "./log.ts";
@@ -20,6 +25,8 @@ import { networkRoutes } from "./network/routes.ts";
 import type { Places } from "./places.ts";
 import type { PushSettings } from "./push/settings.ts";
 import { RelayAccess, relayAccessRoutes } from "./relay/access.ts";
+import type { StashFiles } from "./stash/files.ts";
+import { stashRoutes } from "./stash/routes.ts";
 import { updateRoutes } from "./updates/routes.ts";
 import { clerkWebhookRoutes } from "./webhooks/clerk.ts";
 
@@ -43,9 +50,9 @@ export interface Services {
   places: Places;
   /** What the relay sends to ask whether a device may use it, or null when it is not set up. */
   relayAccessToken: string | null;
+  /** Where stashed files are kept, or null when the stash is not set up. */
+  stash?: StashFiles | null;
 }
-
-const MAX_BODY_BYTES = 64 * 1024;
 
 export function createApp({
   database,
@@ -62,6 +69,7 @@ export function createApp({
   join,
   places,
   relayAccessToken,
+  stash = null,
 }: Services) {
   const app = new Hono<Env>();
 
@@ -77,18 +85,9 @@ export function createApp({
       maxAge: 600,
     }),
   );
-  app.use(
-    bodyLimit({
-      maxSize: MAX_BODY_BYTES,
-      onError: (c) =>
-        errorResponse(
-          c,
-          413,
-          "payload_too_large",
-          `Request bodies are limited to ${MAX_BODY_BYTES} bytes.`,
-        ),
-    }),
-  );
+  // The stash takes files, so it limits its own bodies.
+  app.route("/v1/stash", stashRoutes(database, verifier, limiter, stash, log));
+  app.use(limitBody());
 
   app.route("/v1/health", healthRoutes(database));
   app.route("/v1/network", networkRoutes(network, limiter));

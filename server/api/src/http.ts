@@ -6,6 +6,7 @@ import {
   type ErrorDetail,
 } from "@sikemux/protocol";
 import type { Context, MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 import type { Logger } from "./log.ts";
@@ -78,6 +79,22 @@ export function requestContext(log: Logger): MiddlewareHandler<Env> {
       "request",
     );
   };
+}
+
+const MAX_BODY_BYTES = 64 * 1024;
+
+/** Refuses a body over 64 KB, the most any JSON request needs. */
+export function limitBody<E extends Env = Env>(): MiddlewareHandler<E> {
+  return bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (c) =>
+      errorResponse(
+        c,
+        413,
+        "payload_too_large",
+        `Request bodies are limited to ${MAX_BODY_BYTES} bytes.`,
+      ),
+  });
 }
 
 const protocol = validator();
