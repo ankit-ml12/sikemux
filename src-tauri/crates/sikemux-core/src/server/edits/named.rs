@@ -125,12 +125,16 @@ fn relative_import(path: &str, line: &str) -> Option<(String, Vec<String>)> {
     if !(line.starts_with("import") || line.starts_with("export")) {
         return None;
     }
-    let quoted = ["\"./", "'./", "\"../", "'../"]
+    let quoted = ["from ", "import ", "import("]
         .iter()
-        .filter_map(|start| line.find(start))
+        .filter_map(|word| line.find(word).map(|at| at + word.len()))
+        .filter(|at| line[*at..].starts_with(['"', '\'']))
         .min()?;
     let quote = &line[quoted..=quoted];
     let spec = line[quoted + 1..].split(quote).next()?;
+    if !(spec.starts_with("./") || spec.starts_with("../")) || spec.ends_with('/') {
+        return None;
+    }
     let spec = spec.split(['?', '#']).next().unwrap_or(spec);
     let mut parts: Vec<&str> = folder(path)
         .split('/')
@@ -206,7 +210,7 @@ mod tests {
         assert!(missing(
             "src/App.tsx",
             b"",
-            b"import markUrl from \"../brand/mark/mark-white.svg?url\";\n",
+            b"import markUrl from \"../brand/mark/mark-white.svg?url\";\nexport const root = new URL('../../../', import.meta.url);\n",
             &tree,
         )
         .is_empty());
