@@ -48,6 +48,7 @@
           "description": "Unix ms; with end, replaces minutes."
         },
         "end": {
+          "description": "Unix ms, with start.",
           "type": "integer"
         },
         "filters": {
@@ -126,6 +127,7 @@
           "description": "Default 30."
         },
         "offset": {
+          "description": "Lines to skip, for the next page.",
           "type": "integer"
         },
         "environment": {
@@ -142,6 +144,7 @@
           "description": "Unix ms; with end, replaces minutes."
         },
         "end": {
+          "description": "Unix ms, with start.",
           "type": "integer"
         },
         "filters": {
@@ -215,12 +218,15 @@
           "description": "Default 20."
         },
         "offset": {
+          "description": "Traces to skip, for the next page.",
           "type": "integer"
         },
         "traceId": {
+          "description": "One trace, as an outline.",
           "type": "string"
         },
         "spanId": {
+          "description": "With traceId: one span whole.",
           "type": "string"
         },
         "maxSpans": {
@@ -242,6 +248,7 @@
           "description": "Unix ms; with end, replaces minutes."
         },
         "end": {
+          "description": "Unix ms, with start.",
           "type": "integer"
         },
         "filters": {
@@ -319,6 +326,7 @@
           "description": "Unix ms; with end, replaces minutes."
         },
         "end": {
+          "description": "Unix ms, with start.",
           "type": "integer"
         }
       },

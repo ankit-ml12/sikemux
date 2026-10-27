@@ -31,9 +31,9 @@
       "method": "agentIssue",
       "description": "One Jira issue by key (ABC-123): its fields, description and newest comments as markdown, its recent field changes, and the transitions it can take next.",
       "properties": {
-        "key": { "type": "string" },
+        "key": { "type": "string", "description": "e.g. ABC-123." },
         "comments": { "type": "integer", "description": "How many of the newest comments to include, up to 50. Default 10; commentCount says how many there are." },
-        "site": { "type": "string" }
+        "site": { "type": "string", "description": "Site host. Default: the first signed-in." }
       },
       "required": ["key"]
     },
@@ -43,9 +43,9 @@
       "method": "comment",
       "description": "Add a comment to a Jira issue. Write it in markdown.",
       "properties": {
-        "key": { "type": "string" },
+        "key": { "type": "string", "description": "e.g. ABC-123." },
         "body": { "type": "string" },
-        "site": { "type": "string" }
+        "site": { "type": "string", "description": "Site host. Default: the first signed-in." }
       },
       "required": ["key", "body"]
     },
@@ -55,9 +55,9 @@
       "method": "transition",
       "description": "Move a Jira issue through its workflow. Name a transition or the status it leads to; with neither, lists the transitions the issue can take now.",
       "properties": {
-        "key": { "type": "string" },
+        "key": { "type": "string", "description": "e.g. ABC-123." },
         "to": { "type": "string", "description": "A transition's name or id, or the name of the status it leads to." },
-        "site": { "type": "string" }
+        "site": { "type": "string", "description": "Site host. Default: the first signed-in." }
       },
       "required": ["key"]
     },
@@ -76,7 +76,7 @@
         "assignee": { "type": "string", "description": "An account id, or 'me'." },
         "labels": { "type": "array", "items": { "type": "string" } },
         "fields": { "type": "object", "description": "Other fields by id, as Jira's REST API takes them." },
-        "site": { "type": "string" }
+        "site": { "type": "string", "description": "Site host. Default: the first signed-in." }
       },
       "required": ["project", "summary"]
     },
@@ -86,15 +86,15 @@
       "method": "edit",
       "description": "Change a Jira issue's fields; only those given change. The description is markdown and replaces the old one.",
       "properties": {
-        "key": { "type": "string" },
+        "key": { "type": "string", "description": "e.g. ABC-123." },
         "summary": { "type": "string" },
         "description": { "type": "string" },
         "parent": { "type": "string", "description": "Epic or issue key; empty takes it out." },
-        "priority": { "type": "string" },
+        "priority": { "type": "string", "description": "Its name, e.g. High." },
         "assignee": { "type": "string", "description": "An account id, or 'me'; empty unassigns." },
         "labels": { "type": "array", "items": { "type": "string" }, "description": "Replaces the labels." },
         "fields": { "type": "object", "description": "Other fields by id, as Jira's REST API takes them." },
-        "site": { "type": "string" }
+        "site": { "type": "string", "description": "Site host. Default: the first signed-in." }
       },
       "required": ["key"]
     },
@@ -107,7 +107,7 @@
         "key": { "type": "string" },
         "relation": { "type": "string", "description": "As Jira words it, or a link type's name." },
         "other": { "type": "string" },
-        "site": { "type": "string" }
+        "site": { "type": "string", "description": "Site host. Default: the first signed-in." }
       },
       "required": ["key", "relation", "other"]
     },
@@ -117,10 +117,10 @@
       "method": "worklog",
       "description": "Log time spent on a Jira issue, e.g. time '1h 30m'.",
       "properties": {
-        "key": { "type": "string" },
+        "key": { "type": "string", "description": "e.g. ABC-123." },
         "time": { "type": "string", "description": "Jira duration, e.g. 45m, 2h, 1d 4h." },
         "comment": { "type": "string" },
-        "site": { "type": "string" }
+        "site": { "type": "string", "description": "Site host. Default: the first signed-in." }
       },
       "required": ["key", "time"]
     }

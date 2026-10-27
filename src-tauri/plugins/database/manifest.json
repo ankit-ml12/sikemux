@@ -59,6 +59,7 @@
       },
       "properties": {
         "database": {
+          "description": "Its name, from db_databases.",
           "type": "string"
         },
         "table": {
@@ -83,6 +84,7 @@
       },
       "properties": {
         "database": {
+          "description": "Its name, from db_databases.",
           "type": "string"
         },
         "sql": {

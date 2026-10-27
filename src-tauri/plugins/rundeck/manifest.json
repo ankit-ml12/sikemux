@@ -41,7 +41,7 @@
       "description": "Run a job and wait up to 50s for it to end: status, duration, url, last log lines. Still running? rundeck_execution with wait.",
       "properties": {
         "job": { "type": "string", "description": "Its id or group/name path." },
-        "project": { "type": "string" },
+        "project": { "type": "string", "description": "Where to find job. Default: every project." },
         "options": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Option values by name." },
         "wait": { "type": "boolean", "description": "Default true; false answers with the execution id at once." },
         "production": { "type": "boolean", "description": "True only after the person agreed to run this production job." }
@@ -55,7 +55,7 @@
       "description": "Runs, newest first, with status, branch, user and duration. With neither job nor project, what is running now.",
       "properties": {
         "job": { "type": "string", "description": "Its id or group/name path." },
-        "project": { "type": "string" },
+        "project": { "type": "string", "description": "Default: every project." },
         "running": { "type": "boolean", "description": "Only runs still going." },
         "max": { "type": "integer", "description": "Default 10, at most 50." }
       }
@@ -67,7 +67,7 @@
       "description": "One run: status, the options it ran with, timings and url. wait holds up to 50s for it to end and adds its last log lines.",
       "properties": {
         "executionId": { "type": "integer" },
-        "wait": { "type": "boolean" }
+        "wait": { "type": "boolean", "description": "Hold up to 50s for it to end." }
       },
       "required": ["executionId"]
     },
@@ -100,7 +100,7 @@
       "description": "Before deploying a branch: what the job last deployed, the option carrying the branch, and whether the checkout is clean, pushed and contains it.",
       "properties": {
         "job": { "type": "string", "description": "Its id or group/name path." },
-        "project": { "type": "string" },
+        "project": { "type": "string", "description": "Where to find job. Default: every project." },
         "repo": { "type": "string", "description": "Local checkout path." },
         "branch": { "type": "string", "description": "Default: the checkout's branch." }
       },

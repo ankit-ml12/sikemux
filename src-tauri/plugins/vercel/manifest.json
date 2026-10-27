@@ -34,7 +34,7 @@
         "state": { "type": "string", "description": "BUILDING, ERROR, INITIALIZING, QUEUED, READY or CANCELED; several joined by commas." },
         "branch": { "type": "string", "description": "Only deployments of this git branch." },
         "limit": { "type": "integer", "description": "Default 20, at most 100." },
-        "team": { "type": "string" }
+        "team": { "type": "string", "description": "Team slug or id." }
       }
     },
     {
@@ -44,7 +44,7 @@
       "description": "One Vercel deployment: its state and any error, target, URL and aliases, git branch and commit, who made it, and its inspector link.",
       "properties": {
         "id": { "type": "string", "description": "A deployment id such as dpl_…, or its URL." },
-        "team": { "type": "string" }
+        "team": { "type": "string", "description": "Team slug or id." }
       },
       "required": ["id"]
     },
@@ -56,7 +56,7 @@
       "properties": {
         "id": { "type": "string", "description": "A deployment id such as dpl_…, or its URL." },
         "tail": { "type": "integer", "description": "How many of the last lines. Default 200, at most 2000." },
-        "team": { "type": "string" }
+        "team": { "type": "string", "description": "Team slug or id." }
       },
       "required": ["id"]
     },
@@ -68,7 +68,7 @@
       "properties": {
         "id": { "type": "string", "description": "The deployment to build again." },
         "target": { "type": "string", "enum": ["production", "preview"] },
-        "team": { "type": "string" }
+        "team": { "type": "string", "description": "Team slug or id." }
       },
       "required": ["id"]
     },
@@ -79,7 +79,7 @@
       "description": "Make a ready deployment production without building it again. Promoting an older deployment rolls production back. Only when the person asked for it.",
       "properties": {
         "id": { "type": "string", "description": "The deployment to serve in production." },
-        "team": { "type": "string" }
+        "team": { "type": "string", "description": "Team slug or id." }
       },
       "required": ["id"]
     },
@@ -90,7 +90,7 @@
       "description": "Stop a deployment that is queued or building.",
       "properties": {
         "id": { "type": "string" },
-        "team": { "type": "string" }
+        "team": { "type": "string", "description": "Team slug or id." }
       },
       "required": ["id"]
     },
@@ -101,7 +101,7 @@
       "description": "A project's domains, whether each is verified, and the branch or redirect each one serves.",
       "properties": {
         "project": { "type": "string", "description": "The project's name or id." },
-        "team": { "type": "string" }
+        "team": { "type": "string", "description": "Team slug or id." }
       },
       "required": ["project"]
     },
@@ -112,7 +112,7 @@
       "description": "The names of a project's environment variables, with the targets and branch each is set for. Their values are never given.",
       "properties": {
         "project": { "type": "string", "description": "The project's name or id." },
-        "team": { "type": "string" }
+        "team": { "type": "string", "description": "Team slug or id." }
       },
       "required": ["project"]
     }
