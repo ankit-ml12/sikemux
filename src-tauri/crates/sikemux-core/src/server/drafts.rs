@@ -39,6 +39,12 @@ pub(crate) struct Draft {
     extra: Option<Value>,
 }
 
+impl Draft {
+    pub(crate) fn into_parts(self) -> (String, Option<Value>) {
+        (self.text, self.extra)
+    }
+}
+
 pub(crate) struct Drafts(Arc<Held>);
 
 struct Held {

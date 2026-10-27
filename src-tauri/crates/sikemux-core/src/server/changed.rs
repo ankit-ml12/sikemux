@@ -63,6 +63,8 @@ pub(crate) enum Topic {
     Files,
     /// Whether an update is out, and how installing it goes.
     Update,
+    /// What the account keeps in its Stash.
+    Stash,
 }
 
 /// Paths by topic and project; none means anything may have changed.

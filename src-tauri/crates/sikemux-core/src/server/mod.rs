@@ -78,6 +78,7 @@ mod skill_library;
 mod spare;
 mod spawn;
 mod ssh;
+mod stash;
 mod streams;
 mod tasks;
 pub mod themes;

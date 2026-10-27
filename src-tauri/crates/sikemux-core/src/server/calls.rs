@@ -362,6 +362,16 @@ calls! { core, client, params;
         answer(style)
     },
     "preferences": Watch => answer(core.preferences.get()),
+    "stash": Person => {
+        let params = serde_json::from_value(params).unwrap_or_default();
+        answer(super::stash::list(&core, params).await?)
+    },
+    "stashPicture": Person => answer(super::stash::picture(&core, parse(params)?).await?),
+    "attachStash": Person => answer(super::stash::attach(&core, parse(params)?).await?),
+    "removeStash": Person => {
+        super::stash::remove(&core, parse(params)?).await?;
+        answer(json!({}))
+    },
     "drafts": Watch => {
         let params: DraftsParams = serde_json::from_value(params).unwrap_or_default();
         answer(core.drafts.get(params.keys.as_deref()))

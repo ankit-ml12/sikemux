@@ -1770,6 +1770,7 @@ impl live::Account for HostAccount {
     fn apply(&self, events: &[AccountEvent]) {
         if let Some(core) = self.0.upgrade() {
             apply_events(&core, events);
+            super::stash::heard(&core, events);
         }
     }
 
@@ -1806,6 +1807,7 @@ impl live::Account for HostAccount {
         }
         if link == Link::Live {
             core.hosts.relink.now();
+            super::stash::catch_up(&core);
         }
     }
 

@@ -186,7 +186,7 @@ fn unused_second(request: String) -> u64 {
 
 /// Calls the accounts API as this host, signed with its key, for an answer
 /// with nothing to read.
-async fn host_request(
+pub(crate) async fn host_request(
     core: &Core,
     method: Method,
     path: &str,

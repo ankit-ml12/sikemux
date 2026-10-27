@@ -48,11 +48,17 @@ pub(crate) fn save(dir: &Path, name: &str, mime: &str, data: &str) -> CoreResult
     if bytes.len() > MAX_ATTACHMENT_BYTES {
         return Err(TOO_LARGE.into());
     }
+    save_bytes(dir, name, mime, &bytes)
+}
+
+/// Writes `bytes` into `dir` under a cleaned-up `name`, never over another
+/// file, and answers with its path.
+pub(crate) fn save_bytes(dir: &Path, name: &str, mime: &str, bytes: &[u8]) -> CoreResult<PathBuf> {
     fs::create_dir_all(dir)
         .map_err(|error| CoreError::from(format!("could not keep the file: {error}")))?;
     let (stem, extension) = file_name(name, mime);
     let (path, mut file) = create_new(dir, &stem, &extension)?;
-    if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_all()) {
+    if let Err(error) = file.write_all(bytes).and_then(|()| file.sync_all()) {
         let _ = fs::remove_file(&path);
         return Err(format!("could not keep the file: {error}").into());
     }
