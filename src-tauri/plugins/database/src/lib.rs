@@ -59,6 +59,7 @@ impl Plugin for Database {
             let data_dir = ctx.data_dir().to_path_buf();
             match method {
                 "form" => reply(form::form(&data_dir, params(input)?)?),
+                "fromUrl" => reply(form::from_url(params(input)?)?),
                 "save" => {
                     let form::Filled { profile, password } = params(input)?;
                     let request = profiles::SaveRequest {

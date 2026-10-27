@@ -1,6 +1,8 @@
 //! The connection form, as the plugin hands it: a new connection or a saved one to edit, tried
 //! and saved through the plugin, which says what a filled-in one still needs.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui_kit::component::checkbox::Checkbox;
@@ -15,6 +17,7 @@ use serde_json::json;
 use sikemux_wire::database::{Engine, ProfileDraft, ProfileForm};
 
 use super::{Database, Host, PluginPane};
+use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::plugin_pane::Failure;
 use crate::plugin_pane::{after, listen};
@@ -25,6 +28,54 @@ use crate::ui::{self, Button, IconButton, Pick, Variant};
 enum Said {
     Tested(String),
     Failed(SharedString),
+}
+
+/// A form as the person left it, so it is still there when its pane is made again, as it is
+/// after another project has been in front.
+struct Kept {
+    choices: Rc<ProfileForm>,
+    draft: ProfileDraft,
+    password: String,
+    url: String,
+    forget_password: bool,
+}
+
+thread_local! {
+    static KEPT: RefCell<HashMap<(Place, String), Kept>> = RefCell::default();
+}
+
+fn kept_key(host: &Host) -> (Place, String) {
+    (host.place().clone(), host.slot.clone())
+}
+
+/// The form this pane's slot left open, filled in as it was left.
+pub(super) fn restore(host: &Host, window: &mut Window, cx: &mut Context<PluginPane>) -> Option<Form> {
+    let kept = KEPT.with_borrow_mut(|kept| kept.remove(&kept_key(host)))?;
+    let mut form = Form::new(kept.choices, window, cx);
+    form.fill(&kept.draft, window, cx);
+    form.forget_password = kept.forget_password;
+    for (input, value) in [(&form.password, kept.password), (&form.url, kept.url)] {
+        input.update(cx, |input, cx| input.set_value(value, window, cx));
+    }
+    Some(form)
+}
+
+/// Keeps the form open in this pane's slot as it stands, or forgets it once it is closed.
+pub(super) fn keep(host: &Host, form: Option<&Form>, cx: &App) {
+    let key = kept_key(host);
+    let Some(form) = form else {
+        KEPT.with_borrow_mut(|kept| kept.remove(&key));
+        return;
+    };
+    let read = |input: &Entity<InputState>| input.read(cx).value().to_string();
+    let now = Kept {
+        choices: form.choices.clone(),
+        draft: form.draft(cx),
+        password: read(&form.password),
+        url: read(&form.url),
+        forget_password: form.forget_password,
+    };
+    KEPT.with_borrow_mut(|kept| kept.insert(key, now));
 }
 
 pub(super) struct Form {
@@ -41,6 +92,9 @@ pub(super) struct Form {
     user: Entity<InputState>,
     password: Entity<InputState>,
     path: Entity<InputState>,
+    url: Entity<InputState>,
+    /// Why the URL typed could not be read.
+    url_failed: Option<SharedString>,
     busy: Option<&'static str>,
     said: Option<Said>,
 }
@@ -57,6 +111,16 @@ impl Form {
             false => "None",
         };
         let password = cx.new(|cx| InputState::new(window, cx).masked(true).placeholder(hint));
+        let url = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("postgres://user:password@host:5432/database")
+        });
+        cx.subscribe_in(&url, window, |pane, url, event: &InputEvent, window, cx| {
+            if matches!(event, InputEvent::Change) {
+                let typed = url.read(cx).value().trim().to_owned();
+                from_url(pane, typed, window, cx);
+            }
+        })
+        .detach();
         let mut field = |value: &str| {
             let input = cx.new(|cx| InputState::new(window, cx).default_value(value.to_owned()));
             cx.subscribe(&input, |pane, _, event: &InputEvent, cx| {
@@ -85,6 +149,8 @@ impl Form {
             user: field(&draft.user),
             password,
             path: field(&draft.path),
+            url,
+            url_failed: None,
             busy: None,
             said: None,
             choices: choices.clone(),
@@ -117,6 +183,27 @@ impl Form {
         ] {
             input.update(cx, |input, cx| input.set_placeholder(hint, window, cx));
         }
+    }
+
+    /// Puts `draft` into the fields, keeping the saved connection the form edits.
+    fn fill(&mut self, draft: &ProfileDraft, window: &mut Window, cx: &mut App) {
+        self.engine = draft.engine;
+        self.tls = draft.tls.clone();
+        self.read_only = draft.read_only;
+        self.agent_writes = draft.agent_writes;
+        for (input, value) in [
+            (&self.name, &draft.name),
+            (&self.host, &draft.host),
+            (&self.port, &draft.port),
+            (&self.database, &draft.database),
+            (&self.user, &draft.user),
+            (&self.path, &draft.path),
+        ] {
+            if input.read(cx).value().as_ref() != value.as_str() {
+                input.update(cx, |input, cx| input.set_value(value.clone(), window, cx));
+            }
+        }
+        self.hint(window, cx);
     }
 
     fn draft(&self, cx: &App) -> ProfileDraft {
@@ -178,6 +265,54 @@ pub(super) fn open(
         cx,
     );
     cx.notify();
+}
+
+/// Fills the fields from the connection URL `typed`, as the plugin reads it.
+fn from_url(pane: &mut PluginPane, typed: String, window: &mut Window, cx: &mut Context<PluginPane>) {
+    let Some((database, host)) = pane.parts::<Database>() else {
+        return;
+    };
+    let Some(form) = &mut database.form else {
+        return;
+    };
+    form.url_failed = None;
+    cx.notify();
+    if typed.is_empty() {
+        return;
+    }
+    let call = host.call("fromUrl", json!({ "url": typed, "profile": form.draft(cx) }));
+    cx.spawn_in(window, async move |pane, cx| {
+        let read = call.await;
+        let _ = pane.update_in(cx, |pane, window, cx| {
+            let Some((database, _)) = pane.parts::<Database>() else {
+                return;
+            };
+            let Some(form) = &mut database.form else {
+                return;
+            };
+            if form.url.read(cx).value().trim() != typed {
+                return;
+            }
+            match read {
+                Ok(read) => {
+                    let draft = serde_json::from_value::<ProfileDraft>(read["profile"].clone());
+                    match draft {
+                        Ok(draft) => form.fill(&draft, window, cx),
+                        Err(error) => form.url_failed = Some(error.to_string().into()),
+                    }
+                    if let Some(password) = read["password"].as_str() {
+                        let password = password.to_owned();
+                        form.password
+                            .update(cx, |input, cx| input.set_value(password, window, cx));
+                    }
+                    form.said = None;
+                }
+                Err(failure) => form.url_failed = Some(failure.message),
+            }
+            cx.notify();
+        });
+    })
+    .detach();
 }
 
 fn run(database: &mut Database, host: &Host, kind: &'static str, cx: &mut Context<PluginPane>) {
@@ -537,12 +672,33 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                 .child(ui::text(title, 15., FontWeight::SEMIBOLD).text_color(t.text_primary))
                 .child(ui::meta(subtitle, cx)),
         );
+    let rule = || div().flex_1().h(px(1.)).bg(t.border);
+    let by_url = div()
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .child(ui::meta("Connection URL", cx))
+        .child(ui::Field::new(&form.url))
+        .children(
+            form.url_failed
+                .clone()
+                .map(|failed| ui::meta(failed, cx).text_color(t.danger)),
+        );
+    let or = div()
+        .flex()
+        .items_center()
+        .gap(px(10.))
+        .child(rule())
+        .child(ui::meta("or", cx))
+        .child(rule());
     let body = div()
         .px(px(20.))
         .pb(px(18.))
         .flex()
         .flex_col()
         .gap(px(16.))
+        .child(by_url)
+        .child(or)
         .child(engines)
         .child(fields)
         .child(toggles)

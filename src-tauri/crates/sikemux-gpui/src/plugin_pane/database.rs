@@ -62,6 +62,8 @@ pub struct Database {
     form_loading: bool,
     /// The form the plugin sent, made into fields at the next draw.
     form_arrived: Option<Rc<sikemux_wire::database::ProfileForm>>,
+    /// The form this pane's slot left open was looked for.
+    form_restored: bool,
     /// The connection the person is asked to remove.
     removing: Option<(String, String)>,
     _typing: Vec<Subscription>,
@@ -132,6 +134,13 @@ impl Panel for Database {
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         self.fields(window, cx);
+        if !std::mem::replace(&mut self.form_restored, true) {
+            self.form = form::restore(host, window, cx);
+        }
+        if let Some(arrived) = self.form_arrived.take() {
+            self.form = Some(form::Form::new(arrived, window, cx));
+        }
+        form::keep(host, self.form.as_ref(), cx);
         let read = host
             .view("explorerView", json!({ "open": self.open_nodes() }), cx)
             .read::<Explorer>();
@@ -143,9 +152,6 @@ impl Panel for Database {
         let Some(explorer) = self.shown.clone() else {
             return super::loading(cx);
         };
-        if let Some(arrived) = self.form_arrived.take() {
-            self.form = Some(form::Form::new(arrived, window, cx));
-        }
         if self.form.is_some() || self.form_loading {
             return div()
                 .size_full()

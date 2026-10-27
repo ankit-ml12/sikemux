@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sikemux_plugin_api::database::{Engine, EngineChoice, ProfileDraft, ProfileForm, TlsChoice};
 
 use crate::engines::mysql::MYSQL_PORT;
@@ -15,6 +15,20 @@ pub struct FormAsk {
     /// The saved connection to edit; none for a new one.
     #[serde(default)]
     pub id: Option<String>,
+}
+
+/// A connection URL pasted into the form, and the form as it stood.
+#[derive(Deserialize)]
+pub struct UrlAsk {
+    pub url: String,
+    pub profile: ProfileDraft,
+}
+
+/// The form with what a connection URL says filled in, and the password it carried.
+#[derive(Serialize)]
+pub struct FromUrl {
+    pub profile: ProfileDraft,
+    pub password: Option<String>,
 }
 
 /// A filled-in form as Save and Test send it.
@@ -155,6 +169,115 @@ fn draft_of(profile: &Profile) -> ProfileDraft {
         }
     }
     draft
+}
+
+/// Fills the form from a URL such as `postgres://app:secret@db.internal:5432/shop?sslmode=require`,
+/// `mysql://root@localhost/shop` or `sqlite:///Users/me/app.db`.
+pub fn from_url(ask: UrlAsk) -> DatabaseResult<FromUrl> {
+    let unreadable =
+        || DatabaseError::BadArg("Not a postgres://, mysql:// or sqlite:// URL.".into());
+    let url = ask.url.trim();
+    let (scheme, rest) = url.split_once(':').ok_or_else(unreadable)?;
+    let engine = match scheme.to_ascii_lowercase().as_str() {
+        "postgres" | "postgresql" => Engine::Postgres,
+        "mysql" | "mariadb" => Engine::Mysql,
+        "sqlite" | "sqlite3" | "file" => Engine::Sqlite,
+        _ => return Err(unreadable()),
+    };
+    let (rest, query) = rest.split_once('?').unwrap_or((rest, ""));
+    let mut profile = ProfileDraft {
+        engine,
+        ..ask.profile
+    };
+    if engine == Engine::Sqlite {
+        profile.path = decoded(rest.strip_prefix("//").unwrap_or(rest));
+        if profile.name.trim().is_empty() {
+            profile.name = Path::new(&profile.path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+        }
+        return Ok(FromUrl {
+            profile,
+            password: None,
+        });
+    }
+    let rest = rest.strip_prefix("//").ok_or_else(unreadable)?;
+    let (authority, database) = rest.split_once('/').unwrap_or((rest, ""));
+    let (login, address) = match authority.rsplit_once('@') {
+        Some((login, address)) => (Some(login), address),
+        None => (None, authority),
+    };
+    let (user, password) = match login.map(|login| login.split_once(':')) {
+        Some(Some((user, password))) => (decoded(user), Some(decoded(password))),
+        Some(None) => (decoded(login.unwrap_or_default()), None),
+        None => (String::new(), None),
+    };
+    let (host, port) = match address.strip_prefix('[') {
+        Some(bracketed) => {
+            let (host, after) = bracketed.split_once(']').ok_or_else(unreadable)?;
+            (host, after.strip_prefix(':').unwrap_or_default())
+        }
+        None => address.split_once(':').unwrap_or((address, "")),
+    };
+    if host.is_empty() {
+        return Err(DatabaseError::BadArg("The URL names no host.".into()));
+    }
+    profile.host = decoded(host);
+    profile.port = port.into();
+    profile.user = user;
+    profile.database = decoded(database.trim_end_matches('/'));
+    for (key, value) in query.split('&').filter_map(|pair| pair.split_once('=')) {
+        let key = key.to_ascii_lowercase().replace(['-', '_'], "");
+        if let Some(tls) = (key == "sslmode" || key == "ssl")
+            .then(|| tls_named(value))
+            .flatten()
+        {
+            profile.tls = tls.into();
+        }
+    }
+    if profile.name.trim().is_empty() {
+        profile.name = match profile.database.is_empty() {
+            true => profile.host.clone(),
+            false => profile.database.clone(),
+        };
+    }
+    Ok(FromUrl { profile, password })
+}
+
+/// The form's encryption for a URL's `sslmode`, as PostgreSQL and MySQL each name it.
+fn tls_named(mode: &str) -> Option<&'static str> {
+    match mode.to_ascii_lowercase().replace('_', "-").as_str() {
+        "disable" | "disabled" | "false" | "0" => Some("disable"),
+        "allow" | "prefer" | "preferred" => Some("prefer"),
+        "require" | "required" | "true" | "1" => Some("require"),
+        "verify-ca" | "verify-full" | "verify-identity" => Some("verify-full"),
+        _ => None,
+    }
+}
+
+/// `text` with its `%xx` escapes turned back into the characters they stand for.
+fn decoded(text: &str) -> String {
+    let mut out = Vec::with_capacity(text.len());
+    let mut rest = text.as_bytes();
+    while let Some((&byte, after)) = rest.split_first() {
+        let escaped = after
+            .get(..2)
+            .filter(|_| byte == b'%')
+            .and_then(|hex| std::str::from_utf8(hex).ok())
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match escaped {
+            Some(escaped) => {
+                out.push(escaped);
+                rest = after.get(2..).unwrap_or_default();
+            }
+            None => {
+                out.push(byte);
+                rest = after;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// The port as typed: empty is the engine's usual one; anything else must be 1 to 65535.
