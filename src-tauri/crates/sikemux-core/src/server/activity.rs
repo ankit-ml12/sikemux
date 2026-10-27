@@ -62,7 +62,11 @@ impl Core {
                     self.seen.active(&agent_id);
                     self.inbox.stopped(&agent_id);
                 } else {
-                    self.seen.wants_a_look(&agent_id);
+                    if self.reports_to_open_lead(&agent_id) {
+                        self.seen.active(&agent_id);
+                    } else {
+                        self.seen.wants_a_look(&agent_id);
+                    }
                     self.inbox.ended(&agent_id, None);
                 }
                 self.notify.send(Signal::TurnCompleted {
@@ -113,6 +117,14 @@ impl Core {
     pub(crate) fn view_changed_now(&self) {
         self.view_due.notify_one();
         self.view_changed();
+    }
+
+    /// Whether the agent's turns are told to a lead still here, who reads them
+    /// in the person's place.
+    fn reports_to_open_lead(&self, agent_id: &str) -> bool {
+        self.names
+            .reports_to(agent_id)
+            .is_some_and(|lead| self.open_agents().contains(&lead))
     }
 
     fn journal_agent(&self, agent_id: &str, happened: Happened) {

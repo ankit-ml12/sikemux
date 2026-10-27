@@ -66,6 +66,7 @@ pub(crate) fn show_chat(chat: &mut ChatInfo, asking: bool) {
     );
     chat.status = match chat.group {
         AgentGroup::Blocked => AgentStatus::Blocked,
+        AgentGroup::Done => AgentStatus::Done,
         _ if chat.asleep => AgentStatus::Asleep,
         _ if chat.state == ChatState::Stopped => AgentStatus::Stopped,
         _ if chat.state == ChatState::Starting => AgentStatus::Starting,
@@ -85,9 +86,7 @@ pub(crate) fn show_session(session: &mut SessionInfo, asking: bool) {
     );
     session.group = Some(shown);
     session.status = Some(match shown {
-        AgentGroup::Done | AgentGroup::Idle if !session.running || state == Some("stopped") => {
-            AgentStatus::Stopped
-        }
+        AgentGroup::Idle if !session.running || state == Some("stopped") => AgentStatus::Stopped,
         shown => status(shown),
     });
 }
