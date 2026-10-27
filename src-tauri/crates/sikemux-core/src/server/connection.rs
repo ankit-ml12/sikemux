@@ -909,7 +909,13 @@ async fn run_requests(
                     .get()
                     .and_then(|listening| listening.config.attachment_dir.clone())
                     .ok_or_else(|| CoreError::from("this host has nowhere to keep files"));
-                match core.chats.running(&agent_id).and(dir) {
+                let open = core.chats.running(&agent_id).map(drop).or_else(|error| {
+                    core.open_agents()
+                        .contains(&agent_id)
+                        .then_some(())
+                        .ok_or(error)
+                });
+                match open.and(dir) {
                     Ok(dir) => {
                         tokio::spawn(async move {
                             let result =
