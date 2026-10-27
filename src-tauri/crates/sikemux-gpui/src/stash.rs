@@ -18,8 +18,12 @@ use crate::ui::{self, IconButton, Row};
 use crate::workbench::Workbench;
 use sikemux_wire::protocol::PaneKind;
 
-const CARD: f32 = 236.;
+/// The narrowest a card gets before the grid drops a column, and the gap between cards.
+const MIN_CARD: f32 = 260.;
+const GAP: f32 = 14.;
 const PREVIEW: f32 = 132.;
+/// How wide a card's picture is decoded, enough for the widest a card stretches to.
+const PICTURE: f32 = 440.;
 
 /// A stash item being dragged onto a chat.
 #[derive(Clone)]
@@ -337,7 +341,7 @@ pub fn rail_row(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             .child(stash.items.len().to_string())
     });
     Row::new("rail-stash", "Stash")
-        .mark(16., ui::icon(Icon::Stash, 13.).text_color(t.text_secondary))
+        .mark(16., ui::icon(Icon::Stack, 13.).text_color(t.text_secondary))
         .quiet()
         .chosen(bench.settings.is_none() && bench.stash_in_front())
         .status(count)
@@ -400,7 +404,7 @@ pub fn chip(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Opti
                         .bg(t.surface_raised)
                         .text_size(theme::ui_text(12.))
                         .text_color(t.text_secondary)
-                        .child(ui::icon(Icon::Stash, 12.).text_color(t.text_tertiary))
+                        .child(ui::icon(Icon::Stack, 12.).text_color(t.text_tertiary))
                         .child(
                             div()
                                 .id("stash-chip-open")
@@ -449,7 +453,7 @@ pub fn pane(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(ui::icon(Icon::Stash, 15.).text_color(t.text_secondary))
+                .child(ui::icon(Icon::Stack, 15.).text_color(t.text_secondary))
                 .child(ui::text("Stash", 15., FontWeight::SEMIBOLD).text_color(t.text_primary))
                 .when(stash.signed_in && count > 0, |head| {
                     head.child(
@@ -469,11 +473,12 @@ pub fn pane(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let body = if !stash.signed_in || stash.items.is_empty() {
         empty(stash.signed_in, &t).into_any_element()
     } else {
-        let cards: Vec<AnyElement> = stash
+        let columns = cx.try_global::<Columns>().map_or(2, |columns| columns.0);
+        let cards: Vec<(AnyElement, f32)> = stash
             .items
             .iter()
             .enumerate()
-            .map(|(at, item)| card(bench, at, item, cx))
+            .map(|(at, item)| (card(bench, at, item, cx), tall(item)))
             .collect();
         div()
             .id("stash-cards")
@@ -482,7 +487,7 @@ pub fn pane(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             .overflow_y_scroll()
             .px(px(24.))
             .pb(px(24.))
-            .child(div().flex().flex_wrap().gap(px(14.)).children(cards))
+            .child(grid(cards, columns))
             .into_any_element()
     };
     ui::pane(cx)
@@ -496,6 +501,67 @@ pub fn pane(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 .child(body),
         )
         .into_any_element()
+}
+
+/// How many columns the stash's grid had room for when it was last drawn.
+#[derive(Clone, Copy, PartialEq)]
+struct Columns(u16);
+
+impl gpui_kit::Global for Columns {}
+
+/// Roughly how tall a card draws, for placing it in the shortest column: a compact link's is a
+/// row, any other's has a picture.
+fn tall(item: &Value) -> f32 {
+    let compact = item["kind"].as_str() == Some("link") && item["preview"]["imageUrl"].is_null();
+    let noted = item["note"]
+        .as_str()
+        .is_some_and(|note| !note.trim().is_empty());
+    match (compact, noted) {
+        (true, true) => 128.,
+        (true, false) => 106.,
+        (false, _) => 372.,
+    }
+}
+
+/// The cards in as many columns as fit, each column as wide as the others and each card going
+/// under the shortest column so far, so short cards stack rather than leave gaps.
+fn grid(cards: Vec<(AnyElement, f32)>, columns: u16) -> impl IntoElement {
+    let mut stacks: Vec<(f32, Vec<AnyElement>)> =
+        (0..columns.max(1)).map(|_| (0., Vec::new())).collect();
+    for (card, tall) in cards {
+        if let Some(shortest) = stacks.iter_mut().min_by(|a, b| a.0.total_cmp(&b.0)) {
+            shortest.0 += tall + GAP;
+            shortest.1.push(card);
+        }
+    }
+    div()
+        .w_full()
+        .on_children_prepainted(|bounds, window, cx| {
+            let Some(width) = bounds.first().map(|bounds| f32::from(bounds.size.width)) else {
+                return;
+            };
+            let fit = Columns(((width + GAP) / (MIN_CARD + GAP)).floor().max(1.) as u16);
+            if cx.try_global::<Columns>() != Some(&fit) {
+                cx.set_global(fit);
+                window.refresh();
+            }
+        })
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .items_start()
+                .gap(px(GAP))
+                .children(stacks.into_iter().map(|(_, cards)| {
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap(px(GAP))
+                        .children(cards)
+                })),
+        )
 }
 
 fn empty(signed_in: bool, t: &Tokens) -> Div {
@@ -528,7 +594,7 @@ fn empty(signed_in: bool, t: &Tokens) -> Div {
                 .bg(t.surface_raised)
                 .border_1()
                 .border_color(t.line)
-                .child(ui::icon(Icon::Stash, 18.).text_color(t.text_tertiary)),
+                .child(ui::icon(Icon::Stack, 18.).text_color(t.text_tertiary)),
         )
         .child(ui::text(head, 14., FontWeight::MEDIUM).text_color(t.text_primary))
         .child(
@@ -554,9 +620,51 @@ fn card(bench: &Workbench, at: usize, item: &Value, cx: &mut Context<Workbench>)
     let dragged = DraggedStash { id: id.clone() };
     let label: SharedString = title(item).into();
     let ghost = label.clone();
+    let compact = item["kind"].as_str() == Some("link") && item["preview"]["imageUrl"].is_null();
+    let words = div()
+        .flex_1()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+        .child(
+            ui::text(label, 12.5, FontWeight::MEDIUM)
+                .text_color(t.text_primary)
+                .truncate(),
+        )
+        .child(
+            ui::text(place(item), 10.5, FontWeight::NORMAL)
+                .text_color(t.text_tertiary)
+                .truncate(),
+        );
+    let body = match compact {
+        true => div()
+            .px(px(12.))
+            .pt(px(12.))
+            .flex()
+            .items_center()
+            .gap(px(10.))
+            .child(favicon(bench, item, &t, cx))
+            .child(words.children(note.map(|note| {
+                ui::text(note, 11.5, FontWeight::NORMAL)
+                    .pt(px(3.))
+                    .text_color(t.text_secondary)
+                    .truncate()
+            }))),
+        false => div().px(px(12.)).pt(px(10.)).child(
+            words.child(
+                ui::text(note.unwrap_or_default(), 11.5, FontWeight::NORMAL)
+                    .h(px(19.))
+                    .pt(px(3.))
+                    .text_color(t.text_secondary)
+                    .truncate(),
+            ),
+        ),
+    };
     div()
         .id(("stash-card", at))
-        .w(px(CARD))
+        .w_full()
+        .min_w_0()
         .flex()
         .flex_col()
         .rounded(theme::RADIUS_3)
@@ -568,34 +676,52 @@ fn card(bench: &Workbench, at: usize, item: &Value, cx: &mut Context<Workbench>)
         .on_drag(dragged, move |_: &DraggedStash, _: Point<Pixels>, _, cx| {
             crate::drag::ghost(ghost.clone(), cx)
         })
-        .child(preview(bench, item, &t, cx))
-        .child(
-            div()
-                .px(px(12.))
-                .pt(px(10.))
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(
-                    ui::text(label, 12.5, FontWeight::MEDIUM)
-                        .text_color(t.text_primary)
-                        .truncate(),
-                )
-                .child(
-                    ui::text(place(item), 10.5, FontWeight::NORMAL)
-                        .text_color(t.text_tertiary)
-                        .truncate(),
-                )
-                .child(
-                    ui::text(note.unwrap_or_default(), 11.5, FontWeight::NORMAL)
-                        .h(px(19.))
-                        .pt(px(3.))
-                        .text_color(t.text_secondary)
-                        .truncate(),
-                ),
-        )
+        .when(!compact, |card| card.child(preview(bench, item, &t, cx)))
+        .child(body)
         .child(actions(bench, at, item, &id, cx))
         .into_any_element()
+}
+
+/// A link's site in a small tile: its icon when the site has one, else a globe.
+fn favicon(bench: &Workbench, item: &Value, t: &Tokens, cx: &App) -> AnyElement {
+    let tile = div()
+        .size(px(32.))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(theme::RADIUS_2)
+        .overflow_hidden()
+        .bg(t.surface_sunken)
+        .border_1()
+        .border_color(t.line);
+    let icon = item["url"].as_str().and_then(|url| {
+        let url = url::Url::parse(url).ok()?;
+        Some(format!(
+            "{}://{}/favicon.ico",
+            url.scheme(),
+            url.host_str()?
+        ))
+    });
+    match icon {
+        Some(icon) => {
+            let fallback = std::cell::RefCell::new(Some(glyph(item, 15., cx)));
+            let shown = Picture::Remote(Remote::new(icon, bench.asks.clone()));
+            tile.child(
+                img(shown.source_at(px(18.)))
+                    .size(px(18.))
+                    .object_fit(ObjectFit::Contain)
+                    .with_fallback(move || {
+                        fallback
+                            .borrow_mut()
+                            .take()
+                            .unwrap_or_else(|| div().into_any_element())
+                    }),
+            )
+            .into_any_element()
+        }
+        None => tile.child(glyph(item, 15., cx)).into_any_element(),
+    }
 }
 
 /// The top of a card: a photo or a page's picture filling it, a text's opening lines, or a
@@ -655,8 +781,8 @@ fn preview(bench: &Workbench, item: &Value, t: &Tokens, cx: &App) -> AnyElement 
             let fallback = std::cell::RefCell::new(Some(plain(cx)));
             frame
                 .child(
-                    img(shown.source_at(px(CARD)))
-                        .w(px(CARD))
+                    img(shown.source_at(px(PICTURE)))
+                        .w_full()
                         .h(px(PREVIEW))
                         .object_fit(ObjectFit::Cover)
                         .with_fallback(move || {

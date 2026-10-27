@@ -1336,7 +1336,7 @@ pub fn kind_icon(kind: PaneKind) -> Icon {
         PaneKind::Desk => Icon::PanelRight,
         PaneKind::ProjectSettings => Icon::Settings,
         PaneKind::InstallSikemux => Icon::Download,
-        PaneKind::Stash => Icon::Stash,
+        PaneKind::Stash => Icon::Stack,
         PaneKind::Unknown => Icon::Window,
     }
 }
