@@ -30,7 +30,7 @@ use objc2_foundation::{
     NSObjectNSKeyValueObserverRegistration, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
     NSURLRequest, NSURLResponse, NSURL,
 };
-use objc2_quartz_core::{kCAFillRuleEvenOdd, CALayer, CAShapeLayer, CATransaction};
+use objc2_quartz_core::{kCAFillRuleEvenOdd, CACornerMask, CALayer, CAShapeLayer, CATransaction};
 use objc2_web_kit::{
     WKContentWorld, WKDownload, WKDownloadDelegate, WKFrameInfo, WKMediaCaptureType, WKNavigation,
     WKNavigationAction, WKNavigationActionPolicy, WKNavigationDelegate, WKNavigationResponse,
@@ -640,6 +640,26 @@ pub fn clip(webview: &WKWebView, clip_left: f64, clip_right: f64, holes: Vec<(NS
             unsafe { layer.setMask(Some(mask)) };
         }
     });
+    CATransaction::commit();
+}
+
+/// Round the page's two lower corners by `radius`, so it fits inside a pane's rounded edge.
+pub fn round_bottom(webview: &WKWebView, radius: f64) {
+    let view: &NSView = webview;
+    // SAFETY: every NSView answers `layer` with a CALayer or nil, and the result is retained.
+    let Some(layer): Option<Retained<CALayer>> = (unsafe { msg_send![view, layer] }) else {
+        return;
+    };
+    let bottom = if layer.isGeometryFlipped() {
+        CACornerMask::LayerMinXMaxYCorner | CACornerMask::LayerMaxXMaxYCorner
+    } else {
+        CACornerMask::LayerMinXMinYCorner | CACornerMask::LayerMaxXMinYCorner
+    };
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    layer.setCornerRadius(radius);
+    layer.setMaskedCorners(bottom);
+    layer.setMasksToBounds(radius > 0.0);
     CATransaction::commit();
 }
 

@@ -306,6 +306,7 @@ mod tests {
             holes: Vec::new(),
             dim: 0.0,
             opacity: 1.0,
+            bottom_radius: 0.0,
         });
         assert_eq!(agent.needed_back(), vec!["b"]);
         agent.strip.acting.insert("a".into(), 1);

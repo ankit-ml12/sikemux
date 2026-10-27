@@ -143,6 +143,7 @@ fn fit(area: &BrowserBounds, viewport: Viewport) -> BrowserBounds {
             .collect(),
         dim: area.dim,
         opacity: area.opacity,
+        bottom_radius: area.bottom_radius / scale,
     }
 }
 
@@ -175,6 +176,7 @@ mod tests {
             holes: Vec::new(),
             dim: 0.0,
             opacity: 1.0,
+            bottom_radius: 0.0,
         }
     }
 

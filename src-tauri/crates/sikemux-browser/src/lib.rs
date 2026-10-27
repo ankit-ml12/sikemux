@@ -99,6 +99,7 @@ pub struct BrowserSnapshot {
 /// holes are app elements, like toasts, that must show through the page. The
 /// dim is how dark a shade to lay over the page while an app panel floats on it.
 /// The opacity follows the pane's own while it fades, which CSS cannot reach.
+/// The bottom radius rounds the page's lower corners to the pane's edge.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrowserBounds {
@@ -113,6 +114,8 @@ pub struct BrowserBounds {
     pub dim: f64,
     #[serde(default = "opaque")]
     pub opacity: f64,
+    #[serde(default)]
+    pub bottom_radius: f64,
 }
 
 fn opaque() -> f64 {

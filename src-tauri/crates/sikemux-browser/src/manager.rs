@@ -1275,6 +1275,7 @@ pub(crate) fn place(view: &Tab, layout: viewport::Layout, awake: bool) {
                     })
                     .collect();
                 macos::clip(tab, frame.clip_left, frame.clip_right, holes);
+                macos::round_bottom(tab, frame.bottom_radius);
                 macos::dim(tab, frame.dim);
                 // A video's controls blur what is behind them, and that blur
                 // draws through the mask even when it cuts the whole page away.
@@ -1319,6 +1320,7 @@ pub(crate) fn validate_bounds(bounds: &BrowserBounds) -> BrowserResult<()> {
     let finite = [
         bounds.dim,
         bounds.opacity,
+        bounds.bottom_radius,
         bounds.x,
         bounds.y,
         bounds.width,
@@ -1347,6 +1349,7 @@ pub(crate) fn validate_bounds(bounds: &BrowserBounds) -> BrowserResult<()> {
         || bounds.clip_left + bounds.clip_right > bounds.width
         || !(0.0..=1.0).contains(&bounds.dim)
         || !(0.0..=1.0).contains(&bounds.opacity)
+        || bounds.bottom_radius < 0.0
     {
         return Err(Error::BadArg("invalid browser bounds"));
     }
@@ -1609,6 +1612,7 @@ mod tests {
             }],
             dim: 0.0,
             opacity: 1.0,
+            bottom_radius: 0.0,
         };
         assert!(validate_bounds(&good).is_ok());
         assert!(validate_bounds(&BrowserBounds {

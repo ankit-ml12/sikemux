@@ -441,6 +441,7 @@ impl Surface for DeskPage {
             holes: Vec::new(),
             dim: 0.,
             opacity: 1.,
+            bottom_radius: f64::from(f32::from(RADIUS_3) - 1.),
         });
         if let Err(error) = self.engine.set_bounds(&self.agent, bounds) {
             eprintln!("sikemux: the desk's page could not be placed: {error}");
@@ -1961,6 +1962,8 @@ pub fn pane(
     let body = div()
         .flex_1()
         .min_h_0()
+        .mx(px(1.))
+        .mb(px(1.))
         .relative()
         .key_context("BrowserPage")
         .children(page.filter(|_| !no_pages).map(|page| {
@@ -2018,19 +2021,31 @@ fn frame(
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let edge = t.border;
+    let (edge, ground) = (t.border, crate::see_through::ground(t.surface, cx));
     div()
         .relative()
         .size_full()
         .overflow_hidden()
         .rounded(RADIUS_3)
-        .bg(crate::see_through::ground(t.surface, cx))
+        .child(
+            gpui_kit::canvas(
+                |_, _, _| {},
+                move |bounds, (), window, _| {
+                    if let Ok(path) = stepped_edge(bounds, gpui_kit::PathBuilder::fill()).build() {
+                        window.paint_path(path, ground);
+                    }
+                },
+            )
+            .absolute()
+            .inset_0(),
+        )
         .child(content)
         .child(
             gpui_kit::canvas(
                 |_, _, _| {},
                 move |bounds, (), window, _| {
-                    if let Ok(path) = stepped_edge(bounds).build() {
+                    let stroke = gpui_kit::PathBuilder::stroke(px(1.));
+                    if let Ok(path) = stepped_edge(bounds, stroke).build() {
                         window.paint_path(path, edge);
                     }
                 },
@@ -2049,6 +2064,7 @@ fn frame(
                 .rounded(RADIUS_3)
                 .border_1()
                 .border_color(t.border)
+                .bg(ground)
                 .child(kinds(bench, agent, kind, cx)),
         )
         .into_any_element()
@@ -2056,7 +2072,10 @@ fn frame(
 
 /// The desk's edge: a rounded box whose top-left corner steps in round the kind switch, as the
 /// Mac's cutCornerOutline draws it, on the half pixel so the line is sharp.
-fn stepped_edge(bounds: gpui_kit::Bounds<gpui_kit::Pixels>) -> gpui_kit::PathBuilder {
+fn stepped_edge(
+    bounds: gpui_kit::Bounds<gpui_kit::Pixels>,
+    mut path: gpui_kit::PathBuilder,
+) -> gpui_kit::PathBuilder {
     let (radius, inner) = (f32::from(RADIUS_3), f32::from(RADIUS_3) + GAP);
     let at = |x: f32, y: f32| gpui_kit::point(bounds.origin.x + px(x), bounds.origin.y + px(y));
     let (left, top) = (0.5, 0.5);
@@ -2074,7 +2093,6 @@ fn stepped_edge(bounds: gpui_kit::Bounds<gpui_kit::Pixels>) -> gpui_kit::PathBui
             at(x, y),
         );
     };
-    let mut path = gpui_kit::PathBuilder::stroke(px(1.));
     path.move_to(at(left, step_y + radius));
     arc(&mut path, radius, true, left + radius, step_y);
     path.line_to(at(step_x - inner, step_y));
