@@ -937,6 +937,11 @@
   .mentions .face { flex: none; width: 34px; height: 34px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-raised); display: grid; place-items: center; color: var(--text-secondary); }
   .mentions .face.og { border-color: transparent; background: radial-gradient(circle at 76% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 48%, #a277ff 64%, #1d2a3a 65%, #101a24 100%); }
   .mentions .words { min-width: 0; }
+  .stash-news { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; height: 36px; margin: 0 0 8px; padding: 0 4px 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-overlay); font-size: 13px; color: var(--text-secondary); }
+  .stash-news .ico { color: var(--ink-dim); }
+  .stash-news b { font-weight: 500; color: var(--text-primary); }
+  .stash-news .add { height: 26px; padding: 0 10px; display: grid; place-items: center; font-weight: 600; color: var(--acc); }
+  .stash-news .x { width: 26px; height: 26px; display: grid; place-items: center; color: var(--text-tertiary); }
   .mentions b { display: block; font-size: 13.5px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mentions em { display: block; margin-top: 1px; font-style: normal; font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
@@ -3259,6 +3264,34 @@ expected 1 write, got 2</div>
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>&amp; for the stash</b><div class="note">As on the Mac, an &amp; that starts a word lists the stash items whose title, note, link or text holds what follows it, four at most, in the boxes slash commands use: each with its picture or glyph, its title, and its note or site and age. A tap takes the &amp; word out and attaches the item as Add does. With nothing matching, one box says so; with nothing stashed, how to stash something.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+        </div>
+        <div class="composer-wrap" style="display:flex;flex-direction:column">
+          <div class="stash-news">{{IconStack:13}}<span><b>2</b> new in Stash</span><span class="add">Add</span><span class="x">{{IconClose:11}}</span></div>
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>New in Stash</b><div class="note">As on the Mac, what was stashed since the person last looked at the stash, on any device, shows as one chip above the composer: the count, then Add, which attaches them all as picking them would, and × to let them be. Opening the stash, Add and × each mark it looked at everywhere, so the chip goes on every device at once. It steps aside while a permission card, slash commands or the &amp; list show.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

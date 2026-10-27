@@ -9,7 +9,7 @@ import { Chip } from '@/ui/controls';
 import { alertFailure, PromptGlyph } from '@/ui/prompt';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import type { StashItem } from './api';
-import { refreshStash, removeStash, stashToken, useStash } from './store';
+import { refreshStash, removeStash, seeStash, stashToken, useStash } from './store';
 import { itemPlace, itemTitle } from './words';
 
 const GHOSTS = 3;
@@ -34,7 +34,7 @@ export function StashPicker({
   const stash = useStash();
   const bearer = useBearer();
   useEffect(() => {
-    void refreshStash();
+    void refreshStash().then(seeStash);
   }, []);
 
   const remove = (item: StashItem) => {

@@ -5,10 +5,13 @@ import type { TokenSource } from '@/account/api';
 import { problem as problemOf } from '@/core/problem';
 import { stashApi, type StashItem } from './api';
 
-/** What the phone knows of the stash: `loading` until the first read, `offline` while the last read failed. */
-export type Stash = { items: StashItem[]; state: 'loading' | 'ready' | 'offline'; problem?: string };
+/**
+ * What the phone knows of the stash: `loading` until the first read, `offline` while the last read failed.
+ * `seenAt` is when the person last looked at it on any device; null before they ever have.
+ */
+export type Stash = { items: StashItem[]; seenAt: string | null; state: 'loading' | 'ready' | 'offline'; problem?: string };
 
-const EMPTY: Stash = { items: [], state: 'loading' };
+const EMPTY: Stash = { items: [], seenAt: null, state: 'loading' };
 /** Live events often come in a burst, such as a file and then its link preview; one read follows them. */
 const SETTLE_MS = 300;
 
@@ -35,15 +38,17 @@ export async function refreshStash() {
   if (now.state === 'offline' && !now.items.length) publish(EMPTY);
   try {
     const items: StashItem[] = [];
+    let seenAt: string | null = null;
     let cursor: string | undefined;
     do {
       const page = await stashApi(token).listStash({ taken: 'false', ...(cursor ? { cursor } : {}) });
       items.push(...page.items);
+      seenAt = page.seenAt;
       cursor = page.cursor;
     } while (cursor);
-    if (read === reading) publish({ items, state: 'ready' });
+    if (read === reading) publish({ items, seenAt, state: 'ready' });
   } catch (error) {
-    if (read === reading) publish({ items: now.items, state: 'offline', problem: problemOf(error) });
+    if (read === reading) publish({ ...now, state: 'offline', problem: problemOf(error) });
   }
 }
 
@@ -71,6 +76,23 @@ export async function removeStash(id: string) {
     publish({ ...now, items: before });
     throw error;
   }
+}
+
+/** The items stashed since the person last looked at the stash, newest first. */
+export function newInStash(stash: Stash): StashItem[] {
+  const seen = stash.seenAt === null ? null : Date.parse(stash.seenAt);
+  return seen === null ? stash.items : stash.items.filter((item) => Date.parse(item.createdAt) > seen);
+}
+
+/** The person has looked at the stash: what it holds now is no longer new, on any device. */
+export async function seeStash() {
+  const newest = now.items[0]?.createdAt;
+  if (!token || !newest || !newInStash(now).length) return;
+  publish({ ...now, seenAt: newest });
+  try {
+    const { at } = await stashApi(token).markStashSeen({ at: newest });
+    publish({ ...now, seenAt: at });
+  } catch {}
 }
 
 export function useStash(): Stash {

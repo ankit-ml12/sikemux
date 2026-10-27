@@ -26,6 +26,7 @@ import { MAX_ATTACHMENTS } from '@/core/wire.generated';
 import type { StashItem } from '@/stash/api';
 import { intoMessage, stashIdsOf } from '@/stash/attach';
 import { StashMenu } from '@/stash/StashMenu';
+import { StashNews } from '@/stash/StashNews';
 import { takeStash } from '@/stash/store';
 import { stashQuery, withoutQuery } from '@/stash/words';
 import type { ChatSession } from './session';
@@ -542,7 +543,12 @@ export const Composer = memo(function Composer({
       {dock}
       <Commands matches={matches} onPick={(name) => session.setDraft(`/${name} `)} />
       {mention !== undefined ? <StashMenu query={mention} onPick={(item) => fromStash([item], withoutQuery(draft))} /> : null}
-      {dock || matches.length || mention !== undefined ? null : strip}
+      {dock || matches.length || mention !== undefined ? null : (
+        <>
+          <StashNews onAdd={(items) => fromStash(items.slice(0, room))} />
+          {strip}
+        </>
+      )}
       <View style={[styles.composer, focused && { borderColor: colors.borderSelected }]} {...pullUp.panHandlers}>
         {question ? <AnsweringChip question={question} /> : null}
         {attachments.length ? <ComposerAttachments attachments={attachments} onRemove={session.removeAttachment} onRetry={send} /> : null}
