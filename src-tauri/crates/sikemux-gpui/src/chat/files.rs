@@ -410,13 +410,20 @@ fn open(found: &PathRef, kind: FileKind, on: &On, bench: &WeakEntity<Workbench>,
 }
 
 /// Opens a file of this host's chat on its agent's desk, its cursor on the line the name gave,
-/// and turns the tab rail to its files.
+/// and turns the tab rail to the file tree opened down to it when the tree holds it.
 fn open_on_desk(agent: &str, found: &PathRef, bench: &WeakEntity<Workbench>, cx: &mut App) {
     let path = std::path::PathBuf::from(&found.path);
     bench
         .update(cx, |bench, cx| {
+            let in_tree = (bench.files.root.as_deref()).is_some_and(|root| path.starts_with(root));
+            if in_tree {
+                if let Some(folder) = path.parent() {
+                    let core = bench.target();
+                    bench.files.open_down_to(folder, &core);
+                }
+                bench.show_rail_page(crate::workbench::RailPage::Files, cx);
+            }
             bench.open_file_on_desk(agent, path, found.line, found.column);
-            bench.show_rail_page(crate::workbench::RailPage::Files, cx);
             bench.parts.redraw(&bench.parts.stage, cx);
         })
         .ok();
