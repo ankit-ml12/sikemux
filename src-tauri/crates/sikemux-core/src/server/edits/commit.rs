@@ -40,9 +40,16 @@ pub(crate) struct Committed {
 
 /// What `git_commit` did: the commit, and what it pushed when asked to.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Done {
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     committed: Option<Committed>,
+    /// Why nothing was committed before landing or pushing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nothing_committed: Option<String>,
+    /// Why the commit made was neither landed nor pushed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    not_landed: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     landed: Option<super::land::Landed>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -65,6 +72,28 @@ struct Taken {
 struct Left {
     path: String,
     by: Vec<String>,
+}
+
+/// Why a commit was not made: none of the uncommitted lines were the agent's,
+/// which landing or pushing what it committed before can go past, or anything
+/// else.
+pub(crate) enum Refusal {
+    NothingYours(String),
+    Other(String),
+}
+
+impl From<String> for Refusal {
+    fn from(message: String) -> Self {
+        Self::Other(message)
+    }
+}
+
+impl From<Refusal> for String {
+    fn from(refusal: Refusal) -> Self {
+        match refusal {
+            Refusal::NothingYours(message) | Refusal::Other(message) => message,
+        }
+    }
 }
 
 /// One file as the commit holds it: `content` none when it is deleted.
@@ -98,14 +127,36 @@ pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             serde_json::from_value(paths.clone()).map_err(|_| "paths must be a list of paths")?
         }
     };
-    let (core, dir) = (core.clone(), PathBuf::from(&request.project));
+    let project = PathBuf::from(&request.project);
+    let named: Vec<String> = named
+        .iter()
+        .map(|path| project.join(path).to_string_lossy().into_owned())
+        .collect();
+    let core = core.clone();
     blocking(move || {
-        let committed = match &message {
-            Some(message) => Some(commit(&core, &dir, &agent_id, message, &named)?),
-            None => None,
+        let dir = checkout_for(&project, &named)?;
+        let (committed, nothing_committed) = match &message {
+            Some(message) => match commit(&core, &dir, &agent_id, message, &named) {
+                Ok(committed) => (Some(committed), None),
+                Err(Refusal::NothingYours(why)) if land || push => (None, Some(why)),
+                Err(refusal) => return Err(String::from(refusal).into()),
+            },
+            None => (None, None),
         };
         let landed = match land {
-            true => Some(super::land::land(&core, &agent_id)?),
+            true => match super::land::land(&core, &agent_id) {
+                Ok(landed) => Some(landed),
+                Err(why) if committed.is_some() => {
+                    return Ok(Done {
+                        committed,
+                        nothing_committed,
+                        not_landed: Some(why),
+                        landed: None,
+                        pushed: None,
+                    })
+                }
+                Err(why) => return Err(why.into()),
+            },
             false => None,
         };
         let from = landed
@@ -117,6 +168,8 @@ pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         };
         Ok(Done {
             committed,
+            nothing_committed,
+            not_landed: None,
             landed,
             pushed,
         })
@@ -124,6 +177,49 @@ pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
     .await
     .map_err(|error| error.to_string())
     .and_then(|done| serde_json::to_value(done).map_err(|error| error.to_string()))
+}
+
+/// The checkout to commit in: the one holding the `named` paths, which may
+/// lie outside the project's own, else the project's.
+fn checkout_for(project: &Path, named: &[String]) -> Result<PathBuf, String> {
+    let mut tops = BTreeSet::new();
+    for path in named {
+        let place = Path::new(path);
+        let folder = place
+            .ancestors()
+            .find(|folder| folder.is_dir())
+            .unwrap_or(project);
+        let top = git(folder, &["rev-parse", "--show-toplevel"])
+            .map_err(|_| format!("{path} is not in a git checkout"))?;
+        tops.insert(PathBuf::from(top.trim()));
+    }
+    match tops.len() {
+        0 => match git(project, &["rev-parse", "--show-toplevel"]) {
+            Ok(_) => Ok(project.to_owned()),
+            Err(_) => Err(format!(
+                "{} is not in a git checkout; name the paths to commit, inside the repository that holds them",
+                project.display()
+            )),
+        },
+        1 => Ok(tops.into_iter().next().unwrap_or_default()),
+        _ => Err(format!(
+            "Nothing was committed: the paths lie in {} checkouts ({}). Commit each checkout's paths in a call of its own.",
+            tops.len(),
+            tops.iter()
+                .map(|top| top.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
+/// A trailer crediting Claude, which the person never wants on a commit.
+fn credits_claude(message: &str) -> bool {
+    message.lines().any(|line| {
+        let line = line.trim().to_lowercase();
+        line.starts_with("co-authored-by:")
+            && (line.contains("claude") || line.contains("anthropic"))
+    })
 }
 
 /// Commits what `agent_id` wrote in `dir`'s checkout, and every change in the
@@ -134,9 +230,16 @@ pub(crate) fn commit(
     agent_id: &str,
     message: &str,
     named: &[String],
-) -> Result<Committed, String> {
+) -> Result<Committed, Refusal> {
     if message.trim().is_empty() {
-        return Err("message must say what the commit does".into());
+        return Err(Refusal::Other(
+            "message must say what the commit does".into(),
+        ));
+    }
+    if credits_claude(message) {
+        return Err(Refusal::Other(
+            "Nothing was committed: leave out the Co-Authored-By trailer naming Claude. Sikemux's footer credits the agent already.".into(),
+        ));
     }
     for _ in 0..ATTEMPTS {
         let branch = git(dir, &["symbolic-ref", "-q", "HEAD"])
@@ -147,16 +250,28 @@ pub(crate) fn commit(
             .map(|path| in_checkout(&diff.top, dir, path))
             .collect::<Result<Vec<_>, _>>()?;
         let mine = owners.standing_for(core, agent_id);
-        let (changes, left) = plan(&owners, &diff, mine, &named)?;
+        let Plan {
+            changes,
+            left,
+            unchanged,
+        } = plan(&owners, &diff, mine, &named)?;
+        if changes.is_empty() && !unchanged.is_empty() {
+            return Err(Refusal::NothingYours(format!(
+                "Nothing was committed: {} {} nothing uncommitted in {}. A file changed in another checkout goes by its absolute path.",
+                said(&unchanged),
+                if unchanged.len() == 1 { "has" } else { "have" },
+                diff.top.display()
+            )));
+        }
         if changes.is_empty() {
-            return Err(nothing_yours(&left));
+            return Err(Refusal::NothingYours(nothing_yours(&left)));
         }
         let lacking = unresolved(&diff, &changes)?;
         if !lacking.is_empty() {
-            return Err(format!(
+            return Err(Refusal::Other(format!(
                 "Nothing was committed, since the commit would not build on its own: {}. Name the missing files in paths too, or wait until the agent writing them commits.",
                 lacking.join("; ")
-            ));
+            )));
         }
         let me = owners
             .authors
@@ -210,11 +325,13 @@ pub(crate) fn commit(
                     note,
                 });
             }
-            Err(error) if head(&diff.top) == diff.base => return Err(error),
+            Err(error) if head(&diff.top) == diff.base => return Err(error.into()),
             Err(_) => {}
         }
     }
-    Err("the branch kept moving while committing; call this again".into())
+    Err(Refusal::Other(
+        "the branch kept moving while committing; call this again".into(),
+    ))
 }
 
 fn head(top: &Path) -> Option<String> {
@@ -302,16 +419,16 @@ pub(super) fn names(paths: &[String], file: &str) -> bool {
     })
 }
 
-/// What the commit holds of each changed file, and what it leaves out, for
-/// the committing agent whose authors are `mine`: with
-/// `named` paths, only changes in them. A lockfile goes with a manifest beside
-/// or below it that the commit changes.
+/// What the commit holds of each changed file, what it leaves out, and the
+/// `named` paths with nothing uncommitted, for the committing agent whose
+/// authors are `mine`: with `named` paths, only changes in them. A lockfile
+/// goes with a manifest beside or below it that the commit changes.
 fn plan(
     owners: &Owners,
     diff: &Diff,
     mine: HashSet<usize>,
     named: &[String],
-) -> Result<(Vec<Change>, Vec<Left>), String> {
+) -> Result<Plan, String> {
     let mut paths: BTreeSet<&str> = diff
         .changed
         .keys()
@@ -332,6 +449,15 @@ fn plan(
     if !named.is_empty() {
         paths.retain(|path| names(named, path) || is_lockfile(path));
     }
+    let unchanged: Vec<String> = named
+        .iter()
+        .filter(|path| {
+            !paths
+                .iter()
+                .any(|changed| names(std::slice::from_ref(path), changed))
+        })
+        .cloned()
+        .collect();
     let planner = Planner {
         owners,
         diff,
@@ -368,7 +494,17 @@ fn plan(
             untaken.join("; ")
         ));
     }
-    Ok((changes, left))
+    Ok(Plan {
+        changes,
+        left,
+        unchanged,
+    })
+}
+
+struct Plan {
+    changes: Vec<Change>,
+    left: Vec<Left>,
+    unchanged: Vec<String>,
 }
 
 /// Names as one would say them: "Otter", "Otter and Briar".
@@ -909,7 +1045,9 @@ mod tests {
         };
         let diff = super::super::owners::read_diff(&top, false, false, None, false).unwrap();
         let mine = HashSet::from([0]);
-        let (changes, _) = plan(&owners, &diff, mine, &["Cargo.toml".to_owned()]).unwrap();
+        let changes = plan(&owners, &diff, mine, &["Cargo.toml".to_owned()])
+            .unwrap()
+            .changes;
         let taken: Vec<&str> = changes.iter().map(|change| change.path.as_str()).collect();
         assert_eq!(taken, ["Cargo.toml", "Cargo.lock"]);
     }
@@ -944,7 +1082,9 @@ mod tests {
         let diff = super::super::owners::read_diff(&top, false, false, None, false).unwrap();
         let taken = |named: &[&str]| {
             let named: Vec<String> = named.iter().map(|path| (*path).to_owned()).collect();
-            let (changes, _) = plan(&owners, &diff, HashSet::from([0, 1]), &named).unwrap();
+            let changes = plan(&owners, &diff, HashSet::from([0, 1]), &named)
+                .unwrap()
+                .changes;
             changes
                 .into_iter()
                 .map(|change| change.path)

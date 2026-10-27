@@ -877,15 +877,20 @@ commands, leaving other agents' changes and the files on disk as they are.
 Lines changed while your command and others' ran at once count as yours. With
 `paths` it commits only those files or folders: your lines there, and changes
 no other agent wrote, such as what your scripts, builds and formatters made,
-binary files too. A lockfile goes with the manifest change it records. A named
-file holding only another agent's lines fails the commit rather than leaving
-it half done. It returns the commit, its files and what was left. Stage
+binary files too. Paths may be absolute, and the commit goes in the repository
+that holds them, even outside the project's checkout. A lockfile goes with the
+manifest change it records. A named file holding only another agent's lines
+fails the commit rather than leaving it half done. It returns the commit, its
+files and what was left. Leave out any Co-Authored-By trailer naming Claude. Stage
 nothing yourself mid-task: what you `git add`, `git mv` or `git rm` early goes
 into the next agent's commit. The shell is zsh, which does not split `$FILES`
 into words; name paths or use an array. In a checkout of your own, `land: true` then puts your commits on the
 branch your checkout was cut from and moves your checkout up to it: a file
 someone changed in the project's checkout and has not committed takes your
-lines merged in, and a clash refuses the landing before anything moves. With
+lines merged in, and a clash refuses the landing before anything moves.
+Commits already on that branch are skipped; one that clashes with what landed
+since asks you to rebase onto the branch first. With nothing of yours left
+uncommitted, `land: true` lands the commits you made already. With
 `push: true` it then pushes
 your own commits only, even when other agents' unpushed commits sit before
 them, and lists theirs as kept; with no `message` it only pushes. Push only
