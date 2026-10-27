@@ -21,6 +21,8 @@ use super::footer;
 
 /// The name the hook is linked under, outside the agents' PATH.
 const HOOK: &str = "sikemux-git-hook";
+/// macOS has no `timeout`, which agents reach for out of habit.
+const TIMEOUT: &str = "timeout";
 
 static FOLDER: OnceLock<PathBuf> = OnceLock::new();
 static HOOKS_FOLDER: OnceLock<PathBuf> = OnceLock::new();
@@ -37,6 +39,10 @@ pub(crate) fn install(data_dir: &Path, endpoint: Option<&Path>) {
     if folder.to_string_lossy().contains(':') {
         return;
     }
+    if let Err(error) = link(&folder, TIMEOUT) {
+        eprintln!("sikemux core: agents have no timeout command: {error}");
+    }
+    crate::agent_shell::install(data_dir);
     match link(&folder, "git") {
         Ok(()) => {
             let _ = FOLDER.set(folder);
@@ -136,6 +142,7 @@ pub(crate) fn environment(path: Option<&str>) -> Vec<(String, String)> {
         None => folder.into_owned(),
     };
     let mut env = vec![("PATH".to_owned(), path)];
+    env.extend(crate::agent_shell::environment());
     if let Some(git) = sikemux_process::user_environment::git_program() {
         env.push((
             vars::REAL_GIT.to_owned(),
@@ -197,6 +204,7 @@ pub fn run_if_git() -> Option<i32> {
     match Path::new(&name).file_name()?.to_str()? {
         "git" => Some(run(args.collect())),
         HOOK => Some(run_hook()),
+        TIMEOUT => Some(crate::timeout::run(args.collect())),
         footer::LINK => Some(footer::run(args.collect())),
         _ => None,
     }

@@ -903,8 +903,10 @@ manifest change it records. A named file holding only another agent's lines
 fails the commit rather than leaving it half done. It returns the commit, its
 files and what was left. Leave out any Co-Authored-By trailer naming Claude. Stage
 nothing yourself mid-task: what you `git add`, `git mv` or `git rm` early goes
-into the next agent's commit. The shell is zsh, which does not split `$FILES`
-into words; name paths or use an array. In a checkout of your own, `land: true` then puts your commits on the
+into the next agent's commit. Your shell is the person's zsh with
+`nonomatch`, `noequals` and `shwordsplit` on, so a glob that matches nothing
+stays as written, `echo ===` prints, and `$FILES` splits into words as in
+bash; `timeout` works as GNU's does. In a checkout of your own, `land: true` then puts your commits on the
 branch your checkout was cut from and moves your checkout up to it: a file
 someone changed in the project's checkout and has not committed takes your
 lines merged in, and a clash refuses the landing before anything moves.

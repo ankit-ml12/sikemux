@@ -6,6 +6,8 @@ pub mod accounts;
 pub mod acp;
 #[cfg(unix)]
 pub mod agent_accounts;
+#[cfg(unix)]
+mod agent_shell;
 #[rustfmt::skip]
 pub mod agent_catalog;
 mod backoff;
@@ -48,6 +50,8 @@ pub mod sessions;
 pub mod skills;
 pub mod tasks;
 mod text;
+#[cfg(unix)]
+pub mod timeout;
 pub mod trailers;
 pub mod usage;
 #[cfg(unix)]
