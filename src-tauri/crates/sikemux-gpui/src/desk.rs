@@ -1908,13 +1908,13 @@ pub fn pane(
     let page = bench.desks.pages.get(agent);
     let (back, forward, reload) = (agent.to_owned(), agent.to_owned(), agent.to_owned());
     let bar = div()
-        .h(px(34.))
+        .h(px(38.))
         .flex_none()
         .flex()
         .items_center()
         .gap(px(2.))
         .px(px(6.))
-        .pb(px(4.))
+        .py(px(4.))
         .border_b_1()
         .border_color(t.border)
         .child(
