@@ -363,7 +363,7 @@ fn pane(
                 .min_w_0()
                 .min_h_0()
                 .capture_any_mouse_down(
-                    cx.listener(move |bench, _, _, _| bench.panes.focused = Some(focused.clone())),
+                    cx.listener(move |bench, _, _, cx| bench.focus_pane(focused.clone(), cx)),
                 )
                 .children(ui::spot(|| format!("pane-{kind:?}-{target}")))
                 .on_drag_move(cx.listener(
@@ -438,7 +438,7 @@ fn stack(
             .active(at == front)
             .mark(mark)
             .on_click(cx.listener(move |bench, _, window, cx| {
-                bench.panes.focused = Some(lead.clone());
+                bench.focus_pane(lead.clone(), cx);
                 bench.focus_view(&lead, window, cx);
                 bench.parts.redraw(&bench.parts.stage, cx);
             })),
@@ -897,7 +897,7 @@ impl Workbench {
                     .ok()
                     .and_then(|added| added.as_str().map(str::to_owned))
                 {
-                    bench.panes.focused = Some(added);
+                    bench.focus_pane(added, cx);
                 }
                 bench.parts.redraw(&bench.parts.stage, cx);
             });
@@ -913,9 +913,19 @@ impl Workbench {
         let Some(to) = neighbour(&self.panes.drawn.borrow(), &from, towards) else {
             return;
         };
-        self.panes.focused = Some(to.clone());
+        self.focus_pane(to.clone(), cx);
         self.focus_view(&to, window, cx);
         self.parts.redraw(&self.parts.stage, cx);
+    }
+
+    /// Puts the focus on the view `id`, drawing the file tree again when that moves the desk
+    /// whose file it lights.
+    fn focus_pane(&mut self, id: String, cx: &mut Context<Self>) {
+        let was = self.desk_file();
+        self.panes.focused = Some(id);
+        if self.desk_file() != was {
+            self.parts.redraw(&self.parts.tabs, cx);
+        }
     }
 
     /// Puts the keys in the view `id` of the tab in front: a terminal's screen or a chat's draft.
