@@ -366,6 +366,7 @@ calls! { core, client, params;
         let params = serde_json::from_value(params).unwrap_or_default();
         answer(super::stash::list(&core, params).await?)
     },
+    "stashPrompt": Person => answer(super::stash::stash_prompt(&core, parse(params)?).await?),
     "seeStash": Person => answer(super::stash::see(&core, parse(params)?).await?),
     "stashFile": Person => answer(super::stash::keep(&core, parse(params)?).await?),
     "stashPicture": Person => answer(super::stash::picture(&core, parse(params)?).await?),

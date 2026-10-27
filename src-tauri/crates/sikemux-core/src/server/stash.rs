@@ -22,7 +22,7 @@ use crate::accounts::protocol::{
 use super::changed::Topic;
 use super::connection::blocking;
 use super::drafts::Delivery;
-use super::hosts::account::{as_host, host_request};
+use super::hosts::account::{as_host, host_request, host_send, Upload};
 use super::{attachments, Core, CoreError, CoreResult};
 
 /// The most a stash item can hold, as the accounts server takes it.
@@ -183,6 +183,18 @@ pub(crate) struct Attached {
     /// Where the item's file was kept on this host, when it has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<PathBuf>,
+    /// Where each of the item's files was kept: its own, or a prompt's.
+    paths: Vec<PathBuf>,
+}
+
+impl Attached {
+    fn new(agent_id: String, paths: Vec<PathBuf>) -> Self {
+        Self {
+            agent_id,
+            path: paths.first().cloned(),
+            paths,
+        }
+    }
 }
 
 /// Puts a stash item in the draft of one of this host's chats, unsent, and marks it used; or
@@ -193,43 +205,164 @@ pub(crate) async fn attach(core: &Core, params: AttachParams) -> CoreResult<Atta
     }
     let item = item(core, &params.id).await?;
     if params.draft == Some(false) {
-        let path = match has_file(&item) {
-            true => Some(download(core, &item).await?),
-            false => None,
-        };
-        return Ok(Attached {
-            agent_id: params.agent_id,
-            path,
-        });
+        let paths = files(core, &item).await?;
+        return Ok(Attached::new(params.agent_id, paths));
     }
     let _delivering = Delivering::start(&item.id)
         .ok_or_else(|| CoreError::from("that item is already on its way to a chat"))?;
-    let path = into_draft(core, &item, &params.agent_id).await?;
+    let paths = into_draft(core, &item, &params.agent_id).await?;
     take(core, &item.id).await?;
     core.changes.changed(Topic::Stash, None, None);
-    Ok(Attached {
-        agent_id: params.agent_id,
-        path,
-    })
+    Ok(Attached::new(params.agent_id, paths))
 }
 
 /// Downloads the item's file, when it has one, and adds it with the item's words to the
 /// draft of `agent_id`'s chat.
-async fn into_draft(core: &Core, item: &StashItem, agent_id: &str) -> CoreResult<Option<PathBuf>> {
-    let path = match has_file(item) {
-        true => Some(download(core, item).await?),
-        false => None,
-    };
+async fn into_draft(core: &Core, item: &StashItem, agent_id: &str) -> CoreResult<Vec<PathBuf>> {
+    let paths = files(core, item).await?;
     let key = super::drafts::chat_key(agent_id);
+    let said = match item.kind {
+        StashKind::Prompt => item.text.as_deref(),
+        _ => None,
+    };
+    let words = [said, item.note.as_deref()]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .filter(|words| !words.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
     let delivery = Delivery {
-        path: path
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned()),
-        words: words(item),
+        paths: paths
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
+        context: context(item),
+        words,
     };
     core.drafts.deliver(&key, delivery)?;
-    super::drafts::changed(&core, vec![key]);
-    Ok(path)
+    super::drafts::changed(core, vec![key]);
+    Ok(paths)
+}
+
+/// The item's files kept on this host: its own, or each of a prompt's.
+async fn files(core: &Core, item: &StashItem) -> CoreResult<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    match item.kind {
+        StashKind::Prompt => {
+            for file in item.attachments.iter().flatten() {
+                paths.push(download(core, file).await?);
+            }
+        }
+        _ if has_file(item) => paths.push(download(core, item).await?),
+        _ => {}
+    }
+    Ok(paths)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PromptParams {
+    agent_id: String,
+}
+
+#[derive(Serialize)]
+pub(crate) struct Stashed {
+    id: String,
+}
+
+/// The most a prompt's text can be, as the accounts server takes it.
+const MAX_PROMPT_CHARS: usize = 16_000;
+/// The most files a prompt can carry.
+const MAX_PROMPT_FILES: usize = 20;
+
+/// Keeps what is written in `agent_id`'s draft, its files and the links it holds as one prompt
+/// in the Stash, and empties the draft.
+pub(crate) async fn stash_prompt(core: &Core, params: PromptParams) -> CoreResult<Stashed> {
+    let key = super::drafts::chat_key(&params.agent_id);
+    let draft = core
+        .drafts
+        .chat_draft(&params.agent_id)
+        .ok_or_else(|| CoreError::from("there is nothing written to stash"))?;
+    let extra = draft.extra.unwrap_or_default();
+    let files: Vec<PathBuf> = extra["attachments"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|path| path.as_str().map(PathBuf::from))
+        .collect();
+    let links = extra["context"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item["uri"].as_str())
+        .filter(|uri| uri.starts_with("https://") || uri.starts_with("http://"));
+    let text = [draft.text.trim()]
+        .into_iter()
+        .chain(links)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if text.is_empty() && files.is_empty() {
+        return Err(CoreError::from("there is nothing written to stash"));
+    }
+    if text.chars().count() > MAX_PROMPT_CHARS {
+        return Err(CoreError::from(
+            "a stashed prompt can be at most 16,000 characters",
+        ));
+    }
+    if files.len() > MAX_PROMPT_FILES {
+        return Err(CoreError::from(
+            "a stashed prompt can carry at most 20 files",
+        ));
+    }
+    let body = json!({ "kind": "prompt", "text": text, "attachmentCount": files.len() });
+    let prompt: StashItem = as_host(core, Method::POST, "/v1/stash", Some(body)).await?;
+    for file in files {
+        upload(core, &prompt.id, file).await?;
+    }
+    core.drafts.set(&key, String::new(), None)?;
+    super::drafts::changed(core, vec![key]);
+    core.changes.changed(Topic::Stash, None, None);
+    Ok(Stashed { id: prompt.id })
+}
+
+/// Sends one of a prompt's files to the Stash, as part of prompt `id`.
+async fn upload(core: &Core, id: &str, file: PathBuf) -> CoreResult<()> {
+    let read = file.clone();
+    let (bytes, mime) = blocking(move || {
+        let size = std::fs::metadata(&read)
+            .map_err(|error| CoreError::from(format!("{}: {error}", read.display())))?
+            .len();
+        if size > MAX_ITEM_BYTES {
+            return Err(CoreError::from(format!(
+                "{} is larger than the 25 MB a stash item can be",
+                read.display()
+            )));
+        }
+        let bytes = std::fs::read(&read)
+            .map_err(|error| CoreError::from(format!("{}: {error}", read.display())))?;
+        let mime = crate::http::mime_of(&read).unwrap_or("application/octet-stream");
+        Ok((bytes, mime.to_owned()))
+    })
+    .await?;
+    let name = file
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_owned());
+    let upload = Upload {
+        bytes,
+        content_type: mime,
+        headers: vec![
+            (
+                "x-stash-name",
+                url::form_urlencoded::byte_serialize(name.as_bytes()).collect(),
+            ),
+            ("x-stash-prompt", id.to_owned()),
+        ],
+    };
+    host_send(core, Method::POST, "/v1/stash", Some(upload)).await?;
+    Ok(())
 }
 
 fn has_file(item: &StashItem) -> bool {
@@ -239,20 +372,38 @@ fn has_file(item: &StashItem) -> bool {
     )
 }
 
-/// The item's note, and its link or text, as they go after what the draft says.
-fn words(item: &StashItem) -> String {
-    let said = match item.kind {
-        StashKind::Link => item.url.as_deref(),
-        StashKind::Text => item.text.as_deref(),
+/// A link or text as a chip in the draft, which the message hands the agent with its words: a
+/// link's title, address and description, or the text itself.
+fn context(item: &StashItem) -> Option<Value> {
+    match item.kind {
+        StashKind::Link => {
+            let url = item.url.as_deref()?;
+            let preview = item.preview.as_ref();
+            let title = preview
+                .map(|preview| preview.title.trim())
+                .filter(|title| !title.is_empty())
+                .unwrap_or(url);
+            let about = preview
+                .map(|preview| preview.description.trim())
+                .unwrap_or_default();
+            let text = [title, url, about]
+                .into_iter()
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            Some(json!({ "uri": url, "title": title, "text": text }))
+        }
+        StashKind::Text => {
+            let text = item.text.as_deref()?.trim();
+            let title = text.lines().next().unwrap_or(text);
+            Some(json!({
+                "uri": format!("sikemux://stash/{}", item.id),
+                "title": title.chars().take(80).collect::<String>(),
+                "text": text,
+            }))
+        }
         _ => None,
-    };
-    [item.note.as_deref(), said]
-        .into_iter()
-        .flatten()
-        .map(str::trim)
-        .filter(|words| !words.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n\n")
+    }
 }
 
 async fn download(core: &Core, item: &StashItem) -> CoreResult<PathBuf> {

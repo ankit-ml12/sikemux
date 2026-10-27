@@ -52,25 +52,39 @@ pub(crate) struct Draft {
 /// holding it, so a save already on its way cannot lose it.
 #[derive(Clone)]
 pub(crate) struct Delivery {
-    pub path: Option<String>,
+    pub paths: Vec<String>,
+    /// A link or text, as the draft's chips hold it and the message sends it: `{uri, title, text}`.
+    pub context: Option<Value>,
     pub words: String,
+}
+
+/// The list under `key` in the draft's extra, made when there is none.
+fn list<'a>(extra: &'a mut Option<Value>, key: &str) -> Option<&'a mut Vec<Value>> {
+    if !matches!(extra, Some(Value::Object(_))) {
+        *extra = Some(Value::Object(Default::default()));
+    }
+    let Some(Value::Object(extra)) = extra else {
+        return None;
+    };
+    extra
+        .entry(key)
+        .or_insert_with(|| Value::Array(Vec::new()))
+        .as_array_mut()
 }
 
 impl Delivery {
     fn add_to(&self, text: &mut String, extra: &mut Option<Value>) {
-        if let Some(path) = &self.path {
-            if !matches!(extra, Some(Value::Object(_))) {
-                *extra = Some(Value::Object(Default::default()));
-            }
-            let Some(Value::Object(extra)) = extra else {
-                return;
-            };
-            let attachments = extra
-                .entry("attachments")
-                .or_insert_with(|| Value::Array(Vec::new()));
-            if let Some(attachments) = attachments.as_array_mut() {
+        for path in &self.paths {
+            if let Some(attachments) = list(extra, "attachments") {
                 if !attachments.iter().any(|kept| kept.as_str() == Some(path)) {
                     attachments.push(Value::from(path.as_str()));
+                }
+            }
+        }
+        if let Some(context) = &self.context {
+            if let Some(held) = list(extra, "context") {
+                if !held.iter().any(|kept| kept["uri"] == context["uri"]) {
+                    held.push(context.clone());
                 }
             }
         }

@@ -192,12 +192,41 @@ pub(crate) async fn host_request(
     path: &str,
     body: Option<Value>,
 ) -> CoreResult<reqwest::Response> {
+    let body = body
+        .map(|body| serde_json::to_vec(&body))
+        .transpose()?
+        .map(|bytes| Upload {
+            bytes,
+            content_type: "application/json".into(),
+            headers: Vec::new(),
+        });
+    host_send(core, method, path, body).await
+}
+
+/// A body sent as it is, such as a file's bytes, with what the server reads about it.
+pub(crate) struct Upload {
+    pub bytes: Vec<u8>,
+    pub content_type: String,
+    pub headers: Vec<(&'static str, String)>,
+}
+
+/// Calls the accounts API as this host, signed with its key over `body`, whose hash goes along
+/// so the server can check it before reading the body.
+pub(crate) async fn host_send(
+    core: &Core,
+    method: Method,
+    path: &str,
+    body: Option<Upload>,
+) -> CoreResult<reqwest::Response> {
     let base = core
         .remote
         .signed_in_api()
         .ok_or_else(|| CoreError::from("this host is not signed in"))?;
-    let body = body.map(|body| serde_json::to_vec(&body)).transpose()?;
-    let body_sha256 = hex::encode(Sha256::digest(body.as_deref().unwrap_or_default()));
+    let body_sha256 = hex::encode(Sha256::digest(
+        body.as_ref()
+            .map(|body| body.bytes.as_slice())
+            .unwrap_or_default(),
+    ));
     let time = unused_second(format!("{method} {path} {body_sha256}"));
     let request = HostRequest {
         method: method.as_str().to_owned(),
@@ -213,7 +242,13 @@ pub(crate) async fn host_request(
             format!("SikemuxHost {key}.{}.{signature}", request.time),
         );
     if let Some(body) = body {
-        sent = sent.header("content-type", "application/json").body(body);
+        sent = sent
+            .header("content-type", body.content_type)
+            .header("x-body-sha256", &request.body_sha256);
+        for (name, value) in body.headers {
+            sent = sent.header(name, value);
+        }
+        sent = sent.body(body.bytes);
     }
     let response = sent
         .send()
