@@ -710,3 +710,4 @@ fn request_text(delivery: &HookDelivery) -> String {
         when(delivery.received_at),
         body.replace("</webhook-request", "&lt;/webhook-request")
     )
+}
