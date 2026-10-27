@@ -13,14 +13,20 @@ pub(super) fn missing(path: &str, old: &[u8], new: &[u8], tree: &HashSet<String>
         return Vec::new();
     };
     let before: HashSet<&str> = old.lines().map(str::trim).collect();
-    let added = new
-        .lines()
-        .map(str::trim)
-        .filter(|line| !before.contains(line));
+    let lines: Vec<&str> = new.lines().map(str::trim).collect();
+    let added = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| !before.contains(*line));
     let mut lacking = Vec::new();
-    for line in added {
-        let wants = if path.ends_with(".rs") {
-            rust_module(path, line).map(|(name, files)| (format!("`mod {name};`"), files))
+    for (at, line) in added {
+        let placed = at
+            .checked_sub(1)
+            .is_some_and(|above| lines[above].starts_with("#[path"));
+        let wants = if placed {
+            None
+        } else if path.ends_with(".rs") {
+            rust_module(path, line, tree).map(|(name, files)| (format!("`mod {name};`"), files))
         } else if is_script(path) {
             relative_import(path, line).map(|(spec, files)| (format!("an import of {spec}"), files))
         } else {
@@ -60,8 +66,29 @@ fn joined(folder: &str, name: &str) -> String {
     }
 }
 
+/// Whether `path` is a crate of its own, as a file straight in a package's
+/// `tests`, `examples`, `benches` or `src/bin` is, whose modules sit beside it.
+fn is_crate_root(path: &str, tree: &HashSet<String>) -> bool {
+    let dir = folder(path);
+    let package = match dir
+        .rsplit_once('/')
+        .map_or(("", dir), |(up, name)| (up, name))
+    {
+        (up, "tests" | "examples" | "benches") => up,
+        (up, "bin") => match up
+            .rsplit_once('/')
+            .map_or(("", up), |(above, name)| (above, name))
+        {
+            (above, "src") => above,
+            _ => return false,
+        },
+        _ => return false,
+    };
+    tree.contains(&joined(package, "Cargo.toml"))
+}
+
 /// The module a `mod name;` line declares, and the files that could hold it.
-fn rust_module(path: &str, line: &str) -> Option<(String, Vec<String>)> {
+fn rust_module(path: &str, line: &str, tree: &HashSet<String>) -> Option<(String, Vec<String>)> {
     let rest = line.strip_prefix("pub").map_or(line, |after| {
         let after = after.trim_start();
         match after.strip_prefix('(') {
@@ -80,7 +107,8 @@ fn rust_module(path: &str, line: &str) -> Option<(String, Vec<String>)> {
     }
     let file = path.rsplit('/').next().unwrap_or(path);
     let parent = match file {
-        "mod.rs" | "lib.rs" | "main.rs" => folder(path).to_owned(),
+        "mod.rs" | "lib.rs" | "main.rs" | "build.rs" => folder(path).to_owned(),
+        _ if is_crate_root(path, tree) => folder(path).to_owned(),
         _ => path.trim_end_matches(".rs").to_owned(),
     };
     Some((
@@ -103,6 +131,7 @@ fn relative_import(path: &str, line: &str) -> Option<(String, Vec<String>)> {
         .min()?;
     let quote = &line[quoted..=quoted];
     let spec = line[quoted + 1..].split(quote).next()?;
+    let spec = spec.split(['?', '#']).next().unwrap_or(spec);
     let mut parts: Vec<&str> = folder(path)
         .split('/')
         .filter(|part| !part.is_empty())
@@ -161,5 +190,25 @@ mod tests {
             script,
             ["src/api/core.ts adds an import of ./coreChanged, but src/api/coreChanged is not in this commit"]
         );
+    }
+
+    #[test]
+    fn a_test_crates_module_and_an_asset_query_name_files_already_there() {
+        let tree: HashSet<String> = [
+            "crates/core/Cargo.toml",
+            "crates/core/tests/folded/mod.rs",
+            "brand/mark/mark-white.svg",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        assert!(missing("crates/core/tests/chat.rs", b"", b"mod folded;\n", &tree).is_empty());
+        assert!(missing(
+            "src/App.tsx",
+            b"",
+            b"import markUrl from \"../brand/mark/mark-white.svg?url\";\n",
+            &tree,
+        )
+        .is_empty());
     }
 }
