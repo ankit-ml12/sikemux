@@ -81,6 +81,7 @@ pub struct Workbench {
     pub view: Option<DeviceView>,
     /// The latest answer to each watched call, by key.
     reads: HashMap<&'static str, Value>,
+    preferences: Preferences,
     pub lost: Option<String>,
     /// The core stopped on purpose, so it waits for the person to start it again.
     pub stopped: bool,
@@ -627,6 +628,7 @@ impl Workbench {
             version: String::new(),
             view: None,
             reads: HashMap::new(),
+            preferences: Preferences::default(),
             lost: None,
             stopped: false,
             stuck: None,
@@ -1136,6 +1138,7 @@ impl Workbench {
                     crate::theme::set_text_scale(preferences.ui_text_scale as f32, cx);
                     crate::see_through::set(&preferences, cx);
                     crate::experience::preferences_read(self, &preferences, cx);
+                    self.preferences = preferences;
                 }
                 self.reads.insert("preferences", value);
                 self.terminals.redraw_all(cx);
@@ -2396,9 +2399,7 @@ impl Workbench {
     }
 
     pub fn preferences(&self) -> Preferences {
-        self.read("preferences")
-            .and_then(|read| serde_json::from_value(read.clone()).ok())
-            .unwrap_or_default()
+        self.preferences.clone()
     }
 
     pub fn read(&self, key: &str) -> Option<&Value> {
@@ -2514,7 +2515,7 @@ impl Workbench {
         let launchers = self.launchers();
         let chosen = |id: &str| launchers.iter().find(|launcher| launcher.id == id);
         let of_kind = |kind: &str| self.launcher_of_kind(kind);
-        let last_kind = self.preferences().last_agent_type;
+        let last_kind = self.preferences.last_agent_type.as_deref();
         self.launcher_choice
             .as_deref()
             .and_then(of_kind)
@@ -2522,7 +2523,7 @@ impl Workbench {
                 let project = self.project()?.launcher.as_deref().and_then(chosen)?;
                 of_kind(&project.provider)
             })
-            .or_else(|| last_kind.as_deref().and_then(of_kind))
+            .or_else(|| last_kind.and_then(of_kind))
             .or_else(|| of_kind(&launchers.first()?.provider))
     }
 
@@ -4473,14 +4474,10 @@ impl Workbench {
     }
 
     fn chats_of(&self, project: &str) -> Vec<&RecentInfo> {
+        let provider = self.launcher().map(|launcher| launcher.provider.as_str());
         self.saved_chats(project)
             .into_iter()
-            .filter(|recent| {
-                self.all_harnesses
-                    || self
-                        .launcher()
-                        .is_some_and(|launcher| launcher.provider == recent.provider)
-            })
+            .filter(|recent| self.all_harnesses || provider == Some(recent.provider.as_str()))
             .filter(|recent| recent.title.to_lowercase().contains(&self.filter_text))
             .collect()
     }
@@ -5118,16 +5115,15 @@ impl Render for Workbench {
                             .clone()
                             .cached(StyleRefinement::default().absolute().inset_0()),
                     )
-                },
-            )
-            .when(self.over_shown(), |shell| {
-                shell.child(
-                    parts
-                        .over
-                        .clone()
-                        .cached(StyleRefinement::default().absolute().inset_0()),
-                )
-            })
+                    .when(self.over_shown(), |above| {
+                        above.child(
+                            parts
+                                .over
+                                .clone()
+                                .cached(StyleRefinement::default().absolute().inset_0()),
+                        )
+                    }),
+            ))
     }
 }
 
