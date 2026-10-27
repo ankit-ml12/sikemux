@@ -12,10 +12,10 @@ use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, px, AnyElement, AnyWindowHandle, App, AppContext, Bounds, Context, DragMoveEvent,
-    Entity, ExternalPaths, FocusHandle, Focusable, Image, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Render, SharedString, StatefulInteractiveElement, StyleRefinement,
-    Styled, Subscription, Task, WeakEntity, Window,
+    canvas, deferred, div, px, AnyElement, AnyWindowHandle, App, AppContext, Bounds, Context,
+    DragMoveEvent, Entity, ExternalPaths, FocusHandle, Focusable, Image, InteractiveElement,
+    IntoElement, ParentElement, Pixels, Render, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, Subscription, Task, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
@@ -5090,30 +5090,37 @@ impl Render for Workbench {
                         row.child(self.docked_rail(Edge::End, tab_tuck, cx))
                     }),
             )
-            .when(!self.side_rail_open, |shell| {
-                shell.child(self.rail_edge(Edge::Start, window, cx))
-            })
-            .when(!self.tab_rail_open, |shell| {
-                shell.child(self.rail_edge(Edge::End, window, cx))
-            })
-            .children(asked)
-            .children(crate::add_task::view(self, cx))
-            .children(crate::add_provider::view(self, cx))
-            .children(crate::buddy_picker::view(self, cx))
-            .children(crate::share::view(self, cx))
-            .children(crate::boot::reconnecting(self, cx))
-            .children(crate::boot::stopped(self, cx))
-            .children(crate::whats_new::required(self, cx))
-            .children(crate::boot::opening(self, cx))
-            .children(crate::boot::stuck(self, cx))
-            .when(
-                self.finder.is_some() || self.palette.is_some() || self.switcher.is_some(),
-                |shell| {
-                    shell.child(
-                        parts
-                            .finder
-                            .clone()
-                            .cached(StyleRefinement::default().absolute().inset_0()),
+            // Web pages cover all GPUI draws but deferred layers, so what floats goes here.
+            .child(deferred(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .when(!self.side_rail_open, |above| {
+                        above.child(self.rail_edge(Edge::Start, window, cx))
+                    })
+                    .when(!self.tab_rail_open, |above| {
+                        above.child(self.rail_edge(Edge::End, window, cx))
+                    })
+                    .children(asked)
+                    .children(crate::add_task::view(self, cx))
+                    .children(crate::add_provider::view(self, cx))
+                    .children(crate::buddy_picker::view(self, cx))
+                    .children(crate::share::view(self, cx))
+                    .children(crate::boot::reconnecting(self, cx))
+                    .children(crate::boot::stopped(self, cx))
+                    .children(crate::whats_new::required(self, cx))
+                    .children(crate::boot::opening(self, cx))
+                    .children(crate::boot::stuck(self, cx))
+                    .when(
+                        self.finder.is_some() || self.palette.is_some() || self.switcher.is_some(),
+                        |above| {
+                            above.child(
+                                parts
+                                    .finder
+                                    .clone()
+                                    .cached(StyleRefinement::default().absolute().inset_0()),
+                            )
+                        },
                     )
                     .when(self.over_shown(), |above| {
                         above.child(
