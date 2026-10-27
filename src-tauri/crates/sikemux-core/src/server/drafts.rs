@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,8 @@ const MAX_DRAFT: usize = 256 * 1024;
 /// Past this many drafts the oldest goes.
 const MAX_DRAFTS: usize = 512;
 const MAX_KEY: usize = 512;
+/// Past this many unseen deliveries to one draft the oldest is no longer put back.
+const MAX_DELIVERED: usize = 64;
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Stored {
@@ -37,11 +39,48 @@ pub(crate) struct Draft {
     text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     extra: Option<Value>,
+    /// Moves on with every change, so an app saving the draft says which one it last read.
+    #[serde(default)]
+    rev: u64,
 }
 
-impl Draft {
-    pub(crate) fn into_parts(self) -> (String, Option<Value>) {
-        (self.text, self.extra)
+/// What the core itself put in a draft, such as an item shared to the chat: a file and words
+/// added after the text. It is put back into an app's save until the app has read a revision
+/// holding it, so a save already on its way cannot lose it.
+#[derive(Clone)]
+pub(crate) struct Delivery {
+    pub path: Option<String>,
+    pub words: String,
+}
+
+impl Delivery {
+    fn add_to(&self, text: &mut String, extra: &mut Option<Value>) {
+        if let Some(path) = &self.path {
+            if !matches!(extra, Some(Value::Object(_))) {
+                *extra = Some(Value::Object(Default::default()));
+            }
+            let Some(Value::Object(extra)) = extra else {
+                return;
+            };
+            let attachments = extra
+                .entry("attachments")
+                .or_insert_with(|| Value::Array(Vec::new()));
+            if let Some(attachments) = attachments.as_array_mut() {
+                if !attachments.iter().any(|kept| kept.as_str() == Some(path)) {
+                    attachments.push(Value::from(path.as_str()));
+                }
+            }
+        }
+        let words = self.words.trim();
+        if words.is_empty() || text.contains(words) {
+            return;
+        }
+        let written = text.trim_end().len();
+        text.truncate(written);
+        if !text.is_empty() {
+            text.push_str("\n\n");
+        }
+        text.push_str(words);
     }
 }
 
@@ -49,6 +88,10 @@ pub(crate) struct Drafts(Arc<Held>);
 
 struct Held {
     drafts: Mutex<BTreeMap<String, Stored>>,
+    /// The deliveries no app has read yet, by draft key, each with the revision it made.
+    delivered: Mutex<BTreeMap<String, Vec<(u64, Delivery)>>>,
+    /// The last revision given; it starts at the time so it keeps growing across restarts.
+    rev: AtomicU64,
     kept: Kept,
     /// A save is on its way and will write what `drafts` holds by then.
     saving: AtomicBool,
@@ -61,6 +104,8 @@ impl Drafts {
         let kept = Kept::new(data_dir, FILE);
         Self(Arc::new(Held {
             drafts: Mutex::new(kept.load()),
+            delivered: Mutex::default(),
+            rev: AtomicU64::new(epoch_ms()),
             kept,
             saving: AtomicBool::new(false),
             writing: Mutex::new(()),
@@ -95,6 +140,74 @@ impl Drafts {
     /// Keeps `text` and `extra` as the draft for `key`; an empty text with no extra
     /// drops it.
     pub(crate) fn set(&self, key: &str, text: String, extra: Option<Value>) -> CoreResult<()> {
+        let mut drafts = self.0.drafts.locked();
+        self.put(&mut drafts, key, text, extra)?;
+        drop(drafts);
+        self.save_soon();
+        Ok(())
+    }
+
+    /// An app's save of the draft for `key`, written over revision `read`, the last it read.
+    /// What the core delivered after that revision is put back in, as the app never saw it.
+    pub(crate) fn save(
+        &self,
+        key: &str,
+        mut text: String,
+        mut extra: Option<Value>,
+        read: Option<u64>,
+    ) -> CoreResult<()> {
+        let mut drafts = self.0.drafts.locked();
+        let mut delivered = self.0.delivered.locked();
+        let unseen: Vec<Delivery> = delivered
+            .get(key)
+            .into_iter()
+            .flatten()
+            .filter(|(rev, _)| read.is_none_or(|read| *rev > read))
+            .map(|(_, delivery)| delivery.clone())
+            .collect();
+        for delivery in &unseen {
+            delivery.add_to(&mut text, &mut extra);
+        }
+        let rev = self.put(&mut drafts, key, text, extra)?;
+        delivered.remove(key);
+        if read.is_some() && !unseen.is_empty() {
+            delivered.insert(
+                key.to_owned(),
+                unseen.into_iter().map(|delivery| (rev, delivery)).collect(),
+            );
+        }
+        drop((drafts, delivered));
+        self.save_soon();
+        Ok(())
+    }
+
+    /// Adds `delivery` to the draft for `key`, after what is written there.
+    pub(crate) fn deliver(&self, key: &str, delivery: Delivery) -> CoreResult<()> {
+        let mut drafts = self.0.drafts.locked();
+        let (mut text, mut extra) = drafts
+            .get(key)
+            .map(|draft| (draft.shown.text.clone(), draft.shown.extra.clone()))
+            .unwrap_or_default();
+        delivery.add_to(&mut text, &mut extra);
+        let rev = self.put(&mut drafts, key, text, extra)?;
+        let mut delivered = self.0.delivered.locked();
+        let unseen = delivered.entry(key.to_owned()).or_default();
+        unseen.push((rev, delivery));
+        if unseen.len() > MAX_DELIVERED {
+            unseen.remove(0);
+        }
+        drop((drafts, delivered));
+        self.save_soon();
+        Ok(())
+    }
+
+    fn put(
+        &self,
+        drafts: &mut BTreeMap<String, Stored>,
+        key: &str,
+        text: String,
+        extra: Option<Value>,
+    ) -> CoreResult<u64> {
         if key.is_empty() || key.len() > MAX_KEY {
             return Err(CoreError::from("a draft's key must be 1 to 512 bytes"));
         }
@@ -105,41 +218,42 @@ impl Drafts {
                 "that draft is longer than the 256 KB a draft can be",
             ));
         }
-        {
-            let mut drafts = self.0.drafts.locked();
-            if text.is_empty() && extra.is_none() {
-                drafts.remove(key);
-            } else {
-                let shown = Draft { text, extra };
-                drafts.insert(
-                    key.to_owned(),
-                    Stored {
-                        shown,
-                        at: epoch_ms(),
-                    },
-                );
-            }
-            while drafts.len() > MAX_DRAFTS {
-                let Some(oldest) = drafts
-                    .iter()
-                    .min_by_key(|(_, draft)| draft.at)
-                    .map(|(key, _)| key.clone())
-                else {
-                    break;
-                };
-                drafts.remove(&oldest);
-            }
+        let rev = self.0.rev.fetch_add(1, Ordering::AcqRel) + 1;
+        if text.is_empty() && extra.is_none() {
+            drafts.remove(key);
+        } else {
+            let shown = Draft { text, extra, rev };
+            drafts.insert(
+                key.to_owned(),
+                Stored {
+                    shown,
+                    at: epoch_ms(),
+                },
+            );
         }
-        self.save_soon();
-        Ok(())
+        while drafts.len() > MAX_DRAFTS {
+            let Some(oldest) = drafts
+                .iter()
+                .min_by_key(|(_, draft)| draft.at)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            drafts.remove(&oldest);
+        }
+        Ok(rev)
     }
 
     /// Drops the drafts kept under `keys`, answering the ones there were.
     pub(crate) fn forget(&self, keys: impl IntoIterator<Item = String>) -> Vec<String> {
         let forgotten: Vec<String> = {
             let mut drafts = self.0.drafts.locked();
+            let mut delivered = self.0.delivered.locked();
             keys.into_iter()
-                .filter(|key| drafts.remove(key).is_some())
+                .filter(|key| {
+                    delivered.remove(key);
+                    drafts.remove(key).is_some()
+                })
                 .collect()
         };
         if !forgotten.is_empty() {

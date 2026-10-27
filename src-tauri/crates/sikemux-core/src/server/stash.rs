@@ -21,6 +21,7 @@ use crate::accounts::protocol::{
 
 use super::changed::Topic;
 use super::connection::blocking;
+use super::drafts::Delivery;
 use super::hosts::account::{as_host, host_request};
 use super::{attachments, Core, CoreError, CoreResult};
 
@@ -190,24 +191,13 @@ async fn into_draft(core: &Core, item: &StashItem, agent_id: &str) -> CoreResult
         false => None,
     };
     let key = format!("chat:{agent_id}");
-    let held = core
-        .drafts
-        .get(Some(std::slice::from_ref(&key)))
-        .remove(&key);
-    let (text, extra) = held.map(|draft| draft.into_parts()).unwrap_or_default();
-    let mut extra = match extra {
-        Some(Value::Object(extra)) => extra,
-        _ => serde_json::Map::new(),
+    let delivery = Delivery {
+        path: path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned()),
+        words: words(item),
     };
-    if let Some(path) = &path {
-        let attachments = extra.entry("attachments").or_insert_with(|| json!([]));
-        if let Some(attachments) = attachments.as_array_mut() {
-            attachments.push(json!(path));
-        }
-    }
-    let text = with_words(text, item);
-    let extra = (!extra.is_empty()).then_some(Value::Object(extra));
-    core.drafts.set(&key, text, extra)?;
+    core.drafts.deliver(&key, delivery)?;
     core.changes.changed(Topic::Drafts, None, Some(vec![key]));
     Ok(path)
 }
@@ -219,29 +209,20 @@ fn has_file(item: &StashItem) -> bool {
     )
 }
 
-/// The draft's text with the item's note, and its link or text, after what was written.
-fn with_words(text: String, item: &StashItem) -> String {
+/// The item's note, and its link or text, as they go after what the draft says.
+fn words(item: &StashItem) -> String {
     let said = match item.kind {
         StashKind::Link => item.url.as_deref(),
         StashKind::Text => item.text.as_deref(),
         _ => None,
     };
-    let words: Vec<&str> = [item.note.as_deref(), said]
+    [item.note.as_deref(), said]
         .into_iter()
         .flatten()
         .map(str::trim)
         .filter(|words| !words.is_empty())
-        .collect();
-    if words.is_empty() {
-        return text;
-    }
-    let written = text.trim_end();
-    let added = words.join("\n\n");
-    if written.is_empty() {
-        added
-    } else {
-        format!("{written}\n\n{added}")
-    }
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 async fn download(core: &Core, item: &StashItem) -> CoreResult<PathBuf> {

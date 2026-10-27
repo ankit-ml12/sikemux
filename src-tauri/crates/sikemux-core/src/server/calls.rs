@@ -378,7 +378,7 @@ calls! { core, client, params;
     },
     "setDraft": Person => {
         let params: SetDraftParams = parse(params)?;
-        core.drafts.set(&params.key, params.text, params.extra)?;
+        core.drafts.save(&params.key, params.text, params.extra, params.rev)?;
         core.changes.changed(Topic::Drafts, None, Some(vec![params.key]));
         answer(json!({}))
     },
@@ -763,6 +763,9 @@ struct SetDraftParams {
     text: String,
     #[serde(default)]
     extra: Option<Value>,
+    /// The draft's revision the app last read.
+    #[serde(default)]
+    rev: Option<u64>,
 }
 
 #[derive(Deserialize)]
