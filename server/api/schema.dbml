@@ -218,6 +218,36 @@ Table stash_items {
   Note: '(kind = \'link\') = (url IS NOT NULL); (kind = ANY (ARRAY[\'text\', \'prompt\'])) = (text IS NOT NULL); (kind = ANY (ARRAY[\'image\', \'video\', \'file\'])) = ((size IS NOT NULL) AND (name IS NOT NULL) AND (mime IS NOT NULL)); (prompt_id IS NULL) OR (kind = ANY (ARRAY[\'image\', \'video\', \'file\'])); (attachments_missing = 0) OR (kind = \'prompt\')'
 }
 
+Table hooks {
+  id text [pk, note: 'id ~ \'^[0-9a-f]{32}$\'']
+  user_id text [not null]
+  host_key text [not null]
+  token_sha256 bytea [not null, note: 'length(token_sha256) = 32']
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    host_key [name: 'hooks_by_host']
+  }
+}
+
+Table hook_deliveries {
+  id bigint [pk, increment]
+  hook_id text [not null]
+  host_key text [not null]
+  received_at timestamptz [not null, default: `now()`]
+  method text [not null, note: 'method = ANY (ARRAY[\'post\', \'put\', \'patch\'])']
+  headers jsonb [not null]
+  query text [not null]
+  body bytea [not null, note: 'length(body) <= 1048576']
+  attempts integer [not null, default: 0]
+  retry_at timestamptz
+
+  indexes {
+    received_at [name: 'hook_deliveries_by_age']
+    (host_key, id) [name: 'hook_deliveries_by_host']
+  }
+}
+
 Ref: devices.user_id > users.id [delete: cascade]
 Ref: update_channels.update_id > updates.id [delete: cascade]
 Ref: events.user_id > users.id [delete: cascade]
@@ -227,3 +257,6 @@ Ref: update_rollbacks.update_id > updates.id [delete: cascade]
 Ref: shares.user_id > users.id [delete: cascade]
 Ref: stash_items.prompt_id > stash_items.id [delete: cascade]
 Ref: stash_items.user_id > users.id [delete: cascade]
+Ref: hooks.host_key > devices.key [delete: cascade]
+Ref: hooks.user_id > users.id [delete: cascade]
+Ref: hook_deliveries.hook_id > hooks.id [delete: cascade]

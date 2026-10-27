@@ -299,6 +299,279 @@ export const schema = {
       additionalProperties: false,
     },
     HealthStatus: { type: "string", enum: ["ok", "unavailable"] },
+    Hook: {
+      description: "A webhook a host added.",
+      type: "object",
+      properties: {
+        id: { $ref: "#/$defs/HookId" },
+        url: {
+          description:
+            "The address senders post to, with the token at its end.",
+          type: "string",
+          format: "uri",
+        },
+        createdAt: { type: "string", format: "date-time" },
+      },
+      required: ["id", "url", "createdAt"],
+      additionalProperties: false,
+    },
+    HookAccepted: {
+      description:
+        "The request is held for the host, which hears of it now or when it next connects, until a day has passed.",
+      type: "object",
+      properties: { id: { $ref: "#/$defs/HookDeliveryId" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    HookAdd: {
+      description:
+        "A host asks for a webhook address that reaches it wherever it is.",
+      type: "object",
+      properties: { token: { $ref: "#/$defs/HookToken" } },
+      required: ["token"],
+      additionalProperties: false,
+    },
+    HookBye: {
+      description:
+        "The server is restarting and closes with HookCloseCode restarting after it. Reconnect no sooner than reconnectAfterMs.",
+      type: "object",
+      properties: {
+        type: { const: "bye" },
+        reconnectAfterMs: { type: "integer", minimum: 0 },
+      },
+      required: ["type", "reconnectAfterMs"],
+      additionalProperties: false,
+    },
+    HookChallenge: {
+      description:
+        "The server's first message on a webhook connection: a one-time value the host's hello signs.",
+      type: "object",
+      properties: {
+        type: { const: "challenge" },
+        nonce: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        expiresAt: { type: "string", format: "date-time" },
+      },
+      required: ["type", "nonce", "expiresAt"],
+      additionalProperties: false,
+    },
+    HookClientMessage: {
+      description: "What a host sends on a webhook connection.",
+      type: "object",
+      oneOf: [
+        { $ref: "#/$defs/HookHello" },
+        { $ref: "#/$defs/HookDone" },
+        { $ref: "#/$defs/HookPong" },
+      ],
+      discriminator: { propertyName: "type" },
+    },
+    HookCloseCode: {
+      description:
+        "Why the server closed a webhook connection, as the WebSocket close code.",
+      type: "integer",
+      oneOf: [
+        {
+          const: 4400,
+          title: "badMessage",
+          description:
+            "The host sent something the protocol does not allow. Reconnect with backoff.",
+        },
+        {
+          const: 4401,
+          title: "unauthenticated",
+          description:
+            "The hello did not prove the host is on an account, or it was taken off it.",
+        },
+        {
+          const: 4408,
+          title: "helloTimeout",
+          description:
+            "No hello came within 10 seconds of the challenge. Reconnect with backoff.",
+        },
+        {
+          const: 4409,
+          title: "replaced",
+          description: "A newer connection for the same host took over.",
+        },
+        {
+          const: 4410,
+          title: "idle",
+          description:
+            "The host has no webhooks and nothing waiting. Connect again once it adds one.",
+        },
+        {
+          const: 4429,
+          title: "overLimit",
+          description:
+            "Over a limit: more messages a second than allowed, or too many failed hellos from this key or address in a minute. Wait at least 30 seconds.",
+        },
+        {
+          const: 1011,
+          title: "serverError",
+          description:
+            "Something failed on the server. Reconnect with backoff.",
+        },
+        {
+          const: 1012,
+          title: "restarting",
+          description:
+            "The server is restarting, after a bye message. Reconnect no sooner than its reconnectAfterMs.",
+        },
+        {
+          const: 1013,
+          title: "overloaded",
+          description:
+            "The server has too many connections, or the host stopped reading. Reconnect with backoff.",
+        },
+      ],
+    },
+    HookDelivered: {
+      description:
+        "A request for the host. It comes again, on this connection or the next, until the host answers it with done.",
+      type: "object",
+      properties: {
+        type: { const: "delivery" },
+        delivery: { $ref: "#/$defs/HookDelivery" },
+      },
+      required: ["type", "delivery"],
+      additionalProperties: false,
+    },
+    HookDelivery: {
+      description:
+        "A request a webhook received, as the sender made it. The server checked only the token: a sender's signature is for the host to check.",
+      type: "object",
+      properties: {
+        id: { $ref: "#/$defs/HookDeliveryId" },
+        hook: { $ref: "#/$defs/HookId" },
+        receivedAt: { type: "string", format: "date-time" },
+        method: { $ref: "#/$defs/HookMethod" },
+        headers: {
+          type: "array",
+          items: { $ref: "#/$defs/HookHeader" },
+          maxItems: 200,
+        },
+        query: {
+          description: "The query string without its question mark, or empty.",
+          type: "string",
+          maxLength: 8192,
+        },
+        body: {
+          description:
+            "The body's bytes in standard base64, at most 1 MiB of them.",
+          type: "string",
+          maxLength: 1398104,
+          pattern: "^[A-Za-z0-9+/]*={0,2}$",
+        },
+      },
+      required: [
+        "id",
+        "hook",
+        "receivedAt",
+        "method",
+        "headers",
+        "query",
+        "body",
+      ],
+      additionalProperties: false,
+    },
+    HookDeliveryId: {
+      description:
+        "One request a webhook received. Later requests to the same host have larger ids.",
+      type: "string",
+      pattern: "^[1-9][0-9]{0,18}$",
+    },
+    HookDone: {
+      description:
+        "The host finished with a request. Handled, the server lets go of it; otherwise it comes again later, until a day after it arrived.",
+      type: "object",
+      properties: {
+        type: { const: "done" },
+        id: { $ref: "#/$defs/HookDeliveryId" },
+        handled: { type: "boolean" },
+      },
+      required: ["type", "id", "handled"],
+      additionalProperties: false,
+    },
+    HookHeader: {
+      description: "A request header, its name in lowercase.",
+      type: "object",
+      properties: {
+        name: { type: "string", minLength: 1, maxLength: 256 },
+        value: { type: "string", maxLength: 16384 },
+      },
+      required: ["name", "value"],
+      additionalProperties: false,
+    },
+    HookHello: {
+      description:
+        "The host's first message: its key and its Ed25519 signature over the UTF-8 text `sikemux-hooks|<nonce>|<key>`.",
+      type: "object",
+      properties: {
+        type: { const: "hello" },
+        role: { $ref: "#/$defs/HookRole" },
+        key: { $ref: "#/$defs/DeviceKey" },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+      },
+      required: ["type", "role", "key", "signature"],
+      additionalProperties: false,
+    },
+    HookId: {
+      description: "A webhook's id: 16 random bytes in lowercase hex.",
+      type: "string",
+      pattern: "^[0-9a-f]{32}$",
+    },
+    HookMethod: {
+      type: "string",
+      description: "The request's method, in lowercase.",
+      enum: ["post", "put", "patch"],
+    },
+    HookPing: {
+      description: "Answer with pong.",
+      type: "object",
+      properties: { type: { const: "ping" } },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    HookPong: {
+      description: "The answer to ping.",
+      type: "object",
+      properties: { type: { const: "pong" } },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    HookReady: {
+      description:
+        "The hello was accepted. Requests the host has not finished follow, oldest first.",
+      type: "object",
+      properties: {
+        type: { const: "ready" },
+        heartbeatMs: { type: "integer", minimum: 1 },
+      },
+      required: ["type", "heartbeatMs"],
+      additionalProperties: false,
+    },
+    HookRole: {
+      description: "Only hosts connect for their webhooks.",
+      type: "string",
+      enum: ["host"],
+    },
+    HookServerMessage: {
+      description: "What the server sends on a webhook connection.",
+      type: "object",
+      oneOf: [
+        { $ref: "#/$defs/HookChallenge" },
+        { $ref: "#/$defs/HookReady" },
+        { $ref: "#/$defs/HookDelivered" },
+        { $ref: "#/$defs/HookPing" },
+        { $ref: "#/$defs/HookBye" },
+      ],
+      discriminator: { propertyName: "type" },
+    },
+    HookToken: {
+      description:
+        "The secret at the end of a webhook's address: 32 random bytes in lowercase hex. The host makes it and keeps it; the server keeps only its SHA-256.",
+      type: "string",
+      pattern: "^[0-9a-f]{64}$",
+    },
     HostSignIn: {
       description:
         "What the host shows and keeps while its person approves it from a device already signed in.",

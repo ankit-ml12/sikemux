@@ -22,6 +22,11 @@ export function shareMessage(nonce: string, key: string): string {
   return `sikemux-share|${nonce}|${key}`;
 }
 
+/** What a host signs to open its webhook connection. */
+export function hooksMessage(nonce: string, key: string): string {
+  return `sikemux-hooks|${nonce}|${key}`;
+}
+
 /** What a Mac signs to watch a shared chat with its host's key. */
 export function shareViewerMessage(nonce: string, key: string): string {
   return `sikemux-share-viewer|${nonce}|${key}`;

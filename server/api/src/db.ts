@@ -156,6 +156,25 @@ export interface Tables {
     /** On a prompt, how many of its attachments have yet to arrive; it stays hidden until none. */
     attachments_missing: ColumnType<number, number | undefined, number>;
   };
+  hooks: {
+    id: string;
+    user_id: string;
+    host_key: string;
+    token_sha256: Buffer;
+    created_at: CreatedAt;
+  };
+  hook_deliveries: {
+    id: Generated<string>;
+    hook_id: string;
+    host_key: string;
+    received_at: CreatedAt;
+    method: string;
+    headers: ColumnType<unknown, string, never>;
+    query: string;
+    body: Buffer;
+    attempts: ColumnType<number, never, number>;
+    retry_at: ColumnType<Date | null, never, Date | null>;
+  };
   audit: {
     id: Generated<string>;
     user_id: string | null;

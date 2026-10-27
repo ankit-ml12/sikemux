@@ -31,6 +31,8 @@ export interface Config extends MigrationConfig {
   port: number;
   /** The web app's origin, the only page allowed to call the API from a browser. */
   appOrigin: string;
+  /** The API's own public origin, which webhook addresses start with. */
+  apiOrigin: string;
   /** The Clerk instance whose sign-ins the API accepts, such as https://clerk.sikemux.com. */
   clerkIssuer: string;
   /** The Mac app's Clerk OAuth client, the only one whose access tokens are accepted. */
@@ -129,6 +131,10 @@ export function loadConfig(
   if (appOrigin && URL.parse(appOrigin)?.origin !== appOrigin)
     problems.push("APP_ORIGIN is not an origin like https://app.sikemux.com");
 
+  const apiOrigin = text("API_ORIGIN", "https://api.sikemux.com");
+  if (apiOrigin && URL.parse(apiOrigin)?.origin !== apiOrigin)
+    problems.push("API_ORIGIN is not an origin like https://api.sikemux.com");
+
   const clerkIssuer = text("CLERK_ISSUER");
   if (
     clerkIssuer &&
@@ -175,6 +181,7 @@ export function loadConfig(
     port,
     databaseUrl,
     appOrigin,
+    apiOrigin,
     clerkIssuer,
     macClientId,
     clerkSecretKey,

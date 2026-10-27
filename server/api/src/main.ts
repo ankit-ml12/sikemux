@@ -11,6 +11,7 @@ import { createLogger } from "./log.ts";
 import { migrate, readMigrations } from "./migrations.ts";
 import { startServer } from "./server.ts";
 import { checkStashFiles, StashFiles } from "./stash/files.ts";
+import { purgeHookDeliveries } from "./hooks/purge.ts";
 import { purgeStash } from "./stash/purge.ts";
 import {
   promoteUpdate,
@@ -150,6 +151,7 @@ if (command === "serve") {
     await purgeAccounts(database.db, log);
     await pruneHistory(database.db, log);
     await purgeStash(database.db, config.stashDir, log);
+    await purgeHookDeliveries(database.db, log);
   } catch (error) {
     log.fatal({ err: error }, "purging failed");
     process.exitCode = 1;

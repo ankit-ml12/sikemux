@@ -25,6 +25,7 @@ describe("loadConfig", () => {
       port: 4000,
       databaseUrl: minimal.DATABASE_URL,
       appOrigin: "https://app.sikemux.com",
+      apiOrigin: "https://api.sikemux.com",
       clerkIssuer: "https://clerk.sikemux.com",
       macClientId: "mac_client",
       clerkSecretKey: null,

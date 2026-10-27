@@ -84,6 +84,7 @@ export function testApp(
     database,
     log,
     appOrigin: APP_ORIGIN,
+    apiOrigin: "https://api.sikemux.com",
     verifier,
     limiter,
     clerk: null,

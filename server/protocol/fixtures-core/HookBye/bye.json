@@ -1,0 +1,4 @@
+{
+  "type": "bye",
+  "reconnectAfterMs": 4200
+}

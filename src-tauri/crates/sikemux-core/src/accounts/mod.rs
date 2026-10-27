@@ -1,6 +1,7 @@
 //! What the core shares with the accounts server at api.sikemux.com. The types
-//! in [`protocol`], [`share`] and [`host`] are generated from `server/protocol/schema`.
+//! in [`protocol`], [`share`], [`host`] and [`hooks`] are generated from `server/protocol/schema`.
 
+pub mod hooks;
 pub mod host;
 #[cfg(unix)]
 pub mod live;
@@ -29,6 +30,11 @@ pub fn app_base() -> String {
 /// ever passing for a live connection's hello.
 pub fn share_message(nonce: &str, key: &str) -> String {
     format!("sikemux-share|{nonce}|{key}")
+}
+
+/// What a host signs to open its webhook connection.
+pub fn hooks_message(nonce: &str, key: &str) -> String {
+    format!("sikemux-hooks|{nonce}|{key}")
 }
 
 /// What a Mac signs to watch a shared chat as the host's account.
@@ -131,6 +137,7 @@ mod tests {
                 let json = std::fs::read_to_string(&path)?;
                 let written = super::share::round_trip(&name, &json)
                     .or_else(|| super::host::round_trip(&name, &json))
+                    .or_else(|| super::hooks::round_trip(&name, &json))
                     .ok_or_else(|| format!("{name} has fixtures but no Rust type"))?
                     .map_err(|error| format!("{}: {error}", path.display()))?;
                 let read: serde_json::Value = serde_json::from_str(&json)?;

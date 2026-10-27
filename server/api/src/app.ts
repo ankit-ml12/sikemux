@@ -10,6 +10,8 @@ import type { Verifier } from "./auth.ts";
 import type { Database } from "./db.ts";
 import { deviceRoutes } from "./devices/routes.ts";
 import { healthRoutes } from "./health/routes.ts";
+import { HookHosts } from "./hooks/hosts.ts";
+import { hookReceiveRoutes, hookRoutes } from "./hooks/routes.ts";
 import { hostSignInRoutes } from "./host/routes.ts";
 import {
   ApiFailure,
@@ -34,6 +36,8 @@ export interface Services {
   database: Database;
   log: Logger;
   appOrigin: string;
+  /** The API's own public origin, which webhook addresses start with. */
+  apiOrigin: string;
   verifier: Verifier;
   limiter?: RateLimiter;
   relayAccess?: RelayAccess;
@@ -52,12 +56,15 @@ export interface Services {
   relayAccessToken: string | null;
   /** Where stashed files are kept, or null when the stash is not set up. */
   stash?: StashFiles | null;
+  /** The hosts connected for their webhooks, which hear at once of a request for them. */
+  hookHosts?: HookHosts;
 }
 
 export function createApp({
   database,
   log,
   appOrigin,
+  apiOrigin,
   verifier,
   limiter = new RateLimiter(),
   relayAccess = new RelayAccess(database.db),
@@ -70,11 +77,15 @@ export function createApp({
   places,
   relayAccessToken,
   stash = null,
+  hookHosts = new HookHosts(),
 }: Services) {
   const app = new Hono<Env>();
 
   app.use(requestContext(log));
   app.route("/internal", relayAccessRoutes(relayAccess, relayAccessToken));
+  // Senders such as GitHub post every account's webhooks from a few addresses, so each webhook
+  // has its own limit instead of the address's.
+  app.route("/v1/hooks", hookReceiveRoutes(database, limiter, hookHosts));
   app.use(limit<Env>(limiter, "address", 600, clientAddress));
   app.use(
     cors({
@@ -108,6 +119,7 @@ export function createApp({
     accountRoutes(database, verifier, limiter, clerk, appleSignIn, push.app),
   );
   app.route("/v1/webhooks", clerkWebhookRoutes(database, webhookSecret));
+  app.route("/v1/hooks", hookRoutes(database, verifier, hookHosts, apiOrigin));
   app.route("/updates", updateRoutes(database, limiter));
 
   app.notFound((c) =>

@@ -551,6 +551,132 @@
           "body": "ApiError"
         }
       }
+    },
+    {
+      "method": "post",
+      "path": "/v1/hooks",
+      "operationId": "addHook",
+      "summary": "Give this host a webhook address that reaches it wherever it is",
+      "auth": "host",
+      "request": "HookAdd",
+      "responses": {
+        "201": {
+          "description": "The webhook was added.",
+          "body": "Hook"
+        },
+        "409": {
+          "description": "The host already has as many webhooks as it may.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "delete",
+      "path": "/v1/hooks/{hookId}",
+      "operationId": "removeHook",
+      "summary": "Take one of this host's webhooks away, with the requests it still holds",
+      "auth": "host",
+      "responses": {
+        "204": {
+          "description": "Removed, or it was already gone."
+        }
+      }
+    },
+    {
+      "method": "post",
+      "path": "/v1/hooks/{hookId}/{token}",
+      "operationId": "receiveHook",
+      "summary": "A sender's request to a host's webhook, held until the host takes it",
+      "auth": "webhook",
+      "responses": {
+        "202": {
+          "description": "Held for the host.",
+          "body": "HookAccepted"
+        },
+        "404": {
+          "description": "No webhook has this address.",
+          "body": "ApiError"
+        },
+        "413": {
+          "description": "The body is over 1 MiB.",
+          "body": "ApiError"
+        },
+        "429": {
+          "description": "Over 60 requests a minute to this webhook, or its host already has as many requests waiting as it may.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "put",
+      "path": "/v1/hooks/{hookId}/{token}",
+      "operationId": "receiveHookPut",
+      "summary": "The same as a POST, for senders that PUT",
+      "auth": "webhook",
+      "responses": {
+        "202": {
+          "description": "Held for the host.",
+          "body": "HookAccepted"
+        },
+        "404": {
+          "description": "No webhook has this address.",
+          "body": "ApiError"
+        },
+        "413": {
+          "description": "The body is over 1 MiB.",
+          "body": "ApiError"
+        },
+        "429": {
+          "description": "Over 60 requests a minute to this webhook, or its host already has as many requests waiting as it may.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "patch",
+      "path": "/v1/hooks/{hookId}/{token}",
+      "operationId": "receiveHookPatch",
+      "summary": "The same as a POST, for senders that PATCH",
+      "auth": "webhook",
+      "responses": {
+        "202": {
+          "description": "Held for the host.",
+          "body": "HookAccepted"
+        },
+        "404": {
+          "description": "No webhook has this address.",
+          "body": "ApiError"
+        },
+        "413": {
+          "description": "The body is over 1 MiB.",
+          "body": "ApiError"
+        },
+        "429": {
+          "description": "Over 60 requests a minute to this webhook, or its host already has as many requests waiting as it may.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
+      "method": "get",
+      "path": "/v1/hooks/live",
+      "operationId": "openHooks",
+      "summary": "One connection per host with webhooks, carrying the requests they receive",
+      "auth": "device",
+      "upgrade": "websocket",
+      "messages": {
+        "send": "HookClientMessage",
+        "receive": "HookServerMessage"
+      },
+      "responses": {
+        "101": {
+          "description": "The connection is open. The server sends a challenge; the host answers with hello within 10 seconds. Its close codes are HookCloseCode."
+        },
+        "429": {
+          "description": "Too many connections from this address.",
+          "body": "ApiError"
+        }
+      }
     }
   ]
 }

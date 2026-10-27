@@ -36,7 +36,7 @@ export interface CloseCodes {
 
 export interface SocketKind {
   /** Starts every rate-limit key of this kind of connection. */
-  name: "live" | "share";
+  name: "live" | "share" | "hooks";
   incoming: keyof Definitions & string;
   codes: CloseCodes;
 }

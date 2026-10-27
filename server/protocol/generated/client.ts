@@ -13,6 +13,8 @@ import type {
   DeviceRename,
   DeviceRole,
   Health,
+  Hook,
+  HookAdd,
   HostSignIn,
   HostSignInFinish,
   HostSignInPoll,
@@ -143,6 +145,11 @@ export function apiClient(send: Send) {
     /** Delete a stashed item and its file. */
     deleteStash: (id: string) =>
       send<void>("DELETE", `/v1/stash/${encodeURIComponent(id)}`),
+    /** Give this host a webhook address that reaches it wherever it is. */
+    addHook: (body: HookAdd) => send<Hook>("POST", `/v1/hooks`, body),
+    /** Take one of this host's webhooks away, with the requests it still holds. */
+    removeHook: (hookId: string) =>
+      send<void>("DELETE", `/v1/hooks/${encodeURIComponent(hookId)}`),
   };
 }
 

@@ -1231,6 +1231,296 @@
           }
         }
       }
+    },
+    "/v1/hooks": {
+      "post": {
+        "operationId": "addHook",
+        "summary": "Give this host a webhook address that reaches it wherever it is",
+        "security": [{ "host": [] }],
+        "description": "Only a request signed by a host on the account.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/HookAdd" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The webhook was added.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Hook" }
+              }
+            }
+          },
+          "409": {
+            "description": "The host already has as many webhooks as it may.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/hooks/{hookId}": {
+      "delete": {
+        "operationId": "removeHook",
+        "summary": "Take one of this host's webhooks away, with the requests it still holds",
+        "security": [{ "host": [] }],
+        "description": "Only a request signed by a host on the account.",
+        "parameters": [
+          {
+            "name": "hookId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Removed, or it was already gone." },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/hooks/{hookId}/{token}": {
+      "post": {
+        "operationId": "receiveHook",
+        "summary": "A sender's request to a host's webhook, held until the host takes it",
+        "security": [],
+        "description": "Called by Clerk, signed with Svix's headers.",
+        "parameters": [
+          {
+            "name": "hookId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Held for the host.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HookAccepted" }
+              }
+            }
+          },
+          "404": {
+            "description": "No webhook has this address.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "413": {
+            "description": "The body is over 1 MiB.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 60 requests a minute to this webhook, or its host already has as many requests waiting as it may.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "receiveHookPut",
+        "summary": "The same as a POST, for senders that PUT",
+        "security": [],
+        "description": "Called by Clerk, signed with Svix's headers.",
+        "parameters": [
+          {
+            "name": "hookId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Held for the host.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HookAccepted" }
+              }
+            }
+          },
+          "404": {
+            "description": "No webhook has this address.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "413": {
+            "description": "The body is over 1 MiB.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 60 requests a minute to this webhook, or its host already has as many requests waiting as it may.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "receiveHookPatch",
+        "summary": "The same as a POST, for senders that PATCH",
+        "security": [],
+        "description": "Called by Clerk, signed with Svix's headers.",
+        "parameters": [
+          {
+            "name": "hookId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Held for the host.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HookAccepted" }
+              }
+            }
+          },
+          "404": {
+            "description": "No webhook has this address.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "413": {
+            "description": "The body is over 1 MiB.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "429": {
+            "description": "Over 60 requests a minute to this webhook, or its host already has as many requests waiting as it may.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/hooks/live": {
+      "get": {
+        "operationId": "openHooks",
+        "summary": "One connection per host with webhooks, carrying the requests they receive",
+        "security": [],
+        "description": "A WebSocket. The device proves who it is in its first message, since browsers cannot set headers on one. `send` is what the device sends; `receive` is what the server sends.",
+        "x-websocket": {
+          "send": { "$ref": "#/components/schemas/HookClientMessage" },
+          "receive": { "$ref": "#/components/schemas/HookServerMessage" }
+        },
+        "responses": {
+          "101": {
+            "description": "The connection is open. The server sends a challenge; the host answers with hello within 10 seconds. Its close codes are HookCloseCode."
+          },
+          "429": {
+            "description": "Too many connections from this address.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1523,6 +1813,259 @@
         "additionalProperties": false
       },
       "HealthStatus": { "type": "string", "enum": ["ok", "unavailable"] },
+      "Hook": {
+        "description": "A webhook a host added.",
+        "type": "object",
+        "properties": {
+          "id": { "$ref": "#/components/schemas/HookId" },
+          "url": {
+            "description": "The address senders post to, with the token at its end.",
+            "type": "string",
+            "format": "uri"
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "url", "createdAt"],
+        "additionalProperties": false
+      },
+      "HookAccepted": {
+        "description": "The request is held for the host, which hears of it now or when it next connects, until a day has passed.",
+        "type": "object",
+        "properties": {
+          "id": { "$ref": "#/components/schemas/HookDeliveryId" }
+        },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "HookAdd": {
+        "description": "A host asks for a webhook address that reaches it wherever it is.",
+        "type": "object",
+        "properties": { "token": { "$ref": "#/components/schemas/HookToken" } },
+        "required": ["token"],
+        "additionalProperties": false
+      },
+      "HookBye": {
+        "description": "The server is restarting and closes with HookCloseCode restarting after it. Reconnect no sooner than reconnectAfterMs.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "bye" },
+          "reconnectAfterMs": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["type", "reconnectAfterMs"],
+        "additionalProperties": false
+      },
+      "HookChallenge": {
+        "description": "The server's first message on a webhook connection: a one-time value the host's hello signs.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "challenge" },
+          "nonce": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["type", "nonce", "expiresAt"],
+        "additionalProperties": false
+      },
+      "HookClientMessage": {
+        "description": "What a host sends on a webhook connection.",
+        "type": "object",
+        "oneOf": [
+          { "$ref": "#/components/schemas/HookHello" },
+          { "$ref": "#/components/schemas/HookDone" },
+          { "$ref": "#/components/schemas/HookPong" }
+        ],
+        "discriminator": { "propertyName": "type" }
+      },
+      "HookCloseCode": {
+        "description": "Why the server closed a webhook connection, as the WebSocket close code.",
+        "type": "integer",
+        "oneOf": [
+          {
+            "const": 4400,
+            "title": "badMessage",
+            "description": "The host sent something the protocol does not allow. Reconnect with backoff."
+          },
+          {
+            "const": 4401,
+            "title": "unauthenticated",
+            "description": "The hello did not prove the host is on an account, or it was taken off it."
+          },
+          {
+            "const": 4408,
+            "title": "helloTimeout",
+            "description": "No hello came within 10 seconds of the challenge. Reconnect with backoff."
+          },
+          {
+            "const": 4409,
+            "title": "replaced",
+            "description": "A newer connection for the same host took over."
+          },
+          {
+            "const": 4410,
+            "title": "idle",
+            "description": "The host has no webhooks and nothing waiting. Connect again once it adds one."
+          },
+          {
+            "const": 4429,
+            "title": "overLimit",
+            "description": "Over a limit: more messages a second than allowed, or too many failed hellos from this key or address in a minute. Wait at least 30 seconds."
+          },
+          {
+            "const": 1011,
+            "title": "serverError",
+            "description": "Something failed on the server. Reconnect with backoff."
+          },
+          {
+            "const": 1012,
+            "title": "restarting",
+            "description": "The server is restarting, after a bye message. Reconnect no sooner than its reconnectAfterMs."
+          },
+          {
+            "const": 1013,
+            "title": "overloaded",
+            "description": "The server has too many connections, or the host stopped reading. Reconnect with backoff."
+          }
+        ]
+      },
+      "HookDelivered": {
+        "description": "A request for the host. It comes again, on this connection or the next, until the host answers it with done.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "delivery" },
+          "delivery": { "$ref": "#/components/schemas/HookDelivery" }
+        },
+        "required": ["type", "delivery"],
+        "additionalProperties": false
+      },
+      "HookDelivery": {
+        "description": "A request a webhook received, as the sender made it. The server checked only the token: a sender's signature is for the host to check.",
+        "type": "object",
+        "properties": {
+          "id": { "$ref": "#/components/schemas/HookDeliveryId" },
+          "hook": { "$ref": "#/components/schemas/HookId" },
+          "receivedAt": { "type": "string", "format": "date-time" },
+          "method": { "$ref": "#/components/schemas/HookMethod" },
+          "headers": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/HookHeader" },
+            "maxItems": 200
+          },
+          "query": {
+            "description": "The query string without its question mark, or empty.",
+            "type": "string",
+            "maxLength": 8192
+          },
+          "body": {
+            "description": "The body's bytes in standard base64, at most 1 MiB of them.",
+            "type": "string",
+            "maxLength": 1398104,
+            "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+          }
+        },
+        "required": [
+          "id",
+          "hook",
+          "receivedAt",
+          "method",
+          "headers",
+          "query",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "HookDeliveryId": {
+        "description": "One request a webhook received. Later requests to the same host have larger ids.",
+        "type": "string",
+        "pattern": "^[1-9][0-9]{0,18}$"
+      },
+      "HookDone": {
+        "description": "The host finished with a request. Handled, the server lets go of it; otherwise it comes again later, until a day after it arrived.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "done" },
+          "id": { "$ref": "#/components/schemas/HookDeliveryId" },
+          "handled": { "type": "boolean" }
+        },
+        "required": ["type", "id", "handled"],
+        "additionalProperties": false
+      },
+      "HookHeader": {
+        "description": "A request header, its name in lowercase.",
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "value": { "type": "string", "maxLength": 16384 }
+        },
+        "required": ["name", "value"],
+        "additionalProperties": false
+      },
+      "HookHello": {
+        "description": "The host's first message: its key and its Ed25519 signature over the UTF-8 text `sikemux-hooks|<nonce>|<key>`.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "hello" },
+          "role": { "$ref": "#/components/schemas/HookRole" },
+          "key": { "$ref": "#/components/schemas/DeviceKey" },
+          "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
+        },
+        "required": ["type", "role", "key", "signature"],
+        "additionalProperties": false
+      },
+      "HookId": {
+        "description": "A webhook's id: 16 random bytes in lowercase hex.",
+        "type": "string",
+        "pattern": "^[0-9a-f]{32}$"
+      },
+      "HookMethod": {
+        "type": "string",
+        "description": "The request's method, in lowercase.",
+        "enum": ["post", "put", "patch"]
+      },
+      "HookPing": {
+        "description": "Answer with pong.",
+        "type": "object",
+        "properties": { "type": { "const": "ping" } },
+        "required": ["type"],
+        "additionalProperties": false
+      },
+      "HookPong": {
+        "description": "The answer to ping.",
+        "type": "object",
+        "properties": { "type": { "const": "pong" } },
+        "required": ["type"],
+        "additionalProperties": false
+      },
+      "HookReady": {
+        "description": "The hello was accepted. Requests the host has not finished follow, oldest first.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "ready" },
+          "heartbeatMs": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["type", "heartbeatMs"],
+        "additionalProperties": false
+      },
+      "HookRole": {
+        "description": "Only hosts connect for their webhooks.",
+        "type": "string",
+        "enum": ["host"]
+      },
+      "HookServerMessage": {
+        "description": "What the server sends on a webhook connection.",
+        "type": "object",
+        "oneOf": [
+          { "$ref": "#/components/schemas/HookChallenge" },
+          { "$ref": "#/components/schemas/HookReady" },
+          { "$ref": "#/components/schemas/HookDelivered" },
+          { "$ref": "#/components/schemas/HookPing" },
+          { "$ref": "#/components/schemas/HookBye" }
+        ],
+        "discriminator": { "propertyName": "type" }
+      },
+      "HookToken": {
+        "description": "The secret at the end of a webhook's address: 32 random bytes in lowercase hex. The host makes it and keeps it; the server keeps only its SHA-256.",
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
       "HostSignIn": {
         "description": "What the host shows and keeps while its person approves it from a device already signed in.",
         "type": "object",

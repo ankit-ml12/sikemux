@@ -205,6 +205,140 @@ export const healthStatusValues: readonly HealthStatus[] = [
   "unavailable",
 ];
 
+/** A webhook a host added. */
+export interface Hook {
+  id: HookId;
+  /** The address senders post to, with the token at its end. */
+  url: string;
+  createdAt: string;
+}
+
+/** The request is held for the host, which hears of it now or when it next connects, until a day has passed. */
+export interface HookAccepted {
+  id: HookDeliveryId;
+}
+
+/** A host asks for a webhook address that reaches it wherever it is. */
+export interface HookAdd {
+  token: HookToken;
+}
+
+/** The server is restarting and closes with HookCloseCode restarting after it. Reconnect no sooner than reconnectAfterMs. */
+export interface HookBye {
+  type: "bye";
+  reconnectAfterMs: number;
+}
+
+/** The server's first message on a webhook connection: a one-time value the host's hello signs. */
+export interface HookChallenge {
+  type: "challenge";
+  nonce: string;
+  expiresAt: string;
+}
+
+/** What a host sends on a webhook connection. */
+export type HookClientMessage = HookHello | HookDone | HookPong;
+
+/** Why the server closed a webhook connection, as the WebSocket close code. */
+export const HookCloseCode = {
+  /** The host sent something the protocol does not allow. Reconnect with backoff. */
+  badMessage: 4400,
+  /** The hello did not prove the host is on an account, or it was taken off it. */
+  unauthenticated: 4401,
+  /** No hello came within 10 seconds of the challenge. Reconnect with backoff. */
+  helloTimeout: 4408,
+  /** A newer connection for the same host took over. */
+  replaced: 4409,
+  /** The host has no webhooks and nothing waiting. Connect again once it adds one. */
+  idle: 4410,
+  /** Over a limit: more messages a second than allowed, or too many failed hellos from this key or address in a minute. Wait at least 30 seconds. */
+  overLimit: 4429,
+  /** Something failed on the server. Reconnect with backoff. */
+  serverError: 1011,
+  /** The server is restarting, after a bye message. Reconnect no sooner than its reconnectAfterMs. */
+  restarting: 1012,
+  /** The server has too many connections, or the host stopped reading. Reconnect with backoff. */
+  overloaded: 1013,
+} as const;
+export type HookCloseCode = (typeof HookCloseCode)[keyof typeof HookCloseCode];
+
+/** A request for the host. It comes again, on this connection or the next, until the host answers it with done. */
+export interface HookDelivered {
+  type: "delivery";
+  delivery: HookDelivery;
+}
+
+/** A request a webhook received, as the sender made it. The server checked only the token: a sender's signature is for the host to check. */
+export interface HookDelivery {
+  id: HookDeliveryId;
+  hook: HookId;
+  receivedAt: string;
+  method: HookMethod;
+  headers: HookHeader[];
+  /** The query string without its question mark, or empty. */
+  query: string;
+  /** The body's bytes in standard base64, at most 1 MiB of them. */
+  body: string;
+}
+
+/** One request a webhook received. Later requests to the same host have larger ids. */
+export type HookDeliveryId = string;
+
+/** The host finished with a request. Handled, the server lets go of it; otherwise it comes again later, until a day after it arrived. */
+export interface HookDone {
+  type: "done";
+  id: HookDeliveryId;
+  handled: boolean;
+}
+
+/** A request header, its name in lowercase. */
+export interface HookHeader {
+  name: string;
+  value: string;
+}
+
+/** The host's first message: its key and its Ed25519 signature over the UTF-8 text `sikemux-hooks|<nonce>|<key>`. */
+export interface HookHello {
+  type: "hello";
+  role: HookRole;
+  key: DeviceKey;
+  signature: string;
+}
+
+/** A webhook's id: 16 random bytes in lowercase hex. */
+export type HookId = string;
+
+/** The request's method, in lowercase. */
+export type HookMethod = "post" | "put" | "patch";
+export const hookMethodValues: readonly HookMethod[] = ["post", "put", "patch"];
+
+/** Answer with pong. */
+export interface HookPing {
+  type: "ping";
+}
+
+/** The answer to ping. */
+export interface HookPong {
+  type: "pong";
+}
+
+/** The hello was accepted. Requests the host has not finished follow, oldest first. */
+export interface HookReady {
+  type: "ready";
+  heartbeatMs: number;
+}
+
+/** Only hosts connect for their webhooks. */
+export type HookRole = "host";
+export const hookRoleValues: readonly HookRole[] = ["host"];
+
+/** What the server sends on a webhook connection. */
+export type HookServerMessage =
+  HookChallenge | HookReady | HookDelivered | HookPing | HookBye;
+
+/** The secret at the end of a webhook's address: 32 random bytes in lowercase hex. The host makes it and keeps it; the server keeps only its SHA-256. */
+export type HookToken = string;
+
 /** What the host shows and keeps while its person approves it from a device already signed in. */
 export interface HostSignIn {
   code: HostSignInCode;
@@ -913,6 +1047,27 @@ export interface Definitions {
   EventId: EventId;
   Health: Health;
   HealthStatus: HealthStatus;
+  Hook: Hook;
+  HookAccepted: HookAccepted;
+  HookAdd: HookAdd;
+  HookBye: HookBye;
+  HookChallenge: HookChallenge;
+  HookClientMessage: HookClientMessage;
+  HookCloseCode: HookCloseCode;
+  HookDelivered: HookDelivered;
+  HookDelivery: HookDelivery;
+  HookDeliveryId: HookDeliveryId;
+  HookDone: HookDone;
+  HookHeader: HookHeader;
+  HookHello: HookHello;
+  HookId: HookId;
+  HookMethod: HookMethod;
+  HookPing: HookPing;
+  HookPong: HookPong;
+  HookReady: HookReady;
+  HookRole: HookRole;
+  HookServerMessage: HookServerMessage;
+  HookToken: HookToken;
   HostSignIn: HostSignIn;
   HostSignInCode: HostSignInCode;
   HostSignInFinish: HostSignInFinish;

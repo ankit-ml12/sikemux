@@ -10,6 +10,8 @@ import { clerkVerifier } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { RateLimiter } from "./limits.ts";
+import { HookHosts } from "./hooks/hosts.ts";
+import { attachHooks } from "./hooks/server.ts";
 import { attachLive } from "./live/server.ts";
 import { NO_PLACES, openPlaces } from "./places.ts";
 import type { Logger } from "./log.ts";
@@ -107,10 +109,12 @@ export function startServer(config: Config, log: Logger) {
       "STASH_DIR and STASH_KEY are not set: the stash answers unavailable",
     );
   const relayAccess = new RelayAccess(database.db);
+  const hookHosts = new HookHosts();
   const app = createApp({
     database,
     log,
     appOrigin: config.appOrigin,
+    apiOrigin: config.apiOrigin,
     verifier,
     limiter,
     relayAccess,
@@ -123,6 +127,7 @@ export function startServer(config: Config, log: Logger) {
     places,
     relayAccessToken: config.relayAccessToken,
     stash: config.stash ? new StashFiles(config.stash) : null,
+    hookHosts,
   });
   const server = serve(
     { fetch: app.fetch, hostname: config.host, port: config.port },
@@ -137,6 +142,14 @@ export function startServer(config: Config, log: Logger) {
     appOrigin: config.appOrigin,
   });
 
+  const hooks = attachHooks(server, {
+    database,
+    verifier,
+    limiter,
+    log,
+    hosts: hookHosts,
+  });
+
   const live = attachLive(server, {
     database,
     databaseUrl: config.databaseUrl,
@@ -145,7 +158,7 @@ export function startServer(config: Config, log: Logger) {
     log,
     appOrigin: config.appOrigin,
     pusher,
-    watchers: [shares, relayAccess],
+    watchers: [shares, relayAccess, hooks],
   });
   let sweeping = false;
   const clerkSweep = setInterval(() => {
@@ -166,6 +179,7 @@ export function startServer(config: Config, log: Logger) {
     stopping = true;
     log.info({ signal }, "stopping");
     clearInterval(clerkSweep);
+    hooks.stop();
     const force = setTimeout(() => server.closeAllConnections(), DRAIN_MS);
     force.unref();
     const liveStopped = Promise.all([live.stop(), shares.stop()]).catch(

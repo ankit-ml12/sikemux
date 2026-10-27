@@ -36,6 +36,7 @@ async function format(text, path) {
 const CORE_ONLY = new Map([
   ["share.json", "share.rs"],
   ["host.json", "host.rs"],
+  ["hooks.json", "hooks.rs"],
 ]);
 
 const schemaDir = join(protocol, "schema");
