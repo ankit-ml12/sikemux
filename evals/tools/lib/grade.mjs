@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { callMatches, describe, toolMatches, valueMatches } from './match.mjs';
 
 const bash = (pattern) => ({ tool: ['Bash', 'BashOutput'], args: { command: pattern } });
@@ -19,7 +21,7 @@ const PARALLEL = [
   { tool: FILE_TOOLS, key: (call) => call.args.file_path ?? call.args.notebook_path, writes: true },
 ];
 
-export function grade(testCase, outcome) {
+export function grade(testCase, outcome, repo) {
   const spec = testCase.grade ?? {};
   const calls = outcome.calls;
   const failures = [];
@@ -75,6 +77,22 @@ export function grade(testCase, outcome) {
     const first = relevant[0];
     if (!first || !callMatches(spec.first, first)) {
       failures.push({ check: 'first', why: `first call was ${first ? brief(first) : 'none'}, not ${describe(spec.first)}` });
+    }
+  }
+
+  for (const file of spec.files ?? []) {
+    if (!repo) {
+      failures.push({ check: 'files', why: `cannot check ${file.path}: the case's repo is gone` });
+      continue;
+    }
+    const path = join(repo, file.path);
+    const present = existsSync(path);
+    if (file.absent) {
+      if (present) failures.push({ check: 'files', why: file.why ?? `${file.path} still exists` });
+    } else if (!present) {
+      failures.push({ check: 'files', why: file.why ?? `${file.path} is missing` });
+    } else if (file.match !== undefined && !valueMatches(file.match, readFileSync(path, 'utf8'))) {
+      failures.push({ check: 'files', why: file.why ?? `${file.path} does not match ${file.match}` });
     }
   }
 

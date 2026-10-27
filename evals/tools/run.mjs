@@ -31,6 +31,7 @@ const { values: options } = parseArgs({
     at: { type: 'string' },
     resume: { type: 'string' },
     keep: { type: 'boolean', default: false },
+    trials: { type: 'string', default: '1' },
     shell: { type: 'string', default: '/bin/zsh' },
     'shell-env': { type: 'string' },
     record: { type: 'string' },
@@ -46,6 +47,7 @@ if (options.help) {
   --cases id,id,prefix*           cases to run (default: every replayable case)
   --category wrong_tool,...       only these categories
   --concurrency 4                 cases at once per model
+  --trials 1                      runs of each case; reports the mean pass rate and the cases that pass every trial
   --turns 16 --timeout 420        limits per case (turns, seconds)
   --build                         rebuild sikemux-host first
   --shell /bin/bash               the shell agents' commands run in (default /bin/zsh)
@@ -165,27 +167,54 @@ function savedHost(commit) {
 }
 
 async function runVariant(variant) {
-  const queue = [...cases];
+  const trials = Number(options.trials);
+  const queue = cases.flatMap((testCase) => Array.from({ length: trials }, (_, trial) => ({ testCase, trial: trial + 1 })));
   const done = [];
   const workers = Array.from({ length: Number(options.concurrency) }, async () => {
     while (queue.length) {
-      const testCase = queue.shift();
-      const result = await runCase(variant, testCase);
+      const { testCase, trial } = queue.shift();
+      const result = await runCase(variant, testCase, trials > 1 ? trial : null);
       done.push(result);
       const mark = result.pass ? 'pass' : 'FAIL';
-      console.log(`${variant.label.padEnd(26)} ${mark} ${testCase.id}${result.pass ? '' : `  ${result.failures.map((failure) => failure.why).join('; ')}`}`);
+      const name = result.trial ? `${testCase.id} #${result.trial}` : testCase.id;
+      console.log(`${variant.label.padEnd(26)} ${mark} ${name}${result.pass ? '' : `  ${result.failures.map((failure) => failure.why).join('; ')}`}`);
     }
   });
   await Promise.all(workers);
-  done.sort((left, right) => left.id.localeCompare(right.id));
-  return { label: variant.label, model: variant.id, search: variant.search ?? null, cases: done };
+  const byCase = Map.groupBy(done, (result) => result.id);
+  const rows = cases.map((testCase) => (trials > 1 ? summarizeTrials(byCase.get(testCase.id)) : byCase.get(testCase.id)[0]));
+  rows.sort((left, right) => left.id.localeCompare(right.id));
+  return { label: variant.label, model: variant.id, search: variant.search ?? null, trials, cases: rows };
 }
 
-async function runCase(variant, testCase) {
-  const dir = join(runDir, variant.label.replace(/\W+/g, '-'), testCase.id);
+function summarizeTrials(runs) {
+  runs.sort((left, right) => left.trial - right.trial);
+  const passed = runs.filter((run) => run.pass).length;
+  const { id, category, tools } = runs[0];
+  return {
+    id,
+    category,
+    tools,
+    pass: passed === runs.length,
+    rate: passed / runs.length,
+    failures: runs.flatMap((run) => run.failures.map((failure) => ({ ...failure, trial: run.trial }))),
+    cost: runs.reduce((sum, run) => sum + run.cost, 0),
+    ...(runs.some((run) => run.costEstimated) ? { costEstimated: true } : {}),
+    tokens: {
+      input: runs.reduce((sum, run) => sum + run.tokens.input, 0),
+      cached: runs.reduce((sum, run) => sum + run.tokens.cached, 0),
+      output: runs.reduce((sum, run) => sum + run.tokens.output, 0),
+    },
+    runs,
+  };
+}
+
+async function runCase(variant, testCase, trial) {
+  const caseDir = join(runDir, variant.label.replace(/\W+/g, '-'), testCase.id);
+  const dir = trial ? join(caseDir, `t${trial}`) : caseDir;
   const finished = options.resume ? readFinished(variant, testCase, dir) : null;
   const outcome = finished ?? (await runAgent(variant, testCase, dir));
-  const failures = grade(testCase, outcome);
+  const failures = grade(testCase, outcome, repoOf(dir, testCase));
   if (outcome.exit.timedOut) failures.push({ check: 'run', why: 'timed out' });
   else if (outcome.failed) failures.push({ check: 'run', why: `the run failed: ${outcome.stop}` });
   const verdict = testCase.judge && !outcome.failed ? await judgeOnce(testCase, outcome, dir, finished ? null : outcome.sandbox) : null;
@@ -193,6 +222,7 @@ async function runCase(variant, testCase) {
   if (verdict && !verdict.pass) failures.push({ check: 'judge', why: verdict.why });
   return {
     id: testCase.id,
+    ...(trial ? { trial } : {}),
     category: testCase.category,
     tools: testCase.tools ?? [],
     pass: failures.length === 0,
@@ -206,6 +236,12 @@ async function runCase(variant, testCase) {
     reply: outcome.reply?.slice(0, 2000) ?? '',
     dir,
   };
+}
+
+function repoOf(dir, testCase) {
+  const link = join(dir, 'sandbox');
+  if (!existsSync(link)) return null;
+  return join(realpathSync(link), 'home', testCase.fixture?.project === 'work' ? 'work/app' : 'proj/app');
 }
 
 function readFinished(variant, testCase, dir) {
@@ -271,9 +307,13 @@ function compact(result) {
     ...result,
     variants: result.variants.map((variant) => ({
       ...variant,
-      cases: variant.cases.map(({ dir, calls, reply, ...rest }) => ({ ...rest, calls: calls.map((call) => call.tool) })),
+      cases: variant.cases.map((row) => (row.runs ? { ...row, runs: row.runs.map(compactRun) } : compactRun(row))),
     })),
   };
+}
+
+function compactRun({ dir, calls, reply, ...rest }) {
+  return { ...rest, calls: calls.map((call) => call.tool) };
 }
 
 function git(...args) {

@@ -1,7 +1,14 @@
 export function report(summary) {
   const variants = summary.variants;
-  const rate = (rows) => (rows.length ? `${Math.round((100 * rows.filter((row) => row.pass).length) / rows.length)}% ${rows.filter((row) => row.pass).length}/${rows.length}` : '-');
-  const width = Math.max(14, ...variants.map((variant) => variant.label.length + 2));
+  const trials = Math.max(...variants.map((variant) => variant.trials ?? 1));
+  const rate = (rows) => {
+    if (!rows.length) return '-';
+    const all = rows.filter((row) => row.pass).length;
+    if (trials === 1) return `${Math.round((100 * all) / rows.length)}% ${all}/${rows.length}`;
+    const mean = rows.reduce((sum, row) => sum + (row.rate ?? Number(row.pass)), 0) / rows.length;
+    return `${Math.round(100 * mean)}% (all ${all}/${rows.length})`;
+  };
+  const width = Math.max(trials === 1 ? 14 : 22, ...variants.map((variant) => variant.label.length + 2));
   const table = (title, keysOf) => {
     const keys = [...new Set(variants.flatMap((variant) => variant.cases.flatMap(keysOf)))].sort();
     console.log(`\n${title.padEnd(26)}${variants.map((variant) => variant.label.padEnd(width)).join('')}`);
@@ -11,14 +18,15 @@ export function report(summary) {
     }
   };
 
-  console.log(`\n${'model'.padEnd(26)}${'pass'.padEnd(14)}${'cost'.padEnd(10)}${'tokens in'.padEnd(14)}${'out'.padEnd(10)}per case`);
+  if (trials > 1) console.log(`\n${trials} trials of each case: pass is the mean over trials, (all) counts the cases that passed every trial`);
+  console.log(`\n${'model'.padEnd(26)}${'pass'.padEnd(width)}${'cost'.padEnd(10)}${'tokens in'.padEnd(14)}${'out'.padEnd(10)}per case`);
   for (const variant of variants) {
     const cost = variant.cases.reduce((sum, row) => sum + row.cost, 0);
     const input = variant.cases.reduce((sum, row) => sum + row.tokens.input, 0);
     const output = variant.cases.reduce((sum, row) => sum + row.tokens.output, 0);
     const mark = variant.cases.some((row) => row.costEstimated) ? '~' : '';
     const each = variant.cases.length ? `${mark}$${(cost / variant.cases.length).toFixed(3)}, ${Math.round(input / variant.cases.length / 1000)}k in` : '-';
-    console.log(`${variant.label.padEnd(26)}${rate(variant.cases).padEnd(14)}${`${mark}$${cost.toFixed(2)}`.padEnd(10)}${input.toLocaleString().padEnd(14)}${output.toLocaleString().padEnd(10)}${each}`);
+    console.log(`${variant.label.padEnd(26)}${rate(variant.cases).padEnd(width)}${`${mark}$${cost.toFixed(2)}`.padEnd(10)}${input.toLocaleString().padEnd(14)}${output.toLocaleString().padEnd(10)}${each}`);
   }
   if (variants.some((variant) => variant.cases.some((row) => row.costEstimated))) {
     console.log('~ estimated from tokens at the provider price in lib/omp.mjs; the judge is counted at its real cost');
@@ -29,6 +37,10 @@ export function report(summary) {
     const failing = variant.cases.filter((row) => !row.pass);
     if (!failing.length) continue;
     console.log(`\nfailing on ${variant.label}:`);
-    for (const row of failing) console.log(`  ${row.id}: ${row.failures.map((failure) => failure.why).join('; ')}`);
+    for (const row of failing) {
+      const passed = row.runs ? ` (passed ${row.runs.filter((run) => run.pass).length}/${row.runs.length})` : '';
+      const reasons = [...new Set(row.failures.map((failure) => failure.why))];
+      console.log(`  ${row.id}${passed}: ${reasons.join('; ')}`);
+    }
   }
 }
