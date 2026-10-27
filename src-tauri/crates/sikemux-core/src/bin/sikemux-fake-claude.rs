@@ -13,6 +13,15 @@
 //! - `limit` fails the way Claude Code does when the account is out of usage;
 //! - anything else is echoed back.
 //!
+//! `FAKE_CLAUDE_SCRIPT` names a JSON file of replies for recorded demos, each
+//! `{ "when": "words in the prompt", "steps": [...] }`, a step being
+//! `{ "think": "..." }`, `{ "say": "..." }` or `{ "say_file": "reply.md" }`
+//! (beside the script), streamed a word at a time at `perSecond` (30), or
+//! `{ "tool": "Read", "input": {...}, "result": "...", "ms": 600 }`. While
+//! `FAKE_CLAUDE_CLOCK` names a file holding a time in milliseconds, those
+//! pauses follow that time rather than the real one, so a recording that
+//! draws slower than real time still sees the reply arrive at a steady pace.
+//!
 //! With `FAKE_CLAUDE_OUT_OF_USAGE=1` every prompt fails as `limit` does. A
 //! message under an id the transcript already has is dropped, as Claude Code
 //! drops it.
@@ -175,6 +184,10 @@ impl Claude {
         self.interrupted.store(false, Ordering::Release);
         self.send(json!({ "type": "command_lifecycle", "command_uuid": uuid, "state": "started" }));
         let message_id = format!("msg-{uuid}");
+        if let Some(steps) = scripted_reply(text) {
+            self.play(uuid, &message_id, &steps);
+            return;
+        }
         let mut words = text.split_whitespace();
         let out_of_usage = std::env::var("FAKE_CLAUDE_OUT_OF_USAGE").as_deref() == Ok("1");
         let verb = words.next().unwrap_or_default();
@@ -358,6 +371,66 @@ impl Claude {
         }
     }
 
+    /// Plays a reply from `FAKE_CLAUDE_SCRIPT`, each step its own message.
+    fn play(&self, uuid: &str, message_id: &str, steps: &[Value]) {
+        let mut clock = Clock::start();
+        for (at, step) in steps.iter().enumerate() {
+            let id = format!("{message_id}-{at}");
+            let per_second = step["perSecond"].as_f64().unwrap_or(30.).max(1.);
+            if let Some(name) = step["tool"].as_str() {
+                let tool_id = format!("toolu-{uuid}-{at}");
+                self.send(json!({
+                    "type": "assistant", "uuid": uuid::Uuid::new_v4().to_string(), "parent_tool_use_id": null,
+                    "message": { "id": id, "model": "fake", "role": "assistant",
+                        "content": [{ "type": "tool_use", "id": tool_id, "name": name, "input": step["input"] }] },
+                }));
+                clock.wait(step["ms"].as_f64().unwrap_or(600.));
+                self.send(json!({
+                    "type": "user", "uuid": uuid::Uuid::new_v4().to_string(), "parent_tool_use_id": null,
+                    "message": { "role": "user", "content": [{ "type": "tool_result", "tool_use_id": tool_id,
+                        "content": step["result"].as_str().unwrap_or_default() }] },
+                }));
+                continue;
+            }
+            let (kind, said) = match (step["think"].as_str(), step["say"].as_str()) {
+                (Some(thought), _) => ("thinking", thought.to_owned()),
+                (_, Some(said)) => ("text", said.to_owned()),
+                _ => ("text", script_file(step["say_file"].as_str().unwrap_or_default())),
+            };
+            self.send(json!({
+                "type": "stream_event", "parent_tool_use_id": null,
+                "event": { "type": "message_start", "message": { "id": id, "model": "fake" } },
+            }));
+            for piece in said.split_inclusive(char::is_whitespace) {
+                let delta = if kind == "text" {
+                    json!({ "type": "text_delta", "text": piece })
+                } else {
+                    json!({ "type": "thinking_delta", "thinking": piece })
+                };
+                self.send(json!({
+                    "type": "stream_event", "parent_tool_use_id": null,
+                    "event": { "type": "content_block_delta", "index": 0, "delta": delta },
+                }));
+                if !piece.trim().is_empty() {
+                    clock.wait(1000. / per_second);
+                }
+            }
+            let block = if kind == "text" {
+                json!({ "type": "text", "text": said })
+            } else {
+                json!({ "type": "thinking", "thinking": said })
+            };
+            let assistant = json!({
+                "type": "assistant", "uuid": uuid::Uuid::new_v4().to_string(), "parent_tool_use_id": null,
+                "message": { "id": id, "model": "fake", "role": "assistant", "content": [block] },
+            });
+            self.record(assistant.clone());
+            self.send(assistant);
+            clock.wait(step["after"].as_f64().unwrap_or(150.));
+        }
+        self.finish(uuid, None);
+    }
+
     fn control(&self, request_id: &str, request: &Value) {
         let response = match request["subtype"].as_str() {
             Some("initialize") => json!({
@@ -397,6 +470,62 @@ impl Claude {
             "type": "control_response",
             "response": { "subtype": "success", "request_id": request_id, "response": response },
         }));
+    }
+}
+
+/// The steps of the first reply in `FAKE_CLAUDE_SCRIPT` whose words `prompt` holds.
+fn scripted_reply(prompt: &str) -> Option<Vec<Value>> {
+    let script: Value =
+        serde_json::from_slice(&std::fs::read(std::env::var_os("FAKE_CLAUDE_SCRIPT")?).ok()?)
+            .ok()?;
+    let prompt = prompt.to_lowercase();
+    script.as_array()?.iter().find_map(|reply| {
+        let when = reply["when"].as_str()?.to_lowercase();
+        prompt
+            .contains(&when)
+            .then(|| reply["steps"].as_array().cloned())
+            .flatten()
+    })
+}
+
+/// A file named beside `FAKE_CLAUDE_SCRIPT`.
+fn script_file(name: &str) -> String {
+    std::env::var_os("FAKE_CLAUDE_SCRIPT")
+        .map(PathBuf::from)
+        .and_then(|script| std::fs::read_to_string(script.with_file_name(name)).ok())
+        .unwrap_or_default()
+}
+
+/// Paces a scripted reply by `FAKE_CLAUDE_CLOCK`'s time when it is set, else by the real one.
+struct Clock {
+    file: Option<PathBuf>,
+    at: f64,
+}
+
+impl Clock {
+    fn start() -> Self {
+        let file = std::env::var_os("FAKE_CLAUDE_CLOCK").map(PathBuf::from);
+        let at = file.as_deref().map_or(0., Self::read);
+        Self { file, at }
+    }
+
+    fn read(file: &std::path::Path) -> f64 {
+        std::fs::read_to_string(file)
+            .ok()
+            .and_then(|said| said.trim().parse().ok())
+            .unwrap_or(0.)
+    }
+
+    fn wait(&mut self, ms: f64) {
+        self.at += ms;
+        match &self.file {
+            Some(file) => {
+                while Self::read(file) < self.at {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+            None => std::thread::sleep(Duration::from_secs_f64(ms / 1000.)),
+        }
     }
 }
 
