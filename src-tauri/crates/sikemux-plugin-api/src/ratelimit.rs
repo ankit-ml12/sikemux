@@ -105,8 +105,11 @@ impl RateLimits {
             return Some(after);
         }
         let named = |name: Option<&str>| name.and_then(|name| number(headers, name));
-        let none_left = named(self.headers.remaining) == Some(0);
-        if let Some(at) = named(self.headers.reset).filter(|_| none_left || status == 429) {
+        let remaining = named(self.headers.remaining);
+        let none_left = remaining == Some(0);
+        // A 429 with requests still left is a burst limit; the reset names the hourly one.
+        let hourly_spent = none_left || (status == 429 && remaining.is_none());
+        if let Some(at) = named(self.headers.reset).filter(|_| hourly_spent) {
             return Some(at.saturating_sub(epoch_secs()));
         }
         let secondary = String::from_utf8_lossy(body)
@@ -270,6 +273,15 @@ mod tests {
         let secondary = br#"{"message":"You have exceeded a secondary rate limit."}"#;
         assert_eq!(
             limits.wait_for("a", StatusCode::FORBIDDEN, &some_left, secondary),
+            Some(60)
+        );
+        let reset = (epoch_secs() + 1800).to_string();
+        let burst = headers(&[
+            ("x-ratelimit-remaining", "4580"),
+            ("x-ratelimit-reset", &reset),
+        ])?;
+        assert_eq!(
+            limits.wait_for("a", StatusCode::TOO_MANY_REQUESTS, &burst, secondary),
             Some(60)
         );
         Ok(())
