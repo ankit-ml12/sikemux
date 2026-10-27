@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Dumps the sikemux database, encrypts it to the age recipients in BACKUP_RECIPIENTS, uploads it
-# to the R2 bucket and deletes backups older than 30 days. Run nightly by sikemux-backup.service.
-# Citadel holds only the public key, so it can write backups but never read one back.
+# to the R2 bucket and deletes backups older than 30 days. Then copies the stash's files, which
+# the stash key already encrypts, and that key sealed to the same recipients. Run nightly by
+# sikemux-backup.service. Citadel holds only the public key, so it can write backups but never
+# read one back.
 set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -42,3 +44,15 @@ echo "uploaded and verified $object"
 echo "deleting backups older than 30 days"
 rclone delete --min-age "$prune_older_than" "r2:$R2_BUCKET/sikemux"
 echo "kept $(rclone lsf --recursive --files-only "r2:$R2_BUCKET/sikemux" | wc -l | tr -d ' ') backups"
+
+if [ -n "${STASH_DIR:-}" ]; then
+  # A stashed file never changes once written, so one already uploaded is skipped. A file gone
+  # from citadel moves to stash/deleted and is kept 30 days, as the database backups are.
+  echo "copying the stash"
+  rclone sync "$STASH_DIR" "r2:$R2_BUCKET/stash/files" --ignore-existing --exclude '.*' \
+    --backup-dir "r2:$R2_BUCKET/stash/deleted/$(date -u +%Y-%m-%d)"
+  rclone delete --min-age "$prune_older_than" "r2:$R2_BUCKET/stash/deleted"
+  age --encrypt --recipients-file "$recipients" <"${STASH_KEY_FILE:?STASH_KEY_FILE is not set}" |
+    rclone rcat "r2:$R2_BUCKET/stash/key.age"
+  echo "kept $(rclone lsf --files-only "r2:$R2_BUCKET/stash/files" | wc -l | tr -d ' ') stashed files"
+fi

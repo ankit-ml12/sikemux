@@ -1,5 +1,5 @@
 [Unit]
-Description=Sikemux: encrypt a backup of the accounts database and send it to R2
+Description=Sikemux: encrypt a backup of the accounts database and the stash, and send it to R2
 After=network-online.target postgresql.service
 Wants=network-online.target
 
@@ -9,7 +9,10 @@ User=sikemux-backup
 Group=sikemux-backup
 EnvironmentFile=/etc/sikemux/backup.env
 LoadCredential=recipients:/etc/sikemux/backup-recipients.txt
+LoadCredential=stash-key:/etc/sikemux/stash.key
 Environment=BACKUP_RECIPIENTS=%d/recipients
+Environment=STASH_DIR=/var/lib/sikemux-stash STASH_KEY_FILE=%d/stash-key
+SupplementaryGroups=sikemux-stash
 Environment=PGHOST=/var/run/postgresql PGUSER=sikemux_backup PGDATABASE=sikemux
 Environment=RCLONE_CACHE_DIR=%C/sikemux-backup
 CacheDirectory=sikemux-backup

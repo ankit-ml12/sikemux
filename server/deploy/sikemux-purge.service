@@ -17,6 +17,7 @@ CapabilityBoundingSet=
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectSystem=strict
+ReadWritePaths=/var/lib/sikemux-stash
 ProtectHome=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

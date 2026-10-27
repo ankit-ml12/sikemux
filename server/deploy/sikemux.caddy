@@ -10,7 +10,19 @@ api.sikemux.com {
 	import sikemux_headers
 	header Referrer-Policy "no-referrer"
 	encode zstd gzip
-	request_body {
+	# A stashed file may be 25 MiB; every other body stays small.
+	@stash_upload {
+		method POST
+		path /v1/stash
+	}
+	request_body @stash_upload {
+		max_size 26MiB
+	}
+	@small_body not {
+		method POST
+		path /v1/stash
+	}
+	request_body @small_body {
 		max_size 1MB
 	}
 	# Only the relay, on this machine, asks the API at /internal.

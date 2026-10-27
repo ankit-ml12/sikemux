@@ -63,6 +63,30 @@ chmod 640 /etc/sikemux/api.env
 grep -q '^GEOIP_DIR=' /etc/sikemux/api.env ||
   echo 'GEOIP_DIR=/var/lib/sikemux-places' >>/etc/sikemux/api.env
 
+step "stash: files written by the API, encrypted with a key kept in /etc/sikemux/stash.key"
+# The backup reads the files, which the key already encrypts, through the sikemux-stash group;
+# the folder hands its group to every file in it.
+getent group sikemux-stash >/dev/null || groupadd --system sikemux-stash
+install -d -m 2750 -o sikemux -g sikemux-stash /var/lib/sikemux-stash
+stash_changed=0
+if [ ! -f /etc/sikemux/stash.key ]; then
+  (umask 077 && openssl rand -hex 32 >/etc/sikemux/stash.key)
+fi
+chown root:root /etc/sikemux/stash.key
+chmod 600 /etc/sikemux/stash.key
+if ! grep -qx 'STASH_DIR=/var/lib/sikemux-stash' /etc/sikemux/api.env; then
+  sed -i '/^STASH_DIR=/d' /etc/sikemux/api.env
+  echo 'STASH_DIR=/var/lib/sikemux-stash' >>/etc/sikemux/api.env
+  stash_changed=1
+fi
+stash_key="$(cat /etc/sikemux/stash.key)"
+if ! grep -qx "STASH_KEY=$stash_key" /etc/sikemux/api.env; then
+  sed -i '/^STASH_KEY=/d' /etc/sikemux/api.env
+  echo "STASH_KEY=$stash_key" >>/etc/sikemux/api.env
+  stash_changed=1
+fi
+unset stash_key
+
 step "database, reachable only by the sikemux users through the local socket"
 psql -U "$PG_ADMIN" -d postgres -v ON_ERROR_STOP=1 -q <<'SQL'
 select 'create role sikemux login' where not exists (select from pg_roles where rolname = 'sikemux') \gexec
@@ -112,6 +136,7 @@ install -m 644 "$here/sikemux-places.timer" /etc/systemd/system/sikemux-places.t
 install -D -m 755 -o root -g root "$here/update-places" /usr/local/lib/sikemux/update-places
 systemctl daemon-reload
 systemctl enable sikemux-api >/dev/null
+[ "$stash_changed" = 0 ] || systemctl try-restart sikemux-api
 systemctl enable --now sikemux-purge.timer >/dev/null
 systemctl enable --now sikemux-places.timer >/dev/null
 [ -f /var/lib/sikemux-places/dbip-asn-lite.mmdb ] || systemctl start sikemux-places
