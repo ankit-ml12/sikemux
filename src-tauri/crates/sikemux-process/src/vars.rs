@@ -33,6 +33,10 @@ pub const AGENT_SEARCH: &str = "SIKEMUX_AGENT_SEARCH";
 /// Sikemux starts inherits it; an account's profile sets its own again.
 pub const CLAUDE_HOME: &str = "CLAUDE_CONFIG_DIR";
 
+/// The caller a headless Claude Code names on its requests. Plans count the SDK's own names
+/// (`sdk-ts`, `sdk-cli`) against the 5-hour limit about twice as fast: anthropics/claude-code#97074.
+pub const CLAUDE_ENTRYPOINT: (&str, &str) = ("CLAUDE_CODE_ENTRYPOINT", "sikemux");
+
 /// What the agent session that started this process set for its own programs, which no agent,
 /// terminal or task Sikemux starts may inherit: Claude Code's session markers, which turn a new
 /// agent's transcript saving off and hand it the session's messaging socket, its Claude home, and

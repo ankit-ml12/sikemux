@@ -706,7 +706,8 @@ pub(super) fn run_ai_commit_model(
         AgentKind::Codex => run_codex_app_server(repo, model, prompt),
         AgentKind::Claude => run_ai_candidate(provider, |bin| {
             let mut command = sikemux_process::user_environment::agent_command(bin);
-            command.current_dir(repo).args([
+            let (entrypoint, caller) = sikemux_process::vars::CLAUDE_ENTRYPOINT;
+            command.current_dir(repo).env(entrypoint, caller).args([
                 "--print",
                 "--model",
                 model,

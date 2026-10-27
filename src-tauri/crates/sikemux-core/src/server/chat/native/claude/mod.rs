@@ -342,7 +342,7 @@ impl Claude {
             Start::Resume(id) => args.push(format!("--resume={id}")),
         }
         let env = [
-            ("CLAUDE_CODE_ENTRYPOINT", "sdk-ts"),
+            sikemux_process::vars::CLAUDE_ENTRYPOINT,
             ("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS", "1"),
         ]
         .map(|(key, value)| (key.to_owned(), value.to_owned()));
