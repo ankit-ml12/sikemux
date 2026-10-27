@@ -206,6 +206,22 @@ impl Render for RunningFor {
     }
 }
 
+/// A clock's time fading in as it settles on how long its call or run took.
+fn settled(id: String, running: bool, time: AnyElement) -> AnyElement {
+    motion::replay(
+        ElementId::Name(id.into()),
+        running,
+        motion::TEXT_SWAP,
+        move |shown| {
+            div()
+                .opacity(if running { 1. } else { shown })
+                .child(time)
+                .into_any_element()
+        },
+    )
+    .into_any_element()
+}
+
 fn seconds(ms: u64) -> String {
     if ms < 1000 {
         return "0s".into();
@@ -377,6 +393,7 @@ pub fn run(
         )),
         None => (spent > 0).then(|| duration(spent).into_any_element()),
     };
+    let time = time.map(|time| settled(format!("run-time:{key}"), current.is_some(), time));
     let (reader, hover, ink) = (looks.reader.clone(), looks.hover, looks.ink);
     let sum = div()
         .id(SharedString::from(format!("run:{key}")))
@@ -441,7 +458,7 @@ pub fn run(
     );
     let body = (shown > 0.).then(|| {
         let rows = calls.iter().enumerate().map(|(ix, call)| {
-            let row = row(call, ix + 1 == count, kind, looks, cx);
+            let row = row(call, ix + 1 == count, kind, looks, window, cx);
             let id = &call.tool.tool_call_id;
             if !arriving.contains(id) {
                 return row;
@@ -473,7 +490,14 @@ pub fn run(
 
 /// One call: a tick off the run's spine, its icon and word in the colour of what
 /// it did, what it was about, and how long it took, opening onto its detail.
-fn row(call: &Call, last: bool, kind: usize, looks: &Drawn, cx: &App) -> AnyElement {
+fn row(
+    call: &Call,
+    last: bool,
+    kind: usize,
+    looks: &Drawn,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
     let id = call.tool.tool_call_id.clone();
     let row = &call.tool.row;
     let running = call.running();
@@ -491,6 +515,7 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn, cx: &App) -> AnyElem
             .zip(call.started)
             .map(|(ended, started)| duration(ended.saturating_sub(started)).into_any_element())
     };
+    let elapsed = elapsed.map(|elapsed| settled(format!("call-time:{id}"), running, elapsed));
     let quiet = call.diff.is_none() && call.status() != "failed";
     let group = SharedString::from(format!("tool:{id}"));
     let end = div()
@@ -593,8 +618,28 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn, cx: &App) -> AnyElem
         .flex_col()
         .child(spine(last, looks))
         .child(line)
-        .when(opens, |node| node.cursor_pointer().on_click(toggle))
-        .when(open, |node| node.child(detail(call, looks, cx)));
+        .when(opens, |node| node.cursor_pointer().on_click(toggle));
+    let shown = motion::follow(
+        ElementId::Name(format!("call-fold:{}", call.tool.tool_call_id).into()),
+        if open { 1. } else { 0. },
+        if open {
+            motion::UNFOLD
+        } else {
+            motion::FOLD_AWAY
+        },
+        window,
+        cx,
+    );
+    let node = node.when(shown > 0., |node| {
+        let detail = detail(call, looks, cx);
+        node.child(motion::folded(
+            ElementId::Name(format!("call-body:{}", call.tool.tool_call_id).into()),
+            shown,
+            detail,
+            window,
+            cx,
+        ))
+    });
     node.into_any_element()
 }
 

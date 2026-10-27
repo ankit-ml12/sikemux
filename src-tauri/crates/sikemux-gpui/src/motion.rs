@@ -115,6 +115,10 @@ pub const ARRIVE_SLIDE: Ease = Ease::new(190, Curve::OUT);
 pub const UNFOLD: Ease = Ease::new(180, Curve::OUT);
 pub const FOLD_AWAY: Ease = Ease::new(140, Curve::Bezier(0.4, 0., 1., 1.));
 
+/// A line's words giving way to new ones, as what the agent is doing changes or a running
+/// clock settles on how long it took.
+pub const TEXT_SWAP: Ease = Ease::new(140, Curve::OUT);
+
 /// The angle of a fold's chevron, open or shut.
 pub fn fold_angle(open: bool) -> f32 {
     if open {
@@ -409,6 +413,18 @@ pub fn folded(
     fold_along(id.into(), Along::Down, shown, false, body, window, cx)
 }
 
+/// `body` folded as `folded` does, but drawn whole until its height is known, for what was
+/// already showing when it starts to fold away.
+pub fn folding_away(
+    id: impl Into<ElementId>,
+    shown: f32,
+    body: impl IntoElement,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    fold_along(id.into(), Along::Down, shown, true, body, window, cx)
+}
+
 /// Which way a slot opens and closes: in height, as a list's row, or in width, as a tab.
 #[derive(Clone, Copy)]
 pub enum Along {
@@ -482,6 +498,18 @@ pub const ROW_DEPARTURE: Departure = Departure {
     fade: Ease::new(50, Curve::Linear),
     slide: 6.,
     close: Ease::new(120, Curve::Bezier(0.25, 0.8, 0.25, 1.)),
+};
+/// A card the agent waits on coming up over the composer, and leaving once answered.
+pub const CARD_ARRIVAL: Arrival = Arrival {
+    along: Along::Down,
+    grow: Ease::new(180, Curve::OUT),
+    slide: None,
+};
+pub const CARD_DEPARTURE: Departure = Departure {
+    along: Along::Down,
+    fade: Ease::new(90, Curve::Linear),
+    slide: 0.,
+    close: Ease::new(140, Curve::Bezier(0.25, 0.8, 0.25, 1.)),
 };
 /// A tab opening in its strip by widening, and closing by narrowing away.
 pub const TAB_ARRIVAL: Arrival = Arrival {

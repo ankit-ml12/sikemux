@@ -505,6 +505,8 @@ pub struct Chat {
     folded: Option<String>,
     /// The groups of live work over the composer the reader folded away, by kind.
     groups_folded: HashSet<String>,
+    /// The cards the agent waits on as last drawn, to bring new ones in and fold answered ones away.
+    waiting_seen: RefCell<motion::ListMemory<Waiting>>,
     /// The choice of the open question on show the arrow keys moved to.
     cursor: Option<(String, usize)>,
     /// The sent prompt the arrows brought back into the draft, and what was typed before.
@@ -523,6 +525,13 @@ pub struct Chat {
     /// Out of sight long enough to stop following the core, which it attaches to again from
     /// its mark once it shows.
     pub resting: bool,
+}
+
+/// A card over the composer the agent waits on the person for.
+#[derive(Clone)]
+enum Waiting {
+    Questions(Vec<Question>),
+    Permission(PermissionAsk),
 }
 
 /// The draft, the masked field a secret answer is typed into, and what the draft last said while empty.
@@ -792,6 +801,7 @@ impl Chat {
             shown: None,
             folded: None,
             groups_folded: HashSet::new(),
+            waiting_seen: RefCell::default(),
             cursor: None,
             recalled: None,
             replying: None,
@@ -1887,16 +1897,63 @@ pub fn pane(
         .state
         .as_ref()
         .map_or(&[][..], |head| head.permissions.as_slice());
-    let permissions: Vec<_> = permissions
+    let mut waiting: Vec<(String, Waiting)> = permissions
         .iter()
-        .map(|ask| permission(&agent.id, ask, chat.replying.is_some(), cx))
+        .map(|ask| {
+            let key = format!("permission:{}", ask.request_id);
+            (key, Waiting::Permission(ask.clone()))
+        })
         .collect();
+    if chat.current(&open).is_some() {
+        let asked = open.iter().map(|question| (*question).clone()).collect();
+        waiting.push(("questions".into(), Waiting::Questions(asked)));
+    }
+    let lasting = motion::CARD_ARRIVAL
+        .lasts()
+        .max(motion::CARD_DEPARTURE.close.duration);
+    let mut seen = chat.waiting_seen.borrow_mut();
+    let (arrived, left) = seen.update(agent.id.clone(), waiting, usize::MAX, lasting);
+    let comes_in = |key: &str, card: AnyElement| match arrived.iter().any(|at| at == key) {
+        true => {
+            let id = SharedString::from(format!("arrive:{key}"));
+            motion::arriving(id, motion::CARD_ARRIVAL, card).into_any_element()
+        }
+        false => card,
+    };
+    let mut permissions: Vec<AnyElement> = permissions
+        .iter()
+        .map(|ask| {
+            let card = permission(&agent.id, ask, chat.replying.is_some(), cx).into_any_element();
+            comes_in(&format!("permission:{}", ask.request_id), card)
+        })
+        .collect();
+    let mut asking = questions(&agent.id, chat, &open, cx).map(|card| comes_in("questions", card));
+    for gone in left {
+        let card = match &gone.item {
+            Waiting::Permission(ask) => permission(&agent.id, ask, true, cx).into_any_element(),
+            Waiting::Questions(asked) => {
+                let asked: Vec<&Question> = asked.iter().collect();
+                match questions(&agent.id, chat, &asked, cx) {
+                    Some(card) => card,
+                    None => continue,
+                }
+            }
+        };
+        let id = SharedString::from(format!("depart:{}", gone.id));
+        let card =
+            motion::departing(id, gone.since, motion::CARD_DEPARTURE, card).into_any_element();
+        match gone.item {
+            Waiting::Permission(_) => permissions.insert(gone.at.min(permissions.len()), card),
+            Waiting::Questions(_) => asking = asking.or(Some(card)),
+        }
+    }
+    drop(seen);
     let answered: Vec<&Question> = bench
         .questions
         .iter()
         .filter(|question| question.of(&agent.id, "answered"))
         .collect();
-    let mut groups: Vec<AnyElement> = questions(&agent.id, chat, &open, cx).into_iter().collect();
+    let mut groups: Vec<AnyElement> = asking.into_iter().collect();
     groups.extend(live::subagents(agent, chat, cx));
     groups.extend(live::tasks(agent, chat, cx));
     groups.extend(waiting_answers(&agent.id, &answered, cx));
@@ -3869,29 +3926,83 @@ fn row(
         Some(fold) if folded => usize::try_from(fold.from).unwrap_or(0),
         _ => 0,
     };
-    let shown = message.parts.iter().enumerate().filter(|(index, part)| {
+    let work_shown = if user {
+        1.
+    } else {
+        motion::follow(
+            SharedString::from(format!("work-shown:{}", message.id)),
+            if folded { 0. } else { 1. },
+            if folded {
+                motion::FOLD_AWAY
+            } else {
+                motion::UNFOLD
+            },
+            window,
+            cx,
+        )
+    };
+    let mut segments: Vec<(bool, Vec<&ChatPart>)> = Vec::new();
+    for (index, part) in message.parts.iter().enumerate() {
         let reply = matches!(part, ChatPart::Text { .. } | ChatPart::Content { .. });
-        from == 0 || outlives(part) || *index >= from && reply
-    });
-    let groups = runs(shown.map(|(_, part)| part));
-    let (count, live) = (groups.len(), ix + 1 == rows.len() && looks.reading.running);
-    let parts: Vec<AnyElement> = groups
-        .into_iter()
-        .enumerate()
-        .map(|(at, group)| match group {
-            Shown::Part(ChatPart::Notice { notice, .. })
-                if let Some(card) = notice
-                    .subagent
-                    .as_deref()
-                    .and_then(|session| card_of(rows, session)) =>
-            {
-                self::subagent(card, pen, looks, window, cx)
-            }
-            Shown::Part(part) => self::part(row, part, user, pen, looks, window, cx),
-            Shown::Run(calls) => tools::run(&calls, live && at + 1 == count, looks, window, cx),
-        })
-        .collect();
-    let summary = opens.map(|fold| work(fold, !folded, looks, cx));
+        let tucked = !(from == 0 || outlives(part) || index >= from && reply);
+        if tucked && work_shown <= 0. {
+            continue;
+        }
+        match segments.last_mut() {
+            Some((was, parts)) if *was == tucked => parts.push(part),
+            _ => segments.push((tucked, vec![part])),
+        }
+    }
+    let live = ix + 1 == rows.len() && looks.reading.running;
+    let summed = if user {
+        0.
+    } else {
+        motion::follow(
+            SharedString::from(format!("work-line:{}", message.id)),
+            if opens.is_some() { 1. } else { 0. },
+            motion::UNFOLD,
+            window,
+            cx,
+        )
+    };
+    let summary = opens
+        .filter(|_| summed > 0.)
+        .map(|fold| work(fold, !folded, looks, cx))
+        .map(|line| {
+            let key = format!("work-line-slot:{}", message.id);
+            tucked(key, summed, false, vec![line], window, cx)
+        });
+    let whole_row_tucked =
+        summary.is_none() && !segments.is_empty() && segments.iter().all(|(tucked, _)| *tucked);
+    let last_segment = segments.len().saturating_sub(1);
+    let mut parts: Vec<AnyElement> = Vec::new();
+    for (at_segment, (tucked_away, shown)) in segments.into_iter().enumerate() {
+        let first = shown.first().map(|part| part.id().to_owned());
+        let groups = runs(shown.into_iter());
+        let count = groups.len();
+        let live = live && at_segment == last_segment;
+        let mut drawn = Vec::with_capacity(count);
+        for (at, group) in groups.into_iter().enumerate() {
+            drawn.push(match group {
+                Shown::Part(ChatPart::Notice { notice, .. })
+                    if let Some(card) = notice
+                        .subagent
+                        .as_deref()
+                        .and_then(|session| card_of(rows, session)) =>
+                {
+                    self::subagent(card, pen, looks, window, cx)
+                }
+                Shown::Part(part) => self::part(row, part, user, pen, looks, window, cx),
+                Shown::Run(calls) => tools::run(&calls, live && at + 1 == count, looks, window, cx),
+            });
+        }
+        if !tucked_away || whole_row_tucked {
+            parts.extend(drawn);
+            continue;
+        }
+        let key = format!("work-parts:{}:{}", message.id, first.unwrap_or_default());
+        parts.push(tucked(key, work_shown, folded, drawn, window, cx));
+    }
     let carried = !message.attachments.is_empty() || !message.context.is_empty();
     let lost = (ix == 0 && looks.reading.earlier_lost).then(|| {
         div()
@@ -3982,7 +4093,7 @@ fn row(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(10.))
+                    .gap(px(PART_GAP))
                     .min_w_0()
                     .children(summary)
                     .children(parts),
@@ -3990,7 +4101,7 @@ fn row(
             .children(meta::line(rows, ix, &group, looks, cx))
     };
     let user = user && !lettered;
-    div()
+    let drawn = div()
         .w_full()
         .flex()
         .flex_col()
@@ -4014,7 +4125,46 @@ fn row(
                 })
                 .when(ix + 1 == rows.len(), |row| row.pb(px(32.)))
                 .child(content),
-        )
+        );
+    if !whole_row_tucked {
+        return drawn.into_any_element();
+    }
+    let key = SharedString::from(format!("work-row:{}", message.id));
+    match folded {
+        true => motion::folding_away(key, work_shown, drawn, window, cx),
+        false => motion::folded(key, work_shown, drawn, window, cx),
+    }
+}
+
+/// The gap between a message's parts.
+const PART_GAP: f32 = 10.;
+
+/// Parts a finished turn folds away, drawn `shown` of the way open; the gap after them folds
+/// with them, so nothing below moves once they are gone.
+fn tucked(
+    key: String,
+    shown: f32,
+    closing: bool,
+    parts: Vec<AnyElement>,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    let key = SharedString::from(key);
+    let body = div()
+        .flex()
+        .flex_col()
+        .gap(px(PART_GAP))
+        .pb(px(PART_GAP))
+        .min_w_0()
+        .children(parts);
+    let slot = match closing {
+        true => motion::folding_away(key, shown, body, window, cx),
+        false => motion::folded(key, shown, body, window, cx),
+    };
+    div()
+        .min_w_0()
+        .mb(px(-PART_GAP))
+        .child(slot)
         .into_any_element()
 }
 

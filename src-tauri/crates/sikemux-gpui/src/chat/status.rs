@@ -28,6 +28,8 @@ pub struct Activity {
     /// The chat's agent as the pane last drew it, whose face the line wears.
     agent: Option<AgentRow>,
     label: Option<SharedString>,
+    /// The words the label had before, fading out as the new ones fade in, and since when.
+    before: Option<(SharedString, Instant)>,
     since: Instant,
 }
 
@@ -37,6 +39,7 @@ impl Activity {
             provider: provider.to_owned(),
             agent: None,
             label: None,
+            before: None,
             since: Instant::now(),
         }
     }
@@ -61,6 +64,7 @@ impl Activity {
         if self.label.is_none() {
             self.since = Instant::now();
         }
+        self.before = self.label.take().map(|before| (before, Instant::now()));
         self.label = label;
         cx.notify();
     }
@@ -74,6 +78,35 @@ impl Render for Activity {
         ui::clock::second(window, cx);
         let t = Tokens::get(cx).clone();
         let seconds = self.since.elapsed().as_secs();
+        let swap = motion::TEXT_SWAP;
+        let through = self
+            .before
+            .as_ref()
+            .map(|(_, at)| (at.elapsed().as_secs_f32() / swap.duration.as_secs_f32()).min(1.))
+            .filter(|through| *through < 1. && !cx.reduce_motion());
+        if through.is_some() {
+            window.request_animation_frame();
+        }
+        let shown = through.map_or(1., |through| swap.at(through));
+        let words = div()
+            .relative()
+            .min_w_0()
+            .text_size(crate::theme::ui_text(13.))
+            .child(div().opacity(shown).child(crate::ui::shimmer::shimmer(
+                format!("activity:{}", cx.entity_id()),
+                label,
+            )))
+            .children(through.and(self.before.as_ref()).map(|(before, _)| {
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .w_full()
+                    .truncate()
+                    .opacity(1. - shown)
+                    .text_color(t.text_disabled)
+                    .child(before.clone())
+            }));
         centred(
             div()
                 .px(px(22.))
@@ -86,9 +119,7 @@ impl Render for Activity {
                     Some(agent) => ui::agent_mark(agent, 21., cx),
                     None => ui::mark(&self.provider, 21.),
                 })
-                .child(div().min_w_0().text_size(crate::theme::ui_text(13.)).child(
-                    crate::ui::shimmer::shimmer(format!("activity:{}", cx.entity_id()), label),
-                ))
+                .child(words)
                 .when(seconds > 0, |line| {
                     line.child(ui::mono(elapsed(seconds), 10.5, cx).text_color(t.text_disabled))
                 }),
