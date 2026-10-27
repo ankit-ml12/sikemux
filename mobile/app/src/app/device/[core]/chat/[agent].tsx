@@ -384,7 +384,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
           </HostContext>
         )}
         {chat.attached === 'live' ? (
-          <>
+          <HostContext value={core}>
             {live.status !== 'open' ? <Reconnecting live={live} hostName={hostName} onTry={() => reconnect(core)} /> : null}
             {chat.notice ? <Notice text={chat.notice} onDismiss={session.dismissNotice} /> : null}
             <Composer
@@ -427,7 +427,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                 }
               }
             />
-          </>
+          </HostContext>
         ) : state.messages.length ? (
           <View style={[styles.bottomStatus, { paddingBottom: bottom }]}>{status}</View>
         ) : null}

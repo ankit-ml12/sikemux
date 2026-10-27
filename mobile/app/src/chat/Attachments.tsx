@@ -28,6 +28,26 @@ function FileChip({ name, size, image, tall }: { name: string; size?: number; im
   );
 }
 
+/** Whether only the host has the file, as for one the host put in the draft. */
+const onHostOnly = (attachment: Attachment) => attachment.path !== undefined && attachment.uri === attachment.path;
+
+/** A picture on the composer: this phone's copy, or one fetched from the host for a picture only the host has. */
+function TileImage({ attachment }: { attachment: Attachment }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const hostOnly = onHostOnly(attachment);
+  const fetched = useHostFile(attachment.path ?? '', hostOnly);
+  const uri = hostOnly ? fetched : attachment.uri;
+  if (!uri) {
+    return (
+      <View style={styles.waiting}>
+        <Icon name="IconImage" size={16} color={colors.inkDim} />
+      </View>
+    );
+  }
+  return <Image source={{ uri }} style={styles.thumbImage} resizeMode="cover" resizeMethod="resize" />;
+}
+
 /** A file from the stash shows as the stash showed it, while the stash still holds it. */
 function StashedOrFile({ attachment }: { attachment: Attachment }) {
   const item = useStashItem(attachment.stashId);
@@ -73,11 +93,7 @@ export function ComposerAttachments({
                   : undefined
               }>
               <View style={styles.tileBody} accessible={!broken} accessibilityLabel={`${attachment.name}${sending ? ', sending' : ''}`}>
-                {attachment.kind === 'image' ? (
-                  <Image source={{ uri: attachment.uri }} style={styles.thumbImage} resizeMode="cover" />
-                ) : (
-                  <StashedOrFile attachment={attachment} />
-                )}
+                {attachment.kind === 'image' ? <TileImage attachment={attachment} /> : <StashedOrFile attachment={attachment} />}
               </View>
               {sending || broken ? (
                 <View style={styles.veil}>
@@ -111,8 +127,9 @@ export function ComposerAttachments({
 function SentImage({ path, picked }: { path: string; picked?: Attachment }) {
   const styles = useStyles(makeStyles);
   const [open, setOpen] = useState(false);
-  const fetched = useHostFile(path, !picked);
-  const uri = picked?.uri ?? fetched;
+  const local = picked && !onHostOnly(picked) ? picked : undefined;
+  const fetched = useHostFile(path, !local);
+  const uri = local?.uri ?? fetched;
   const name = picked?.name ?? basename(path);
   return (
     <>
@@ -149,6 +166,7 @@ const makeStyles = (colors: Palette) => {
     thumb: { width: 58 },
     tileBody: { flex: 1, justifyContent: 'center' },
     thumbImage: { width: '100%', height: '100%' },
+    waiting: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     fileItem: { maxWidth: 190, justifyContent: 'center' },
     veil: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(9, 9, 11, 0.55)' },
     remove: {

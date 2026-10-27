@@ -131,10 +131,12 @@ const PERMISSION_GRACE_MS = 2000;
 const DRAFT_SAVE_MS = 600;
 
 /** A file the host's draft holds, known here only by where the host keeps it. */
+const PICTURE = /\.(jpe?g|png|gif|webp|heic|heif)$/i;
+
 function hostFile(path: string): Attachment {
   return {
     id: `draft:${path}`,
-    kind: 'file',
+    kind: PICTURE.test(path) ? 'image' : 'file',
     name: path.split('/').pop() || path,
     mime: 'application/octet-stream',
     uri: path,
