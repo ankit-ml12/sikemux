@@ -59,6 +59,17 @@ pub trait Panel: Any {
 
     /// Shows the place `at` names, as a row picked in one of the plugin's palettes says it.
     fn open_at(&mut self, _at: &str, _host: &mut Host, _cx: &mut Context<PluginPane>) {}
+
+    /// Shows the one thing `at` names alone, as a desk does a link to it, saying whether the
+    /// panel can; `at` is what the plugin's `resolveLink` answered.
+    fn show_alone(&mut self, _at: &Value, _host: &mut Host, _cx: &mut Context<PluginPane>) -> bool {
+        false
+    }
+
+    /// What a desk's tab calls the thing shown alone.
+    fn alone_title(&self) -> Option<String> {
+        None
+    }
 }
 
 /// The surface of a plugin's item in the window's top bar.
@@ -660,6 +671,17 @@ impl Host {
 pub struct PluginPane {
     pub host: Host,
     panel: Option<Box<dyn Panel>>,
+    /// Shows one thing alone on a desk, in a slot of its own, so the core stops reading its
+    /// views once the desk lets it go.
+    alone: bool,
+}
+
+impl Drop for PluginPane {
+    fn drop(&mut self) {
+        if self.alone {
+            self.hide();
+        }
+    }
 }
 
 impl PluginPane {
@@ -667,6 +689,7 @@ impl PluginPane {
         let (plugin, surface) = parts(target);
         Self {
             panel: panel(plugin, surface),
+            alone: false,
             host: Host {
                 plugin: plugin.to_owned(),
                 surface: surface.to_owned(),
@@ -704,6 +727,28 @@ impl PluginPane {
     pub fn parts<P: Panel>(&mut self) -> Option<(&mut P, &mut Host)> {
         let panel: &mut dyn Any = self.panel.as_deref_mut()?;
         Some((panel.downcast_mut::<P>()?, &mut self.host))
+    }
+
+    /// Shows the one thing `at` names alone, as a desk does a link to it, saying whether the
+    /// plugin's panel can.
+    pub fn show_alone(&mut self, at: &Value, cx: &mut Context<Self>) -> bool {
+        self.alone = self
+            .panel
+            .as_mut()
+            .is_some_and(|panel| panel.show_alone(at, &mut self.host, cx));
+        cx.notify();
+        self.alone
+    }
+
+    /// How a desk's tab names the thing shown alone: the plugin's mark and its title.
+    pub fn desk_face(&self) -> (AnyElement, String) {
+        let name = self.host.plugin.trim_start_matches("sikemux.");
+        let mark = match crate::icons::Icon::named(name) {
+            Some(icon) => ui::icon(icon, 13.).flex_none().into_any_element(),
+            None => div().into_any_element(),
+        };
+        let title = self.panel.as_ref().and_then(|panel| panel.alone_title());
+        (mark, title.unwrap_or_else(|| name.to_owned()))
     }
 
     /// Shows the place `at` names, as a palette row picked for this plugin says it.

@@ -3857,7 +3857,11 @@ impl Workbench {
         paths: Option<&[String]>,
         cx: &mut Context<Self>,
     ) {
-        for pane in self.plugin_panes.values().chain(self.plugin_bars.values()) {
+        let desks = self.desk_plugin_panes();
+        for pane in (self.plugin_panes.values())
+            .chain(self.plugin_bars.values())
+            .chain(&desks)
+        {
             pane.update(cx, |pane, cx| {
                 if pane.host.place() == place {
                     pane.changed(paths, cx);

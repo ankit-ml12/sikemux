@@ -188,6 +188,8 @@ pub struct Jira {
     docs: HashMap<String, Rc<Markdown>>,
     /// How wide the open issue is while its edge is dragged and after.
     detail_width: Option<f32>,
+    /// Shows only the open issue, as a desk does a link to it.
+    alone: bool,
 }
 
 impl Panel for Jira {
@@ -218,6 +220,9 @@ impl Panel for Jira {
             sites[0].clone()
         };
         self.shown_site = site.clone();
+        if let Some(key) = self.issue.clone().filter(|_| self.alone) {
+            return self.detail(host, &key, &site, window, cx);
+        }
         let sidebar = self.sidebar(host, &sites, &site, window, cx);
         let middle = match &self.list {
             List::Board { id, .. } => self.board(host, *id, &site, window, cx),
@@ -287,6 +292,20 @@ impl Panel for Jira {
                     )
             })
             .into_any_element()
+    }
+
+    fn show_alone(&mut self, at: &Value, _: &mut Host, _: &mut Context<PluginPane>) -> bool {
+        let (Some(site), Some(key)) = (at["site"].as_str(), at["key"].as_str()) else {
+            return false;
+        };
+        self.site = site.to_owned();
+        self.issue = Some(key.to_owned());
+        self.alone = true;
+        true
+    }
+
+    fn alone_title(&self) -> Option<String> {
+        self.issue.clone()
     }
 }
 
