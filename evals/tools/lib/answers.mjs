@@ -191,7 +191,8 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
         const met =
           (args.text === undefined || shows(tab.page, args.text)) &&
           (args.textGone === undefined || !shows(tab.page, args.textGone)) &&
-          (args.url === undefined || tab.page.url.includes(args.url));
+          (args.url === undefined || tab.page.url.includes(args.url)) &&
+          (args.urlGone === undefined || !tab.page.url.includes(args.urlGone));
         return { met, waitedMs: met ? 320 : args.timeoutMs ?? 10000, ...where(tab) };
       });
     case 'browser_evaluate':

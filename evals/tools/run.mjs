@@ -96,6 +96,7 @@ const variants = options.models.split(',').flatMap((alias) => {
 });
 
 mkdirSync('/tmp/sikemux-tool-eval', { recursive: true });
+const earlier = options.resume ? recordedFailures(options.resume) : new Map();
 const runDir = options.resume ? realpathSync(options.resume) : join(realpathSync('/tmp/sikemux-tool-eval'), new Date().toISOString().replace(/[:.]/g, '-'));
 mkdirSync(runDir, { recursive: true });
 console.log(`${cases.length} cases × ${variants.map((variant) => variant.label).join(', ')}; runs in ${runDir}`);
@@ -214,7 +215,7 @@ async function runCase(variant, testCase, trial) {
   const dir = trial ? join(caseDir, `t${trial}`) : caseDir;
   const finished = options.resume ? readFinished(variant, testCase, dir) : null;
   const outcome = finished ?? (await runAgent(variant, testCase, dir));
-  const failures = grade(testCase, outcome, repoOf(dir, testCase));
+  const failures = grade(testCase, outcome, repoOf(dir, testCase), earlier.get(`${variant.label}\0${testCase.id}\0${trial ?? ''}`));
   if (outcome.exit.timedOut) failures.push({ check: 'run', why: 'timed out' });
   else if (outcome.failed) failures.push({ check: 'run', why: `the run failed: ${outcome.stop}` });
   const verdict = testCase.judge && !outcome.failed ? await judgeOnce(testCase, outcome, dir, finished ? null : outcome.sandbox) : null;
@@ -236,6 +237,19 @@ async function runCase(variant, testCase, trial) {
     reply: outcome.reply?.slice(0, 2000) ?? '',
     dir,
   };
+}
+
+// What a run already graded, so a resumed run keeps the file checks it can no longer make once the repos are gone.
+function recordedFailures(folder) {
+  const path = join(folder, 'result.json');
+  const recorded = new Map();
+  if (!existsSync(path)) return recorded;
+  for (const variant of JSON.parse(readFileSync(path, 'utf8')).variants) {
+    for (const row of variant.cases) {
+      for (const run of row.runs ?? [row]) recorded.set(`${variant.label}\0${row.id}\0${run.trial ?? ''}`, run.failures);
+    }
+  }
+  return recorded;
 }
 
 function repoOf(dir, testCase) {

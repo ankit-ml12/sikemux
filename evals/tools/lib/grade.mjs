@@ -21,7 +21,7 @@ const PARALLEL = [
   { tool: FILE_TOOLS, key: (call) => call.args.file_path ?? call.args.notebook_path, writes: true },
 ];
 
-export function grade(testCase, outcome, repo) {
+export function grade(testCase, outcome, repo, recorded) {
   const spec = testCase.grade ?? {};
   const calls = outcome.calls;
   const failures = [];
@@ -80,7 +80,8 @@ export function grade(testCase, outcome, repo) {
     }
   }
 
-  for (const file of spec.files ?? []) {
+  if (!repo && recorded) failures.push(...recorded.filter((failure) => failure.check === 'files'));
+  for (const file of repo || !recorded ? spec.files ?? [] : []) {
     if (!repo) {
       failures.push({ check: 'files', why: `cannot check ${file.path}: the case's repo is gone` });
       continue;

@@ -3533,6 +3533,11 @@
                 "selector": {
                   "$present": true
                 }
+              },
+              {
+                "urlGone": {
+                  "$present": true
+                }
               }
             ]
           }
@@ -3542,24 +3547,6 @@
         }
       ],
       "forbid": [
-        {
-          "tool": "browser_wait",
-          "args": {
-            "$any": [
-              {
-                "urlGone": {
-                  "$present": true
-                }
-              },
-              {
-                "urlNot": {
-                  "$present": true
-                }
-              }
-            ]
-          },
-          "why": "passed a wait condition browser_wait does not have"
-        },
         {
           "tool": "browser_navigate",
           "why": "navigated the tab the person was signing in on"
