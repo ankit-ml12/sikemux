@@ -2468,7 +2468,7 @@
         "additionalProperties": false
       },
       "StashAdd": {
-        "description": "A link or text to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget).",
+        "description": "A link or text to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget). A file signed with SikemuxHost or SikemuxDevice also sends X-Body-Sha256, the body's SHA-256 in lowercase hex, which the signature covers in place of hashing the body.",
         "type": "object",
         "properties": {
           "kind": { "$ref": "#/components/schemas/StashKind" },
@@ -2654,7 +2654,7 @@
       "device": {
         "type": "http",
         "scheme": "SikemuxDevice",
-        "description": "`Authorization: SikemuxDevice <key>.<time>.<signature>`: as SikemuxHost, signed by a phone on the account over `sikemux-device-request|<METHOD>|<path and query>|<time>|<lowercase hex SHA-256 of the body>`. Only the stash takes it."
+        "description": "`Authorization: SikemuxDevice <key>.<time>.<signature>`: as SikemuxHost, signed by a phone on the account over `sikemux-device-request|<METHOD>|<path and query>|<time>|<lowercase hex SHA-256 of the body>`. Only the stash takes it. A file uploaded to the stash under either signature also sends that hash in X-Body-Sha256, so the signature is checked before the body arrives."
       },
       "host": {
         "type": "http",

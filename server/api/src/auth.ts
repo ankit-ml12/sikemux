@@ -9,7 +9,13 @@ import { sql, type Kysely } from "kysely";
 
 import type { Tables } from "./db.ts";
 import { bodySha256, requestMessage, signedBy } from "./devices/signature.ts";
-import { ApiFailure, forbidden, unauthorized, type Env } from "./http.ts";
+import {
+  ApiFailure,
+  badRequest,
+  forbidden,
+  unauthorized,
+  type Env,
+} from "./http.ts";
 
 export interface Identity {
   userId: string;
@@ -146,10 +152,10 @@ export type AuthEnv = Env & {
   Variables: {
     identity: Identity;
     /**
-     * Checks a signed request's body by its SHA-256, in hex, for a route that streams the body
-     * rather than reading it before the handler. Does nothing for a bearer token.
+     * Holds a streamed body, by its SHA-256 in hex, to the hash a signed request declared. Does
+     * nothing for a bearer token.
      */
-    proveBody: (bodySha256: string) => void;
+    checkBody: (bodySha256: string) => void;
   };
 };
 
@@ -187,8 +193,9 @@ function takeSignature(signature: string, until: number) {
 }
 
 /**
- * Who signed a request with a host's or a phone's key. With `streamed`, the body is not read
- * here: proveBody checks it once the handler has hashed it.
+ * Who signed a request with a host's or a phone's key. A streamed body is not read here: the
+ * signature covers the SHA-256 the request declares in X-Body-Sha256, and checkBody holds the
+ * body to it once the handler has hashed it.
  */
 async function signedIdentity(
   c: Context,
@@ -200,29 +207,28 @@ async function signedIdentity(
     string,
   ],
   streamed: boolean,
-): Promise<{ identity: Identity; proveBody: (bodySha256: string) => void }> {
+): Promise<{ identity: Identity; checkBody: (bodySha256: string) => void }> {
   const signer = SIGNERS[scheme];
   const signedAt = Number(time) * 1000;
   if (Math.abs(Date.now() - signedAt) > HOST_CLOCK_SECONDS * 1000)
     throw unauthorized(
       `The request's time is more than a minute from the server's; check this ${signer.via}'s clock.`,
     );
-  const url = new URL(c.req.url);
-  const expiresAt = signedAt + HOST_CLOCK_SECONDS * 1000;
-  const proveBody = (sha256: string) => {
-    const message = requestMessage(
-      signer.via,
-      c.req.method,
-      url.pathname + url.search,
-      time,
-      sha256,
+  const declared = streamed ? c.req.header("x-body-sha256") : undefined;
+  if (streamed && !/^[0-9a-f]{64}$/.test(declared ?? ""))
+    throw badRequest(
+      "A signed upload declares its body's SHA-256, in lowercase hex, in X-Body-Sha256.",
     );
-    if (!signedBy(key, message, signature))
-      throw unauthorized(`The request is not signed by that ${signer.via}.`);
-    takeSignature(signature, expiresAt);
-  };
-  if (!streamed)
-    proveBody(bodySha256(new Uint8Array(await c.req.arrayBuffer())));
+  const url = new URL(c.req.url);
+  const message = requestMessage(
+    signer.via,
+    c.req.method,
+    url.pathname + url.search,
+    time,
+    declared ?? bodySha256(new Uint8Array(await c.req.arrayBuffer())),
+  );
+  if (!signedBy(key, message, signature))
+    throw unauthorized(`The request is not signed by that ${signer.via}.`);
   const device = await db
     .selectFrom("devices")
     .innerJoin("users", "users.id", "devices.user_id")
@@ -232,6 +238,8 @@ async function signedIdentity(
     .executeTakeFirst();
   if (!device || device.deleted_at)
     throw unauthorized(`This ${signer.via} is not on an account.`);
+  const expiresAt = signedAt + HOST_CLOCK_SECONDS * 1000;
+  takeSignature(signature, expiresAt);
   return {
     identity: {
       userId: device.user_id,
@@ -239,7 +247,10 @@ async function signedIdentity(
       deviceKey: key,
       expiresAt: new Date(expiresAt),
     },
-    proveBody: streamed ? proveBody : () => undefined,
+    checkBody: (sha256) => {
+      if (declared !== undefined && sha256 !== declared)
+        throw badRequest("The body does not match its X-Body-Sha256.");
+    },
   };
 }
 
@@ -281,10 +292,10 @@ export function requireIdentity(
     const signed = SIGNED_SCHEME.exec(header);
     const bearer = /^Bearer\s+(\S+)$/i.exec(header);
     let identity: Identity;
-    let proveBody: (bodySha256: string) => void = () => undefined;
+    let checkBody: (bodySha256: string) => void = () => undefined;
     const scheme = signed?.[1] as keyof typeof SIGNERS | undefined;
     if (signed && scheme && accept.includes(SIGNERS[scheme].via)) {
-      ({ identity, proveBody } = await signedIdentity(
+      ({ identity, checkBody } = await signedIdentity(
         c,
         db,
         signed.slice(1) as [keyof typeof SIGNERS, string, string, string],
@@ -304,7 +315,7 @@ export function requireIdentity(
     }
     admit(identity, accept);
     c.set("identity", identity);
-    c.set("proveBody", proveBody);
+    c.set("checkBody", checkBody);
     c.set("log", c.get("log").child({ userId: identity.userId }));
     await next();
   };

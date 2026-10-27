@@ -773,7 +773,7 @@ export function openapi(definitions, routes) {
           type: "http",
           scheme: "SikemuxDevice",
           description:
-            "`Authorization: SikemuxDevice <key>.<time>.<signature>`: as SikemuxHost, signed by a phone on the account over `sikemux-device-request|<METHOD>|<path and query>|<time>|<lowercase hex SHA-256 of the body>`. Only the stash takes it.",
+            "`Authorization: SikemuxDevice <key>.<time>.<signature>`: as SikemuxHost, signed by a phone on the account over `sikemux-device-request|<METHOD>|<path and query>|<time>|<lowercase hex SHA-256 of the body>`. Only the stash takes it. A file uploaded to the stash under either signature also sends that hash in X-Body-Sha256, so the signature is checked before the body arrives.",
         },
         host: {
           type: "http",

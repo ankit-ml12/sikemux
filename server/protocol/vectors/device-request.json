@@ -9,5 +9,20 @@
   "bodySha256": "9f54e204ff0668a10f9dcb733ff309505f0eb0ff325b659022e30dafd54089ad",
   "message": "sikemux-device-request|POST|/v1/stash|1760000000|9f54e204ff0668a10f9dcb733ff309505f0eb0ff325b659022e30dafd54089ad",
   "signature": "34a029ecbdd056ad198636ce0507a61f02494fce710d48fa22fcb241e24173aec065a52605742d817ba3cad5ef937ce14f05486ee1ed08dd3051dc8133707c01",
-  "authorization": "SikemuxDevice ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c.1760000000.34a029ecbdd056ad198636ce0507a61f02494fce710d48fa22fcb241e24173aec065a52605742d817ba3cad5ef937ce14f05486ee1ed08dd3051dc8133707c01"
+  "authorization": "SikemuxDevice ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c.1760000000.34a029ecbdd056ad198636ce0507a61f02494fce710d48fa22fcb241e24173aec065a52605742d817ba3cad5ef937ce14f05486ee1ed08dd3051dc8133707c01",
+  "upload": {
+    "description": "The same phone uploading a file. The signature covers X-Body-Sha256, which the body must then match.",
+    "method": "POST",
+    "path": "/v1/stash",
+    "time": 1760000000,
+    "body": "hello from the share sheet\n",
+    "headers": {
+      "authorization": "SikemuxDevice ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c.1760000000.bb89e4cd8792461f31d903659019afa44adf3d8d458ac8523ec221bca4bdf673fa4fad0305becafa7ba61bd0d1cd5484e355cfde9a9add9a8a0a875889238704",
+      "content-type": "text/plain",
+      "x-stash-name": "note%20%C3%A9.txt",
+      "x-body-sha256": "ae6ce08842130bfe05279c75c9da7b9685b5ec2e9cd6db47de77f4fae7696fb3"
+    },
+    "message": "sikemux-device-request|POST|/v1/stash|1760000000|ae6ce08842130bfe05279c75c9da7b9685b5ec2e9cd6db47de77f4fae7696fb3",
+    "signature": "bb89e4cd8792461f31d903659019afa44adf3d8d458ac8523ec221bca4bdf673fa4fad0305becafa7ba61bd0d1cd5484e355cfde9a9add9a8a0a875889238704"
+  }
 }

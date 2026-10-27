@@ -287,7 +287,7 @@ export function stashRoutes(
       MAX_FILE_BYTES,
     );
     try {
-      c.get("proveBody")(written.sha256);
+      c.get("checkBody")(written.sha256);
       const device = await fromDevice(db, identity);
       const row = await db.transaction().execute(async (trx) => {
         await holdAccount(trx, userId);
