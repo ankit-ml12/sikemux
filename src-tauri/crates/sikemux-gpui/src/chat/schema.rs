@@ -4,6 +4,7 @@
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -25,13 +26,18 @@ pub(super) fn fences(bench: WeakEntity<Workbench>, agent: String) -> Fences {
     }
 }
 
-/// What a block keeps between frames: its diagram, the text it was drawn from, and whether
-/// the person chose to see the text.
+/// What a block keeps between frames: its diagram, the text it was drawn from, the text as the
+/// chat last had it, and whether the person chose to see the text.
 struct Block {
     diagram: Entity<Diagram>,
     code: SharedString,
+    written: SharedString,
     source: bool,
 }
+
+/// How long a block's text must stay the same before its last line counts as finished, for a
+/// block whose reply stops right after it.
+const SETTLED: Duration = Duration::from_millis(400);
 
 fn block(
     fence: Fence,
@@ -41,19 +47,24 @@ fn block(
     cx: &mut App,
 ) -> AnyElement {
     let key = ElementId::NamedChild(Arc::new(fence.id.clone()), "dbml".into());
-    let code = finished_lines(&fence.code);
+    let written = fence.code.clone();
     let block = window.use_keyed_state(key, cx, |_, cx| Block {
-        diagram: cx.new(|_| Diagram::embedded(&code)),
-        code: code.clone(),
+        diagram: cx.new(|_| Diagram::embedded(&written)),
+        code: written.clone(),
+        written: written.clone(),
         source: false,
     });
-    let (diagram, changed) = {
-        let kept = block.read(cx);
-        (kept.diagram.clone(), kept.code != code)
-    };
-    if changed {
-        block.update(cx, |kept, _| kept.code = code.clone());
-        diagram.update(cx, |diagram, cx| diagram.set_source(&code, cx));
+    let diagram = block.read(cx).diagram.clone();
+    if block.read(cx).written != written {
+        let code = finished_lines(&written);
+        block.update(cx, |kept, _| kept.written = written.clone());
+        if code != written {
+            settle(&block, written.clone(), cx);
+        }
+        if block.read(cx).code != code {
+            block.update(cx, |kept, _| kept.code = code.clone());
+            diagram.update(cx, |diagram, cx| diagram.set_source(&code, cx));
+        }
     }
     let empty = diagram.read(cx).is_empty();
     let source = block.read(cx).source || empty;
@@ -135,6 +146,24 @@ fn block(
             }
         })
         .into_any_element()
+}
+
+/// Draws the whole of `written` once it has stayed the block's text for a moment, so a line the
+/// reply ends on is not left out for want of another change to the chat.
+fn settle(block: &Entity<Block>, written: SharedString, cx: &mut App) {
+    let block = block.downgrade();
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(SETTLED).await;
+        let _ = block.update(cx, |kept, cx| {
+            if kept.written == written && kept.code != written {
+                kept.code = written.clone();
+                kept.diagram
+                    .update(cx, |diagram, cx| diagram.set_source(&written, cx));
+                cx.notify();
+            }
+        });
+    })
+    .detach();
 }
 
 /// The block's text up to its last line break: while an agent writes a line, the diagram
