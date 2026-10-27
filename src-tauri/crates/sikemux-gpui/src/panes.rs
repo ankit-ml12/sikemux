@@ -535,8 +535,8 @@ fn view(
             .into_any_element(),
         PaneKind::Git if bench.area != crate::codehost::Area::Local && bench.host.is_some() => {
             match &bench.host {
-                Some(host) => ui::pane(cx).child(host.clone()).into_any_element(),
-                None => ui::pane(cx).into_any_element(),
+                Some(host) => ui::plain_pane(cx).child(host.clone()).into_any_element(),
+                None => ui::plain_pane(cx).into_any_element(),
             }
         }
         PaneKind::Git if bench.git_repo().is_none() && bench.git_repos().is_some() => ui::pane(cx)
