@@ -289,8 +289,8 @@ struct TriggerTime: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             HStack(spacing: 3) {
-                IconView(icon: Icons.timer, size: 11).foregroundStyle(Theme.inkFaint)
-                Text(Self.format(at, context.date)).font(Theme.ui(11, .medium)).monospacedDigit().foregroundStyle(Theme.inkFaint)
+                IconView(icon: Icons.timer, size: 11).foregroundStyle(Theme.command)
+                Text(Self.format(at, context.date)).font(Theme.ui(11, .medium)).monospacedDigit().foregroundStyle(Theme.ink)
             }
         }
         .fixedSize()

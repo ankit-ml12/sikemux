@@ -129,8 +129,8 @@ export function TriggerTime({ at, now }: { at: number; now: number }) {
           : `${Math.floor(seconds / 86_400)}d`;
   return (
     <View style={styles.count} accessible accessibilityLabel={`A trigger wakes it in ${left}`}>
-      <Icon name="IconTimer" size={11} color={colors.tertiary} />
-      <Text style={[styles.countText, { color: colors.tertiary }]}>{left}</Text>
+      <Icon name="IconTimer" size={11} color={colors.cmd} />
+      <Text style={styles.countText}>{left}</Text>
     </View>
   );
 }

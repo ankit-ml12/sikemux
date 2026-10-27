@@ -1070,8 +1070,7 @@ fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
                     .flex()
                     .items_center()
                     .gap(px(3.))
-                    .text_color(t.text_tertiary)
-                    .child(ui::icon(Icon::Timer, 11.).text_color(t.text_tertiary))
+                    .child(ui::icon(Icon::Timer, 11.).text_color(t.cmd))
                     .child(
                         ui::text(until(at), 11., FontWeight::MEDIUM)
                             .font_features(crate::theme::tabular()),
