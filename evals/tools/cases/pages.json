@@ -25,7 +25,6 @@
   },
   {
     "id": "page-03",
-    "skip": "The fake page_preview cannot draw the page or run its script, so an agent that checks its page before showing it cannot verify anything; it needs a real preview.",
     "from": ["other_agents-003"],
     "category": "wrong_tool",
     "severity": "high",
@@ -51,7 +50,6 @@
   },
   {
     "id": "page-04",
-    "skip": "The fake page_preview cannot draw the page or run its script, so an agent that checks its page before showing it cannot verify anything; it needs a real preview.",
     "from": ["err_tools_sikemux-022"],
     "category": "malformed_call",
     "severity": "med",

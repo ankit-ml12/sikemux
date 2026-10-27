@@ -1,7 +1,12 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import { deflateSync, crc32 } from 'node:zlib';
 import { valueMatches, toolMatches } from './match.mjs';
 import { AUTHOR, BASE_PATH } from './sandbox.mjs';
+import { readRepo } from './surface.mjs';
 
 const pictures = new Map();
 
@@ -41,7 +46,7 @@ function picture(width, height) {
 
 const BLANK_PAGE = { url: 'about:blank', title: '', elements: [], text: '' };
 
-export function answerer(fixture, project) {
+export function answerer(fixture, project, previewProfile) {
   const rules = (fixture.answers ?? []).map((rule) => ({ ...rule, used: 0 }));
   const pages = fixture.pages ?? [];
   const me = fixture.me ?? 'Juniper';
@@ -73,7 +78,7 @@ export function answerer(fixture, project) {
       if (rule.error) return { error: fill(rule.error) };
       return { value: fill(rule.reply ?? {}) };
     }
-    return builtIn(tool, args ?? {}, { state, pages, agents, project, fixture });
+    return builtIn(tool, args ?? {}, { state, pages, agents, project, fixture, previewProfile });
   };
 }
 
@@ -136,7 +141,7 @@ function pageState(tab, full) {
 
 const NO_TAB = 'No desk tab is open for this agent. Open one with browser_navigate.';
 
-function builtIn(tool, args, { state, pages, agents, project, fixture }) {
+function builtIn(tool, args, { state, pages, agents, project, fixture, previewProfile }) {
   const tab = tabOf(state, args);
   const needTab = (answer) => (tab ? { value: answer() } : { error: NO_TAB });
   const outcome = args.report === 'outcome';
@@ -220,7 +225,7 @@ function builtIn(tool, args, { state, pages, agents, project, fixture }) {
     case 'browser_dialog':
       return needTab(() => ({ dialog: null }));
     case 'page_preview':
-      return { value: { data: picture(756, 900), mimeType: 'image/png', width: 756, contentHeight: 900, console: { recorded: 0, matched: 0, messages: [] } } };
+      return preview(args, project, previewProfile);
     case 'page_show':
       return {
         value: {
@@ -337,4 +342,75 @@ function commit(repo, args) {
     });
   const left = git('status', '--porcelain', '-z').split('\0').filter(Boolean).map((entry) => entry.replace(/^.. /, ''));
   return { value: { commit: git('rev-parse', 'HEAD').trim(), branch: 'refs/heads/main', files, left, ...(args.land ? { landed: true } : {}) } };
+}
+
+const PREVIEW = join(import.meta.dirname, 'preview.mjs');
+
+// A dark theme with the variables Sikemux sets on a page's :root; the real values follow the person's theme.
+const THEME = {
+  '--background': '#16161d',
+  '--foreground': '#e8e8ef',
+  '--muted-foreground': '#a0a0ad',
+  '--faint-foreground': '#6c6c78',
+  '--card': '#1f1f28',
+  '--border': 'rgba(255,255,255,0.1)',
+  '--accent': '#a277ff',
+  '--accent-foreground': '#ffffff',
+  '--accent-surface': 'rgba(162,119,255,0.16)',
+  '--destructive': '#f0616d',
+  '--success': '#61d095',
+  '--warning': '#ffca85',
+  '--info': '#82b1ff',
+  '--code-background': '#15141b',
+  '--code-foreground': '#edecee',
+  '--chart-1': '#a277ff',
+  '--chart-2': '#82b1ff',
+  '--chart-3': '#61d095',
+  '--chart-4': '#ffca85',
+  '--chart-5': '#f694ff',
+  '--chart-6': '#61ffca',
+  '--radius': '8px',
+  '--font-sans': 'Figtree, system-ui',
+  '--font-mono': 'JetBrains Mono, ui-monospace',
+};
+
+// The page as Sikemux draws it: its theme and base styles ahead of everything the agent wrote.
+function themed(path) {
+  const base = readRepo('src-tauri/crates/sikemux-core/src/pages.rs').match(/const BASE_CSS: &str = "([^"]+)";/)[1];
+  const theme = `:root{color-scheme:dark;${Object.entries(THEME).map(([name, value]) => `${name}:${value};`).join('')}}`;
+  const head = `<meta charset="utf-8"><base href="${pathToFileURL(dirname(path)).href}/"><style id="sikemux-theme">${theme}</style><style>${base}</style>`;
+  return head + readFileSync(path, 'utf8');
+}
+
+// Draws the agent's page with QuickLook's WebKit and runs its script in jsdom, inside the agent's sandbox.
+function preview(args, repo, profile) {
+  const home = dirname(dirname(repo));
+  const path = args.path.startsWith('~/') ? join(home, args.path.slice(2)) : isAbsolute(args.path) ? args.path : join(repo, args.path);
+  if (!existsSync(path)) return { error: `${args.path} could not be read` };
+  const width = args.width ?? 756;
+  const folder = mkdtempSync(join(tmpdir(), 'preview-'));
+  const copy = join(folder, basename(path));
+  writeFileSync(copy, themed(path));
+  let ran = { script: null, messages: [] };
+  try {
+    const output = execFileSync('/usr/bin/sandbox-exec', ['-f', profile, process.execPath, PREVIEW, copy, path, ...(args.script ? [args.script] : [])], { encoding: 'utf8', timeout: 20_000 });
+    ran = JSON.parse(output);
+  } catch (error) {
+    ran.messages.push({ level: 'error', text: String(error.stderr || error.message).trim().split('\n').at(-1) });
+  }
+  const value = {
+    width,
+    contentHeight: 900,
+    console: { recording: true, recorded: ran.messages.length, matched: ran.messages.length, messages: ran.messages },
+    ...(args.script ? { script: ran.script } : {}),
+  };
+  try {
+    if (args.picture === false) return { value };
+    execFileSync('/usr/bin/qlmanage', ['-t', '-s', String(width), '-o', folder, copy], { stdio: 'ignore', timeout: 20_000 });
+    return { value: { data: readFileSync(join(folder, `${basename(path)}.png`)).toString('base64'), mimeType: 'image/png', ...value } };
+  } catch {
+    return { value: { data: picture(width, 900), mimeType: 'image/png', ...value } };
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 }

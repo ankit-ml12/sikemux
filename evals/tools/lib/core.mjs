@@ -3,9 +3,9 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { answerer } from './answers.mjs';
 
-export async function startCore({ surface, fixture, project, endpointFile, logFile }) {
+export async function startCore({ surface, fixture, project, endpointFile, logFile, previewProfile }) {
   const token = randomBytes(16).toString('hex');
-  const answer = answerer(fixture, project);
+  const answer = answerer(fixture, project, previewProfile);
   const held = new Set();
   const log = (entry) => appendFileSync(logFile, `${JSON.stringify({ at: Date.now(), ...entry })}\n`);
 

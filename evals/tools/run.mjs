@@ -305,7 +305,7 @@ async function runAgent(variant, testCase, dir) {
   const fixture = testCase.fixture ?? {};
   const surface = loadSurface(fixture.plugins ?? SIGNED_IN_PLUGINS, at);
   const endpoint = join(dir, 'endpoint.json');
-  const core = await startCore({ surface, fixture, project: sandbox.repo, endpointFile: endpoint, logFile: join(dir, 'core.jsonl') });
+  const core = await startCore({ surface, fixture, project: sandbox.repo, endpointFile: endpoint, logFile: join(dir, 'core.jsonl'), previewProfile: join(dir, 'preview.sb') });
   roots.add(sandbox.root);
   const tools = await startTools({ host: HOST, endpoint, sandbox, profile: join(dir, 'tools.sb') });
   writeAgentProfile(dir, sandbox, tools.port);
