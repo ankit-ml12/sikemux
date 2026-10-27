@@ -573,6 +573,7 @@ calls! { core, client, params;
         answer(())
     },
     "plugins": Watch => answer(plugins::listed().await),
+    "pluginLink": Watch => answer(plugins::link(parse(params)?).await),
     "pluginSetDisabled": Person => {
         plugins::set_disabled(&core, parse(params)?);
         answer(())

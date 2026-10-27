@@ -38,6 +38,11 @@ struct Jira {
     manifest: Manifest,
 }
 
+#[derive(serde::Deserialize)]
+struct LinkQuery {
+    url: String,
+}
+
 async fn signed_in(data_dir: &Path, outcome: JiraResult<()>) -> Result<Value, PluginError> {
     outcome?;
     reply(auth::status(data_dir).await)
@@ -58,6 +63,10 @@ impl Plugin for Jira {
             let data_dir = ctx.data_dir();
             match method {
                 "status" => reply(auth::status(data_dir).await),
+                "resolveLink" => {
+                    let query: LinkQuery = params(input)?;
+                    reply(config::issue_link(data_dir, &query.url))
+                }
                 "signIn" => {
                     signed_in(data_dir, auth::sign_in(data_dir, params(input)?).await).await
                 }

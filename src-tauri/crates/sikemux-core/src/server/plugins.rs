@@ -272,6 +272,32 @@ pub(crate) async fn listed() -> Vec<Listed> {
     futures_util::future::join_all(asked).await
 }
 
+#[derive(Deserialize)]
+pub(crate) struct LinkParams {
+    url: String,
+}
+
+/// The plugin whose own view shows what a web address names, and where in that view, as
+/// the first enabled plugin's `resolveLink` answers; null when none does.
+pub(crate) async fn link(params: LinkParams) -> Value {
+    let disabled = disabled();
+    let url = params.url;
+    let asked = manifests().into_iter().filter_map(|manifest| {
+        let id = manifest["id"].as_str()?.to_owned();
+        let url = url.clone();
+        (!disabled.contains(&id)).then_some(async move {
+            let at = call(&id, "resolveLink", json!({ "url": url })).await.ok()?;
+            (!at.is_null()).then(|| json!({ "plugin": id, "at": at }))
+        })
+    });
+    futures_util::future::join_all(asked)
+        .await
+        .into_iter()
+        .flatten()
+        .next()
+        .unwrap_or(Value::Null)
+}
+
 /// A plugin's call may have signed it in or out, or picked another account,
 /// so clients read the plugins again.
 pub(crate) fn sign_in_moved(core: &Core, plugin: &str, method: &str) {
