@@ -347,7 +347,7 @@ pub(super) fn month_day(text: &str) -> Option<(i32, i32)> {
 
 /// `at`, in Unix milliseconds, as this host's clock reads it: "at 15:40"
 /// today, else "on 18 Oct at 15:40".
-fn when(at: u64) -> String {
+pub(crate) fn when(at: u64) -> String {
     let (Some(then), Some(now)) = (calendar(at, Zone::Host), calendar(epoch_ms(), Zone::Host))
     else {
         return String::new();
@@ -365,13 +365,13 @@ fn when(at: u64) -> String {
 
 /// The zone a reset time an agent writes out is in.
 #[derive(Clone, Copy)]
-pub(super) enum Zone {
+pub(crate) enum Zone {
     Host,
     Utc,
 }
 
 /// A reset time as an agent writes it out, to the minute.
-pub(super) struct WallClock {
+pub(crate) struct WallClock {
     pub zone: Zone,
     /// Year, month from 1 and day, when it names a day; the year defaults to this one.
     pub date: Option<(Option<i32>, i32, i32)>,
@@ -391,7 +391,7 @@ impl WallClock {
         }
     }
 
-    fn on_day(&self, now: u64, days_later: i32) -> Option<u64> {
+    pub(crate) fn on_day(&self, now: u64, days_later: i32) -> Option<u64> {
         let mut tm = calendar(now, self.zone)?;
         if let Some((year, month, day)) = self.date {
             if let Some(year) = year {
@@ -413,7 +413,7 @@ impl WallClock {
     }
 }
 
-fn calendar(at: u64, zone: Zone) -> Option<libc::tm> {
+pub(crate) fn calendar(at: u64, zone: Zone) -> Option<libc::tm> {
     let seconds = (at / 1000) as libc::time_t;
     // SAFETY: `tm` is plain data, for which all zeroes is a valid value.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };

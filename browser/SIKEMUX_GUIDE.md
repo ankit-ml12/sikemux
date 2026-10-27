@@ -72,6 +72,7 @@ Pass one of these as `topic`:
 - `skills` — skills every agent gets
 - `agents` — names, `@`, messages, committing, who broke CI
 - `board` — the project's cards: adding, claiming, finishing
+- `triggers` — sending your own chat a prompt later, once or on a schedule
 - `shell` — the `sikemux tool` CLI
 
 ## config: Writing sikemux.json
@@ -1341,6 +1342,31 @@ goes to the person. Give your verdict once with `review_verdict`: `approve:
 true` to let it merge, or `approve: false` with `findings`, each a `text` and,
 where it applies, a `file` and `line`. Then end your turn. A turn that ends
 without a verdict, and waits on no answer, sends the card back to the person.
+
+## triggers: Prompts your chat gets later
+
+A trigger sends your own chat a prompt when its time comes: once, such as
+checking a deploy in 20 minutes, or again and again, such as reading new issues
+every morning. It reaches you as a message from `Trigger`, which you act on like
+any other, even while you are working or asleep. Use one instead of sleeping or
+waiting in a loop.
+
+`trigger_add` takes a `title`, which the person sees above your composer, a
+`prompt`, what you are sent, and exactly one of:
+
+- `in`: seconds from now, once.
+- `at`: a time with its offset, once, such as `2026-10-28T09:30:00+05:30`.
+- `every`: seconds between firings, at least 60.
+- `daily`: `HH:MM` on this host's clock, with `weekdays` such as
+  `["mon", "fri"]` to fire only on those days.
+
+Write the prompt for yourself later: say what to look at and what to do with
+it, since a long conversation may have moved on by then. A chat holds up to 20
+triggers. `trigger_list` lists them with their numbers and next times, and
+`trigger_remove` stops one; the person can remove them too. Remove a trigger
+once it has done its job. Triggers end when your chat closes. A time that
+passes while the host is off fires once the host is back: a one-time trigger
+always, a repeating one only within 15 minutes of its time.
 
 ## shell: The same operations from a shell
 

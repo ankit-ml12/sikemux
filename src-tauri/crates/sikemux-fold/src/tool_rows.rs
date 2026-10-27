@@ -689,6 +689,39 @@ pub(super) const SPECS: &[(&str, Spec)] = &[
         },
     ),
     (
+        "trigger_add",
+        Spec {
+            verb: "set",
+            kind: "edit",
+            icon: "clock",
+            target: &["trigger {title}"],
+            detail: &[],
+            plugin: None,
+        },
+    ),
+    (
+        "trigger_list",
+        Spec {
+            verb: "list",
+            kind: "read",
+            icon: "clock",
+            target: &["triggers"],
+            detail: &[],
+            plugin: None,
+        },
+    ),
+    (
+        "trigger_remove",
+        Spec {
+            verb: "remove",
+            kind: "edit",
+            icon: "clock",
+            target: &["trigger {trigger}"],
+            detail: &[],
+            plugin: None,
+        },
+    ),
+    (
         "review_verdict",
         Spec {
             verb: "review",

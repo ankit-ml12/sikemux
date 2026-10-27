@@ -33,6 +33,7 @@ const FILE: &str = "agent-mailbox.json";
 const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_WAITING: usize = 10;
 const BOARD: &str = "board";
+const TRIGGER: &str = "trigger";
 const AUTO: &str = "auto";
 /// Notes about teammates on linked hosts come from here.
 const HOSTS: &str = "hosts";
@@ -124,6 +125,11 @@ pub(crate) struct Carried {
 }
 
 impl Letter {
+    /// Sent by a part of Sikemux that carries work on, not by an agent.
+    fn by_sikemux(&self) -> bool {
+        self.from_id == BOARD || self.from_id == TRIGGER
+    }
+
     fn carried(&self, to: &str, question: Option<String>) -> Carried {
         Carried {
             to: to.to_owned(),
@@ -320,9 +326,9 @@ impl Mailbox {
             .rev()
             .find(|sent| sent.digest == digest && now.saturating_sub(sent.at) < REPEAT_WINDOW_MS);
         // Answers, reports and questions each stand for an event of their own,
-        // however alike they read, and so does a board note.
+        // however alike they read, and so do a board note and a trigger's firing.
         if let Some(repeat) =
-            repeat.filter(|_| letter.kind == Kind::Message && letter.from_id != BOARD)
+            repeat.filter(|_| letter.kind == Kind::Message && !letter.by_sikemux())
         {
             return Ok(Admitted::Repeat {
                 seconds_ago: now.saturating_sub(repeat.at) / 1000,
@@ -1343,6 +1349,34 @@ pub(crate) async fn from_board(
     deliver(core, &target, letter).await
 }
 
+/// Hands an agent the prompt of a trigger it set, waking it first when it sleeps. Fails when
+/// the agent has stopped or is gone.
+pub(crate) async fn from_trigger(
+    core: &Arc<Core>,
+    to: String,
+    text: String,
+    note: String,
+) -> Result<Value, String> {
+    let mut target = running(core, to.clone()).await?;
+    if target.reach == Reach::Asleep {
+        launching::wake(core, to.clone())
+            .await
+            .map_err(|error| format!("it is asleep and did not wake: {error}"))?;
+        target = running(core, to).await?;
+    }
+    let letter = Letter {
+        kind: Kind::Message,
+        from_id: TRIGGER.to_owned(),
+        from_name: "Trigger".to_owned(),
+        cli: "sikemux".to_owned(),
+        text,
+        at: epoch_ms(),
+        note: Some(note),
+        answers: None,
+    };
+    deliver(core, &target, letter).await
+}
+
 /// Hands an agent a note from Sikemux itself, about work it shares with
 /// other agents. Fails when the agent has stopped or is gone.
 pub(crate) async fn from_sikemux(
@@ -1581,7 +1615,7 @@ async fn handed(
     }
     if !notice {
         mailbox.note_sent(&letter, &target.agent_id);
-        if letter.from_id != BOARD {
+        if !letter.by_sikemux() {
             super::board::reached_by_more_than_offer(core, &target.agent_id);
         }
     }

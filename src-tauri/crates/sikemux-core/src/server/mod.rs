@@ -85,6 +85,7 @@ mod tasks;
 pub mod themes;
 mod tools;
 mod transcript;
+mod triggers;
 mod updates;
 mod upgrade;
 mod wait_for;
@@ -383,6 +384,7 @@ pub(crate) struct Core {
     pub(crate) view_due: Notify,
     pub(crate) names: names::Names,
     pub(crate) boards: board::Boards,
+    pub(crate) triggers: triggers::Triggers,
     pub(crate) changes: changed::Changes,
     pub(crate) ports: ports::Ports,
     pub(crate) spares: spare::Spares,
@@ -504,6 +506,7 @@ impl Core {
             view_due: Notify::new(),
             names,
             boards: board::Boards::new(data_dir),
+            triggers: triggers::Triggers::new(data_dir),
             changes: changed::Changes::default(),
             ports: ports::Ports::default(),
             spares: spare::Spares::default(),
@@ -1478,6 +1481,11 @@ pub(crate) async fn run_core(
             core.clone(),
             |core| &core.boards.wake,
             board::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.triggers.wake,
+            triggers::settle,
         )),
         tokio::spawn(wake::serve(
             core.clone(),

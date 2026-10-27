@@ -1533,6 +1533,7 @@ impl Chats {
             feed.offer_effort();
         }
         feed.work_in(launch.cwd.clone());
+        super::triggers::seed(core, &feed, &launch.agent_id);
         let keeper = Keeper::new(self.kept.as_deref(), feed.id());
         let chat = Arc::new(Chat {
             generation: self.next_generation.fetch_add(1, Ordering::Relaxed),

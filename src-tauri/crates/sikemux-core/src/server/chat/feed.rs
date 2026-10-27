@@ -18,7 +18,9 @@ use crate::protocol::{
     Response, ServerMessage,
 };
 use sikemux_process::clock::epoch_ms;
-use sikemux_wire::chat::{ChatChange, ChatDraft, ChatPage, QueuedMessage, SentContext, ToolDetail};
+use sikemux_wire::chat::{
+    ChatChange, ChatDraft, ChatPage, ChatTrigger, QueuedMessage, SentContext, ToolDetail,
+};
 
 use super::super::connection::{ClientConn, ClientId};
 use super::history::{History, HistoryState, Page, Reader, Recovered, MAX_HISTORY_BYTES};
@@ -1464,6 +1466,7 @@ struct Inner {
     holding: bool,
     /// What the person sent while the agent was at work, oldest first.
     queued: Vec<Queued>,
+    triggers: Vec<ChatTrigger>,
     /// The folder the chat's agent works in, and where its edits sit in their files,
     /// for each fold made for it.
     work: Option<(PathBuf, Place)>,
@@ -1625,6 +1628,7 @@ impl Feed {
                 closed: false,
                 holding: false,
                 queued: Vec::new(),
+                triggers: Vec::new(),
                 work: None,
                 waits_for_person: false,
                 reach: None,
@@ -1700,6 +1704,7 @@ impl Feed {
                 closed: false,
                 holding: false,
                 queued: Vec::new(),
+                triggers: Vec::new(),
                 work: None,
                 waits_for_person: false,
                 reach: state.reach,
@@ -1853,6 +1858,7 @@ impl Feed {
                 fold.apply(index, event.kind, &event.payload, at);
             }
             fold.set_queued(queued_view(&inner.queued));
+            fold.set_triggers(inner.triggers.clone());
             if inner.replay.is_trimmed() && !inner.replay.keeps_history() {
                 fold.set_earlier_lost();
             }
@@ -2119,6 +2125,16 @@ impl Feed {
         if !inner.queued.is_empty() {
             inner.queued.clear();
             self.queue_changed(&mut inner);
+        }
+    }
+
+    /// The chat's triggers changed; clients already hearing the chat are told.
+    pub(crate) fn set_triggers(&self, triggers: Vec<ChatTrigger>) {
+        let mut inner = self.inner.locked();
+        inner.triggers = triggers.clone();
+        if let Some(fold) = inner.fold.as_mut() {
+            fold.set_triggers(triggers);
+            self.flush_locked(&mut inner);
         }
     }
 

@@ -145,6 +145,9 @@ pub struct ChatHead {
     pub running_subagents: Vec<SubagentCard>,
     /// What the person sent mid-turn, waiting to go out once the turn ends.
     pub queued: Vec<QueuedMessage>,
+    /// The triggers that send this chat a message when their time comes.
+    #[serde(default)]
+    pub triggers: Vec<ChatTrigger>,
     /// The host no longer keeps the turns before the first row.
     pub earlier_lost: bool,
     /// Why the agent's session ended, once it has.
@@ -277,6 +280,30 @@ pub enum TaskState {
     Completed,
     Failed,
     Stopped,
+}
+
+/// A trigger that sends a chat a message when its time comes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatTrigger {
+    pub id: u64,
+    pub title: String,
+    pub when: TriggerWhen,
+    /// The next time it fires, in Unix milliseconds.
+    pub next_at: u64,
+}
+
+/// When a trigger fires.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum TriggerWhen {
+    /// Once, at `at` in Unix milliseconds.
+    Once { at: u64 },
+    /// Every `seconds`.
+    Every { seconds: u64 },
+    /// Each day at `minute` past midnight on the host's clock, on `weekdays`
+    /// counted from Sunday as 0, or on every day when there are none.
+    Daily { minute: u32, weekdays: Vec<u8> },
 }
 
 /// Work the agent left running in the background.

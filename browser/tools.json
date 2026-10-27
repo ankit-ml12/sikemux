@@ -1850,6 +1850,82 @@
       ]
     },
     {
+      "name": "trigger_add",
+      "row": {"verb": "set", "kind": "edit", "icon": "clock", "target": ["trigger {title}"]},
+      "method": "trigger.add",
+      "description": "Prompt this chat later.",
+      "properties": {
+        "title": {
+          "description": "What it is for, shown to the person",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "prompt": {
+          "description": "What this chat is sent when it fires",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "in": {
+          "description": "Seconds from now, once",
+          "type": "integer",
+          "minimum": 60
+        },
+        "at": {
+          "description": "A time with its offset, once, such as 2026-10-28T09:30:00+05:30",
+          "type": "string",
+          "maxLength": 64
+        },
+        "every": {
+          "description": "Seconds between firings",
+          "type": "integer",
+          "minimum": 60
+        },
+        "daily": {
+          "description": "HH:MM on this host's clock, each day",
+          "type": "string",
+          "maxLength": 5
+        },
+        "weekdays": {
+          "description": "With daily, the days it fires on; every day when left out",
+          "type": "array",
+          "maxItems": 7,
+          "items": {
+            "type": "string",
+            "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+          }
+        }
+      },
+      "required": [
+        "title",
+        "prompt"
+      ]
+    },
+    {
+      "name": "trigger_list",
+      "row": {"verb": "list", "kind": "read", "icon": "clock", "target": ["triggers"]},
+      "method": "trigger.list",
+      "description": "List your triggers.",
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "trigger_remove",
+      "row": {"verb": "remove", "kind": "edit", "icon": "clock", "target": ["trigger {trigger}"]},
+      "method": "trigger.remove",
+      "description": "Stop a trigger.",
+      "properties": {
+        "trigger": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "trigger"
+      ]
+    },
+    {
       "name": "review_verdict",
       "row": {"verb": "review", "kind": "think", "icon": "eye", "target": ["the change"]},
       "method": "review.verdict",

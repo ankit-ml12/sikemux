@@ -24,7 +24,7 @@ use sikemux_markdown::Doc;
 
 use sikemux_wire::chat::{
     AccountMove, AgentNotice, AsyncTask, ChatCommandInfo, ChatConnection, ChatDraft, ChatFailure,
-    ChatHead, ChatMessage, ChatPart, ChatRole, ContextUsage, FailureKind, MoveReason,
+    ChatHead, ChatMessage, ChatPart, ChatRole, ChatTrigger, ContextUsage, FailureKind, MoveReason,
     NoticeSeverity, NoticeState, PermissionAsk, PermissionOption, QueuedMessage, Retrying,
     SentContext, SessionEnded, SubagentCard, SubagentState, TaskNotice, TaskState, TaskUsage,
     ToolDetail, TurnStart, UsageCost, WorkflowAgent,
@@ -639,6 +639,13 @@ impl Fold {
     pub fn set_queued(&mut self, queued: Vec<QueuedMessage>) {
         self.head.queued = queued;
         self.set_head("queued");
+    }
+
+    pub fn set_triggers(&mut self, triggers: Vec<ChatTrigger>) {
+        if self.head.triggers != triggers {
+            self.head.triggers = triggers;
+            self.set_head("triggers");
+        }
     }
 
     pub fn set_draft(&mut self, draft: Option<ChatDraft>) {

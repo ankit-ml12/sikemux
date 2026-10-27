@@ -902,6 +902,8 @@ export interface ChatHead {
     runningSubagents: SubagentCard[];
     /** What the person sent mid-turn, waiting to go out once the turn ends. */
     queued: QueuedMessage[];
+    /** The triggers that send this chat a message when their time comes. */
+    triggers: ChatTrigger[];
     /** The host no longer keeps the turns before the first row. */
     earlierLost: boolean;
     /** Why the agent's session ended, once it has. */
@@ -1096,6 +1098,37 @@ export interface SentContext {
     uri: string;
     title: string;
 }
+
+/** A trigger that sends a chat a message when its time comes. */
+export interface ChatTrigger {
+    id: number;
+    title: string;
+    when: TriggerWhen;
+    /** The next time it fires, in Unix milliseconds. */
+    nextAt: number;
+}
+
+/** When a trigger fires. */
+export type TriggerWhen =
+    /** Once, at `at` in Unix milliseconds. */
+    | {
+          kind: "once";
+          at: number;
+      }
+    /** Every `seconds`. */
+    | {
+          kind: "every";
+          seconds: number;
+      }
+    /**
+     * Each day at `minute` past midnight on the host's clock, on `weekdays`
+     * counted from Sunday as 0, or on every day when there are none.
+     */
+    | {
+          kind: "daily";
+          minute: number;
+          weekdays: number[];
+      };
 
 export interface SessionEnded {
     /** `requested`, `exited` after it was up, or `failed` before it got there. */

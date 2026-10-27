@@ -267,6 +267,10 @@ calls! { core, client, params;
         let core = core.clone();
         answer(blocking(move || Ok(super::ssh::hosts(&core))).await?)
     },
+    "removeTrigger": Full => {
+        let params: TriggerParams = parse(params)?;
+        answer(super::triggers::remove(&core, &params.agent_id, params.trigger))
+    },
     "cancelResume": Full => {
         agent_accounts::cancel_resume(&core, parse(params)?);
         answer(())
@@ -1040,6 +1044,13 @@ struct QueuedParams {
 #[serde(rename_all = "camelCase")]
 struct AgentParams {
     agent_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TriggerParams {
+    agent_id: String,
+    trigger: u64,
 }
 
 /// A saved agent to start; one moved to another agent before it ran waits for the person.
