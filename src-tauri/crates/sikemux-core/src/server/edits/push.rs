@@ -138,8 +138,8 @@ fn push_as(
         )?;
         return Ok(pushed);
     }
-    let tip = replay(signing, &top, &base, &ours)?;
-    let rebuilt = replay(signing, &top, &tip, &theirs)?;
+    let tip = replay(signing, &top, &base, &ours, WITHOUT_THEIRS)?;
+    let rebuilt = replay(signing, &top, &tip, &theirs, WITHOUT_THEIRS)?;
     if tree(&top, &rebuilt)? != tree(&top, &head)? {
         return Err(format!(
             "Your commits build on other agents' unpushed ones, so they cannot go alone: {}. Ask them to push, or push when the person says to.",
@@ -200,7 +200,8 @@ fn rebase_branch(
                 subject: String::new(),
             })
             .collect();
-        let caught_up = replay(signing, top, &onto, &later.iter().collect::<Vec<_>>())?;
+        let later: Vec<&Unpushed> = later.iter().collect();
+        let caught_up = replay(signing, top, &onto, &later, WITHOUT_THEIRS)?;
         if tree(top, &caught_up)? != tree(top, &now)? {
             return Ok(false);
         }
@@ -208,6 +209,8 @@ fn rebase_branch(
     }
     Ok(false)
 }
+
+const WITHOUT_THEIRS: &str = "without other agents' unpushed commits";
 
 pub(super) fn line(text: String) -> String {
     text.trim().to_owned()
@@ -260,12 +263,14 @@ fn unpushed(
 
 /// `commits` made again one after another on `onto`, with the same changes,
 /// authors and messages, their footers and notes signed again for where they
-/// now stand. The last one made, or `onto` when there are none.
+/// now stand. The last one made, or `onto` when there are none. `clash` says
+/// what a commit that does not apply there lacks.
 pub(super) fn replay(
     signing: &Signing,
     top: &Path,
     onto: &str,
     commits: &[&Unpushed],
+    clash: &str,
 ) -> Result<String, String> {
     let (key, hosts) = (&signing.key, &signing.hosts);
     let mut onto = onto.to_owned();
@@ -286,13 +291,7 @@ pub(super) fn replay(
                     id,
                 ],
             )
-            .map_err(|_| {
-                format!(
-                    "{} {} does not apply without other agents' unpushed commits",
-                    short(id),
-                    commit.subject
-                )
-            })?;
+            .map_err(|_| format!("{} {} does not apply {clash}", short(id), commit.subject))?;
             merged.lines().next().unwrap_or_default().to_owned()
         };
         let object = git(top, &["cat-file", "commit", id])?;

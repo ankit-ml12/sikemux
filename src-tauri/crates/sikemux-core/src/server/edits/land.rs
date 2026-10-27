@@ -94,7 +94,14 @@ fn land_from(worktree: &AgentWorktree, signing: &Signing) -> Result<Landed, Stri
         }
         let listed = git(
             &worktree.path,
-            &["log", "--reverse", "--format=%H%x00%s", &range],
+            &[
+                "log",
+                "--reverse",
+                "--cherry-pick",
+                "--right-only",
+                "--format=%H%x00%s",
+                &format!("{tip}...{head}"),
+            ],
         )?;
         let commits: Vec<Unpushed> = listed
             .lines()
@@ -114,6 +121,7 @@ fn land_from(worktree: &AgentWorktree, signing: &Signing) -> Result<Landed, Stri
             &worktree.path,
             &tip,
             &commits.iter().collect::<Vec<_>>(),
+            &format!("onto {base}, which changed the same lines since your checkout was cut. Run git rebase {base} in your checkout, settle the clash, then land again"),
         )?;
         let checked_out = git(&worktree.repo, &["symbolic-ref", "-q", "HEAD"])
             .is_ok_and(|head| head.trim() == target);
