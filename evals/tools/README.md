@@ -25,4 +25,4 @@ Each case runs the agent CLI (`claude -p`, or OMP for DeepSeek) in a temporary h
 
 A call matcher is `tool` (a name, a `prefix*` or a list) with optional `args`, or `any` of several matchers. Argument matchers compare values, `"/regex/flags"` strings, `{"$present": bool}`, `{"$not": …}` and `{"$any": […]}`.
 
-Runs land in `/tmp/sikemux-tool-eval/<time>/`, one folder per case with its transcript and every call the fake Sikemux answered. `--record <label>` also saves the result under `results/`.
+Runs land in `/tmp/sikemux-tool-eval/<time>/`, one folder per case with its transcript and every call the fake Sikemux answered; each case's home and repo are deleted once it is graded unless `--keep` is given. `--resume <run folder>` finishes a run that stopped, grading what finished and running the rest. `--shell` and `--shell-env` change the shell agents' commands run in. `--record <label>` also saves the result under `results/`.

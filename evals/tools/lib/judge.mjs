@@ -29,11 +29,15 @@ export async function judge({ testCase, outcome, dir, sandbox }) {
     profile: join(dir, 'sandbox.sb'),
     timeoutMs: 180_000,
   });
+  return readVerdict(folder) ?? { pass: false, why: 'the judge gave no verdict', cost: 0 };
+}
+
+export function readVerdict(folder) {
   try {
     const answer = JSON.parse(readFileSync(join(folder, 'transcript.jsonl'), 'utf8'));
     const verdict = JSON.parse(answer.result.slice(answer.result.indexOf('{'), answer.result.lastIndexOf('}') + 1));
     return { pass: Boolean(verdict.pass), why: String(verdict.why ?? ''), cost: answer.total_cost_usd ?? 0 };
-  } catch (error) {
-    return { pass: false, why: `the judge gave no verdict: ${error.message}`, cost: 0 };
+  } catch {
+    return null;
   }
 }

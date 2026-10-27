@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { readFileSync, readdirSync, mkdirSync, writeFileSync, realpathSync, statSync, existsSync, copyFileSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync, writeFileSync, realpathSync, statSync, existsSync, copyFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { loadSurface, REPO, SIGNED_IN_PLUGINS } from './lib/surface.mjs';
 import { startCore } from './lib/core.mjs';
 import { prepareCase } from './lib/sandbox.mjs';
-import { MODELS, mcpServers, runClaude } from './lib/runners.mjs';
-import { runOmp } from './lib/omp.mjs';
+import { MODELS, mcpServers, runClaude, readClaude } from './lib/runners.mjs';
+import { runOmp, readOmp } from './lib/omp.mjs';
 import { grade } from './lib/grade.mjs';
-import { judge } from './lib/judge.mjs';
+import { judge, readVerdict } from './lib/judge.mjs';
 import { report } from './lib/report.mjs';
 
 const EVAL = join(REPO, 'evals/tools');
@@ -28,6 +28,10 @@ const { values: options } = parseArgs({
     timeout: { type: 'string', default: '420' },
     build: { type: 'boolean', default: false },
     at: { type: 'string' },
+    resume: { type: 'string' },
+    keep: { type: 'boolean', default: false },
+    shell: { type: 'string', default: '/bin/zsh' },
+    'shell-env': { type: 'string' },
     record: { type: 'string' },
     list: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
@@ -43,6 +47,10 @@ if (options.help) {
   --concurrency 4                 cases at once per model
   --turns 16 --timeout 420        limits per case (turns, seconds)
   --build                         rebuild sikemux-host first
+  --shell /bin/bash               the shell agents' commands run in (default /bin/zsh)
+  --shell-env <file>              startup lines that shell reads first, as ~/.zshenv or BASH_ENV
+  --keep                          keep each case's home and repo after grading
+  --resume <run folder>           finish a run that stopped: grade what finished, run the rest
   --at <commit>                   run the tools as they were at a commit, with its host saved by an earlier build
   --record <label>                also save the result under evals/tools/results/
   --list                          list the cases that would run, and stop`);
@@ -66,9 +74,8 @@ const variants = options.models.split(',').flatMap((alias) => {
   return searches.map((search) => ({ label: `${alias}${search ? '' : ' (no tool search)'}`, alias, search, ...model }));
 });
 
-const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 mkdirSync('/tmp/sikemux-tool-eval', { recursive: true });
-const runDir = join(realpathSync('/tmp/sikemux-tool-eval'), stamp);
+const runDir = options.resume ? realpathSync(options.resume) : join(realpathSync('/tmp/sikemux-tool-eval'), new Date().toISOString().replace(/[:.]/g, '-'));
 mkdirSync(runDir, { recursive: true });
 console.log(`${cases.length} cases × ${variants.map((variant) => variant.label).join(', ')}; runs in ${runDir}`);
 
@@ -78,6 +85,8 @@ const summary = {
   date: new Date().toISOString(),
   commit: at ? git('rev-parse', at) : git('rev-parse', 'HEAD'),
   dirty: !at && git('status', '--porcelain', '--', ...SURFACE) !== '',
+  shell: options.shell,
+  ...(options['shell-env'] ? { shellEnv: readFileSync(options['shell-env'], 'utf8') } : {}),
   claude: execFileSync(join(process.env.HOME, '.local/bin/claude'), ['--version'], { encoding: 'utf8' }).trim(),
   seconds: Math.round((Date.now() - started) / 1000),
   variants: results,
@@ -155,27 +164,13 @@ async function runVariant(variant) {
 
 async function runCase(variant, testCase) {
   const dir = join(runDir, variant.label.replace(/\W+/g, '-'), testCase.id);
-  mkdirSync(dir, { recursive: true });
-  const sandbox = prepareCase(dir, testCase, { at, host: HOST });
-  const fixture = testCase.fixture ?? {};
-  const surface = loadSurface(fixture.plugins ?? SIGNED_IN_PLUGINS, at);
-  const endpoint = join(dir, 'endpoint.json');
-  const core = await startCore({ surface, fixture, project: sandbox.repo, endpointFile: endpoint, logFile: join(dir, 'core.jsonl') });
-  const servers = mcpServers({ host: HOST, endpoint, repo: sandbox.repo, dir, rivals: fixture.rivals });
-  const limits = { maxTurns: testCase.maxTurns ?? Number(options.turns), timeoutMs: Number(options.timeout) * 1000 };
-  let outcome;
-  try {
-    outcome =
-      variant.runner === 'claude'
-        ? await runClaude({ model: variant.id, search: variant.search, dir, sandbox, servers, prompt: testCase.prompt, ...limits })
-        : await runOmp({ model: variant.id, dir, sandbox, servers, prompt: testCase.prompt, ...limits });
-  } finally {
-    core.close();
-  }
+  const finished = options.resume ? readFinished(variant, testCase, dir) : null;
+  const outcome = finished ?? (await runAgent(variant, testCase, dir));
   const failures = grade(testCase, outcome);
   if (outcome.exit.timedOut) failures.push({ check: 'run', why: 'timed out' });
   else if (outcome.failed) failures.push({ check: 'run', why: `the run failed: ${outcome.stop}` });
-  const verdict = testCase.judge && !outcome.failed ? await judge({ testCase, outcome, dir, sandbox }) : null;
+  const verdict = testCase.judge && !outcome.failed ? await judgeOnce(testCase, outcome, dir, finished ? null : outcome.sandbox) : null;
+  dropSandbox(dir);
   if (verdict && !verdict.pass) failures.push({ check: 'judge', why: verdict.why });
   return {
     id: testCase.id,
@@ -192,6 +187,54 @@ async function runCase(variant, testCase) {
     reply: outcome.reply?.slice(0, 2000) ?? '',
     dir,
   };
+}
+
+function readFinished(variant, testCase, dir) {
+  const transcript = join(dir, 'transcript.jsonl');
+  if (!existsSync(transcript)) return null;
+  const outcome = variant.runner === 'claude' ? readClaude(transcript) : readOmp(transcript, ['sikemux-tools', ...(testCase.fixture?.rivals ?? [])]);
+  const ended = variant.runner === 'claude' ? outcome.stop !== 'no result' : !outcome.failed;
+  return ended ? { ...outcome, exit: { timedOut: false } } : null;
+}
+
+async function judgeOnce(testCase, outcome, dir, sandbox) {
+  const given = options.resume ? readVerdict(join(dir, 'judge')) : null;
+  if (given) return given;
+  if (sandbox) return judge({ testCase, outcome, dir, sandbox });
+  const again = join(dir, 'rejudge');
+  rmSync(again, { recursive: true, force: true });
+  mkdirSync(again, { recursive: true });
+  const verdict = await judge({ testCase, outcome, dir: again, sandbox: prepareCase(again, testCase, { at, host: HOST }) });
+  dropSandbox(again);
+  return verdict;
+}
+
+function dropSandbox(dir) {
+  const link = join(dir, 'sandbox');
+  if (options.keep || !existsSync(link)) return;
+  rmSync(realpathSync(link), { recursive: true, force: true });
+}
+
+async function runAgent(variant, testCase, dir) {
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  const sandbox = prepareCase(dir, testCase, { at, host: HOST, shell: options.shell, shellEnv: options['shell-env'] });
+  const fixture = testCase.fixture ?? {};
+  const surface = loadSurface(fixture.plugins ?? SIGNED_IN_PLUGINS, at);
+  const endpoint = join(dir, 'endpoint.json');
+  const core = await startCore({ surface, fixture, project: sandbox.repo, endpointFile: endpoint, logFile: join(dir, 'core.jsonl') });
+  const servers = mcpServers({ host: HOST, endpoint, repo: sandbox.repo, dir, rivals: fixture.rivals });
+  const limits = { maxTurns: testCase.maxTurns ?? Number(options.turns), timeoutMs: Number(options.timeout) * 1000 };
+  let outcome;
+  try {
+    outcome =
+      variant.runner === 'claude'
+        ? await runClaude({ model: variant.id, search: variant.search, dir, sandbox, servers, prompt: testCase.prompt, ...limits })
+        : await runOmp({ model: variant.id, dir, sandbox, servers, prompt: testCase.prompt, ...limits });
+  } finally {
+    core.close();
+  }
+  return { ...outcome, sandbox };
 }
 
 function compact(result) {

@@ -27,7 +27,7 @@ export const BASE_PATH = [
   '/sbin',
 ].join(':');
 
-export function prepareCase(dir, testCase, { at = null, host }) {
+export function prepareCase(dir, testCase, { at = null, host, shell = '/bin/zsh', shellEnv }) {
   const fixture = testCase.fixture ?? {};
   const root = realpathSync(mkdtempSync('/tmp/u'));
   const home = join(root, 'home');
@@ -37,6 +37,7 @@ export function prepareCase(dir, testCase, { at = null, host }) {
   symlinkSync(root, join(dir, 'sandbox'));
   symlinkSync(join(HOME, 'Library/Keychains'), join(home, 'Library/Keychains'));
   writeFileSync(join(home, '.claude.json'), JSON.stringify(claudeAccount()));
+  if (shellEnv) for (const name of ['.zshenv', '.bashenv']) cpSync(shellEnv, join(home, name));
   writeFileSync(join(dir, 'fixture.json'), JSON.stringify(fixture, null, 1));
 
   for (const name of Object.keys(SHIMMED)) {
@@ -66,6 +67,7 @@ export function prepareCase(dir, testCase, { at = null, host }) {
 
   writeFileSync(join(dir, 'sandbox.sb'), profile([dir, root], host));
   return {
+    root,
     home,
     repo,
     env: {
@@ -74,7 +76,9 @@ export function prepareCase(dir, testCase, { at = null, host }) {
       USER: process.env.USER,
       LOGNAME: process.env.USER,
       PATH: `${bin}:${BASE_PATH}`,
-      SHELL: '/bin/zsh',
+      SHELL: shell,
+      CLAUDE_CODE_SHELL: shell,
+      ...(shellEnv ? { BASH_ENV: join(home, '.bashenv') } : {}),
       LANG: 'en_US.UTF-8',
       TERM: 'dumb',
       TMPDIR: join(root, 'tmp/'),
