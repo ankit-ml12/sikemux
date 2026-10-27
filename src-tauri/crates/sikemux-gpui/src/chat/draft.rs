@@ -123,6 +123,13 @@ fn held(drafts: &Value, agent: &str) -> Value {
     held
 }
 
+/// The core's revision of `agent`'s draft in `drafts`.
+fn rev(drafts: &Value, agent: &str) -> u64 {
+    drafts[key(agent).as_str()]["rev"]
+        .as_u64()
+        .unwrap_or_default()
+}
+
 /// Whether the chat runs on another host, whose core keeps its draft.
 pub fn is_elsewhere(chat: &super::Chat) -> bool {
     *chat.target.place() != crate::hosts::Place::This
@@ -178,7 +185,8 @@ impl Workbench {
             return;
         }
         composing.synced = draft.clone();
-        let mut params = json!({ "key": key(agent), "text": draft["text"] });
+        let mut params =
+            json!({ "key": key(agent), "text": draft["text"], "rev": composing.read_rev });
         if let Some(extra) = draft.get("extra") {
             params["extra"] = extra.clone();
         }
@@ -196,11 +204,12 @@ impl Workbench {
             };
             let draft = held(drafts, agent);
             if draft == composing.synced {
+                composing.read_rev = rev(drafts, agent);
                 continue;
             }
             let shown = kept(composing, cx);
             if shown == composing.synced {
-                composing.arrived = Some((restored(&draft), shown));
+                composing.arrived = Some((restored(&draft), shown, rev(drafts, agent)));
                 cx.notify();
             }
             composing.synced = draft;
@@ -211,11 +220,12 @@ impl Workbench {
 impl Composing {
     /// Puts a draft that came from elsewhere in place, unless the person typed since.
     pub fn take_arrived(&mut self, window: &mut Window, cx: &mut App) {
-        let Some((arrived, was)) = self.arrived.take() else {
+        let Some((arrived, was, rev)) = self.arrived.take() else {
             return;
         };
         if kept(self, cx) == was {
             self.put(arrived, window, cx);
+            self.read_rev = rev;
         }
     }
 
@@ -224,6 +234,7 @@ impl Composing {
         let draft = held(drafts, agent);
         self.put(restored(&draft), window, cx);
         self.synced = draft;
+        self.read_rev = rev(drafts, agent);
     }
 
     fn put(&mut self, draft: Sent, window: &mut Window, cx: &mut App) {

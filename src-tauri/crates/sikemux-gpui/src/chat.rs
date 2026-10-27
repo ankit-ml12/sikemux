@@ -548,8 +548,11 @@ pub struct Composing {
     pub returned: Option<Sent>,
     /// The draft as the core last kept it.
     pub synced: Value,
-    /// A draft typed in another app, with this draft as it was when that came.
-    pub arrived: Option<(Sent, Value)>,
+    /// The core's revision of the draft this one has taken in, which a save names so the core
+    /// puts back what it added since.
+    pub read_rev: u64,
+    /// A draft typed in another app, with this draft as it was when that came, and its revision.
+    pub arrived: Option<(Sent, Value, u64)>,
     pub _keeping: Task<()>,
     pub _heard: [Subscription; 2],
 }

@@ -1501,6 +1501,7 @@ impl Workbench {
             sent: None,
             returned: None,
             synced: json!({ "text": "" }),
+            read_rev: 0,
             arrived: None,
             _keeping: Task::ready(()),
             _heard: [sending, keeping],
