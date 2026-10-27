@@ -19,7 +19,7 @@ pub fn pane(cx: &App) -> Div {
 }
 
 /// A pane's frame without the grain or the person's picture behind it, for a pane that is
-/// read closely, such as a code host's pull requests, runs and issues.
+/// read closely, such as a code host's pull requests, runs and issues, or a plugin's pane.
 pub fn plain_pane(cx: &App) -> Div {
     div()
         .relative()
