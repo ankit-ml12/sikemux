@@ -482,13 +482,30 @@ fn choice_of(
         .iter()
         .find(|project| project.path == chat.project)
         .ok_or_else(|| CoreError::from("that chat's project is not on this host"))?;
-    // A chat that left the recent ones keeps no launcher, so it starts on
-    // the account the person chose for its agent.
-    let chosen = saved
+    let launcher = chat_launcher(published, chat).ok_or_else(|| {
+        CoreError::from("Sikemux on this host can no longer start that chat's agent")
+    })?;
+    Ok(ChatChoice {
+        launcher: launcher.id.clone(),
+        project: project.id.clone(),
+        permission_mode: choice.permission_mode,
+        model: choice.model,
+        effort: choice.effort,
+        resume_id: Some(chat.session_id.clone()),
+        cwd: (chat.cwd != chat.project).then(|| chat.cwd.clone()),
+        title: Some(chat.title.clone()).filter(|title| !title.trim().is_empty()),
+    })
+}
+
+/// The launcher that found `chat`. A chat that left the recent ones keeps no launcher, so
+/// it takes the account the person chose for its agent.
+fn chat_launcher<'a>(published: &'a Published, chat: &Recent) -> Option<&'a Launcher> {
+    let chosen = published
+        .saved
         .accounts
         .as_ref()
         .map(|book| format!("{}:{}", chat.provider, book.chosen(&chat.provider)));
-    let launcher = published
+    published
         .every_launcher()
         .filter(|launcher| launcher.agent.provider == chat.provider)
         .find(|launcher| {
@@ -502,18 +519,19 @@ fn choice_of(
                     .find(|launcher| launcher.agent.provider == chat.provider)
             })?
         })
-        .ok_or_else(|| {
-            CoreError::from("Sikemux on this host can no longer start that chat's agent")
-        })?;
-    Ok(ChatChoice {
-        launcher: launcher.id.clone(),
-        project: project.id.clone(),
-        permission_mode: choice.permission_mode,
-        model: choice.model,
-        effort: choice.effort,
-        resume_id: Some(chat.session_id.clone()),
-        cwd: (chat.cwd != chat.project).then(|| chat.cwd.clone()),
-        title: Some(chat.title.clone()).filter(|title| !title.trim().is_empty()),
+}
+
+/// A saved chat the core no longer lists, from its id and the folder it ran in.
+fn unlisted(recent: &str, cwd: PathBuf) -> Option<Recent> {
+    let (provider, session_id) = recent.split_once(':')?;
+    Some(Recent {
+        launcher: String::new(),
+        provider: provider.to_owned(),
+        session_id: session_id.to_owned(),
+        title: String::new(),
+        project: cwd.clone(),
+        cwd,
+        active_at: 0,
     })
 }
 
@@ -808,14 +826,19 @@ impl Workspaces {
 
     /// The saved session of the recent chat named `recent`, with the program and sign-in of
     /// the launcher that found it.
-    pub(crate) fn recent_session(&self, recent: &str) -> CoreResult<RecentSession> {
+    pub(crate) fn recent_session(
+        &self,
+        recent: &str,
+        cwd: Option<PathBuf>,
+    ) -> CoreResult<RecentSession> {
         let published = self.published.locked();
-        let chat = listed(&published, recent).ok_or("that chat is not among the recent ones")?;
+        let chat = listed(&published, recent)
+            .cloned()
+            .or_else(|| unlisted(recent, cwd?))
+            .ok_or("that chat is not among the recent ones")?;
         let agent = AgentKind::from_name(&chat.provider)
             .ok_or_else(|| CoreError::from(format!("{} keeps no saved chats", chat.provider)))?;
-        let launcher = published
-            .every_launcher()
-            .find(|launcher| launcher.id == chat.launcher);
+        let launcher = chat_launcher(&published, &chat);
         Ok(RecentSession {
             agent,
             cwd: chat.cwd.to_string_lossy().into_owned(),

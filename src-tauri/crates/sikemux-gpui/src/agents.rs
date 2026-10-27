@@ -538,7 +538,7 @@ fn older_when_seen(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement
 
 /// Asks for a recent chat's new title, and renames it in its CLI's own history.
 fn rename_recent(bench: &mut Workbench, chat: &RecentInfo, cx: &mut Context<Workbench>) {
-    let recent = chat.id.clone();
+    let (recent, cwd) = (chat.id.clone(), chat.cwd.clone());
     bench.prompt(
         "Rename chat",
         chat.title.clone(),
@@ -546,7 +546,7 @@ fn rename_recent(bench: &mut Workbench, chat: &RecentInfo, cx: &mut Context<Work
             if !title.trim().is_empty() {
                 bench.call(
                     "renameRecent",
-                    serde_json::json!({ "recent": recent, "title": title.trim() }),
+                    serde_json::json!({ "recent": recent, "title": title.trim(), "cwd": cwd }),
                 );
                 bench.retitle_older(&recent, title.trim());
             }
@@ -557,7 +557,7 @@ fn rename_recent(bench: &mut Workbench, chat: &RecentInfo, cx: &mut Context<Work
 
 /// Deletes a recent chat from its CLI's own history, once the person says so.
 fn delete_recent(bench: &mut Workbench, chat: &RecentInfo, cx: &mut Context<Workbench>) {
-    let recent = chat.id.clone();
+    let (recent, cwd) = (chat.id.clone(), chat.cwd.clone());
     bench.confirm(
         "Delete this chat?",
         format!(
@@ -568,7 +568,10 @@ fn delete_recent(bench: &mut Workbench, chat: &RecentInfo, cx: &mut Context<Work
         true,
         move |bench, yes, _, _| {
             if yes {
-                bench.call("deleteRecent", serde_json::json!({ "recent": recent }));
+                bench.call(
+                    "deleteRecent",
+                    serde_json::json!({ "recent": recent, "cwd": cwd }),
+                );
                 bench.forget_older(&recent);
             }
         },
