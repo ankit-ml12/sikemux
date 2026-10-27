@@ -842,12 +842,19 @@ struct StopShareParams {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ChatFileParams {
     path: PathBuf,
+    /// For a picture shown small: the longest side, in pixels, to send it scaled to.
+    #[serde(default)]
+    max_edge: Option<u32>,
 }
 
 #[derive(Serialize)]
 struct ChatFile {
+    /// Set when the file was sent as a scaled copy, which is a JPEG.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mime: Option<&'static str>,
     data: String,
 }
 
@@ -872,8 +879,20 @@ async fn chat_file(core: &Core, peer: &Peer, params: ChatFileParams) -> CoreResu
             CoreError::from("this device can open only the pictures pasted into chats")
         })?;
     }
-    let data = blocking(move || attachments::read(&path)).await?;
-    Ok(ChatFile { data })
+    let max_edge = params.max_edge;
+    blocking(move || {
+        if let Some(data) = max_edge.and_then(|edge| attachments::thumbnail(&path, edge)) {
+            return Ok(ChatFile {
+                mime: Some("image/jpeg"),
+                data,
+            });
+        }
+        Ok(ChatFile {
+            mime: None,
+            data: attachments::read(&path)?,
+        })
+    })
+    .await
 }
 
 #[derive(Deserialize)]

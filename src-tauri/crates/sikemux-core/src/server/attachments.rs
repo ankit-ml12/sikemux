@@ -73,6 +73,38 @@ pub(crate) fn is_kept(dir: &Path, path: &Path) -> bool {
     }
 }
 
+/// A picture scaled to fit `max_edge` pixels on its longest side, as a JPEG in base64, for a
+/// device to show small; none where this host cannot scale it, which then sends the picture.
+pub(crate) fn thumbnail(path: &Path, max_edge: u32) -> Option<String> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    let picture = [
+        "png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tif", "tiff", "bmp",
+    ];
+    if !picture.contains(&extension.as_str()) {
+        return None;
+    }
+    let out = std::env::temp_dir().join(format!(
+        "sikemux-thumbnail-{}.jpg",
+        uuid::Uuid::new_v4().simple()
+    ));
+    let scaled = std::process::Command::new("/usr/bin/sips")
+        .args(["-s", "format", "jpeg", "-s", "formatOptions", "80", "-Z"])
+        .arg(max_edge.clamp(16, 2048).to_string())
+        .arg(path)
+        .arg("--out")
+        .arg(&out)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    let bytes = scaled.then(|| fs::read(&out).ok()).flatten();
+    let _ = fs::remove_file(&out);
+    bytes.map(|bytes| STANDARD.encode(bytes))
+}
+
 /// A file, in base64, for a device to show.
 pub(crate) fn read(path: &Path) -> CoreResult<String> {
     let missing = || CoreError::from("this host no longer has that file");
