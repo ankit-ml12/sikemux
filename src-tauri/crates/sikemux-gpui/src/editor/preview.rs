@@ -32,17 +32,28 @@ pub(super) enum Mode {
     Preview,
 }
 
-/// The editor a file opens in first: markdown reads as itself.
+/// How a file reads when it is not shown as its text.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum Look {
+    Markdown,
+    /// A DBML schema, drawn as its tables.
+    Diagram,
+}
+
+pub(super) fn look(path: &Path) -> Option<Look> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    match extension.as_str() {
+        "md" | "markdown" => Some(Look::Markdown),
+        "dbml" => Some(Look::Diagram),
+        _ => None,
+    }
+}
+
+/// The editor a file opens in first: markdown and DBML read as themselves.
 pub(super) fn first_mode(path: &Path) -> Mode {
-    let markdown = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            matches!(extension.to_ascii_lowercase().as_str(), "md" | "markdown")
-        });
-    match markdown {
-        true => Mode::Preview,
-        false => Mode::Source,
+    match look(path) {
+        Some(_) => Mode::Preview,
+        None => Mode::Source,
     }
 }
 
@@ -55,11 +66,12 @@ pub(crate) fn render(text: &str) -> Markdown {
     Markdown::new(&blocks, text.encode_utf16().count())
 }
 
-/// The bar over a markdown file's editor that switches it between its
+/// The bar over a markdown or DBML file's editor that switches it between its
 /// source and how it reads.
 pub(super) fn toolbar(
     this: &Entity<Workbench>,
     key: &super::FileKey,
+    look: Look,
     mode: Mode,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
@@ -99,7 +111,14 @@ pub(super) fn toolbar(
         .border_color(t.border)
         .text_size(crate::theme::ui_text(12.))
         .child(choice("markdown-source", "Source", Mode::Source))
-        .child(choice("markdown-preview", "Preview", Mode::Preview))
+        .child(choice(
+            "markdown-preview",
+            match look {
+                Look::Markdown => "Preview",
+                Look::Diagram => "Diagram",
+            },
+            Mode::Preview,
+        ))
 }
 
 /// The markdown of the file at `path`, drawn to read.

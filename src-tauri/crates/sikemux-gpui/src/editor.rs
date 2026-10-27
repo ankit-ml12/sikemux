@@ -26,6 +26,8 @@ use crate::workbench::{Strip, TakesKeys, Workbench};
 
 mod blame;
 mod copies;
+mod dbml;
+mod diagram;
 mod gutter;
 mod insights;
 mod lsp;
@@ -165,14 +167,19 @@ struct Document {
     peek: Option<Peek>,
     /// The selection ⌘D started from, and where the match it last added ends.
     next_match: Option<(std::ops::Range<usize>, usize)>,
-    /// Whether it shows its text or, for markdown, how it reads, and that rendering.
+    /// Whether it shows its text or, for markdown and DBML, how it reads, and that rendering.
     mode: preview::Mode,
-    rendered: Option<Rc<gpui_transcript::Markdown>>,
+    rendered: Option<Rendered>,
     /// What changed since the last commit, marked beside the lines.
     gutter: gutter::Gutter,
     /// Who last changed each line.
     blame: blame::Blame,
     _changes: Subscription,
+}
+
+enum Rendered {
+    Markdown(Rc<gpui_transcript::Markdown>),
+    Diagram(Entity<diagram::Diagram>),
 }
 
 #[derive(Clone)]
@@ -383,16 +390,18 @@ pub fn pane(
                     ),
             )
         })
-        .when(
-            preview::first_mode(&path) == preview::Mode::Preview,
-            |pane| pane.child(preview::toolbar(&this, &key, document.mode, cx)),
-        )
-        .map(|pane| match (document.mode, document.rendered.clone()) {
-            (preview::Mode::Preview, Some(markdown)) => {
+        .when_some(preview::look(&path), |pane, look| {
+            pane.child(preview::toolbar(&this, &key, look, document.mode, cx))
+        })
+        .map(|pane| match (document.mode, document.rendered.as_ref()) {
+            (preview::Mode::Preview, Some(Rendered::Markdown(markdown))) => {
                 pane.child(div().flex_1().min_h_0().child(preview::Body {
                     path: path.clone(),
-                    markdown,
+                    markdown: markdown.clone(),
                 }))
+            }
+            (preview::Mode::Preview, Some(Rendered::Diagram(diagram))) => {
+                pane.child(div().flex_1().min_h_0().child(diagram.clone()))
             }
             _ => pane.child(
                 div()
@@ -1161,7 +1170,8 @@ fn read(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
                     document.dirty = false;
                     document.notice = None;
                     if document.mode == preview::Mode::Preview {
-                        document.rendered = Some(Rc::new(preview::render(&document.saved)));
+                        let text = document.saved.clone();
+                        show_rendered(document, &key, &text, cx);
                     }
                     lsp::changed(document, &asks, cx);
                 }
@@ -1542,7 +1552,7 @@ fn show_mode(
     match mode {
         preview::Mode::Preview => {
             let text = document.state.read(cx).value();
-            document.rendered = Some(Rc::new(preview::render(&text)));
+            show_rendered(document, key, &text, cx);
             document.goto = None;
         }
         preview::Mode::Source => document
@@ -1550,6 +1560,31 @@ fn show_mode(
             .update(cx, |state, cx| state.focus(window, cx)),
     }
     bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// Renders `text` as the file reads: markdown as a page, DBML as a diagram that keeps
+/// where its tables were moved to.
+fn show_rendered(document: &mut Document, key: &FileKey, text: &str, cx: &mut Context<Workbench>) {
+    match preview::look(&key.path) {
+        Some(preview::Look::Diagram) => {
+            if let Some(Rendered::Diagram(diagram)) = &document.rendered {
+                diagram.update(cx, |diagram, cx| diagram.set_source(text, cx));
+                return;
+            }
+            let (bench, key) = (cx.entity().downgrade(), key.clone());
+            let open: diagram::OpenLine = Rc::new(move |line, window, cx| {
+                let at = OpenAt {
+                    path: key.path.clone(),
+                    line,
+                    column: None,
+                };
+                let _ = bench.update(cx, |bench, cx| place_cursor(bench, &key, &at, window, cx));
+            });
+            let diagram = cx.new(|_| diagram::Diagram::new(text, open));
+            document.rendered = Some(Rendered::Diagram(diagram));
+        }
+        _ => document.rendered = Some(Rendered::Markdown(Rc::new(preview::render(text)))),
+    }
 }
 
 /// The editors' text scale the person chose.
