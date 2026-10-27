@@ -10,9 +10,9 @@ use gpui_kit::component::input::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, div, px, AnyElement, AnyWindowHandle, App, AppContext, Context, Entity, Focusable,
-    FontWeight, InteractiveElement, IntoElement, KeyBinding, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window,
+    actions, div, px, AnyElement, AnyWindowHandle, App, AppContext, Context, Entity, FocusHandle,
+    Focusable, FontWeight, InteractiveElement, IntoElement, KeyBinding, ParentElement,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{Pane, PaneKind};
@@ -76,6 +76,8 @@ const MAX_HISTORY: usize = 128;
 const MAX_PEEKED: usize = 300;
 
 pub fn install(cx: &mut App) {
+    preview::install(cx);
+    crate::ui::find_bar::install(cx);
     let save = if cfg!(target_os = "macos") {
         "cmd-s"
     } else {
@@ -170,6 +172,10 @@ struct Document {
     /// Whether it shows its text or, for markdown and DBML, how it reads, and that rendering.
     mode: preview::Mode,
     rendered: Option<Rendered>,
+    /// The find bar over the markdown as it reads, while it is open.
+    finding: Option<preview::Finding>,
+    preview_focus: FocusHandle,
+    preview_scroll: ScrollHandle,
     /// What changed since the last commit, marked beside the lines.
     gutter: gutter::Gutter,
     /// Who last changed each line.
@@ -180,6 +186,15 @@ struct Document {
 enum Rendered {
     Markdown(Rc<gpui_transcript::Markdown>),
     Diagram(Entity<diagram::Diagram>),
+}
+
+impl Document {
+    fn markdown(&self) -> Option<Rc<gpui_transcript::Markdown>> {
+        match &self.rendered {
+            Some(Rendered::Markdown(markdown)) => Some(markdown.clone()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -206,7 +221,9 @@ impl Editors {
     /// Whether the keys are in the editor showing `path`.
     pub fn has_keys(&self, path: &Path, window: &Window, cx: &App) -> bool {
         (self.open.iter()).any(|(key, document)| {
-            key.path == path && document.state.read(cx).focus_handle(cx).is_focused(window)
+            key.path == path
+                && (document.state.read(cx).focus_handle(cx).is_focused(window)
+                    || document.preview_focus.contains_focused(window, cx))
         })
     }
 
@@ -271,9 +288,15 @@ pub fn pane(
         let focused = key.clone();
         cx.defer_in(window, move |bench, window, cx| {
             if let Some(document) = bench.editors.open.get(&focused) {
-                document
-                    .state
-                    .update(cx, |state, cx| state.focus(window, cx));
+                let look = preview::look(&focused.path);
+                match document.mode {
+                    preview::Mode::Preview if look == Some(preview::Look::Markdown) => {
+                        document.preview_focus.focus(window, cx)
+                    }
+                    _ => document
+                        .state
+                        .update(cx, |state, cx| state.focus(window, cx)),
+                }
             }
         });
     }
@@ -395,10 +418,38 @@ pub fn pane(
         })
         .map(|pane| match (document.mode, document.rendered.as_ref()) {
             (preview::Mode::Preview, Some(Rendered::Markdown(markdown))) => {
-                pane.child(div().flex_1().min_h_0().child(preview::Body {
-                    path: path.clone(),
-                    markdown: markdown.clone(),
-                }))
+                let finding = document.finding.as_ref();
+                if finding.is_some_and(preview::Finding::revealing) {
+                    let (this, key) = (this.clone(), key.clone());
+                    window.on_next_frame(move |_, cx| {
+                        this.update(cx, |bench, cx| preview::reveal(bench, &key, cx))
+                    });
+                }
+                let find = {
+                    let key = key.clone();
+                    window.listener_for(
+                        &this,
+                        move |bench, _: &preview::FindInPreview, window, cx| {
+                            preview::open_find(bench, &key, window, cx)
+                        },
+                    )
+                };
+                pane.child(
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_h_0()
+                        .key_context(preview::CONTEXT)
+                        .on_action(find)
+                        .child(preview::Body {
+                            path: path.clone(),
+                            markdown: markdown.clone(),
+                            found: finding.and_then(preview::Finding::found),
+                            scroll: document.preview_scroll.clone(),
+                            focus: document.preview_focus.clone(),
+                        })
+                        .children(finding.map(|finding| preview::bar(&this, &key, finding, cx))),
+                )
             }
             (preview::Mode::Preview, Some(Rendered::Diagram(diagram))) => pane.child(
                 div().flex_1().min_h_0().child(
@@ -987,6 +1038,9 @@ fn open(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
             next_match: None,
             mode: preview::first_mode(&key.path),
             rendered: None,
+            finding: None,
+            preview_focus: cx.focus_handle(),
+            preview_scroll: ScrollHandle::new(),
             gutter: gutter::Gutter::default(),
             blame: blame::Blame::default(),
             _changes: changes,
@@ -1175,6 +1229,7 @@ fn read(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
                     if document.mode == preview::Mode::Preview {
                         let text = document.saved.clone();
                         show_rendered(document, &key, &text, cx);
+                        preview::refind(document, cx);
                     }
                     lsp::changed(document, &asks, cx);
                 }
@@ -1559,6 +1614,10 @@ fn show_mode(
             let text = document.state.read(cx).value();
             show_rendered(document, key, &text, cx);
             document.goto = None;
+            preview::refind(document, cx);
+            if document.markdown().is_some() {
+                document.preview_focus.focus(window, cx);
+            }
         }
         preview::Mode::Source => document
             .state
