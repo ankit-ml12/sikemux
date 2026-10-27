@@ -321,6 +321,76 @@ impl World {
         })
     }
 
+    /// A year of work in `path` for the activity calendar: busier on weekdays and lately.
+    fn seed_activity(&self, path: &Path) -> anyhow::Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis() as i64;
+        let day = 86_400_000i64;
+        let mut seed = 11u32;
+        let mut random = move || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 8) as f64 / (1u32 << 24) as f64
+        };
+        let place = path.to_string_lossy().replace('\'', "''");
+        let mut sql = String::from(
+            "CREATE TABLE IF NOT EXISTS launches (at_ms INTEGER NOT NULL, agent TEXT NOT NULL, \
+             project TEXT NOT NULL, transport TEXT NOT NULL, resumed INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS turns (started_ms INTEGER NOT NULL, ended_ms INTEGER NOT NULL, \
+             agent TEXT NOT NULL, project TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS commits (sha TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, \
+             project TEXT NOT NULL, agent TEXT);
+             CREATE TABLE IF NOT EXISTS tokens (at_ms INTEGER NOT NULL, agent TEXT NOT NULL, \
+             project TEXT NOT NULL, input INTEGER NOT NULL, output INTEGER NOT NULL, \
+             cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL);
+             BEGIN;\n",
+        );
+        for back in 0..365i64 {
+            let weekday = (now / day - back + 4).rem_euclid(7) < 5;
+            let lately = 1. - back as f64 / 500.;
+            if random() > if weekday { 0.9 } else { 0.4 } * lately {
+                continue;
+            }
+            let at = now - back * day - (random() * 8. * 3_600_000.) as i64;
+            let busy = lately * (0.3 + random());
+            for turn in 0..(2. + busy * 14.) as i64 {
+                let started = at + turn * 1_200_000;
+                sql += &format!(
+                    "INSERT INTO turns VALUES ({started}, {}, 'claude', '{place}');\n",
+                    started + (busy * 900_000.) as i64 + 60_000,
+                );
+            }
+            sql += &format!(
+                "INSERT INTO tokens (at_ms, agent, project, input, output, cache_read, cache_write) \
+                 VALUES ({at}, 'claude', '{place}', {}, {}, 0, {});\n",
+                (busy * 900_000.) as i64,
+                (busy * 300_000.) as i64,
+                (busy * 1_500_000.) as i64,
+            );
+            for commit in 0..(busy * 6.) as i64 {
+                sql += &format!(
+                    "INSERT OR IGNORE INTO commits VALUES ('{back:x}{commit:x}', {}, '{place}', 'claude');\n",
+                    at + commit * 600_000,
+                );
+            }
+        }
+        sql += "COMMIT;\n";
+        let mut sqlite = sikemux_process::user_environment::command("sqlite3")
+            .arg(self.work.join("data").join("activity.sqlite3"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()?;
+        sqlite
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow!("sqlite3 took no input"))?
+            .write_all(sql.as_bytes())?;
+        if !sqlite.wait()?.success() {
+            bail!("could not seed the activity calendar");
+        }
+        Ok(())
+    }
+
     /// Fills the first project's rail and strip the way a working day leaves them: agents
     /// with their titles and teammates, some still working and some done and unread, chats
     /// closed earlier among the recent ones and one of them pinned, and tabs of other kinds.
@@ -355,6 +425,7 @@ impl World {
                 pinned.push(format!("claude:{session}"));
             }
         }
+        self.seed_activity(path)?;
         let mut named = std::collections::HashMap::new();
         let agents: Vec<&Value> = world["agents"].as_array().into_iter().flatten().collect();
         for agent in &agents {

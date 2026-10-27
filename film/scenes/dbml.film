@@ -5,7 +5,7 @@ project shop shop
 chat Wren
 settle 6
 cursor 1200,700
-zoom 771,850 2.15 0.1
+zoom 760,610 1.45 0.1
 record
 wait 0.2
 move 600,768 0.7
