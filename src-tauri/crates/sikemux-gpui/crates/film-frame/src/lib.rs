@@ -134,7 +134,7 @@ impl Compositor {
                 }
             }
             gaussian(&mut alpha, size.0, size.1, blur * d / 2.);
-            for (pixel, alpha) in shadowed.chunks_exact_mut(4).zip(&alpha) {
+            for (pixel, alpha) in shadowed.as_chunks_mut::<4>().0.iter_mut().zip(&alpha) {
                 let keep = 1. - alpha * strength;
                 for channel in &mut pixel[..3] {
                     *channel = (*channel as f32 * keep).round() as u8;
@@ -303,7 +303,12 @@ impl Compositor {
                 for (y, line) in lockup.as_raw().chunks_exact(w * 4).enumerate() {
                     let start = ((top + y) * self.size.0 + left) * 4;
                     let target = &mut self.canvas[start..start + w * 4];
-                    for (pixel, source) in target.chunks_exact_mut(4).zip(line.chunks_exact(4)) {
+                    for (pixel, source) in target
+                        .as_chunks_mut::<4>()
+                        .0
+                        .iter_mut()
+                        .zip(line.as_chunks::<4>().0)
+                    {
                         let cover = source[3] as f32 / 255. * card;
                         for channel in 0..3 {
                             let under = pixel[channel] as f32;
@@ -500,7 +505,7 @@ fn wallpaper(path: Option<&Path>, size: (usize, usize)) -> Vec<u8> {
     for (y, line) in pixels.chunks_exact_mut(size.0 * 4).enumerate() {
         let t = y as f32 / size.1 as f32;
         let colour = [11. + 18. * t, 10. + 12. * t, 16. + 30. * t];
-        for pixel in line.chunks_exact_mut(4) {
+        for pixel in line.as_chunks_mut::<4>().0 {
             for channel in 0..3 {
                 pixel[channel] = colour[channel] as u8;
             }
@@ -524,7 +529,9 @@ fn draw_pointer(shape: Shape, size: f32) -> Art {
     let (w, h) = (width as usize, height as usize);
     let art = pixmap.data();
     let mut shadow: Vec<f32> = art
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|pixel| pixel[3] as f32 / 255.)
         .collect();
     gaussian(&mut shadow, w, h, size);
@@ -541,9 +548,7 @@ fn draw_pointer(shape: Shape, size: f32) -> Art {
             let source = &art[at * 4..at * 4 + 4];
             let alpha = source[3] as f32 / 255.;
             let out = &mut pixels[at * 4..at * 4 + 4];
-            for channel in 0..3 {
-                out[channel] = source[channel];
-            }
+            out[..3].copy_from_slice(&source[..3]);
             out[3] = ((alpha + under * (1. - alpha)) * 255.).round() as u8;
         }
     }

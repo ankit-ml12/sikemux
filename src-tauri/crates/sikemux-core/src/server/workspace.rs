@@ -2257,7 +2257,7 @@ fn agents_closed(core: &Core, before: HashSet<String>) {
             .map(|agent_id| super::drafts::chat_key(agent_id)),
     );
     if !forgotten.is_empty() {
-        super::drafts::changed(&core, forgotten);
+        super::drafts::changed(core, forgotten);
     }
     core.names.settle(core.open_agents());
 }

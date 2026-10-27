@@ -1170,7 +1170,7 @@ pub(crate) async fn work_on(core: &Arc<Core>, params: WorkOnParams) -> Answer {
     if let Err(error) = core.drafts.set(&key, String::new(), Some(extra)) {
         return failed(&error.to_string());
     }
-    super::drafts::changed(&core, vec![key]);
+    super::drafts::changed(core, vec![key]);
     let tab = json!({ "project": project.id, "kind": "agent", "target": agent_id });
     if let Ok(tab) = serde_json::from_value(tab) {
         let _ = super::layout::open_tab(core, tab);

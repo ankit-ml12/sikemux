@@ -90,7 +90,7 @@ pub(crate) fn thumbnail(path: &Path, max_edge: u32) -> Option<String> {
         "sikemux-thumbnail-{}.jpg",
         uuid::Uuid::new_v4().simple()
     ));
-    let scaled = std::process::Command::new("/usr/bin/sips")
+    let scaled = sikemux_process::user_environment::command("/usr/bin/sips")
         .args(["-s", "format", "jpeg", "-s", "formatOptions", "80", "-Z"])
         .arg(max_edge.clamp(16, 2048).to_string())
         .arg(path)

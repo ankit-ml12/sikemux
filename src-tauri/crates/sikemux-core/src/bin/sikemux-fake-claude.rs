@@ -395,7 +395,10 @@ impl Claude {
             let (kind, said) = match (step["think"].as_str(), step["say"].as_str()) {
                 (Some(thought), _) => ("thinking", thought.to_owned()),
                 (_, Some(said)) => ("text", said.to_owned()),
-                _ => ("text", script_file(step["say_file"].as_str().unwrap_or_default())),
+                _ => (
+                    "text",
+                    script_file(step["say_file"].as_str().unwrap_or_default()),
+                ),
             };
             self.send(json!({
                 "type": "stream_event", "parent_tool_use_id": null,

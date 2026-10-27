@@ -405,7 +405,12 @@ impl Workbench {
             return;
         };
         self.seen_stash_at(&at);
-        let _ = crate::core::request(&self.asks, "seeStash", json!({ "at": at }));
+        // The ask is sent at once; the future only waits for an answer nobody needs.
+        drop(crate::core::request(
+            &self.asks,
+            "seeStash",
+            json!({ "at": at }),
+        ));
     }
 
     /// Opens the Stash's pane in the strip in front, and marks the stash seen.

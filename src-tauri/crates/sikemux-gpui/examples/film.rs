@@ -34,7 +34,7 @@ use std::cell::RefCell;
 use std::io::Write;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -229,7 +229,7 @@ impl World {
         let socket = work.join("core.sock");
         let _ = std::fs::remove_file(&socket);
         let log = std::fs::File::create(work.join("core.log"))?;
-        let mut command = Command::new(&args.core);
+        let mut command = sikemux_process::user_environment::command(&args.core);
         command
             .arg("core")
             .arg("--socket")
@@ -310,7 +310,7 @@ impl World {
                 let from = self.scenes.join(step.text(1)?);
                 let path = self.work.join("projects").join(&name);
                 std::fs::create_dir_all(path.parent().unwrap_or(&self.work))?;
-                let copied = Command::new("cp")
+                let copied = sikemux_process::user_environment::command("cp")
                     .arg("-R")
                     .arg(&from)
                     .arg(&path)
@@ -319,7 +319,7 @@ impl World {
                     bail!("could not copy {}", from.display());
                 }
                 let git = |words: &[&str]| -> anyhow::Result<()> {
-                    let done = Command::new("git")
+                    let done = sikemux_process::user_environment::command("git")
                         .args(["-c", "user.name=edon", "-c", "user.email=edon@acme.dev"])
                         .args(words)
                         .current_dir(&path)
@@ -789,7 +789,7 @@ impl Director {
             }
         }
         self.recorded += 1;
-        if self.recorded % 60 == 0 {
+        if self.recorded.is_multiple_of(60) {
             let each = |spent: Duration| spent.as_secs_f64() * 1000. / self.recorded as f64;
             println!(
                 "film: {:.1} s filmed, {:.0} ms a frame: app {:.0}, reading {:.0}, framing {:.0}, encoding {:.0}",
@@ -810,12 +810,11 @@ impl Director {
     }
 }
 
+/// A box on screen: left, top, width and height.
+type Rect = (f32, f32, f32, f32);
+
 impl Director {
-    fn place(
-        &mut self,
-        step: &Step,
-        at: usize,
-    ) -> anyhow::Result<((f32, f32), Option<(f32, f32, f32, f32)>)> {
+    fn place(&mut self, step: &Step, at: usize) -> anyhow::Result<((f32, f32), Option<Rect>)> {
         let word = step
             .words
             .get(at)
@@ -1103,7 +1102,7 @@ impl Director {
                 } else {
                     let (centre, rect) = self.place(step, 0)?;
                     let (view, duration) =
-                        match (rect, step.words.get(0).is_some_and(|word| word.quoted)) {
+                        match (rect, step.words.first().is_some_and(|word| word.quoted)) {
                             (Some(rect), false) => {
                                 let pad = 48.;
                                 let fit = (self.stage.0 / (rect.2 + pad * 2.))
@@ -1259,7 +1258,7 @@ fn main() -> anyhow::Result<()> {
         }
         None => {
             let partial = args.out.with_extension("partial.mp4");
-            let mut ffmpeg = Command::new("ffmpeg")
+            let mut ffmpeg = sikemux_process::user_environment::command("ffmpeg")
                 .args([
                     "-y",
                     "-loglevel",
