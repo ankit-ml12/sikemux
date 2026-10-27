@@ -278,7 +278,7 @@ function builtIn(tool, args, { state, pages, agents, project, fixture, previewPr
     case 'who_wrote':
       return { value: { target: 'file', path: args.target, commits: [], owners: [{ kind: 'person', name: 'the person', action: 'ask the person' }], note: '' } };
     case 'git_commit':
-      return commit(project, args);
+      return commit(project, args, fixture.yours ?? {});
     case 'ask':
       return {
         value: {
@@ -321,18 +321,33 @@ function builtIn(tool, args, { state, pages, agents, project, fixture, previewPr
 }
 
 // Commits for real in the case's repo, so an agent that checks the result finds the commit it was told about.
-function commit(repo, args) {
+function commit(repo, args, yours) {
   if (/co-authored-by:[^\n]*claude/i.test(args.message ?? '')) {
     return { error: "Nothing was committed: leave out the Co-Authored-By trailer naming Claude. Sikemux's footer credits the agent already." };
   }
   const git = (...words) => execFileSync('/usr/bin/git', words, { cwd: repo, env: { ...AUTHOR, PATH: BASE_PATH }, encoding: 'utf8' });
   const paths = (args.paths ?? []).map((path) => (path.startsWith(`${repo}/`) ? path.slice(repo.length + 1) : path));
-  const changed = git('status', '--porcelain', '--', ...paths).trim();
+  const own = (path) => yours[path] !== undefined;
+  const committed = (path) => {
+    try {
+      return git('show', `HEAD:${path}`);
+    } catch {
+      return null;
+    }
+  };
+  const changed = paths.some(own)
+    ? paths.filter((path) => !own(path) || committed(path) !== yours[path]).join(' ')
+    : git('status', '--porcelain', '--', ...paths).trim();
   if (!changed) {
     if (args.land && !args.message) return { value: { landed: true, branch: 'refs/heads/main', commits: [] } };
     return { error: paths.length ? `Nothing was committed: ${paths.join(', ')} ${paths.length === 1 ? 'has' : 'have'} nothing uncommitted in ${repo}.` : 'None of the uncommitted lines here are yours' };
   }
-  git('add', '--', ...(paths.length ? paths : ['.']));
+  const plain = paths.filter((path) => !own(path));
+  if (plain.length || !paths.length) git('add', '--', ...(paths.length ? plain : ['.']));
+  for (const path of paths.filter(own)) {
+    const blob = execFileSync('/usr/bin/git', ['hash-object', '-w', '--stdin'], { cwd: repo, input: yours[path], encoding: 'utf8' }).trim();
+    git('update-index', '--add', '--cacheinfo', `100644,${blob},${path}`);
+  }
   git('commit', '-q', '-m', args.message || 'Update');
   const files = git('show', '--numstat', '--format=', 'HEAD')
     .split('\n')

@@ -18,7 +18,7 @@ Each case runs the agent CLI (`claude -p`, or OMP for DeepSeek) in a temporary h
 `cases/*.json` hold arrays of cases:
 
 - `prompt`: what the agent is told.
-- `fixture`: `project` (`sikemux` or `work`), `files`, `commits`, `dirty`, `remote` and `branches` for the repo, `instructions` added to its AGENTS.md, `tab`, `tabs` and `pages` for the desk browser, `agents` beside it, `answers` (rules of `tool`, optional `args`, `reply` or `error` where `{{arg}}` stands for an argument of the call, optional `times`) for any tool, `shell` rules for shimmed commands, `rivals` and `plugins`.
+- `fixture`: `project` (`sikemux` or `work`), `files`, `commits`, `dirty`, `remote` and `branches` for the repo, `yours` for a file as git_commit would commit it when other agents' uncommitted lines share it, `instructions` added to its AGENTS.md, `tab`, `tabs` and `pages` for the desk browser, `agents` beside it, `answers` (rules of `tool`, optional `args`, `reply` or `error` where `{{arg}}` stands for an argument of the call, optional `times`) for any tool, `shell` rules for shimmed commands, `rivals` and `plugins`.
 - `grade`: `expect` (calls that must happen, in `order` if set), `forbid`, `limit`, `first`, `reply`, `files` (what the repo must hold afterwards: `path` with `match`, or `absent`), and `allow` to lift one of the checks every case gets: no Atlassian MCP, no Claude browser, no SendMessage, no raw `git commit` or `git add -A`, no sleeping, and no two calls at once on the simulator or on a file being written. Browser calls batched on one tab are fine: the server runs them in order.
 - `judge`: a rubric for a judge model, for what calls alone cannot show.
 - `skip`: why a case cannot be replayed.
