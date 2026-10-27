@@ -138,6 +138,31 @@ impl Label {
     }
 }
 
+/// A group's rows under its label, folding open and shut as the label is pressed.
+fn folding(key: &str, folded: bool, rows: Vec<AnyElement>) -> AnyElement {
+    let key = key.to_owned();
+    motion::with_window(move |window, cx| {
+        let shown = motion::follow(
+            SharedString::from(format!("live-fold:{key}")),
+            if folded { 0. } else { 1. },
+            if folded {
+                motion::FOLD_AWAY
+            } else {
+                motion::UNFOLD
+            },
+            window,
+            cx,
+        );
+        if shown <= 0. {
+            return div().into_any_element();
+        }
+        let rows = div().flex().flex_col().children(rows);
+        let id = SharedString::from(format!("live-rows:{key}"));
+        motion::folded(id, shown, rows, window, cx)
+    })
+    .into_any_element()
+}
+
 fn plural(word: &str, count: usize) -> String {
     if count == 1 {
         word.to_owned()
@@ -297,7 +322,7 @@ pub fn subagents(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> 
             .flex()
             .flex_col()
             .child(label)
-            .when(!folded, |group| group.children(rows))
+            .child(folding("subagent", folded, rows.collect()))
             .into_any_element(),
     )
 }
@@ -360,6 +385,7 @@ pub fn tasks(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Vec<
         .map(|(kind, group)| {
             let key = format!("task:{kind}");
             let folded = chat.groups_folded.contains(&key);
+            let fold_key = key.clone();
             let label = Label {
                 word: plural(kind, group.len()),
                 count: group.len(),
@@ -437,7 +463,7 @@ pub fn tasks(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Vec<
                 .flex()
                 .flex_col()
                 .child(label)
-                .when(!folded, |group| group.children(rows))
+                .child(folding(&fold_key, folded, rows))
                 .into_any_element()
         })
         .collect()

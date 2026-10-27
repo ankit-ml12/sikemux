@@ -119,6 +119,10 @@ pub const FOLD_AWAY: Ease = Ease::new(140, Curve::Bezier(0.4, 0., 1., 1.));
 /// clock settles on how long it took.
 pub const TEXT_SWAP: Ease = Ease::new(140, Curve::OUT);
 
+/// A small control coming up over what it floats on, and going again, as the way back to a
+/// chat's latest message.
+pub const POP_UP: Ease = Ease::new(150, Curve::OUT);
+
 /// The angle of a fold's chevron, open or shut.
 pub fn fold_angle(open: bool) -> f32 {
     if open {

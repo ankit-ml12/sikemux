@@ -531,6 +531,7 @@ pub struct Chat {
 #[derive(Clone)]
 enum Waiting {
     Questions(Vec<Question>),
+    Answered(Vec<Question>),
     Permission(Box<PermissionAsk>),
 }
 
@@ -1857,36 +1858,50 @@ pub fn pane(
                 .map(|(row, part, nth)| (row.as_str(), part.as_str(), *nth));
             find::bar(&agent.id, finding, found, local, cx)
         }))
-        .children(chat.transcript.read(cx).away().then(|| {
+        .child({
+            let away = chat.transcript.read(cx).away();
             let latest = cx.listener({
                 let agent = agent.id.clone();
                 move |bench, _, _, cx| bench.show_latest(&agent, cx)
             });
-            div()
-                .absolute()
-                .bottom(px(8.))
-                .left_0()
-                .right_0()
-                .flex()
-                .justify_center()
-                .child(
+            let (line, ground) = (Tokens::get(cx).line, Tokens::get(cx).surface_composer);
+            motion::animated(
+                "chat-latest-shown",
+                if away { 1. } else { 0. },
+                motion::POP_UP,
+                move |shown| {
+                    if shown <= 0. {
+                        return div().into_any_element();
+                    }
                     div()
-                        .rounded(theme::RADIUS_2)
-                        .border_1()
-                        .border_color(Tokens::get(cx).line)
-                        .bg(Tokens::get(cx).surface_composer)
-                        .shadow_md()
+                        .absolute()
+                        .bottom(px(8. - LATEST_RISE * (1. - shown)))
+                        .left_0()
+                        .right_0()
+                        .flex()
+                        .justify_center()
+                        .opacity(shown)
                         .child(
-                            IconButton::new(
-                                "chat-latest",
-                                Icon::ArrowDown,
-                                "Jump to latest message",
-                            )
-                            .glyph(14.)
-                            .on_click(latest),
-                        ),
-                )
-        }))
+                            div()
+                                .rounded(theme::RADIUS_2)
+                                .border_1()
+                                .border_color(line)
+                                .bg(ground)
+                                .shadow_md()
+                                .child(
+                                    IconButton::new(
+                                        "chat-latest",
+                                        Icon::ArrowDown,
+                                        "Jump to latest message",
+                                    )
+                                    .glyph(14.)
+                                    .on_click(latest),
+                                ),
+                        )
+                        .into_any_element()
+                },
+            )
+        })
         .children(welcome.map(|welcome| crate::home::centred(welcome).absolute().inset_0()));
     let open: Vec<&Question> = bench
         .questions
@@ -1908,6 +1923,18 @@ pub fn pane(
         let asked = open.iter().map(|question| (*question).clone()).collect();
         waiting.push(("questions".into(), Waiting::Questions(asked)));
     }
+    let answered: Vec<&Question> = bench
+        .questions
+        .iter()
+        .filter(|question| question.of(&agent.id, "answered"))
+        .collect();
+    if !answered.is_empty() {
+        let sent = answered
+            .iter()
+            .map(|question| (*question).clone())
+            .collect();
+        waiting.push(("answered".into(), Waiting::Answered(sent)));
+    }
     let lasting = motion::CARD_ARRIVAL
         .lasts()
         .max(motion::CARD_DEPARTURE.close.duration);
@@ -1928,12 +1955,21 @@ pub fn pane(
         })
         .collect();
     let mut asking = questions(&agent.id, chat, &open, cx).map(|card| comes_in("questions", card));
+    let mut sending =
+        waiting_answers(&agent.id, &answered, cx).map(|card| comes_in("answered", card));
     for gone in left {
         let card = match &gone.item {
             Waiting::Permission(ask) => permission(&agent.id, ask, true, cx).into_any_element(),
             Waiting::Questions(asked) => {
                 let asked: Vec<&Question> = asked.iter().collect();
                 match questions(&agent.id, chat, &asked, cx) {
+                    Some(card) => card,
+                    None => continue,
+                }
+            }
+            Waiting::Answered(sent) => {
+                let sent: Vec<&Question> = sent.iter().collect();
+                match waiting_answers(&agent.id, &sent, cx) {
                     Some(card) => card,
                     None => continue,
                 }
@@ -1945,18 +1981,14 @@ pub fn pane(
         match gone.item {
             Waiting::Permission(_) => permissions.insert(gone.at.min(permissions.len()), card),
             Waiting::Questions(_) => asking = asking.or(Some(card)),
+            Waiting::Answered(_) => sending = sending.or(Some(card)),
         }
     }
     drop(seen);
-    let answered: Vec<&Question> = bench
-        .questions
-        .iter()
-        .filter(|question| question.of(&agent.id, "answered"))
-        .collect();
     let mut groups: Vec<AnyElement> = asking.into_iter().collect();
     groups.extend(live::subagents(agent, chat, cx));
     groups.extend(live::tasks(agent, chat, cx));
-    groups.extend(waiting_answers(&agent.id, &answered, cx));
+    groups.extend(sending);
     groups.extend(live::queued(&agent.id, chat, cx));
     let stack = live::stack(groups, Tokens::get(cx));
     let covered = stack.is_some();
@@ -4134,6 +4166,9 @@ fn row(
         false => motion::folded(key, work_shown, drawn, window, cx),
     }
 }
+
+/// How far below its place the way back to the latest message starts as it comes up.
+const LATEST_RISE: f32 = 6.;
 
 /// The gap between a message's parts.
 const PART_GAP: f32 = 10.;
