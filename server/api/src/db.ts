@@ -135,6 +135,22 @@ export interface Tables {
     ended_reason: ColumnType<string | null, never, string | null>;
     viewer_check: string | null;
   };
+  stash_items: {
+    id: string;
+    user_id: string;
+    kind: string;
+    url: string | null;
+    text: string | null;
+    note: string | null;
+    name: string | null;
+    mime: string | null;
+    size: ColumnType<string | null, number | null, never>;
+    preview: ColumnType<unknown, string | null, string | null>;
+    target: ColumnType<unknown, string | null, never>;
+    from_device: string | null;
+    created_at: CreatedAt;
+    taken_at: ColumnType<Date | null, never, Date | null>;
+  };
   audit: {
     id: Generated<string>;
     user_id: string | null;
