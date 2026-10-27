@@ -867,29 +867,23 @@ fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div 
         .text_color(t.text_primary)
         .font_weight(FontWeight::MEDIUM)
         .child(author.clone());
-    let labels = pull.labels.iter().map(|label| super::label_chip(label, cx));
+    let doing = match found.state {
+        PullState::Merged => "merged into",
+        _ => "wants to merge into",
+    };
     let meta = line()
         .child(state_pill(found.state, cx))
         .child(ui::mono(format!("#{}", pull.number), 11.5, cx).text_color(t.text_tertiary))
         .child(dot())
-        .child(who);
-    let meta = match narrow {
-        true => meta.child(dot()).child(ago(&pull.updated_at)),
-        false => meta
-            .child(match found.state {
-                PullState::Merged => "merged into",
-                _ => "wants to merge into",
-            })
-            .child(branches())
-            .child(dot())
-            .child(ago(&pull.updated_at))
-            .children(labels.collect::<Vec<_>>()),
-    };
-    let under = narrow.then(|| {
-        line()
-            .child(branches())
-            .children(pull.labels.iter().map(|label| super::label_chip(label, cx)))
-    });
+        .child(who)
+        .map(|meta| match narrow {
+            true => meta.child(dot()),
+            false => meta.child(doing),
+        })
+        .child(branches())
+        .child(dot())
+        .child(ago(&pull.updated_at))
+        .children(pull.labels.iter().map(|label| super::label_chip(label, cx)));
     let back = area.desk.is_none().then(|| {
         let at = div().h(px(AVATAR)).flex().items_center().child(back(cx));
         match narrow {
@@ -917,8 +911,7 @@ fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div 
                             .whitespace_normal()
                             .text_color(t.text_primary),
                     )
-                    .child(meta)
-                    .children(under),
+                    .child(meta),
             )
             .child(
                 IconButton::new("pull-open-host", Icon::Globe, format!("Open on {host}"))
