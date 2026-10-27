@@ -400,7 +400,7 @@ fn explain(failure: &Failure) -> String {
         || matches!(failure.status, Some(401 | 403));
     if signed_out {
         format!(
-            "{} is not signed in ({}). Ask the person to sign in from its pane in Sikemux, then try again.",
+            "{} is not signed in ({}). Ask the person to sign in from its pane in Sikemux, then try again; do not switch to another tool or MCP server for it.",
             failure.plugin, failure.message
         )
     } else {
