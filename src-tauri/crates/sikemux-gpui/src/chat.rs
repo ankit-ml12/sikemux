@@ -1774,6 +1774,9 @@ pub fn connection_note(
     status::connection_note(agent, chat, resumes, cx)
 }
 
+/// How deep the transcript fades out as rows scroll up under the pane's header.
+const TOP_FADE: f32 = 16.;
+
 pub fn pane(
     bench: &Workbench,
     agent: &AgentRow,
@@ -1844,9 +1847,14 @@ pub fn pane(
         .min_h_0()
         .relative()
         .child(
-            chat.transcript
-                .clone()
-                .cached(StyleRefinement::default().size_full()),
+            div()
+                .size_full()
+                .fade_edges(px(TOP_FADE), px(0.))
+                .child(
+                    chat.transcript
+                        .clone()
+                        .cached(StyleRefinement::default().size_full()),
+                ),
         )
         .children(scrollbar)
         .children(chat.finding.as_ref().map(|finding| {
