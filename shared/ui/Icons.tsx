@@ -324,6 +324,12 @@ export const IconFile = makeSvgIcon(
         <path d="M8.8 1.9v3.3h3.3" />
     </>,
 );
+export const IconTable = makeSvgIcon(
+    <>
+        <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+        <path d="M2 6.2h12M2 9.9h12M6.4 6.2v7.3" />
+    </>,
+);
 export const IconClose = makeSvgIcon(<path d="M4 4l8 8M12 4l-8 8" />);
 export const IconArrowUp = makeSvgIcon(<path d="M8 12.6V3.4M4.2 7.2 8 3.4l3.8 3.8" />);
 export const IconArrowDown = makeSvgIcon(<path d="M8 3.4v9.2M4.2 8.8 8 12.6l3.8-3.8" />);

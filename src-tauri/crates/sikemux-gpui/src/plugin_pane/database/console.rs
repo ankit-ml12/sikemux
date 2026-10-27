@@ -27,10 +27,14 @@ const NUMBER_WIDTH: f32 = 44.;
 const ROW_HEIGHT: f32 = 24.;
 const SQL_LINE_HEIGHT: f32 = 18.;
 const SQL_ROWS: (usize, usize) = (6, 16);
+/// A table's data needs room for rows more than for SQL, so its query starts one line high.
+const TABLE_SQL_ROWS: (usize, usize) = (1, 16);
 
 /// One console's SQL and what its last run gave.
 pub(super) struct Console {
+    connection: String,
     sql: Entity<EditorState>,
+    sql_rows: (usize, usize),
     limit: u32,
     /// Names the run going now, so Stop reaches it and not another console's.
     running: Option<String>,
@@ -43,7 +47,13 @@ pub(super) struct Console {
 }
 
 impl Console {
-    pub(super) fn new(key: String, window: &mut Window, cx: &mut Context<PluginPane>) -> Self {
+    pub(super) fn new(
+        key: String,
+        connection: String,
+        table: bool,
+        window: &mut Window,
+        cx: &mut Context<PluginPane>,
+    ) -> Self {
         let sql = cx.new(|cx| {
             let mut state = EditorState::new(window, cx)
                 .language("sql")
@@ -67,7 +77,9 @@ impl Console {
         })
         .detach();
         Self {
+            connection,
             sql,
+            sql_rows: if table { TABLE_SQL_ROWS } else { SQL_ROWS },
             limit: ROW_LIMIT,
             running: None,
             outcome: None,
@@ -83,11 +95,6 @@ impl Console {
             editor.set_value(sql.to_owned(), window, cx)
         });
     }
-}
-
-/// The connection a console's key names: `<connection>/<number>`.
-fn connection_of(key: &str) -> &str {
-    key.rsplit_once('/').map_or(key, |(id, _)| id)
 }
 
 /// Runs the console's SQL on its database. A run already going is left alone rather than
@@ -114,7 +121,7 @@ pub(super) fn run(
     console.error = None;
     let call = host.call(
         "query",
-        json!({ "id": connection_of(key), "sql": sql, "limit": console.limit, "run": run }),
+        json!({ "id": console.connection, "sql": sql, "limit": console.limit, "run": run }),
     );
     let key = key.to_owned();
     after::<Database, _>(
@@ -145,14 +152,14 @@ pub(super) fn run(
 }
 
 fn stop(database: &Database, host: &Host, key: &str, cx: &mut Context<PluginPane>) {
-    let Some(run) = database
+    let Some((connection, run)) = database
         .consoles
         .get(key)
-        .and_then(|console| console.running.clone())
+        .and_then(|console| Some((console.connection.clone(), console.running.clone()?)))
     else {
         return;
     };
-    let call = host.call("cancel", json!({ "id": connection_of(key), "run": run }));
+    let call = host.call("cancel", json!({ "id": connection, "run": run }));
     after::<Database, _>(
         call,
         |_, host, done, cx| {
@@ -168,6 +175,7 @@ pub(super) fn page(
     database: &Database,
     key: &str,
     connection: &Connection,
+    lead: Option<AnyElement>,
     host: &Host,
     cx: &mut Context<PluginPane>,
 ) -> AnyElement {
@@ -208,6 +216,7 @@ pub(super) fn page(
         .flex()
         .items_center()
         .gap(px(8.))
+        .children(lead)
         .child(
             ui::text(connection.name.clone(), 12.5, FontWeight::SEMIBOLD)
                 .text_color(t.text_primary),
@@ -240,7 +249,7 @@ pub(super) fn page(
                 move |database, host, _, _, cx| run(database, host, &run_key, cx),
             )),
         );
-    let (fewest, most) = SQL_ROWS;
+    let (fewest, most) = console.sql_rows;
     let rows = console.sql.read(cx).text().lines_len().clamp(fewest, most);
     let editor = div()
         .mx(px(12.))

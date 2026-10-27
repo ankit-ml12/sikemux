@@ -52,8 +52,10 @@ pub struct Database {
     busy: bool,
     /// The connection whose history the person is asked to clear.
     clearing: Option<(String, String)>,
-    /// Each console's SQL and results, by `<connection>/<number>`.
+    /// Each console's SQL and results, by its tab's `console_key`.
     consoles: HashMap<String, console::Console>,
+    /// The table tabs showing the table's columns and keys rather than its rows.
+    structure: HashSet<Tab>,
     /// Runs started, so each is named apart from the others.
     runs: u64,
     /// The connection form, while it shows.
@@ -77,7 +79,7 @@ enum Node {
     Table(String, String, String),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Tab {
     Console {
         id: String,
@@ -106,6 +108,15 @@ impl Tab {
         }
     }
 
+    /// Names the console holding the tab's SQL and results, for a console or a table's data.
+    fn console_key(&self) -> Option<String> {
+        match self {
+            Tab::Console { id, number } => Some(format!("{id}/{number}")),
+            Tab::Table { id, schema, name } => Some(format!("{id}/table/{schema}/{name}")),
+            Tab::History { .. } | Tab::Properties { .. } => None,
+        }
+    }
+
     fn label(&self) -> String {
         match self {
             Tab::Console { number: 1, .. } => "console".into(),
@@ -119,7 +130,7 @@ impl Tab {
     fn icon(&self) -> Icon {
         match self {
             Tab::Console { .. } => Icon::Code,
-            Tab::Table { .. } => Icon::File,
+            Tab::Table { .. } => Icon::Table,
             Tab::History { .. } => Icon::Clock,
             Tab::Properties { .. } => Icon::Settings,
         }
@@ -283,9 +294,10 @@ impl Database {
             return;
         };
         self.tabs.remove(at);
-        if let Tab::Console { id, number } = tab {
-            self.consoles.remove(&format!("{id}/{number}"));
+        if let Some(key) = tab.console_key() {
+            self.consoles.remove(&key);
         }
+        self.structure.remove(tab);
         if self.front.as_ref() == Some(tab) {
             self.front = self
                 .tabs
@@ -373,35 +385,24 @@ impl Database {
     }
 
     /// The console's state, made the first time it shows.
-    fn console(&mut self, key: &str, window: &mut Window, cx: &mut Context<PluginPane>) {
+    fn console(&mut self, key: &str, id: &str, window: &mut Window, cx: &mut Context<PluginPane>) {
         if !self.consoles.contains_key(key) {
-            let console = console::Console::new(key.to_owned(), window, cx);
+            let console = console::Console::new(key.to_owned(), id.to_owned(), false, window, cx);
             self.consoles.insert(key.to_owned(), console);
         }
     }
 
-    /// Puts SQL in a console of the connection, running it when asked.
-    fn query(
-        &mut self,
-        host: &mut Host,
-        id: &str,
-        sql: &str,
-        run: bool,
-        window: &mut Window,
-        cx: &mut Context<PluginPane>,
-    ) {
+    /// Puts SQL in a console of the connection, to run when the person is ready.
+    fn query(&mut self, id: &str, sql: &str, window: &mut Window, cx: &mut Context<PluginPane>) {
         let tab = self.console_for(id);
         let Tab::Console { number, .. } = &tab else {
             return;
         };
         let key = format!("{id}/{number}");
         self.show(tab.clone());
-        self.console(&key, window, cx);
+        self.console(&key, id, window, cx);
         if let Some(console) = self.consoles.get(&key) {
             console.load(sql, window, cx);
-        }
-        if run {
-            console::run(self, host, &key, cx);
         }
     }
 
@@ -550,7 +551,11 @@ impl Database {
                 cx.notify();
             },
         ))
-        .context_menu(ui::menu(connection_menu(connection, nested, cx.weak_entity())));
+        .context_menu(ui::menu(connection_menu(
+            connection,
+            nested,
+            cx.weak_entity(),
+        )));
         rows.push(row.into_any_element());
         if let Some(failed) = self.failed.get(&id) {
             rows.push(note(1, failed.clone(), true, &t));
@@ -558,7 +563,11 @@ impl Database {
         if !open {
             return;
         }
-        match (&connection.failed, &connection.schemas, &connection.databases) {
+        match (
+            &connection.failed,
+            &connection.schemas,
+            &connection.databases,
+        ) {
             (Some(failed), _, _) => rows.push(note(1, failed.clone().into(), true, &t)),
             (None, Some(schemas), _) => {
                 for schema in schemas {
@@ -571,8 +580,7 @@ impl Database {
                     self.connection_rows(database, words, true, &mut nested, cx);
                 }
                 rows.extend(
-                    (nested.into_iter())
-                        .map(|row| div().pl(px(14.)).child(row).into_any_element()),
+                    (nested.into_iter()).map(|row| div().pl(px(14.)).child(row).into_any_element()),
                 );
             }
             (None, None, None) => rows.push(note(1, "Loading…".into(), false, &t)),
@@ -699,7 +707,7 @@ impl Database {
         };
         let current = self.front.as_ref() == Some(&tab);
         let icon = match table.kind {
-            TableKind::Table | TableKind::ForeignTable => Icon::File,
+            TableKind::Table | TableKind::ForeignTable => Icon::Table,
             TableKind::View | TableKind::MaterializedView => Icon::Eye,
         };
         let opening = tab.clone();
@@ -707,6 +715,7 @@ impl Database {
         let (name, qualified) = (table.name.clone(), format!("{schema}.{}", table.name));
         let toggled = key.clone();
         let (connection_id, preview) = (id.to_owned(), table.preview.clone());
+        let structure_tab = tab.clone();
         rows.push(
             node(
                 format!("db-table/{id}/{schema}/{}", table.name),
@@ -724,28 +733,30 @@ impl Database {
             }))
             .context_menu(ui::menu(move |popup: PopupMenu, _, _| {
                 let (show, columns) = (tab.clone(), toggled.clone());
-                let (preview_id, preview_sql) = (connection_id.clone(), preview.clone());
+                let structure = structure_tab.clone();
                 let (query_id, query_sql) = (connection_id.clone(), preview.clone());
                 popup
                     .item(
-                        PopupMenuItem::new("Open")
-                            .icon(Icon::File)
+                        PopupMenuItem::new("Open data")
+                            .icon(Icon::Table)
                             .on_click(on(&pane, move |database, _, _, _| {
+                                database.structure.remove(&show);
                                 database.show(show.clone())
                             })),
                     )
                     .item(
-                        PopupMenuItem::new("Preview rows")
-                            .icon(Icon::Eye)
-                            .on_click(on(&pane, move |database, host, window, cx| {
-                                database.query(host, &preview_id, &preview_sql, true, window, cx)
+                        PopupMenuItem::new("Open structure")
+                            .icon(Icon::InfoCircle)
+                            .on_click(on(&pane, move |database, _, _, _| {
+                                database.structure.insert(structure.clone());
+                                database.show(structure.clone())
                             })),
                     )
                     .item(
                         PopupMenuItem::new("Query this table")
                             .icon(Icon::Code)
-                            .on_click(on(&pane, move |database, host, window, cx| {
-                                database.query(host, &query_id, &query_sql, false, window, cx)
+                            .on_click(on(&pane, move |database, _, window, cx| {
+                                database.query(&query_id, &query_sql, window, cx)
                             })),
                     )
                     .item(
@@ -849,7 +860,10 @@ impl Database {
                         cx.notify();
                     },
                 ));
-                div().id(("db-tab-menu", at)).child(tab).context_menu(ui::menu(menu))
+                div()
+                    .id(("db-tab-menu", at))
+                    .child(tab)
+                    .context_menu(ui::menu(menu))
             }))
             .into_any_element()
     }
@@ -879,12 +893,56 @@ impl Database {
             }
             Tab::Console { id, number } => {
                 let key = format!("{id}/{number}");
-                self.console(&key, window, cx);
-                console::page(self, &key, connection, host, cx)
+                self.console(&key, id, window, cx);
+                console::page(self, &key, connection, None, host, cx)
             }
             Tab::Properties { .. } => self.properties(connection, cx),
-            Tab::Table { id, schema, name } => table_page(id, schema, name, host, window, cx),
+            Tab::Table { id, schema, name } => {
+                self.table(&tab, id, schema, name, connection, host, window, cx)
+            }
         }
+    }
+
+    /// A table's rows, read with its preview query as soon as it opens, or its structure.
+    #[allow(clippy::too_many_arguments)]
+    fn table(
+        &mut self,
+        tab: &Tab,
+        id: &str,
+        schema: &str,
+        name: &str,
+        connection: &Connection,
+        host: &mut Host,
+        window: &mut Window,
+        cx: &mut Context<PluginPane>,
+    ) -> AnyElement {
+        let read = host
+            .view(
+                "tableView",
+                json!({ "id": id, "schema": schema, "table": name }),
+                cx,
+            )
+            .read::<TableView>();
+        let info = match read {
+            Ok(None) => return super::loading(cx),
+            Err(failure) => return super::failure(&failure, cx),
+            Ok(Some(info)) => info,
+        };
+        let structure = self.structure.contains(tab);
+        let switch = table_switch(tab, structure, cx);
+        if structure {
+            return table_page(id, &info, switch, cx);
+        }
+        let Some(key) = tab.console_key() else {
+            return super::loading(cx);
+        };
+        if !self.consoles.contains_key(&key) {
+            let console = console::Console::new(key.clone(), id.to_owned(), true, window, cx);
+            console.load(&info.preview, window, cx);
+            self.consoles.insert(key.clone(), console);
+            console::run(self, host, &key, cx);
+        }
+        console::page(self, &key, connection, Some(switch), host, cx)
     }
 
     fn properties(&self, connection: &Connection, cx: &mut Context<PluginPane>) -> AnyElement {
@@ -1142,26 +1200,37 @@ fn welcome(cx: &mut Context<PluginPane>) -> AnyElement {
 }
 
 /// A table's columns, indexes and foreign keys; a foreign key opens the table it points at.
+/// Switches a table tab between its rows and its structure.
+fn table_switch(tab: &Tab, structure: bool, cx: &mut Context<PluginPane>) -> AnyElement {
+    let (pane, picked_tab) = (cx.weak_entity(), tab.clone());
+    let key = tab.console_key().unwrap_or_default();
+    ui::Segmented::words(
+        SharedString::from(format!("db-table-view-{key}")),
+        vec![("Data".into(), None), ("Structure".into(), None)],
+        usize::from(structure),
+    )
+    .on_select(move |picked, _, cx| {
+        let (picked, tab) = (*picked, picked_tab.clone());
+        let _ = pane.update(cx, |pane, cx| {
+            if let Some((database, _)) = pane.parts::<Database>() {
+                if picked == 1 {
+                    database.structure.insert(tab);
+                } else {
+                    database.structure.remove(&tab);
+                }
+            }
+            cx.notify();
+        });
+    })
+    .into_any_element()
+}
+
 fn table_page(
     id: &str,
-    schema: &str,
-    name: &str,
-    host: &mut Host,
-    _: &mut Window,
+    info: &TableView,
+    switch: AnyElement,
     cx: &mut Context<PluginPane>,
 ) -> AnyElement {
-    let read = host
-        .view(
-            "tableView",
-            json!({ "id": id, "schema": schema, "table": name }),
-            cx,
-        )
-        .read::<TableView>();
-    let info = match read {
-        Ok(None) => return super::loading(cx),
-        Err(failure) => return super::failure(&failure, cx),
-        Ok(Some(info)) => info,
-    };
     let t = Tokens::get(cx).clone();
     let heading = |text: &'static str| {
         ui::text(text, 12., FontWeight::SEMIBOLD)
@@ -1281,7 +1350,9 @@ fn table_page(
                                 .text_color(t.text_primary),
                         ),
                 )
-                .children((info.kind != TableKind::Table).then(|| ui::caps(&info.kind_name, cx))),
+                .children((info.kind != TableKind::Table).then(|| ui::caps(&info.kind_name, cx)))
+                .child(div().flex_1())
+                .child(switch),
         )
         .child(heading("Columns"))
         .child(div().flex().flex_col().child(header).children(columns))
@@ -1391,10 +1462,12 @@ fn note(depth: usize, text: SharedString, error: bool, t: &Tokens) -> AnyElement
 
 /// The connection `id` names, or a database on a whole server.
 fn connection_of<'a>(connections: &'a [Connection], id: &str) -> Option<&'a Connection> {
-    connections.iter().find_map(|connection| match connection.id == id {
-        true => Some(connection),
-        false => connection_of(connection.databases.as_deref().unwrap_or_default(), id),
-    })
+    connections
+        .iter()
+        .find_map(|connection| match connection.id == id {
+            true => Some(connection),
+            false => connection_of(connection.databases.as_deref().unwrap_or_default(), id),
+        })
 }
 
 /// A connection's menu; a database on a whole server is edited with the server.
@@ -1424,7 +1497,8 @@ fn connection_menu(
                     }))
             }
         };
-        let (history, properties, fresh, editing) = (id.clone(), id.clone(), id.clone(), id.clone());
+        let (history, properties, fresh, editing) =
+            (id.clone(), id.clone(), id.clone(), id.clone());
         popup
             .item(toggle)
             .item(

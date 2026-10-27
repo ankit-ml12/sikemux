@@ -156,6 +156,7 @@ icons!(
     Steps => "steps",
     Stop => "stop",
     Swipe => "swipe",
+    Table => "table",
     Tabs => "tabs",
     Tap => "tap",
     Terminal => "terminal",

@@ -29,6 +29,7 @@ const DRAWN = {
   agent: [ICONS, "IconAgent"],
   agents: [ICONS, "IconAgents"],
   file: [ICONS, "IconFile"],
+  table: [ICONS, "IconTable"],
   editor: [ICONS, "IconEditor"],
   git: [ICONS, "IconGit"],
   board: [ICONS, "IconBoard"],
