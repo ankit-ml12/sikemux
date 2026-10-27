@@ -50,8 +50,14 @@ pub(super) fn apply(repo: &Path, steps: Steps, before: &str, after: &str) -> Vec
     for (path, step, dirty) in steps.0 {
         let file = repo.join(&path);
         let done = match step {
-            Step::Write(bytes) => std::fs::write(&file, bytes),
-            Step::Delete => std::fs::remove_file(&file),
+            Step::Write(bytes) => file
+                .parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|()| std::fs::write(&file, bytes)),
+            Step::Delete => match std::fs::remove_file(&file) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                done => done,
+            },
             Step::Keep => Ok(()),
         };
         if let Err(error) = done {
