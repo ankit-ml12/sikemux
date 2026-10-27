@@ -28,7 +28,9 @@ pub use floats::{
     card_tooltip, float, menu, menu_button, split_button, tooltip, MenuRow, SplitMenu, FLOAT_INSET,
     PANEL_INSET,
 };
-pub use lists::{close_button, page_tab, page_tabs, Group, Row, Tab, ROW};
+pub use lists::{
+    close_button, gives_way, hover_actions, page_tab, page_tabs, Group, Row, Tab, ROW,
+};
 pub use pane::{pane, plain_pane, PaneHeader, AGENT_INSET};
 pub use select::{marked_select, select, Pick};
 pub use state_mark::status_mark;

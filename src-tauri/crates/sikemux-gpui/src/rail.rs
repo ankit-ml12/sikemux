@@ -172,29 +172,20 @@ fn with_menu(
         .relative()
         .group(HOST_ROW)
         .context_menu(ui::menu(move |popup, window, cx| menu(popup, window, cx)))
-        .child(row)
+        .child(row.hover_padding(HOST_ROW, 32.))
         .child(
-            div()
-                .absolute()
-                .top_0()
-                .bottom_0()
-                .right(px(4.))
-                .flex()
-                .items_center()
-                .opacity(0.)
-                .group_hover(HOST_ROW, |more| more.opacity(1.))
-                .child(
-                    KitButton::new(SharedString::from(format!("{id}-more")))
-                        .ghost()
-                        .compact()
-                        .rounded(RADIUS_2)
-                        .bg(t.surface_hover)
-                        .child(ui::icon(Icon::More, 12.).text_color(t.text_secondary))
-                        .dropdown_menu_with_anchor(
-                            Anchor::TopRight,
-                            ui::menu(move |popup, window, cx| more(popup, window, cx)),
-                        ),
-                ),
+            ui::hover_actions(HOST_ROW).top_0().bottom_0().child(
+                KitButton::new(SharedString::from(format!("{id}-more")))
+                    .ghost()
+                    .compact()
+                    .rounded(RADIUS_2)
+                    .bg(t.surface_hover)
+                    .child(ui::icon(Icon::More, 12.).text_color(t.text_secondary))
+                    .dropdown_menu_with_anchor(
+                        Anchor::TopRight,
+                        ui::menu(move |popup, window, cx| more(popup, window, cx)),
+                    ),
+            ),
         )
         .into_any_element()
 }
@@ -639,15 +630,9 @@ fn project_tree(
     let closable = bench.projects().len() > 1;
     let close = closable.then(|| {
         let project = project.clone();
-        div()
-            .absolute()
+        ui::hover_actions(PROJECT_ROW)
             .top_0()
             .bottom_0()
-            .right(px(4.))
-            .flex()
-            .items_center()
-            .opacity(0.)
-            .group_hover(PROJECT_ROW, |close| close.opacity(1.))
             .child(ui::close_button(
                 SharedString::from(format!("close-project-{}", project.id)),
                 format!("Close {}", project.name),

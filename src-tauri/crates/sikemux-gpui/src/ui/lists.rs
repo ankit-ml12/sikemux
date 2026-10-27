@@ -18,6 +18,27 @@ use crate::theme::{Tokens, RADIUS_2};
 /// The hover group a row puts itself in, for a glyph in it that follows its text.
 pub const ROW: &str = "row";
 
+/// What sits at the end of a row or tab and makes way for the buttons that show there
+/// while the pointer is over `group`.
+pub fn gives_way(group: &'static str, element: impl IntoElement) -> gpui_kit::Div {
+    div()
+        .flex_none()
+        .group_hover(group, |hidden| hidden.opacity(0.))
+        .child(element)
+}
+
+/// The buttons at the trailing edge of a row or tab, shown while the pointer is over `group`
+/// in place of what gives way to them.
+pub fn hover_actions(group: &'static str) -> gpui_kit::Div {
+    div()
+        .absolute()
+        .right(px(4.))
+        .flex()
+        .items_center()
+        .opacity(0.)
+        .group_hover(group, |actions| actions.opacity(1.))
+}
+
 /// The rails' row: a mark in its slot, a title, a line under it when it has one,
 /// then whatever it adds as children, and a status mark pinned at the right.
 #[derive(IntoElement)]
@@ -134,7 +155,7 @@ impl Row {
     }
 
     /// Keeps `right` free at the trailing edge while the pointer is over `group`, so what
-    /// shows there on hover never covers the row's text.
+    /// shows there on hover never covers the row's text, and hides the status under it.
     pub fn hover_padding(mut self, group: &'static str, right: f32) -> Self {
         self.hover_right = Some((group, right));
         self
@@ -275,6 +296,10 @@ impl RenderOnce for Row {
             }))
             .children(self.trailing)
             .children(self.status.map(|status| {
+                let status = match self.hover_right {
+                    Some((group, _)) => gives_way(group, status).into_any_element(),
+                    None => status,
+                };
                 div()
                     .absolute()
                     .right(px(4.))
@@ -485,8 +510,17 @@ impl RenderOnce for Tab {
         };
         let on_click = self.on_click;
         let wrap_id = ElementId::NamedChild(Arc::new(self.id.clone()), "wrap".into());
+        let hidden = closing.is_some();
+        let makes_way = move |element: AnyElement| {
+            div()
+                .flex_none()
+                .when(hidden, |way| way.opacity(0.))
+                .child(element)
+        };
+        let room = self.note.is_none() && self.tail.is_none() && self.on_close.is_some();
         div()
             .id(wrap_id)
+            .relative()
             .flex_none()
             .h(px(26.))
             .min_w(px(120.))
@@ -505,6 +539,11 @@ impl RenderOnce for Tab {
                     .flex_1()
                     .h_full()
                     .pl(px(8.))
+                    .pr(px(match (self.tail.is_some(), room) {
+                        (true, _) => 3.,
+                        (false, true) => 26.,
+                        (false, false) => 8.,
+                    }))
                     .flex()
                     .items_center()
                     .justify_start()
@@ -520,26 +559,30 @@ impl RenderOnce for Tab {
                             .text_ellipsis()
                             .when(self.italic, |label| label.italic()),
                     )
-                    .children(self.note.map(|note| meta(note, cx))),
+                    .children(
+                        self.note
+                            .map(|note| makes_way(meta(note, cx).pr(px(4.)).into_any_element())),
+                    )
+                    .children(
+                        self.tail
+                            .map(|tail| makes_way(mark_box(20., tail).into_any_element())),
+                    ),
             )
-            .child(
+            .children(closing.map(|close| {
                 div()
-                    .size(px(20.))
-                    .mr(px(3.))
-                    .flex_none()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .right(px(3.))
                     .flex()
                     .items_center()
-                    .justify_center()
-                    .map(|slot| match closing {
-                        Some(close) => slot.child(close_button(
-                            close_id,
-                            format!("Close {label}"),
-                            move |event, window, cx| close(event, window, cx),
-                            cx,
-                        )),
-                        None => slot.children(self.tail),
-                    }),
-            )
+                    .child(close_button(
+                        close_id,
+                        format!("Close {label}"),
+                        move |event, window, cx| close(event, window, cx),
+                        cx,
+                    ))
+            }))
     }
 }
 

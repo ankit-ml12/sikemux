@@ -420,10 +420,11 @@ fn harness_label(bench: &Workbench, launcher: &LauncherInfo) -> String {
 fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let tail = match recent.pinned {
-        true => ui::icon(Icon::Pin, 11.)
-            .text_color(t.text_tertiary)
-            .group_hover(RECENT_ROW, |pin| pin.opacity(0.))
-            .into_any_element(),
+        true => ui::gives_way(
+            RECENT_ROW,
+            ui::icon(Icon::Pin, 11.).text_color(t.text_tertiary),
+        )
+        .into_any_element(),
         false => ui::mono(age(recent.active_at), 11., cx).into_any_element(),
     };
     let row = Row::new(
@@ -440,15 +441,9 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
     let pin = pin_chat(&cx.entity(), recent);
     let unpin = recent.pinned.then(|| {
         let unpin = pin.1.clone();
-        div()
-            .absolute()
+        ui::hover_actions(RECENT_ROW)
             .top_0()
-            .right(px(4.))
             .h(px(if bench.rail_compact() { 27. } else { 28. }))
-            .flex()
-            .items_center()
-            .opacity(0.)
-            .group_hover(RECENT_ROW, |actions| actions.opacity(1.))
             .child(
                 IconButton::new(
                     SharedString::from(format!("unpin-{}", recent.id)),
@@ -921,11 +916,7 @@ fn agent_row(
                 .child(ui::meta(project, cx)),
         )
     })
-    .status(status.map(|mark| {
-        div()
-            .group_hover(AGENT_ROW, |mark| mark.opacity(0.))
-            .child(mark)
-    }))
+    .status(status)
     .on_click(cx.listener({
         let id = id.clone();
         move |bench, event: &ClickEvent, window, cx| {
@@ -943,12 +934,11 @@ fn agent_row(
         }
     }))
     .children(agent.name.clone().map(|name| {
-        ui::meta(format!("@{name}"), cx)
-            .pl(px(8.))
-            .pr(px(4.))
-            .when(fades, |name| {
-                name.group_hover(AGENT_ROW, |name| name.opacity(0.))
-            })
+        let name = ui::meta(format!("@{name}"), cx).pl(px(8.)).pr(px(4.));
+        match fades {
+            true => ui::gives_way(AGENT_ROW, name).into_any_element(),
+            false => name.into_any_element(),
+        }
     }))
     .children(fold.as_ref().filter(|fold| !fold.open).map(|fold| {
         div()
@@ -962,25 +952,16 @@ fn agent_row(
             .font_features(crate::theme::tabular())
             .child(format!("+{}", fold.count))
     }))
-    .children(counts(agent, cx).map(|counts| {
-        div()
-            .when(fades, |counts| {
-                counts.group_hover(AGENT_ROW, |counts| counts.opacity(0.))
-            })
-            .child(counts)
+    .children(counts(agent, cx).map(|counts| match fades {
+        true => ui::gives_way(AGENT_ROW, counts).into_any_element(),
+        false => counts.into_any_element(),
     }));
     let lines = team_lines(team, matches!(fold, Some(Fold { open: true, .. })), cx);
     let card = crate::agent_card::view(bench, agent, project.as_deref(), cx);
     let close = agent.id.clone();
-    let actions = div()
-        .absolute()
+    let actions = ui::hover_actions(AGENT_ROW)
         .top_0()
-        .right(px(4.))
         .h(px(if bench.rail_compact() { 27. } else { 28. }))
-        .flex()
-        .items_center()
-        .opacity(0.)
-        .group_hover(AGENT_ROW, |actions| actions.opacity(1.))
         .children(pin.map(|(pinned, pin)| {
             let label = format!("{} {}", if pinned { "Unpin" } else { "Pin" }, agent.title);
             IconButton::new(

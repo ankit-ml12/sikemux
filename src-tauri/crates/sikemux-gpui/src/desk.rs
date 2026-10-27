@@ -2177,9 +2177,11 @@ fn pill(
         .flex_initial()
         .w(px(PILL_W))
         .min_w(px(PILL_MIN))
+        .relative()
         .h(px(24.))
         .pl(px(8.))
-        .pr(px(2.))
+        .pr(px(8.))
+        .group_hover(DESK_PILL, |pill| pill.pr(px(24.)))
         .flex()
         .items_center()
         .gap(px(6.))
@@ -2209,15 +2211,18 @@ fn pill(
                 .text_ellipsis()
                 .whitespace_nowrap(),
         )
-        .children(at_work.map(|(_, mark)| div().flex_none().child(mark)))
+        .children(at_work.map(|(_, mark)| ui::gives_way(DESK_PILL, mark)))
         .child(
-            div()
-                .relative()
-                .flex_none()
-                .opacity(0.)
-                .group_hover(DESK_PILL, |close| close.opacity(1.))
-                .child(ui::close_button(close_id, "Close tab", close, cx))
-                .children(close_spot),
+            ui::hover_actions(DESK_PILL)
+                .right(px(2.))
+                .top_0()
+                .bottom_0()
+                .child(
+                    div()
+                        .relative()
+                        .child(ui::close_button(close_id, "Close tab", close, cx))
+                        .children(close_spot),
+                ),
         )
 }
 
