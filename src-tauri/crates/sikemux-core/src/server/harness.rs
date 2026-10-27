@@ -1086,6 +1086,18 @@ pub(crate) async fn stop_runs(core: &Arc<Core>, selector: RunSelector) {
 }
 
 /// What a start names: the task id, and for a command task what it runs.
+/// An absolute `cwd` inside the project, as the relative one tasks take.
+fn within_project(project: &str, cwd: &str) -> String {
+    let real = |path: &str| std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+    match real(cwd).strip_prefix(real(project)) {
+        Ok(inside) if Path::new(cwd).is_absolute() => match inside.to_string_lossy() {
+            inside if inside.is_empty() => ".".to_owned(),
+            inside => inside.into_owned(),
+        },
+        _ => cwd.to_owned(),
+    }
+}
+
 fn launch_target(
     state: &mut State,
     project: &str,
@@ -1112,7 +1124,8 @@ fn launch_target(
             if label.is_some_and(|label| label.chars().count() > 80) {
                 return Err("label must be at most 80 characters".into());
             }
-            let cwd = command_cwd(text(params, "cwd")?)?;
+            let cwd = text(params, "cwd")?.map(|cwd| within_project(project, cwd));
+            let cwd = command_cwd(cwd.as_deref())?;
             let task_id = command_task_id(command, &cwd, label);
             Ok((
                 task_id,
