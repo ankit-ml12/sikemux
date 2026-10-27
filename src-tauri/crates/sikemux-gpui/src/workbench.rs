@@ -3799,22 +3799,24 @@ impl Workbench {
         }
     }
 
-    /// Opens `plugin`'s pane at the place `at` names: the one open in front, else a new tab.
+    /// Opens `plugin`'s pane at the place `at` names and brings its tab to the front: the pane this
+    /// strip already holds, else a new tab.
     pub fn open_plugin_at(&mut self, plugin: &str, at: String, cx: &mut Context<Self>) {
+        let (Some(surface), Some(strip)) = (crate::plugin_pane::surface(plugin), self.strip())
+        else {
+            return;
+        };
         let open = self
             .plugin_panes
             .values()
             .find(|pane| pane.read(cx).host.plugin == plugin)
             .cloned();
-        if let Some(pane) = open {
-            pane.update(cx, |pane, cx| pane.open_at(&at, cx));
-            return;
+        match open {
+            Some(pane) => pane.update(cx, |pane, cx| pane.open_at(&at, cx)),
+            None => {
+                self.plugin_opening.insert(plugin.to_owned(), at);
+            }
         }
-        let (Some(surface), Some(strip)) = (crate::plugin_pane::surface(plugin), self.strip())
-        else {
-            return;
-        };
-        self.plugin_opening.insert(plugin.to_owned(), at);
         let target = format!("{plugin}:{surface}");
         let params = json!({ "kind": PaneKind::Plugin, "target": target });
         self.call_in_front("openTab", strip.with(params));
