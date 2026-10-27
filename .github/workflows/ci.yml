@@ -217,6 +217,7 @@ jobs:
           workspaces: src-tauri
           key: deps-opt-level-${{ env.DEPS_OPT_LEVEL }}
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
@@ -268,6 +269,7 @@ jobs:
           workspaces: src-tauri/crates/sikemux-gpui
           key: deps-opt-level-${{ env.DEPS_OPT_LEVEL }}
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
@@ -422,6 +424,7 @@ jobs:
             src-tauri
           key: deps-opt-level-${{ env.DEPS_OPT_LEVEL }}
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build the core and the fake agent
         run: cargo build --locked -p sikemux-core --bin sikemux-core --bin sikemux-fake-acp-agent
@@ -490,6 +493,7 @@ jobs:
             src-tauri
             src-tauri/crates/sikemux-gpui
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check the app compiles on Linux
         run: cargo check --workspace --all-targets --locked
@@ -564,6 +568,7 @@ jobs:
           workspaces: src-tauri
           key: deps-opt-level-${{ env.DEPS_OPT_LEVEL }}
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build the helper
         run: node scripts/build-sim-helper.mjs --dev
