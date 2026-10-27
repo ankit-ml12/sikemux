@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use iroh::SecretKey;
+use sha2::{Digest, Sha256};
 
 use super::{CoreError, CoreResult};
 
@@ -31,7 +32,8 @@ pub(super) struct HostKey {
 }
 
 pub(super) enum Keeper {
-    /// The secret store's entry, named for the socket so each core has its own.
+    /// The secret store's entry, named for the socket's whole path so a core
+    /// started with another HOME never shares it.
     Store { account: String },
     /// A private file beside the socket, for a core run by tests.
     File(PathBuf),
@@ -44,12 +46,17 @@ impl Keeper {
             path.push(".host");
             return Ok(Self::File(path.into()));
         }
-        let account = socket
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| CoreError::from("the core's socket has no name"))?;
+        let digest = Sha256::digest(socket.as_os_str().as_encoded_bytes());
         Ok(Self::Store {
-            account: account.to_owned(),
+            account: format!("{}-{}", socket_name(socket)?, hex::encode(&digest[..8])),
+        })
+    }
+
+    /// The entry format 1 data folders kept, named for the socket's file name
+    /// alone, which every core with a socket of that name shared.
+    pub(super) fn named_by_file(socket: &Path) -> CoreResult<Self> {
+        Ok(Self::Store {
+            account: socket_name(socket)?.to_owned(),
         })
     }
 
@@ -88,6 +95,13 @@ impl Keeper {
             }
         }
     }
+}
+
+fn socket_name(socket: &Path) -> CoreResult<&str> {
+    socket
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| CoreError::from("the core's socket has no name"))
 }
 
 pub(super) fn secret_from_hex(text: &str) -> Option<SecretKey> {

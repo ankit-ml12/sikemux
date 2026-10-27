@@ -1233,6 +1233,36 @@ pub fn trust_remote_file(socket: &Path, key: &SecretKey) -> Result<(), String> {
     trust().map_err(|error: CoreError| error.to_string())
 }
 
+fn vouches(key: &HostKey, file: &serde_json::Value, trusted: &str) -> CoreResult<bool> {
+    Ok(key.trusted == trusted
+        || key.written.as_deref() == Some(trusted)
+        || key.trusted == trusted_as_written(file)?)
+}
+
+/// Copies the host's key from the secret store entry named for the socket's
+/// file name to the one named for its whole path, when the old entry vouches
+/// for this host's remote file. A core started with another HOME may have
+/// written the old entry; that one is left behind. The old entry stays, so an
+/// older core run again still finds it.
+pub(crate) fn rename_host_key(socket: &Path) -> CoreResult<()> {
+    let keeper = Keeper::new(socket, true)?;
+    if keeper.load()?.is_some() {
+        return Ok(());
+    }
+    let Some(key) = Keeper::named_by_file(socket)?.load()? else {
+        return Ok(());
+    };
+    let (file, mut stored) = read_file(&file_path(socket))?;
+    stored.secret_key.take();
+    if !vouches(&key, &file, &stored.trusted()?)? {
+        eprintln!(
+            "sikemux core: the host key kept under the socket's name vouches for another core's devices, so it was left behind"
+        );
+        return Ok(());
+    }
+    keeper.save(&key)
+}
+
 /// Reads the remote file and the key that vouches for it, trusting none of
 /// the devices, hosts or account the file names unless the key's digest is
 /// the file's.
@@ -1241,13 +1271,7 @@ fn load(keeper: &Keeper, path: &Path) -> CoreResult<(Stored, HostKey, String)> {
     let file_key = stored.secret_key.take();
     let trusted = stored.trusted()?;
     let key = match keeper.load()? {
-        Some(key)
-            if key.trusted == trusted
-                || key.written.as_ref() == Some(&trusted)
-                || key.trusted == trusted_as_written(&file)? =>
-        {
-            key
-        }
+        Some(key) if vouches(&key, &file, &trusted)? => key,
         Some(key) => {
             eprintln!(
                 "sikemux core: {} was changed by something other than this host, so it trusts none of the devices or hosts it names",

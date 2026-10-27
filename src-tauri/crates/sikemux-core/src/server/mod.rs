@@ -459,7 +459,6 @@ impl Core {
 
     fn new(build: BuildIdentity, data_dir: Option<&Path>) -> Result<Arc<Self>, ServerError> {
         if let Some(dir) = data_dir {
-            data_format::upgrade(dir);
             crate::sessions::index::open(dir);
         }
         let detection = ManifestRegistry::bundled()
@@ -1408,6 +1407,7 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
     let (listener, lock) = tokio::task::spawn_blocking(move || claim_socket(&socket))
         .await
         .map_err(std::io::Error::other)??;
+    data_format::upgrade(&config);
     let core = Core::new(config.build.clone(), config.data_dir.as_deref())?;
     chat::restore(&core);
     workspace::restore(&core);

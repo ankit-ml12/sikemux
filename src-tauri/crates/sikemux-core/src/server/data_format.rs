@@ -6,14 +6,19 @@ use std::path::Path;
 use serde_json::{json, Value};
 use sikemux_process::files::write_atomic;
 
+use super::ServerConfig;
+
 const FILE: &str = "data-format.json";
 
-type Step = fn(&Path) -> std::io::Result<()>;
+type Step = fn(&Path, &ServerConfig) -> std::io::Result<()>;
 
 /// Each step takes the folder from the format of its index to the next.
-const STEPS: [Step; 1] = [prompts_say_whether_shown];
+const STEPS: [Step; 2] = [prompts_say_whether_shown, host_key_named_by_socket_path];
 
-pub(crate) fn upgrade(data_dir: &Path) {
+pub(crate) fn upgrade(config: &ServerConfig) {
+    let Some(data_dir) = config.data_dir.as_deref() else {
+        return;
+    };
     let file = data_dir.join(FILE);
     let from = match std::fs::read(&file) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
@@ -40,7 +45,7 @@ pub(crate) fn upgrade(data_dir: &Path) {
         return;
     }
     for (format, step) in STEPS.iter().enumerate().skip(from) {
-        let done = step(data_dir).and_then(|()| {
+        let done = step(data_dir, config).and_then(|()| {
             let next = json!({ "format": format + 1 });
             write_atomic(&file, next.to_string().as_bytes(), true)
         });
@@ -59,7 +64,7 @@ pub(crate) fn upgrade(data_dir: &Path) {
 
 /// Format 0 cores named the client a prompt to send again came from, or
 /// none once every client had been shown it; now it is whether they have not.
-fn prompts_say_whether_shown(data_dir: &Path) -> std::io::Result<()> {
+fn prompts_say_whether_shown(data_dir: &Path, _: &ServerConfig) -> std::io::Result<()> {
     if let Ok(entries) = std::fs::read_dir(data_dir.join("chats")) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -83,6 +88,16 @@ fn prompts_say_whether_shown(data_dir: &Path) -> std::io::Result<()> {
             entry.get_mut("prompt").is_some_and(announced_as_flag) | changed
         })
     })
+}
+
+/// Format 1 cores kept the host's key in the secret store under the socket's
+/// file name, which a core started with another HOME overwrote.
+fn host_key_named_by_socket_path(_: &Path, config: &ServerConfig) -> std::io::Result<()> {
+    if !config.secret_store {
+        return Ok(());
+    }
+    super::remote::rename_host_key(&config.socket)
+        .map_err(|error| std::io::Error::other(error.to_string()))
 }
 
 /// Turns the client a prompt to send again came from into whether clients

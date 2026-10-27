@@ -844,6 +844,7 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
         accounts_api: Some(crate::accounts::api_base()),
         secret_store: true,
     };
+    super::data_format::upgrade(&config);
     let core = Core::new(build, config.data_dir.as_deref())?;
     let mut inherited = Inherited {
         open: recovery.inherited.clone(),
