@@ -10,7 +10,8 @@ use gpui_kit::{
 };
 use serde_json::json;
 use sikemux_wire::chat::{
-    AsyncTask, QueuedMessage, SubagentCard, TaskState, WorkflowAgent, WorkflowAgentState,
+    AsyncTask, ChatTrigger, QueuedMessage, SubagentCard, TaskState, TriggerWhen, WorkflowAgent,
+    WorkflowAgentState,
 };
 
 use super::tools::word;
@@ -679,6 +680,132 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
             .flex_col()
             .child(label)
             .children(rows)
+            .into_any_element(),
+    )
+}
+
+const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/// How often a trigger fires, in a few words; none for one that fires once.
+fn repeats(when: &TriggerWhen) -> Option<String> {
+    match when {
+        TriggerWhen::Once { .. } => None,
+        TriggerWhen::Every { seconds } => Some(match seconds {
+            s if s % 86_400 == 0 => format!(
+                "every {} {}",
+                s / 86_400,
+                plural("day", (s / 86_400) as usize)
+            ),
+            s if s % 3_600 == 0 => format!("every {} h", s / 3_600),
+            s => format!("every {} min", s.div_ceil(60)),
+        }),
+        TriggerWhen::Daily { weekdays, .. } => Some(match weekdays.as_slice() {
+            [] => "daily".to_owned(),
+            [1, 2, 3, 4, 5] => "weekdays".to_owned(),
+            days => days
+                .iter()
+                .filter_map(|day| WEEKDAYS.get(usize::from(*day)))
+                .copied()
+                .collect::<Vec<_>>()
+                .join(" "),
+        }),
+    }
+}
+
+fn next_fire(trigger: &ChatTrigger) -> String {
+    i64::try_from(trigger.next_at)
+        .ok()
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map(crate::agents::day_and_time)
+        .unwrap_or_default()
+}
+
+/// The triggers the agent set on its chat, each with when it next sends the chat its
+/// prompt, which the person can remove.
+pub fn triggers(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<AnyElement> {
+    let set = &chat.state.as_ref()?.triggers;
+    if set.is_empty() {
+        return None;
+    }
+    let t = Tokens::get(cx).clone();
+    let folded = chat.groups_folded.contains("triggers");
+    let label = Label {
+        key: "triggers".into(),
+        word: plural("trigger", set.len()),
+        count: set.len(),
+        folds: true,
+        folded,
+        icon: ui::icon(Icon::Timer, 11.)
+            .text_color(t.text_disabled)
+            .into_any_element(),
+        peek: set.iter().map(next_fire).take(1).collect(),
+        action: None,
+    }
+    .draw(agent, cx);
+    let rows: Vec<AnyElement> = set
+        .iter()
+        .map(|trigger| {
+            let (agent, id, danger) = (agent.to_owned(), trigger.id, t.danger);
+            let remove = BaseButton::new(SharedString::from(format!("trigger-remove:{id}")))
+                .accessibility_label(format!("Remove trigger {}", trigger.title))
+                .size(px(18.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(theme::RADIUS_1)
+                .text_color(t.text_disabled)
+                .hover(move |remove| remove.bg(Hsla { a: 0.16, ..danger }).text_color(danger))
+                .on_click(cx.listener(move |bench, _, _, _| {
+                    bench
+                        .chat_target(&agent)
+                        .call("removeTrigger", json!({ "agentId": agent, "trigger": id }));
+                }))
+                .child(ui::icon(Icon::Close, 10.).text_color(t.text_disabled));
+            let when = match repeats(&trigger.when) {
+                Some(repeats) => format!("{repeats} · next {}", next_fire(trigger)),
+                None => next_fire(trigger),
+            };
+            div()
+                .min_w_0()
+                .py(px(4.))
+                .pl(px(11.))
+                .pr(px(8.))
+                .flex()
+                .items_center()
+                .gap(px(7.))
+                .child(
+                    ui::icon(Icon::Timer, 12.)
+                        .flex_none()
+                        .text_color(t.text_tertiary),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(crate::theme::ui_text(12.))
+                        .text_color(t.text_secondary)
+                        .child(trigger.title.clone()),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .font_family(theme::MONO)
+                        .text_size(crate::theme::ui_text(10.))
+                        .text_color(t.text_disabled)
+                        .child(when),
+                )
+                .child(remove)
+                .into_any_element()
+        })
+        .collect();
+    Some(
+        div()
+            .pb(px(7.))
+            .flex()
+            .flex_col()
+            .child(label)
+            .child(folding("triggers", folded, rows))
             .into_any_element(),
     )
 }

@@ -1990,6 +1990,7 @@ pub fn pane(
     groups.extend(live::tasks(agent, chat, cx));
     groups.extend(sending);
     groups.extend(live::queued(&agent.id, chat, cx));
+    groups.extend(live::triggers(&agent.id, chat, cx));
     let stack = live::stack(groups, Tokens::get(cx));
     let covered = stack.is_some();
     let empty = chat

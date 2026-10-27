@@ -1527,7 +1527,7 @@ fn ticks(percent: f64, signal: Hsla, t: &Tokens) -> gpui_kit::Canvas<()> {
 }
 
 /// When a window resets, as a person would say it: today, tomorrow, a weekday or a date.
-fn day_and_time(at: chrono::DateTime<chrono::Utc>) -> String {
+pub(crate) fn day_and_time(at: chrono::DateTime<chrono::Utc>) -> String {
     let at = at.with_timezone(&chrono::Local);
     let days = (at.date_naive() - chrono::Local::now().date_naive()).num_days();
     let time = at.format("%-I:%M %p");
