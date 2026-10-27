@@ -1125,8 +1125,11 @@ export interface ChatTrigger {
   id: number;
   title: string;
   when: TriggerWhen;
-  /** The next time it fires, in Unix milliseconds. */
-  nextAt: number;
+  /**
+   * The next time it fires, in Unix milliseconds; none for a webhook, which fires on each
+   * request.
+   */
+  nextAt?: number;
 }
 
 /** When a trigger fires. */
@@ -1149,6 +1152,11 @@ export type TriggerWhen =
       kind: 'daily';
       minute: number;
       weekdays: number[];
+    }
+  /** On each request to `url`, the address senders post to. */
+  | {
+      kind: 'webhook';
+      url: string;
     };
 
 export interface SessionEnded {

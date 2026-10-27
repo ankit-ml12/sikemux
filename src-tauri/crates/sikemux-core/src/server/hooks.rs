@@ -21,6 +21,7 @@ use crate::accounts::hooks::{
 use crate::accounts::live::{parse_rfc3339, socket_url};
 use crate::accounts::socket::{self, Closed, Failures, Frame, Socket};
 
+/// A webhook just added, and where senders post, its secret at the end of that address.
 pub(crate) struct AddedHook {
     pub hook_id: String,
     pub url: String,
@@ -45,6 +46,7 @@ pub(crate) async fn register_hook(core: &Arc<Core>) -> CoreResult<AddedHook> {
         .fill(&mut secret)
         .map_err(|_| CoreError::from("could not make a webhook's secret"))?;
     let token = hex::encode(secret);
+    let add = HookAdd { token };
     let hook: Hook = as_host(
         core,
         Method::POST,

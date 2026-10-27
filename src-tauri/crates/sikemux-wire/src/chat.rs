@@ -289,8 +289,10 @@ pub struct ChatTrigger {
     pub id: u64,
     pub title: String,
     pub when: TriggerWhen,
-    /// The next time it fires, in Unix milliseconds.
-    pub next_at: u64,
+    /// The next time it fires, in Unix milliseconds; none for a webhook, which fires on each
+    /// request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_at: Option<u64>,
 }
 
 /// When a trigger fires.
@@ -304,6 +306,8 @@ pub enum TriggerWhen {
     /// Each day at `minute` past midnight on the host's clock, on `weekdays`
     /// counted from Sunday as 0, or on every day when there are none.
     Daily { minute: u32, weekdays: Vec<u8> },
+    /// On each request to `url`, the address senders post to.
+    Webhook { url: String },
 }
 
 /// Work the agent left running in the background.

@@ -596,7 +596,7 @@ async fn dispatch(
         "board.claim" => board::claim(core, &request).await,
         "board.update" => board::update(core, &request).await,
         "review.verdict" => board::verdict(core, &request).await,
-        "trigger.add" => super::triggers::add(core, &request),
+        "trigger.add" => super::triggers::add(core, &request).await,
         "trigger.list" => super::triggers::list(core, &request),
         "trigger.remove" => super::triggers::remove_by_agent(core, &request),
         "git.commit" => super::edits::commit::call(core, &request).await,

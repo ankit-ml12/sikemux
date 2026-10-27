@@ -1891,6 +1891,10 @@
           "description": "Add a card to this project's board when it fires instead of prompting this chat",
           "type": "boolean"
         },
+        "webhook": {
+          "description": "Fire on each request to an address it returns, instead of at a time",
+          "type": "boolean"
+        },
         "weekdays": {
           "description": "With daily, the days it fires on; every day when left out",
           "type": "array",

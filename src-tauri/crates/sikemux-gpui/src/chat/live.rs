@@ -689,7 +689,7 @@ const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /// How often a trigger fires, in a few words; none for one that fires once.
 fn repeats(when: &TriggerWhen) -> Option<String> {
     match when {
-        TriggerWhen::Once { .. } => None,
+        TriggerWhen::Once { .. } | TriggerWhen::Webhook { .. } => None,
         TriggerWhen::Every { seconds } => Some(match seconds {
             s if s % 86_400 == 0 => format!(
                 "every {} {}",
@@ -712,12 +712,21 @@ fn repeats(when: &TriggerWhen) -> Option<String> {
     }
 }
 
-fn next_fire(trigger: &ChatTrigger) -> String {
-    i64::try_from(trigger.next_at)
-        .ok()
+/// When the trigger fires: on each request for a webhook, else how often and when next.
+fn fires(trigger: &ChatTrigger) -> String {
+    if let TriggerWhen::Webhook { .. } = trigger.when {
+        return "on each request".to_owned();
+    }
+    let next = trigger
+        .next_at
+        .and_then(|at| i64::try_from(at).ok())
         .and_then(chrono::DateTime::from_timestamp_millis)
         .map(crate::agents::day_and_time)
-        .unwrap_or_default()
+        .unwrap_or_default();
+    match repeats(&trigger.when) {
+        Some(repeats) => format!("{repeats} · next {next}"),
+        None => next,
+    }
 }
 
 /// The triggers the agent set on its chat, each with when it next sends the chat its
@@ -738,7 +747,7 @@ pub fn triggers(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option
         icon: ui::icon(Icon::Timer, 11.)
             .text_color(t.cmd)
             .into_any_element(),
-        peek: set.iter().map(next_fire).take(1).collect(),
+        peek: set.iter().map(fires).take(1).collect(),
         action: None,
     }
     .draw(agent, cx);
@@ -786,9 +795,25 @@ pub fn trigger_row(
         .hover(move |remove| remove.bg(Hsla { a: 0.16, ..danger }).text_color(danger))
         .on_click(remove)
         .child(ui::icon(Icon::Close, 10.).text_color(t.text_disabled));
-    let when = match repeats(&trigger.when) {
-        Some(repeats) => format!("{repeats} · next {}", next_fire(trigger)),
-        None => next_fire(trigger),
+    let copy = match &trigger.when {
+        TriggerWhen::Webhook { url } => {
+            let url = url.clone();
+            Some(
+                BaseButton::new(SharedString::from(format!("trigger-copy:{}", trigger.id)))
+                    .accessibility_label(format!("Copy the address of trigger {}", trigger.title))
+                    .size(px(18.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(theme::RADIUS_1)
+                    .hover(|copy| copy.bg(t.surface_hover))
+                    .on_click(move |_, _, cx| {
+                        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(url.clone()))
+                    })
+                    .child(ui::icon(Icon::Copy, 11.).text_color(t.text_disabled)),
+            )
+        }
+        _ => None,
     };
     div()
         .min_w_0()
@@ -814,8 +839,9 @@ pub fn trigger_row(
                 .font_family(theme::MONO)
                 .text_size(crate::theme::ui_text(10.))
                 .text_color(t.text_disabled)
-                .child(when),
+                .child(fires(trigger)),
         )
+        .children(copy)
         .child(remove)
         .into_any_element()
 }

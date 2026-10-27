@@ -116,6 +116,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** How often a trigger fires and when next, as the Mac's board says it. */
 function triggerWhen(trigger: ChatTrigger): string {
+  if (trigger.when.kind === 'webhook' || trigger.nextAt == null) return 'on each request';
   const at = new Date(Number(trigger.nextAt));
   const today = at.toDateString() === new Date().toDateString();
   const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
