@@ -98,6 +98,11 @@ fn mark(id: &str, tint: Hsla, bench: &WeakEntity<Workbench>, cx: &App) -> gpui_k
             .text_color(tint)
             .into_any_element();
     }
+    if id.starts_with("command:") {
+        return ui::icon(Icon::Bolt, 13.)
+            .text_color(tint)
+            .into_any_element();
+    }
     if id.starts_with("earlier:") {
         return ui::icon(Icon::Message, 13.)
             .text_color(tint)
@@ -629,15 +634,30 @@ fn chip_face(
 pub fn with_chips(
     look: Rc<gpui_transcript::Style>,
     message: &ChatMessage,
+    agent: &str,
     bench: &WeakEntity<Workbench>,
     window: &mut Window,
     cx: &App,
 ) -> Rc<gpui_transcript::Style> {
-    let agents = bench
+    let (agents, commands) = bench
         .upgrade()
-        .map(|bench| named_agents(bench.read(cx)))
+        .map(|bench| {
+            let bench = bench.read(cx);
+            let commands: Vec<String> = bench
+                .chats
+                .get(agent)
+                .and_then(|chat| chat.state.as_ref())
+                .map(|head| {
+                    head.commands
+                        .iter()
+                        .map(|command| command.name.clone())
+                        .collect()
+                })
+                .unwrap_or_default();
+            (named_agents(bench), commands)
+        })
         .unwrap_or_default();
-    let mentions = mentions(message, &agents);
+    let mentions = mentions(message, &agents, &commands);
     if mentions.is_empty() {
         return look;
     }
@@ -707,9 +727,13 @@ fn named_agents(bench: &Workbench) -> Vec<(String, String)> {
         .collect()
 }
 
-/// What a sent message's text names, as the draft's chips wrote it. Agents are named only
-/// in the text, so `agents` says which `@` words are agents.
-fn mentions(message: &ChatMessage, agents: &[(String, String)]) -> Vec<Mention> {
+/// What a sent message's text names, as the draft's chips wrote it. Agents and commands
+/// are named only in the text, so `agents` and `commands` say which words they are.
+fn mentions(
+    message: &ChatMessage,
+    agents: &[(String, String)],
+    commands: &[String],
+) -> Vec<Mention> {
     let written = super::edit::written(message);
     let mut found: Vec<Mention> = agents
         .iter()
@@ -719,6 +743,12 @@ fn mentions(message: &ChatMessage, agents: &[(String, String)]) -> Vec<Mention> 
             label: format!("@{name}"),
             carried: format!("sikemux://agent/{id}"),
         })
+        .chain(commands.iter().map(|name| Mention {
+            written: format!("/{name}"),
+            id: format!("command:{name}"),
+            label: format!("/{name}"),
+            carried: String::new(),
+        }))
         .collect();
     for (index, path) in message.attachments.iter().enumerate() {
         let number = index + 1;
@@ -795,7 +825,7 @@ fn chip_words(id: &str, label: &SharedString) -> (SharedString, Option<SharedStr
         }
     }
     let bare = label
-        .strip_prefix(['@', '+'])
+        .strip_prefix(['@', '+', '/'])
         .map_or_else(|| label.clone(), |bare| bare.to_owned().into());
     (bare, None)
 }
@@ -956,7 +986,7 @@ pub fn sent(
     }
     let t = Tokens::get(cx).clone();
     let written = super::edit::written(message);
-    let inline = mentions(message, &[]);
+    let inline = mentions(message, &[], &[]);
     let in_text = |carried: &str| {
         inline
             .iter()

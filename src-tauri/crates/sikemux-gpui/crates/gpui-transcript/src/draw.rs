@@ -1445,8 +1445,8 @@ fn chips_in(rich: &Rich, chips: &[Chip]) -> Vec<(Range<usize>, Chip)> {
             let range = at..at + chip.written.len();
             let before = rich.text[..at].chars().next_back();
             let after = rich.text[range.end..].chars().next();
-            let apart = before.is_none_or(|letter| !letter.is_alphanumeric())
-                && after.is_none_or(|letter| !letter.is_alphanumeric());
+            let apart = before.is_none_or(|letter| !letter.is_alphanumeric() && letter != '/')
+                && after.is_none_or(|letter| !letter.is_alphanumeric() && letter != '/');
             let taken = code.iter().any(|code| overlap(code, &range))
                 || found.iter().any(|(held, _)| overlap(held, &range));
             if apart && !taken {

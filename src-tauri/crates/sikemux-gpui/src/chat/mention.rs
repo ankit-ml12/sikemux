@@ -27,6 +27,7 @@ const FILE: &str = "file:";
 const FOLDER: &str = "folder:";
 const EARLIER: &str = "earlier:";
 const TRACKED: &str = "tracked:";
+const COMMAND: &str = "command:";
 /// Earlier chats the core is asked for, and how long it may read transcripts for them.
 const EARLIER_SHOWN: usize = 4;
 const EARLIER_BUDGET_MS: u64 = 600;
@@ -741,10 +742,10 @@ impl Workbench {
                         tag,
                     ))
                 }
-                Choice::Command { name, .. } => {
-                    draft.replace(format!("/{name}"), window, cx);
-                    None
-                }
+                Choice::Command { name, .. } => Some(InlineToken::new(
+                    format!("{COMMAND}{name}"),
+                    format!("/{name}"),
+                )),
                 Choice::Earlier {
                     cli,
                     session,
