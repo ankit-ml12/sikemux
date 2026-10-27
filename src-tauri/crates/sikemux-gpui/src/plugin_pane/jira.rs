@@ -1324,7 +1324,7 @@ impl Jira {
                     issue
                         .due
                         .as_ref()
-                        .map(|due| due_chip(due, issue.status_category == "done", cx)),
+                        .map(|due| due_chip(due, issue.status_category == "done", false, cx)),
                 )
         });
         let who = issue
@@ -1569,9 +1569,16 @@ impl Jira {
             .collect();
         let at = |key: &str| (key.to_owned(), site.to_owned());
         let (move_key, move_site) = at(&issue.key);
-        let status = ui::select(
+        let ink = match issue.status_category.as_str() {
+            "indeterminate" => jira_blue(),
+            "done" => Tokens::get(cx).live,
+            _ => Tokens::get(cx).text_tertiary,
+        };
+        let dot = div().size(px(8.)).flex_none().rounded_full().bg(ink);
+        let status = ui::marked_select(
             "jira-transition",
-            format!("Status: {}", issue.status),
+            Some(dot.into_any_element()),
+            issue.status.clone(),
             picks,
             None,
             busy || view.transitions.is_empty(),
@@ -1585,48 +1592,84 @@ impl Jira {
             }),
             cx,
         );
-        let (me_key, me_site) = at(&issue.key);
-        let (none_key, none_site) = at(&issue.key);
+        let assigned = issue.assignee.is_some();
+        let assigning = self.assigning;
+        let parts = [
+            (
+                "jira-assign-me",
+                Some(Icon::User),
+                "Assign to me",
+                busy,
+                false,
+            ),
+            ("jira-unassign", None, "Unassign", busy || !assigned, false),
+            ("jira-assign", None, "Assign…", busy, assigning),
+        ];
+        let t = Tokens::get(cx).clone();
+        let group = div()
+            .flex()
+            .flex_none()
+            .rounded(RADIUS_2)
+            .border_1()
+            .border_color(t.border)
+            .overflow_hidden()
+            .children(parts.into_iter().enumerate().map(
+                |(at, (id, glyph, label, off, pressed))| {
+                    let (me_key, me_site) = at_site(&issue.key, site);
+                    div()
+                        .id(id)
+                        .h(px(26.))
+                        .px(px(10.))
+                        .flex()
+                        .items_center()
+                        .gap(px(5.))
+                        .when(at > 0, |part| part.border_l_1().border_color(t.border))
+                        .text_size(crate::theme::ui_text(12.))
+                        .text_color(if off { t.text_tertiary } else { t.text_primary })
+                        .when(pressed, |part| part.bg(t.surface_chosen))
+                        .when(!off, |part| {
+                            part.cursor_pointer()
+                                .hover(move |part| part.bg(t.surface_hover))
+                                .on_click(listen::<Jira, _>(
+                                    cx,
+                                    move |jira, host, _, _, cx| match at {
+                                        0 => {
+                                            let params = json!({
+                                                "key": me_key,
+                                                "me": true,
+                                                "site": site_of(&me_site),
+                                            });
+                                            jira.write(host, "Assign", "assign", params, cx);
+                                        }
+                                        1 => {
+                                            let params = json!({
+                                                "key": me_key,
+                                                "accountId": null,
+                                                "site": site_of(&me_site),
+                                            });
+                                            jira.write(host, "Unassign", "assign", params, cx);
+                                        }
+                                        _ => {
+                                            jira.assigning = !jira.assigning;
+                                            jira.people.clear();
+                                            cx.notify();
+                                        }
+                                    },
+                                ))
+                        })
+                        .children(
+                            glyph.map(|glyph| ui::icon(glyph, 12.).text_color(t.text_tertiary)),
+                        )
+                        .child(label)
+                },
+            ));
         let row = div()
             .flex()
             .flex_wrap()
             .items_center()
             .gap(px(6.))
             .child(status)
-            .child(
-                Button::new("jira-assign-me", "Assign to me", Variant::Outline)
-                    .icon(Icon::User)
-                    .disabled(busy)
-                    .on_click(listen::<Jira, _>(cx, move |jira, host, _, _, cx| {
-                        let params =
-                            json!({ "key": me_key, "me": true, "site": site_of(&me_site) });
-                        jira.write(host, "Assign", "assign", params, cx);
-                    })),
-            )
-            .child(
-                Button::new("jira-unassign", "Unassign", Variant::Outline)
-                    .icon(Icon::Minus)
-                    .disabled(busy || issue.assignee.is_none())
-                    .on_click(listen::<Jira, _>(cx, move |jira, host, _, _, cx| {
-                        let params = json!({
-                            "key": none_key,
-                            "accountId": null,
-                            "site": site_of(&none_site),
-                        });
-                        jira.write(host, "Unassign", "assign", params, cx);
-                    })),
-            )
-            .child(
-                Button::new("jira-assign", "Assign…", Variant::Outline)
-                    .icon(Icon::Search)
-                    .pressed(self.assigning)
-                    .disabled(busy)
-                    .on_click(listen::<Jira, _>(cx, |jira, _, _, _, cx| {
-                        jira.assigning = !jira.assigning;
-                        jira.people.clear();
-                        cx.notify();
-                    })),
-            );
+            .child(group);
         let finder =
             self.assigning.then(|| {
                 let find = field(
@@ -1697,9 +1740,18 @@ impl Jira {
                 .flex()
                 .items_center()
                 .gap(px(12.))
-                .min_h(px(24.))
-                .child(div().w(px(90.)).flex_none().child(ui::meta(label, cx)))
-                .child(div().flex_1().min_w_0().child(value))
+                .min_h(px(34.))
+                .px(px(12.))
+                .py(px(4.))
+                .child(
+                    div()
+                        .w(px(84.))
+                        .flex_none()
+                        .text_size(crate::theme::ui_text(12.))
+                        .text_color(t.text_tertiary)
+                        .child(label),
+                )
+                .child(div().flex_1().min_w_0().flex().items_center().child(value))
         };
         let person = |who: Option<&Person>| {
             let name = who.map_or("Unassigned", |person| person.name.as_str());
@@ -1727,8 +1779,11 @@ impl Jira {
         let mut facts = div()
             .flex()
             .flex_col()
-            .gap(px(4.))
-            .child(ui::caps("Details", cx))
+            .rounded(RADIUS_2)
+            .border_1()
+            .border_color(t.border)
+            .bg(t.surface_composer)
+            .overflow_hidden()
             .child(fact("Assignee", person(issue.assignee.as_ref())));
         if let Some(reporter) = &view.reporter {
             facts = facts.child(fact("Reporter", person(Some(reporter))));
@@ -1747,8 +1802,8 @@ impl Jira {
         }
         if let Some(due) = &issue.due {
             facts = facts.child(fact(
-                "Due date",
-                due_chip(due, issue.status_category == "done", cx),
+                "Due",
+                due_chip(due, issue.status_category == "done", true, cx),
             ));
         }
         if let Some(parent) = &issue.parent {
@@ -1780,7 +1835,13 @@ impl Jira {
                     .into_any_element(),
             ));
         }
-        facts.into_any_element()
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(ui::caps("Details", cx))
+            .child(facts)
+            .into_any_element()
     }
 
     fn description(
@@ -2174,24 +2235,49 @@ fn epic_chip(parent: &Parent, cx: &App) -> AnyElement {
 }
 
 /// The day an issue is due, red once it has passed and the issue is not done.
-fn due_chip(due: &str, done: bool, cx: &App) -> AnyElement {
+/// When an issue is due: red once past and not done, green once done, plain while there is
+/// time. `long` says it as the details do, with a calendar and how late it is, rather than
+/// as a card's `Due 23 Oct`.
+fn due_chip(due: &str, done: bool, long: bool, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     let day = chrono::NaiveDate::parse_from_str(due, "%Y-%m-%d").ok();
-    let late = !done && day.is_some_and(|day| day < chrono::Local::now().date_naive());
-    let said = day.map_or(due.to_owned(), |day| day.format("Due %-d %b").to_string());
+    let today = chrono::Local::now().date_naive();
+    let late = (!done).then_some(day).flatten().filter(|day| *day < today);
+    let (ink, ground) = match (late, done) {
+        (Some(_), _) => (t.danger, t.danger.opacity(0.16)),
+        (None, true) if long => (t.live, t.live.opacity(0.16)),
+        _ => (t.text_secondary, t.surface_active),
+    };
+    let said = match (day, long) {
+        (Some(day), false) => day.format("Due %-d %b").to_string(),
+        (Some(day), true) => match late.map(|day| (today - day).num_days()) {
+            Some(1) => format!("{} · 1 day late", day.format("%-d %b")),
+            Some(days) => format!("{} · {days} days late", day.format("%-d %b")),
+            None => day.format("%-d %b").to_string(),
+        },
+        (None, _) => due.to_owned(),
+    };
     div()
-        .px(px(6.))
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .px(px(if long { 7. } else { 6. }))
         .py(px(1.))
         .rounded(RADIUS_1)
-        .bg(if late {
-            t.danger.opacity(0.16)
-        } else {
-            t.surface_active
+        .bg(ground)
+        .text_size(crate::theme::ui_text(if long { 11.5 } else { 10.5 }))
+        .text_color(ink)
+        .when(long, |chip| {
+            chip.child(ui::icon(Icon::Clock, 11.).text_color(ink))
         })
-        .text_size(crate::theme::ui_text(10.5))
-        .text_color(if late { t.danger } else { t.text_secondary })
         .child(said)
         .into_any_element()
+}
+
+/// An issue's key and its site, for a click to carry.
+fn at_site(key: &str, site: &str) -> (String, String) {
+    (key.to_owned(), site.to_owned())
 }
 
 /// How long is left in a sprint, in the words a standup uses.
