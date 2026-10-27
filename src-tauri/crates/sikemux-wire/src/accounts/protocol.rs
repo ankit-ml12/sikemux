@@ -62,7 +62,7 @@ pub struct AccountEvent {
     /// Only on device.revoked.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<RevokeReason>,
-    /// The stash item the event is about. Only on stash events.
+    /// The stash item the event is about. On stash events but stash.seen, which is about the whole stash.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stash_id: Option<StashItemId>,
 }
@@ -83,6 +83,8 @@ pub enum AccountEventType {
     StashChanged,
     #[serde(rename = "stash.removed")]
     StashRemoved,
+    #[serde(rename = "stash.seen")]
+    StashSeen,
     /// A value added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,
@@ -787,6 +789,8 @@ pub struct StashList {
     /// Send as cursor for the next page. Absent on the last page.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<StashListCursor>,
+    /// When the person last looked at the stash on any device; items created after it are new. Null until they first do.
+    pub seen_at: Option<String>,
 }
 
 /// Where the next page of a list starts. Opaque to apps.
@@ -805,6 +809,13 @@ pub struct StashPreview {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
+}
+
+/// When the person last looked at the stash. Setting it only ever moves it forward, and never past the server's clock.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashSeen {
+    pub at: String,
 }
 
 /// Which items a list holds: those not used yet, those used, or both.
@@ -915,6 +926,7 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "StashListCursor" => through::<StashListCursor>(json),
         "StashNote" => through::<StashNote>(json),
         "StashPreview" => through::<StashPreview>(json),
+        "StashSeen" => through::<StashSeen>(json),
         "StashTaken" => through::<StashTaken>(json),
         "StashTarget" => through::<StashTarget>(json),
         "StashUpdate" => through::<StashUpdate>(json),

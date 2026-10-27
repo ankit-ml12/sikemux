@@ -132,9 +132,14 @@
         "cursor": {
           "description": "Send as cursor for the next page. Absent on the last page.",
           "$ref": "#/$defs/StashListCursor"
+        },
+        "seenAt": {
+          "description": "When the person last looked at the stash on any device; items created after it are new. Null until they first do.",
+          "type": ["string", "null"],
+          "format": "date-time"
         }
       },
-      "required": ["items"],
+      "required": ["items", "seenAt"],
       "additionalProperties": false
     },
     "StashAdd": {
@@ -158,6 +163,15 @@
         "target": { "$ref": "#/$defs/StashTarget" }
       },
       "required": ["kind"],
+      "additionalProperties": false
+    },
+    "StashSeen": {
+      "description": "When the person last looked at the stash. Setting it only ever moves it forward, and never past the server's clock.",
+      "type": "object",
+      "properties": {
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["at"],
       "additionalProperties": false
     },
     "StashUpdate": {

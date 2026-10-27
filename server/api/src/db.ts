@@ -22,6 +22,7 @@ export interface Tables {
     clerk_retry_at: ColumnType<Date | null, never, Date | null>;
     purge_after: ColumnType<Date | null, never, Date | null>;
     events_pruned_through: ColumnType<string, never, string | number>;
+    stash_seen_at: ColumnType<Date | null, never, Date>;
   };
   events: {
     id: Generated<string>;

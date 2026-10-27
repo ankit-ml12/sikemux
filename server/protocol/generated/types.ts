@@ -42,7 +42,7 @@ export interface AccountEvent {
   role?: DeviceRole;
   /** Only on device.revoked. */
   reason?: RevokeReason;
-  /** The stash item the event is about. Only on stash events. */
+  /** The stash item the event is about. On stash events but stash.seen, which is about the whole stash. */
   stashId?: StashItemId;
 }
 
@@ -53,7 +53,8 @@ export type AccountEventType =
   | "account.deleted"
   | "stash.added"
   | "stash.changed"
-  | "stash.removed";
+  | "stash.removed"
+  | "stash.seen";
 export const accountEventTypeValues: readonly AccountEventType[] = [
   "device.added",
   "device.changed",
@@ -62,6 +63,7 @@ export const accountEventTypeValues: readonly AccountEventType[] = [
   "stash.added",
   "stash.changed",
   "stash.removed",
+  "stash.seen",
 ];
 
 /** The name, email and picture the account signed in with, for a host to show who it belongs to. */
@@ -836,6 +838,8 @@ export interface StashList {
   items: StashItem[];
   /** Send as cursor for the next page. Absent on the last page. */
   cursor?: StashListCursor;
+  /** When the person last looked at the stash on any device; items created after it are new. Null until they first do. */
+  seenAt: string | null;
 }
 
 /** Where the next page of a list starts. Opaque to apps. */
@@ -851,6 +855,11 @@ export interface StashPreview {
   site: string;
   description: string;
   imageUrl?: string;
+}
+
+/** When the person last looked at the stash. Setting it only ever moves it forward, and never past the server's clock. */
+export interface StashSeen {
+  at: string;
 }
 
 /** Which items a list holds: those not used yet, those used, or both. */
@@ -983,6 +992,7 @@ export interface Definitions {
   StashListCursor: StashListCursor;
   StashNote: StashNote;
   StashPreview: StashPreview;
+  StashSeen: StashSeen;
   StashTaken: StashTaken;
   StashTarget: StashTarget;
   StashUpdate: StashUpdate;

@@ -79,7 +79,7 @@ export function createApp({
   app.use(
     cors({
       origin: appOrigin,
-      allowMethods: ["GET", "POST", "PATCH", "DELETE"],
+      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
       allowHeaders: ["authorization", "content-type"],
       exposeHeaders: ["x-request-id"],
       maxAge: 600,

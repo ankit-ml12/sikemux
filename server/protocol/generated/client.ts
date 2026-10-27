@@ -28,6 +28,7 @@ import type {
   StashItem,
   StashList,
   StashListCursor,
+  StashSeen,
   StashTaken,
   StashUpdate,
 } from "./types.ts";
@@ -130,6 +131,9 @@ export function apiClient(send: Send) {
     /** Your stash, newest first. */
     listStash: (query: { taken?: StashTaken; cursor?: StashListCursor } = {}) =>
       send<StashList>("GET", `/v1/stash${search(query)}`),
+    /** Mark the stash seen up to a time, on every device. */
+    markStashSeen: (body: StashSeen) =>
+      send<StashSeen>("PUT", `/v1/stash/seen`, body),
     /** One stashed item. */
     getStash: (id: string) =>
       send<StashItem>("GET", `/v1/stash/${encodeURIComponent(id)}`),

@@ -21,7 +21,8 @@
         "account.deleted",
         "stash.added",
         "stash.changed",
-        "stash.removed"
+        "stash.removed",
+        "stash.seen"
       ]
     },
     "RevokeReason": {
@@ -49,7 +50,7 @@
           "$ref": "#/$defs/RevokeReason"
         },
         "stashId": {
-          "description": "The stash item the event is about. Only on stash events.",
+          "description": "The stash item the event is about. On stash events but stash.seen, which is about the whole stash.",
           "$ref": "stash.json#/$defs/StashItemId"
         }
       },

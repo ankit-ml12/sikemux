@@ -86,7 +86,7 @@ export const schema = {
         },
         stashId: {
           description:
-            "The stash item the event is about. Only on stash events.",
+            "The stash item the event is about. On stash events but stash.seen, which is about the whole stash.",
           $ref: "#/$defs/StashItemId",
         },
       },
@@ -103,6 +103,7 @@ export const schema = {
         "stash.added",
         "stash.changed",
         "stash.removed",
+        "stash.seen",
       ],
     },
     AccountProfile: {
@@ -1471,8 +1472,14 @@ export const schema = {
             "Send as cursor for the next page. Absent on the last page.",
           $ref: "#/$defs/StashListCursor",
         },
+        seenAt: {
+          description:
+            "When the person last looked at the stash on any device; items created after it are new. Null until they first do.",
+          type: ["string", "null"],
+          format: "date-time",
+        },
       },
-      required: ["items"],
+      required: ["items", "seenAt"],
       additionalProperties: false,
     },
     StashListCursor: {
@@ -1502,6 +1509,14 @@ export const schema = {
         imageUrl: { type: "string", format: "uri", maxLength: 2048 },
       },
       required: ["title", "site", "description"],
+      additionalProperties: false,
+    },
+    StashSeen: {
+      description:
+        "When the person last looked at the stash. Setting it only ever moves it forward, and never past the server's clock.",
+      type: "object",
+      properties: { at: { type: "string", format: "date-time" } },
+      required: ["at"],
       additionalProperties: false,
     },
     StashTaken: {

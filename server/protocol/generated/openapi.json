@@ -990,6 +990,48 @@
         }
       }
     },
+    "/v1/stash/seen": {
+      "put": {
+        "operationId": "markStashSeen",
+        "summary": "Mark the stash seen up to a time, on every device",
+        "security": [{ "session": [] }, { "host": [] }, { "device": [] }],
+        "description": "The phone's or the web app's sign-in, or a request signed by a host or a phone on the account.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StashSeen" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stash's seen time as it now stands, which is later than the one sent when another device already marked a later one. A stash.seen event follows when it moved.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StashSeen" }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a valid StashSeen.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/stash/{id}": {
       "get": {
         "operationId": "getStash",
@@ -1265,7 +1307,7 @@
             "$ref": "#/components/schemas/RevokeReason"
           },
           "stashId": {
-            "description": "The stash item the event is about. Only on stash events.",
+            "description": "The stash item the event is about. On stash events but stash.seen, which is about the whole stash.",
             "$ref": "#/components/schemas/StashItemId"
           }
         },
@@ -1281,7 +1323,8 @@
           "account.deleted",
           "stash.added",
           "stash.changed",
-          "stash.removed"
+          "stash.removed",
+          "stash.seen"
         ]
       },
       "AccountProfile": {
@@ -2582,9 +2625,14 @@
           "cursor": {
             "description": "Send as cursor for the next page. Absent on the last page.",
             "$ref": "#/components/schemas/StashListCursor"
+          },
+          "seenAt": {
+            "description": "When the person last looked at the stash on any device; items created after it are new. Null until they first do.",
+            "type": ["string", "null"],
+            "format": "date-time"
           }
         },
-        "required": ["items"],
+        "required": ["items", "seenAt"],
         "additionalProperties": false
       },
       "StashListCursor": {
@@ -2612,6 +2660,13 @@
           "imageUrl": { "type": "string", "format": "uri", "maxLength": 2048 }
         },
         "required": ["title", "site", "description"],
+        "additionalProperties": false
+      },
+      "StashSeen": {
+        "description": "When the person last looked at the stash. Setting it only ever moves it forward, and never past the server's clock.",
+        "type": "object",
+        "properties": { "at": { "type": "string", "format": "date-time" } },
+        "required": ["at"],
         "additionalProperties": false
       },
       "StashTaken": {

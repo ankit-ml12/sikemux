@@ -447,6 +447,24 @@
       }
     },
     {
+      "method": "put",
+      "path": "/v1/stash/seen",
+      "operationId": "markStashSeen",
+      "summary": "Mark the stash seen up to a time, on every device",
+      "auth": "sessionOrDevice",
+      "request": "StashSeen",
+      "responses": {
+        "200": {
+          "description": "The stash's seen time as it now stands, which is later than the one sent when another device already marked a later one. A stash.seen event follows when it moved.",
+          "body": "StashSeen"
+        },
+        "400": {
+          "description": "The body is not a valid StashSeen.",
+          "body": "ApiError"
+        }
+      }
+    },
+    {
       "method": "get",
       "path": "/v1/stash/{id}",
       "operationId": "getStash",

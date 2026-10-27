@@ -4,6 +4,7 @@ import {
   stashTakenValues,
   type StashItem,
   type StashList,
+  type StashSeen,
   type StashTaken,
   type StashTarget,
 } from "@sikemux/protocol";
@@ -25,6 +26,7 @@ import {
   readBody,
 } from "../http.ts";
 import { limit, type RateLimiter } from "../limits.ts";
+import { appendEvent } from "../events/log.ts";
 import type { Logger } from "../log.ts";
 import type { StashFiles } from "./files.ts";
 import { removeStashFiles } from "./files.ts";
@@ -353,16 +355,61 @@ export function stashRoutes(
           sql<boolean>`(created_at, id) < (${after.createdAt}::timestamptz, ${after.id})`,
         );
       }
-      const rows = await query
-        .orderBy("created_at", "desc")
-        .orderBy("id", "desc")
-        .limit(PAGE + 1)
-        .execute();
+      const [rows, user] = await Promise.all([
+        query
+          .orderBy("created_at", "desc")
+          .orderBy("id", "desc")
+          .limit(PAGE + 1)
+          .execute(),
+        db
+          .selectFrom("users")
+          .select("stash_seen_at")
+          .where("id", "=", userId)
+          .executeTakeFirst(),
+      ]);
       const page = rows.slice(0, PAGE);
       const last = page.at(-1);
-      const body: StashList = { items: page.map(toItem) };
+      const body: StashList = {
+        items: page.map(toItem),
+        seenAt: user?.stash_seen_at?.toISOString() ?? null,
+      };
       if (rows.length > PAGE && last)
         body.cursor = cursorOf(last.created_text, last.id);
+      return c.json(body);
+    })
+    .put("/seen", perUser("stash-seen", 120), async (c) => {
+      const { userId } = c.get("identity");
+      const { at } = await readBody(c, "StashSeen");
+      const seenAt = await db.transaction().execute(async (trx) => {
+        await holdAccount(trx, userId);
+        const moved = await trx
+          .updateTable("users")
+          .set({ stash_seen_at: sql<Date>`least(${at}::timestamptz, now())` })
+          .where("id", "=", userId)
+          .where((eb) =>
+            eb.or([
+              eb("stash_seen_at", "is", null),
+              eb(
+                "stash_seen_at",
+                "<",
+                sql<Date>`least(${at}::timestamptz, now())`,
+              ),
+            ]),
+          )
+          .returning("stash_seen_at")
+          .executeTakeFirst();
+        if (moved) {
+          await appendEvent(trx, { userId, type: "stash.seen" });
+          return moved.stash_seen_at;
+        }
+        const user = await trx
+          .selectFrom("users")
+          .select("stash_seen_at")
+          .where("id", "=", userId)
+          .executeTakeFirstOrThrow();
+        return user.stash_seen_at;
+      });
+      const body: StashSeen = { at: (seenAt ?? new Date(at)).toISOString() };
       return c.json(body);
     })
     .get("/:id", perUser("stash-get", 240), async (c) =>
