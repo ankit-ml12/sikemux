@@ -409,12 +409,14 @@ fn open(found: &PathRef, kind: FileKind, on: &On, bench: &WeakEntity<Workbench>,
     }
 }
 
-/// Opens a file of this host's chat on its agent's desk, its cursor on the line the name gave.
+/// Opens a file of this host's chat on its agent's desk, its cursor on the line the name gave,
+/// and turns the tab rail to its files.
 fn open_on_desk(agent: &str, found: &PathRef, bench: &WeakEntity<Workbench>, cx: &mut App) {
     let path = std::path::PathBuf::from(&found.path);
     bench
         .update(cx, |bench, cx| {
             bench.open_file_on_desk(agent, path, found.line, found.column);
+            bench.show_rail_page(crate::workbench::RailPage::Files, cx);
             bench.parts.redraw(&bench.parts.stage, cx);
         })
         .ok();
