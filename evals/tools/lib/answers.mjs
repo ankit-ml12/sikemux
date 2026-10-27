@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
@@ -344,8 +345,6 @@ function commit(repo, args) {
   return { value: { commit: git('rev-parse', 'HEAD').trim(), branch: 'refs/heads/main', files, left, ...(args.land ? { landed: true } : {}) } };
 }
 
-const PREVIEW = join(import.meta.dirname, 'preview.mjs');
-
 // A dark theme with the variables Sikemux sets on a page's :root; the real values follow the person's theme.
 const THEME = {
   '--background': '#16161d',
@@ -382,7 +381,7 @@ function themed(path) {
   return head + readFileSync(path, 'utf8');
 }
 
-// Draws the agent's page with QuickLook's WebKit and runs its script in jsdom, inside the agent's sandbox.
+// Draws the agent's page in an offscreen WebKit view, as Sikemux does, inside the agent's sandbox.
 function preview(args, repo, profile) {
   const home = dirname(dirname(repo));
   const path = args.path.startsWith('~/') ? join(home, args.path.slice(2)) : isAbsolute(args.path) ? args.path : join(repo, args.path);
@@ -390,27 +389,33 @@ function preview(args, repo, profile) {
   const width = args.width ?? 756;
   const folder = mkdtempSync(join(tmpdir(), 'preview-'));
   const copy = join(folder, basename(path));
+  const shot = join(folder, 'shot.png');
   writeFileSync(copy, themed(path));
-  let ran = { script: null, messages: [] };
   try {
-    const output = execFileSync('/usr/bin/sandbox-exec', ['-f', profile, process.execPath, PREVIEW, copy, path, ...(args.script ? [args.script] : [])], { encoding: 'utf8', timeout: 20_000 });
-    ran = JSON.parse(output);
-  } catch (error) {
-    ran.messages.push({ level: 'error', text: String(error.stderr || error.message).trim().split('\n').at(-1) });
-  }
-  const value = {
-    width,
-    contentHeight: 900,
-    console: { recording: true, recorded: ran.messages.length, matched: ran.messages.length, messages: ran.messages },
-    ...(args.script ? { script: ran.script } : {}),
-  };
-  try {
-    if (args.picture === false) return { value };
-    execFileSync('/usr/bin/qlmanage', ['-t', '-s', String(width), '-o', folder, copy], { stdio: 'ignore', timeout: 20_000 });
-    return { value: { data: readFileSync(join(folder, `${basename(path)}.png`)).toString('base64'), mimeType: 'image/png', ...value } };
-  } catch {
-    return { value: { data: picture(width, 900), mimeType: 'image/png', ...value } };
+    const drawn = JSON.parse(
+      execFileSync('/usr/bin/sandbox-exec', ['-f', profile, previewer(), copy, '/', String(width), args.picture === false ? '' : shot, args.script ?? ''], { encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'ignore'] }) || '{}',
+    );
+    if (drawn.error) return { error: drawn.error };
+    const value = {
+      width,
+      contentHeight: drawn.contentHeight ?? 900,
+      console: { recording: true, recorded: drawn.messages?.length ?? 0, matched: drawn.messages?.length ?? 0, messages: drawn.messages ?? [] },
+      ...(args.script ? { script: drawn.script ?? null } : {}),
+    };
+    if (args.picture === false || !existsSync(shot)) return { value };
+    return { value: { data: readFileSync(shot).toString('base64'), mimeType: 'image/png', ...value } };
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
+}
+
+const PREVIEWERS = '/private/tmp/sikemux-tool-eval-previewers';
+
+// The WebKit previewer, compiled once for each version of its source.
+function previewer() {
+  const source = join(import.meta.dirname, 'preview.swift');
+  mkdirSync(PREVIEWERS, { recursive: true });
+  const binary = join(PREVIEWERS, `page-preview-${createHash('sha256').update(readFileSync(source)).digest('hex').slice(0, 12)}`);
+  if (!existsSync(binary)) execFileSync('/usr/bin/xcrun', ['swiftc', '-O', source, '-o', binary], { stdio: 'ignore' });
+  return binary;
 }

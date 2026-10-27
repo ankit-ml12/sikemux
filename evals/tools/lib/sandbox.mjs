@@ -80,7 +80,7 @@ export function prepareCase(dir, testCase, { at = null, host, shell = '/bin/zsh'
   writeFiles(repo, fixture.dirty);
 
   writeFileSync(join(dir, 'tools.sb'), profile([dir, root], host));
-  writeFileSync(join(dir, 'preview.sb'), profile([dir, root], null, { root, agent, read: [realpathSync(join(REPO, 'node_modules'))] }));
+  writeFileSync(join(dir, 'preview.sb'), profile([dir, root], null, { root, agent }));
   return {
     root,
     agent,
@@ -159,7 +159,7 @@ function profile(writable, host, own) {
     `(allow file-write* ${writable.map((path) => `(subpath ${quote(path)})`).join(' ')})`,
     `(deny file-read* ${PRIVATE.map((path) => `(subpath ${quote(join(HOME, path))})`).join(' ')})`,
     '(allow file-read-metadata)',
-    `(allow file-read* (subpath ${quote(join(EVAL, 'lib'))}) (subpath ${quote(join(EVAL, 'rivals'))}) ${(own?.read ?? []).map((path) => `(subpath ${quote(path)})`).join(' ')})`,
+    `(allow file-read* (subpath ${quote(join(EVAL, 'lib'))}) (subpath ${quote(join(EVAL, 'rivals'))}))`,
     `(deny process-exec ${[...new Set(NEVER_RUN.flatMap((path) => (existsSync(path) ? [path, realpathSync(path)] : [])))].map((path) => `(literal ${quote(path)})`).join(' ')})`,
     `(deny network-outbound ${SIKEMUX_SOCKETS.map((path) => `(remote unix-socket (path-regex #"^${path.replace(/[.]/g, '\\.')}/"))`).join(' ')})`,
     '(deny signal)',
