@@ -20,6 +20,6 @@ pub use draw::{
     Chip, CodeColours, CodeRuns, DrawFence, DrawImage, Fence, Fences, FileIcon, FileKind, FileOf,
     FilePress, LinkIcon, OnFile, OnLink, OnTask, Pen, Style,
 };
-pub use find::{FoundChanged, Query};
+pub use find::{DocFind, FoundChanged, Query};
 pub use markdown::{Kind, Markdown, Marks, Node, Piece, Rich, Table};
 pub use transcript::{init, AwayChanged, Change, Copy, EmptyChanged, Row, RowsChanged, Transcript};
