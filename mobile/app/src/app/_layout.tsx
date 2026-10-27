@@ -23,6 +23,9 @@ import { currentRelays, useUpdateRequired } from '@/network/network';
 import { useOverTheAirUpdates } from '@/updates/overTheAir';
 import { Crashed } from '@/screens/Crashed';
 import { Unreachable } from '@/screens/Unreachable';
+import { useShareExtension } from '@/stash/extension';
+import { useShareIntake } from '@/stash/incoming';
+import { useStashFeed } from '@/stash/store';
 import { UpdateRequired } from '@/screens/UpdateRequired';
 import { useColors } from '@/ui/theme';
 
@@ -118,12 +121,14 @@ function Routes({ background }: { background: string }) {
           <Stack.Screen name="join" />
           <Stack.Screen name="host-sign-in" />
           <Stack.Screen name="share/[id]" />
+          <Stack.Screen name="stash" />
         </Stack.Protected>
       </Stack>
       {!isSignedIn || lock.phase === 'open' ? (
         <>
           <NotificationsOffer />
           <NotificationResponses />
+          {isSignedIn ? <ShareIntake /> : null}
         </>
       ) : null}
       {isSignedIn ? <LockCover /> : null}
@@ -137,10 +142,18 @@ function NotificationResponses() {
   return null;
 }
 
+/** Mounted while signed in and unlocked, so a share opens its sheet only then. */
+function ShareIntake() {
+  useShareIntake();
+  return null;
+}
+
 function PhoneOnAccount() {
   useOverTheAirUpdates();
   useAccountSequence();
   useAccountHostsFeed();
+  useStashFeed();
+  useShareExtension();
   useConnectArrivals();
   return null;
 }

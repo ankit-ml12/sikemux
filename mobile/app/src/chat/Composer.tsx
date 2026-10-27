@@ -23,6 +23,9 @@ import { ComposerAttachments } from './Attachments';
 import { ComposerInput } from './ComposerInput';
 import { AttachSheet } from './AttachSheet';
 import { MAX_ATTACHMENTS } from '@/core/wire.generated';
+import type { StashItem } from '@/stash/api';
+import { intoMessage, stashIdsOf } from '@/stash/attach';
+import { takeStash } from '@/stash/store';
 import type { ChatSession } from './session';
 import type { Attachment } from './uploads';
 import { useDraft } from './useChat';
@@ -457,6 +460,8 @@ export const Composer = memo(function Composer({
   const styles = useStyles(makeStyles);
   const draft = useDraft(session);
   const [adding, setAdding] = useState(false);
+  /** Stashed links and text put in the message, which leave the stash once it is sent. */
+  const [stashedWords, setStashedWords] = useState<string[]>([]);
   const uploading = attachments.some((attachment) => attachment.upload === 'sending');
   const room = MAX_ATTACHMENTS - attachments.length;
   const [focused, setFocused] = useState(false);
@@ -505,9 +510,12 @@ export const Composer = memo(function Composer({
       return;
     }
     haptics.tap();
+    const stashed = stashIdsOf(attachments, stashedWords);
     const sending = question ? session.answerWith(text, question.onAnswer) : session.send(text);
     void sending.then((sent) => {
       if (!sent) return;
+      void takeStash(stashed);
+      setStashedWords([]);
       // Clearing the state alone leaves text the keyboard is still composing.
       input.current?.clear();
       session.setDraft('');
@@ -517,6 +525,13 @@ export const Composer = memo(function Composer({
 
   const attach = (picking: Promise<Attachment[]>) => {
     picking.then(session.attach).catch((error: unknown) => session.report(`could not pick: ${problem(error)}`));
+  };
+
+  const fromStash = (items: StashItem[]) => {
+    const put = intoMessage(items, draft, session.fromStash);
+    session.setDraft(put.draft);
+    setStashedWords((known) => [...known, ...put.words]);
+    if (put.files) attach(put.files);
   };
 
   return (
@@ -606,7 +621,7 @@ export const Composer = memo(function Composer({
           )}
         </View>
       </View>
-      <AttachSheet visible={adding} room={room} onClose={() => setAdding(false)} onAttach={attach} />
+      <AttachSheet visible={adding} room={room} onClose={() => setAdding(false)} onAttach={attach} onStash={fromStash} />
       <ConfigSheet
         visible={sheet}
         onClose={() => setSheet(false)}

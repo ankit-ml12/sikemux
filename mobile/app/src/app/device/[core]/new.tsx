@@ -16,6 +16,9 @@ import { AttachSheet } from '@/chat/AttachSheet';
 import { YoloToggle } from '@/chat/Composer';
 import { ComposerInput } from '@/chat/ComposerInput';
 import { fitting, uploadEach, type Attachment } from '@/chat/uploads';
+import type { StashItem } from '@/stash/api';
+import { downloadedFile, intoMessage, stashIdsOf } from '@/stash/attach';
+import { takeStash } from '@/stash/store';
 import { MAX_ATTACHMENTS } from '@/core/wire.generated';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf } from '@/core/problem';
@@ -160,6 +163,8 @@ export default function NewChat() {
   const [draft, setDraft] = useState('');
   const [sheet, setSheet] = useState<'agent' | 'project' | 'attach' | 'settings'>();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  /** Stashed links and text put in the message, which leave the stash once it is sent. */
+  const [stashedWords, setStashedWords] = useState<string[]>([]);
   const [sending, setSending] = useState<Sending>();
   const starting = Boolean(sending);
   const [problem, setProblem] = useState<string>();
@@ -200,6 +205,13 @@ export default function NewChat() {
         setAttachments((now) => [...now, ...fits]);
       })
       .catch((error: unknown) => setProblem(`Could not pick: ${problemOf(error)}`));
+  };
+
+  const fromStash = (items: StashItem[]) => {
+    const put = intoMessage(items, draft, downloadedFile);
+    setDraft(put.draft);
+    setStashedWords((known) => [...known, ...put.words]);
+    if (put.files) attach(put.files);
   };
 
   /** Answers the files as they ended up, and all of them sent or null when one did not get there. */
@@ -245,6 +257,8 @@ export default function NewChat() {
       const { sent, files } = await upload(live.connection, agentId, shown.attachments);
       if (!sent) return giveBack(shown, files, 'Could not send every file to the host');
       chatSession(core, agentId).sendWhenAttached(text, sent);
+      void takeStash(stashIdsOf(shown.attachments, stashedWords));
+      setStashedWords([]);
       router.replace({ pathname: '/device/[core]/chat/[agent]', params: { core, agent: agentId, started: '1' } });
     } catch (error) {
       giveBack(shown, shown.attachments, problemOf(error));
@@ -363,7 +377,7 @@ export default function NewChat() {
           </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
-      <AttachSheet visible={sheet === 'attach'} room={room} onClose={() => setSheet(undefined)} onAttach={attach} />
+      <AttachSheet visible={sheet === 'attach'} room={room} onClose={() => setSheet(undefined)} onAttach={attach} onStash={fromStash} />
       <AgentSheet
         visible={sheet === 'agent'}
         onClose={() => setSheet(undefined)}

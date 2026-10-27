@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Device, DeviceIdentity, newDeviceKey, type DeviceLike } from '@sikemux/native';
 
 import { currentRelays, relaySettings, updateRequired } from '@/network/network';
+import { stashNative } from '../../modules/stash';
 
 const KEY_ITEM = 'sikemux.device-key';
 /** The key stays on this phone: a backup restored onto another must not make it the same device. */
@@ -28,6 +29,11 @@ async function deviceKey(): Promise<ArrayBuffer> {
   const key = newDeviceKey();
   await SecureStore.setItemAsync(KEY_ITEM, hex(key), KEY_OPTIONS);
   return key;
+}
+
+/** This phone's key in hex, for the share extension, which signs its requests to the accounts server with it. */
+export async function deviceKeyHex(): Promise<string> {
+  return hex(await deviceKey());
 }
 
 let identity: Promise<DeviceIdentity> | undefined;
@@ -86,6 +92,7 @@ export async function goOffline() {
  */
 export async function rotateDeviceKey(): Promise<void> {
   await SecureStore.deleteItemAsync(KEY_ITEM, KEY_OPTIONS);
+  stashNative?.setDeviceKey?.(null);
   identity = undefined;
   await goOffline();
 }

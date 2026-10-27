@@ -3,6 +3,9 @@ import { Image, Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensi
 import { FlashList } from '@shopify/flash-list';
 
 import { counted } from '@/devices/words';
+import type { StashItem } from '@/stash/api';
+import { StashPicker } from '@/stash/StashPicker';
+import { useStash } from '@/stash/store';
 import { Button, Chip } from '@/ui/controls';
 import { haptics } from '@/ui/haptics';
 import { Icon } from '@/ui/Icon';
@@ -30,19 +33,22 @@ type Cell = LibraryPhoto | typeof CAMERA;
 
 /**
  * Where a message's photos and files come from: the camera, the newest photos in a grid that drags up
- * into the whole library, or the Files app. What is picked comes back through `onAttach`.
+ * into the whole library, the Files app, or the stash. What is picked comes back through `onAttach`,
+ * and stash items through `onStash`.
  */
 export function AttachSheet({
   visible,
   room,
   onClose,
   onAttach,
+  onStash,
 }: {
   visible: boolean;
   /** How many more files the message takes. */
   room: number;
   onClose: () => void;
   onAttach: (picking: Promise<Attachment[]>) => void;
+  onStash: (items: StashItem[]) => void;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
@@ -50,12 +56,17 @@ export function AttachSheet({
   const library = useLibrary(GALLERY && visible);
   const [full, setFull] = useState(false);
   const [chosen, setChosen] = useState<LibraryPhoto[]>([]);
+  const [stashing, setStashing] = useState(false);
+  const [stashChosen, setStashChosen] = useState<StashItem[]>([]);
+  const waiting = useStash().items.length;
   const [shown, setShown] = useState(visible);
   if (shown !== visible) {
     setShown(visible);
     if (visible) {
       setFull(false);
       setChosen([]);
+      setStashing(false);
+      setStashChosen([]);
     }
   }
   // iOS shows a system screen only once the sheet over the app has gone.
@@ -86,6 +97,14 @@ export function AttachSheet({
     onAttach(libraryPhotos(chosen));
     onClose();
   };
+  const toggleStash = (item: StashItem) =>
+    setStashChosen((now) =>
+      now.some((known) => known.id === item.id) ? now.filter((known) => known.id !== item.id) : now.length < room ? [...now, item] : now,
+    );
+  const addStash = () => {
+    onStash(stashChosen);
+    onClose();
+  };
 
   const tiles = (
     <View style={styles.tiles}>
@@ -96,6 +115,7 @@ export function AttachSheet({
         onPress={() => (sees ? setFull(true) : GALLERY && library.canAsk ? library.ask() : leave(() => pickPhotos(room)))}
       />
       <Tile icon="IconFile" label="Files" onPress={() => leave(() => pickFiles(room))} />
+      <Tile icon="IconStack" label="Stash" count={waiting} onPress={() => setStashing(true)} />
     </View>
   );
   const limited =
@@ -113,11 +133,25 @@ export function AttachSheet({
       onClose={onClose}
       onDismiss={dismissed}
       scrolls
-      expand={gallery ? { full, peek, onFull: setFull } : undefined}
+      expand={
+        stashing
+          ? { full: true, peek, onFull: (open) => open || setStashing(false) }
+          : gallery
+            ? { full, peek, onFull: setFull }
+            : undefined
+      }
       footer={
-        chosen.length ? <Button kind="primary" title={`Add ${chosen.length} ${counted('photo', chosen.length)}`} onPress={add} /> : null
+        stashing ? (
+          stashChosen.length ? (
+            <Button kind="primary" title={`Add ${stashChosen.length}`} onPress={addStash} />
+          ) : null
+        ) : chosen.length ? (
+          <Button kind="primary" title={`Add ${chosen.length} ${counted('photo', chosen.length)}`} onPress={add} />
+        ) : null
       }>
-      {full ? (
+      {stashing ? (
+        <StashPicker chosen={stashChosen} onToggle={toggleStash} onBack={() => setStashing(false)} onClose={onClose} />
+      ) : full ? (
         <View style={styles.head}>
           <Pressable onPress={onClose} hitSlop={8} style={styles.close} accessibilityRole="button" accessibilityLabel="Close">
             <Icon name="IconClose" size={15} color={colors.tertiary} />
@@ -126,7 +160,7 @@ export function AttachSheet({
           <View style={styles.close} />
         </View>
       ) : null}
-      {gallery ? (
+      {stashing ? null : gallery ? (
         <View style={styles.grid}>
           <FlashList<Cell>
             data={full ? library.photos : [CAMERA, ...library.photos]}
@@ -180,15 +214,34 @@ export function AttachSheet({
   );
 }
 
-function Tile({ icon, label, onPress }: { icon: 'IconCamera' | 'IconImage' | 'IconFile'; label: string; onPress: () => void }) {
+function Tile({
+  icon,
+  label,
+  count,
+  onPress,
+}: {
+  icon: 'IconCamera' | 'IconImage' | 'IconFile' | 'IconStack';
+  label: string;
+  count?: number;
+  onPress: () => void;
+}) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   return (
-    <Pressable onPress={onPress} style={styles.tile} accessibilityRole="button" accessibilityLabel={label}>
+    <Pressable
+      onPress={onPress}
+      style={styles.tile}
+      accessibilityRole="button"
+      accessibilityLabel={count ? `${label}, ${count} waiting` : label}>
       {({ pressed }) => (
         <>
           <View style={[styles.tileFace, pressed && { backgroundColor: colors.active }]}>
             <Icon name={icon} size={20} color={colors.ink} />
+            {count ? (
+              <View style={styles.count}>
+                <Text style={styles.countText}>{count > 99 ? '99+' : count}</Text>
+              </View>
+            ) : null}
           </View>
           <Text style={styles.tileText}>{label}</Text>
         </>
@@ -261,6 +314,19 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
     },
     tileText: { fontFamily: fonts.uiMedium, fontSize: 12.5, color: colors.secondary },
+    count: {
+      position: 'absolute',
+      top: -6,
+      right: 6,
+      minWidth: 18,
+      height: 18,
+      paddingHorizontal: 5,
+      borderRadius: 9,
+      backgroundColor: colors.ink,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    countText: { fontFamily: fonts.uiSemibold, fontSize: 11, color: colors.ground },
     limited: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', height: LIMITED_LINE, paddingHorizontal: 4 },
     manage: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.accent },
     head: { flexDirection: 'row', alignItems: 'center', height: 46, marginBottom: 6 },

@@ -76,8 +76,11 @@ let devicesProblem: string | null = null;
 let devicesLoad = 0;
 let away = false;
 
+const anyListeners = new Set<() => void>();
+
 function changed() {
   listeners.forEach((listener) => listener());
+  anyListeners.forEach((listener) => listener());
 }
 
 function subscribe(listener: () => void) {
@@ -87,6 +90,20 @@ function subscribe(listener: () => void) {
 
 function hostChanged(core: string) {
   hostListeners.get(core)?.forEach((listener) => listener());
+  anyListeners.forEach((listener) => listener());
+}
+
+/** Hears every change to the paired hosts or any host's live state. */
+export function onAnyHost(listener: () => void) {
+  anyListeners.add(listener);
+  return () => {
+    anyListeners.delete(listener);
+  };
+}
+
+/** The paired hosts as last read, without reading them again. */
+export function knownDevices(): readonly PairedDevice[] {
+  return devices;
 }
 
 function subscribeHost(core: string, listener: () => void) {

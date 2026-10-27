@@ -16,6 +16,8 @@ export type LiveDeps = {
   cursor: Cursor;
   /** A host joined, changed or left the account: the list of hosts is stale. */
   hostsChanged(): void;
+  /** An item was stashed, changed or removed on the account. */
+  stashChanged(): void;
   /** Another device or host joined the account. */
   deviceAdded(key: string): void;
   /** The server took this phone's hello, so the account is reachable again. */
@@ -37,10 +39,11 @@ export function readEvents(
   events: AccountEvent[],
   ownKey: string,
   mark: number,
-): { newest: number; handled: number; hostsChanged: boolean; added: string[]; gone?: RevokeReason } {
+): { newest: number; handled: number; hostsChanged: boolean; stashChanged: boolean; added: string[]; gone?: RevokeReason } {
   let newest = 0;
   let handled = mark;
   let hostsChanged = false;
+  let stashChanged = false;
   const added: string[] = [];
   let gone: RevokeReason | undefined;
   for (const event of [...events].sort((a, b) => a.id - b.id)) {
@@ -49,12 +52,13 @@ export function readEvents(
     handled = event.id;
     if (event.type === 'account.deleted') gone = 'account_deleted';
     else if (event.type === 'device.revoked' && event.key === ownKey) gone ??= event.reason ?? 'removed';
+    else if (event.type.startsWith('stash.')) stashChanged = true;
     else {
       if (event.type === 'device.added' && event.key && event.key !== ownKey && isNews(event.at)) added.push(event.key);
       if (event.role === 'host') hostsChanged = true;
     }
   }
-  return { newest, handled, hostsChanged, added, gone };
+  return { newest, handled, hostsChanged, stashChanged, added, gone };
 }
 
 /** This phone's connection to the account: hears changes as they happen and learns when it was removed. */
@@ -67,7 +71,10 @@ export class LiveAccount extends LiveClient {
       connect: deps.connect,
       token: () => deps.token(),
       ready: deps.ready,
-      reset: deps.hostsChanged,
+      reset: () => {
+        deps.hostsChanged();
+        deps.stashChanged();
+      },
       gone: deps.gone,
       random: deps.random,
       hello: async (nonce) => {
@@ -84,6 +91,7 @@ export class LiveAccount extends LiveClient {
           mark = read.handled;
         }
         if (read.hostsChanged) deps.hostsChanged();
+        if (read.stashChanged) deps.stashChanged();
         for (const key of read.added) deps.deviceAdded(key);
         return { ack: read.newest, gone: read.gone };
       },

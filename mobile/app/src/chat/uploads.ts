@@ -15,12 +15,15 @@ export type Attachment = {
   path?: string;
   upload?: 'sending' | 'failed';
   problem?: string;
+  /** The stash item it came from, which leaves the stash once the message is sent. */
+  stashId?: string;
 };
 
 /** What of `picked` the host would take beside the `held` files already picked, and why the rest were left out. */
 export function fitting(held: number, picked: readonly Attachment[]): { fits: Attachment[]; notice: string | null } {
-  const tooBig = picked.filter((attachment) => attachment.size > MAX_ATTACHMENT_BYTES);
-  const small = picked.filter((attachment) => attachment.size <= MAX_ATTACHMENT_BYTES);
+  const sendable = (attachment: Attachment) => Boolean(attachment.path) || attachment.size <= MAX_ATTACHMENT_BYTES;
+  const tooBig = picked.filter((attachment) => !sendable(attachment));
+  const small = picked.filter(sendable);
   const room = Math.max(0, MAX_ATTACHMENTS - held);
   const fits = small.slice(0, room);
   if (tooBig.length) {

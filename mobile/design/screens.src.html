@@ -344,7 +344,7 @@
   .gallery-full { background: var(--surface-overlay); padding: 0 12px; overflow: hidden; }
   .gallery-head { height: 46px; flex: none; display: flex; align-items: center; margin: 0 -4px 6px; }
   .gallery-head b { flex: 1; text-align: center; font-size: 16px; font-weight: 600; color: var(--text-primary); }
-  .gallery-head .spacer { width: 40px; }
+  .gallery-head .spacer { flex: none; width: 40px; }
   .gallery-add { position: absolute; left: 0; right: 0; bottom: 0; padding: 28px 16px 34px; background: linear-gradient(to bottom, transparent, var(--surface-overlay) 40%); }
   .composer-wrap.jumps { position: relative; }
   .jump { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-raised) 55%, var(--surface-sunken)); color: var(--ink-dim); box-shadow: 0 6px 18px rgba(0,0,0,.52); }
@@ -866,6 +866,72 @@
   .page-card { display: inline-flex; align-self: flex-start; align-items: center; gap: 8px; max-width: 100%; margin: 6px 0; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-raised); color: var(--ink-dim); }
   .page-card b { font-weight: 500; font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .page-card span { font-size: 12px; color: var(--ink-faint); white-space: nowrap; }
+  /* ---------- stash: the share sheet and the composer's stash ---------- */
+  .behind { position: absolute; inset: 0; background: #f4f3f7; padding: 64px 22px 0; display: flex; flex-direction: column; gap: 12px; }
+  .behind i { display: block; height: 11px; border-radius: 4px; background: #d9d7e0; }
+  .behind i.h { height: 22px; width: 80%; background: #b9b6c4; margin-bottom: 6px; }
+  .behind i.pic { height: 150px; border-radius: 10px; background: linear-gradient(160deg, #6c8cd5, #2e3d63); margin: 6px 0; }
+  .behind i.short { width: 62%; }
+  .share-sheet { top: 64px; padding: 8px 16px 0; display: flex; flex-direction: column; border-radius: 14px 14px 0 0; }
+  .share-sheet.android { position: static; top: auto; flex: 1; border: 0; border-radius: 0; box-shadow: none; background: var(--surface); padding-top: 0; }
+  .share-head { height: 46px; flex: none; display: flex; align-items: center; margin: 0 -6px 4px; }
+  .share-head b { flex: 1; text-align: center; font-size: 16px; font-weight: 600; letter-spacing: -0.015em; color: var(--text-primary); }
+  .share-head .text-btn, .share-head .spacer { flex: none; width: 70px; font-size: 16px; color: var(--text-secondary); padding-left: 6px; }
+  .share-head .icon-btn { flex: none; margin-right: 30px; }
+  .share-card { flex: none; display: flex; flex-direction: column; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-raised); overflow: hidden; }
+  .share-card .og { height: 128px; background: radial-gradient(circle at 76% 30%, #ffca85 0 8%, transparent 9%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 48%, #a277ff 64%, #1d2a3a 65%, #101a24 100%); }
+  .share-card .words { padding: 10px 12px 11px; display: flex; flex-direction: column; gap: 4px; }
+  .share-card .words b { font-size: 14.5px; font-weight: 600; line-height: 1.3; color: var(--text-primary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .share-card .site { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-tertiary); }
+  .share-card.flat { flex-direction: row; align-items: center; gap: 12px; padding: 10px; }
+  .share-card.flat .words { padding: 0; flex: 1; min-width: 0; }
+  .share-card .photos { display: flex; gap: 6px; }
+  .share-card .photos .photo { width: 72px; height: 72px; border-radius: 10px; flex: none; }
+  .share-card .count { font-size: 13px; color: var(--text-tertiary); }
+  .share-card .progress { height: 3px; background: var(--border); }
+  .share-card .progress i { display: block; height: 100%; width: 42%; background: var(--ink); }
+  .share-note { flex: none; margin-top: 10px; min-height: 44px; padding: 11px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-sunken); font-size: 15px; line-height: 1.4; color: var(--text-primary); }
+  .share-note.ph { color: var(--text-tertiary); }
+  .share-sheet .glabel { padding: 18px 4px 4px; }
+  .share-sheet .rows { flex: 1; min-height: 0; overflow: hidden; margin: 0 -8px; }
+  .share-sheet .rows .row .t { color: var(--text-primary); }
+  .share-sheet .rows .row.new .mark { color: var(--text-secondary); }
+  .share-sheet .rows .row.new .t { color: var(--text-secondary); }
+  .share-sheet .rows .row.new .t b { color: var(--text-primary); font-weight: 500; }
+  .share-sheet .rows .row.sending { background: var(--surface-active); }
+  .share-sheet .dim { opacity: .45; }
+  .share-foot { flex: none; padding: 10px 0 34px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; border-top: 1px solid var(--line); background: inherit; }
+  .btn .spin { width: 16px; height: 16px; border-color: color-mix(in oklab, var(--bg) 30%, transparent); border-top-color: var(--bg); }
+  .share-done { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding-bottom: 60px; text-align: center; }
+  .share-done .prompt-glyph { margin-bottom: 12px; color: var(--live); border-color: color-mix(in oklab, var(--live) 40%, transparent); background: color-mix(in oklab, var(--live) 7%, var(--surface-raised)); }
+  .share-done b { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; color: var(--text-primary); }
+  .share-done span { font-size: 14px; color: var(--text-tertiary); }
+  .share-sheet.short { top: auto; height: 380px; }
+
+  .attach-tiles .count-on { position: relative; }
+  .attach-tiles .badge { position: absolute; top: -5px; right: 10px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 11px; font-weight: 600; font-style: normal; display: grid; place-items: center; }
+  .stash-list { display: flex; flex-direction: column; gap: 2px; margin: 0 -4px; }
+  .stash-item { display: flex; align-items: center; gap: 12px; min-height: 62px; padding: 8px; border-radius: 10px; border: 1px solid transparent; }
+  .stash-item.on { background: var(--surface-active); }
+  .stash-item .face { flex: none; width: 46px; height: 46px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-raised); display: grid; place-items: center; color: var(--text-secondary); overflow: hidden; }
+  .stash-item .face.og { background: radial-gradient(circle at 76% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 48%, #a277ff 64%, #1d2a3a 65%, #101a24 100%); }
+  .stash-item .face.photo { border-color: transparent; background: radial-gradient(circle at 72% 30%, #ffca85 0 9%, transparent 10%), linear-gradient(160deg, #2b2147 0%, #5b3fa8 45%, #a277ff 62%, #1d2a3a 63%, #101a24 100%); }
+  .stash-item .body { flex: 1; min-width: 0; }
+  .stash-item .t { font-size: 14.5px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stash-item .t.mono { font-family: var(--mono); font-size: 13px; font-weight: 400; }
+  .stash-item .s { margin-top: 2px; font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stash-item .n { margin-top: 3px; font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stash-item .pick { flex: none; width: 22px; height: 22px; border-radius: 999px; border: 1.5px solid var(--gray-500); display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--bg); }
+  .stash-item.on .pick { border-color: var(--acc); background: var(--acc); }
+  .stash-item.ghost .face { border-color: transparent; background: var(--surface-raised); }
+  .stash-item.ghost .t, .stash-item.ghost .s { height: 11px; border-radius: 4px; background: var(--surface-raised); }
+  .stash-item.ghost .t { width: 64%; }
+  .stash-item.ghost .s { width: 38%; margin-top: 8px; }
+  .stash-empty { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 70px 36px 0; text-align: center; }
+  .stash-empty .prompt-glyph { margin-bottom: 8px; }
+  .stash-empty b { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+  .stash-empty span { font-size: 14px; line-height: 1.45; color: var(--text-tertiary); text-wrap: balance; }
+  .stash-empty .dev-connect { margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -3000,6 +3066,195 @@ expected 1 write, got 2</div>
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Recent prompts</b><div class="note">The Mac's up arrow, for a thumb: pulling an empty composer up, or Recent prompts in the menu, lists what was sent in this chat, newest first, two lines each. A tap puts it back in the composer to edit or send again.</div></figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<section class="flow">
+  <h2>Sharing to Sikemux</h2>
+  <p>Sikemux is in every app's share menu. What is shared goes to a chat's composer, unsent, or to the Stash, which keeps it for later on the account, so every signed-in device and host sees it. One sheet does both: what is being shared on top, a note under it, the chats used last, and Stash at the bottom.</p>
+  <div class="phones">
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status" style="color:#111"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="behind"><i class="h"></i><i></i><i></i><i class="short"></i><i class="pic"></i><i></i><i></i></div>
+        <div class="scrim"></div>
+        <div class="sheet share-sheet">
+          <div class="share-head"><span class="text-btn">Cancel</span><b>Sikemux</b><span class="spacer"></span></div>
+          <div class="share-card"><div class="og"></div><div class="words"><b>Stash links from your phone for agents to read later</b><span class="site">{{IconGlobe:12}}github.com</span></div></div>
+          <div class="share-note ph">Add a note</div>
+          <div class="glabel">To a chat</div>
+          <div class="rows">
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · MacBook Pro</div></div><span class="row-name">Otter</span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · MacBook Pro</div></div><span class="row-name">Flint</span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Download size on the hero</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front · build-box</div></div><span class="row-name">Birch</span></div>
+            <div class="row new"><span class="mark">{{IconPlus:18}}</span><div class="body"><div class="t">New chat in <b>sikemux</b></div><div class="s">MacBook Pro</div></div></div>
+          </div>
+          <div class="share-foot"><div class="btn primary">{{IconStack:17}}Stash</div></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Sharing a link, on iPhone</b><div class="note">The share extension's sheet, over the app it was opened from. A link shows its page's picture, title and site when iOS has them, or just the title and site. The note is one optional line that grows as it is written. Under To a chat, the four chats used last, across every host, each with its agent's mark, title, project and host; then New chat in the project of the first, on its host. A tap on a chat sends it there at once, with no second step; Stash keeps it for later. Nothing is sent to an agent either way.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="sheet share-sheet android">
+          <div class="share-head"><span class="icon-btn">{{IconClose:16}}</span><b>Sikemux</b><span class="spacer"></span></div>
+          <div class="share-card flat"><div class="photos"><span class="photo"></span><span class="photo" style="background:linear-gradient(160deg,#61ffca 0%,#2a6b5a 50%,#0f2a24 100%)"></span></div><div class="words"><b>2 photos</b><span class="count">3.4 MB</span></div></div>
+          <div class="share-note">The crash on resume, both times after a call<span class="caret" style="display:inline-block;width:1.5px;height:18px;background:var(--acc);vertical-align:-3px;margin-left:1px"></span></div>
+          <div class="glabel">To a chat</div>
+          <div class="rows">
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · MacBook Pro</div></div><span class="row-name">Flint</span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · MacBook Pro</div></div><span class="row-name">Otter</span></div>
+            <div class="row new"><span class="mark">{{IconPlus:18}}</span><div class="body"><div class="t">New chat in <b>sikemux</b></div><div class="s">MacBook Pro</div></div></div>
+          </div>
+          <div class="share-foot"><div class="btn primary">{{IconStack:17}}Stash</div></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Sharing photos, on Android</b><div class="note">The app opens on a screen of its own, the same sheet at full height, and goes back to the app that shared once it is done. Photos and videos show as thumbnails, up to four with a count after; a file shows its icon, name and size; text shows its first lines. Anything over 25 MB says so in red under the card and leaves only the chats that can take a smaller one.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status" style="color:#111"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="behind"><i class="h"></i><i></i><i></i><i class="short"></i><i class="pic"></i><i></i><i></i></div>
+        <div class="scrim"></div>
+        <div class="sheet share-sheet">
+          <div class="share-head"><span class="text-btn dim">Cancel</span><b>Sikemux</b><span class="spacer"></span></div>
+          <div class="share-card flat"><div class="photos"><span class="photo" style="background:linear-gradient(20deg,#ff6ac1 0%,#7a3a7a 40%,#1d1430 100%)"></span></div><div class="words"><b>screen-recording.mov</b><span class="count">18.2 MB</span></div></div>
+          <div class="share-card" style="margin-top:-1px;border-top:0;border-radius:0 0 14px 14px"><div class="progress"><i></i></div></div>
+          <div class="share-note ph dim">Add a note</div>
+          <div class="glabel dim">To a chat</div>
+          <div class="rows dim">
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · MacBook Pro</div></div><span class="row-name">Otter</span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · MacBook Pro</div></div><span class="row-name">Flint</span></div>
+          </div>
+          <div class="share-foot"><div class="btn primary"><span class="spin"></span>Stashing</div></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Stashing a large file</b><div class="note">Text and links go in a moment and skip straight to the confirmation. A file shows how much has gone in a line under its card, while the rest of the sheet dims and takes no taps; the button keeps its place and says Stashing. Cancel stops the upload.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status" style="color:#111"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="behind"><i class="h"></i><i></i><i></i><i class="short"></i><i class="pic"></i><i></i><i></i></div>
+        <div class="scrim"></div>
+        <div class="sheet share-sheet short">
+          <div class="share-done"><div class="prompt-glyph small">{{IconCheck:22}}</div><b>Stashed</b><span>Attach it from + in any chat.</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Stashed</b><div class="note">The sheet settles to a check in the live green with one line, holds for under a second and closes itself, with a light tap of the haptics. Sent to a chat it reads "Added to Otter's draft" and "Unsent, on MacBook Pro", since the host puts it in that chat's draft and never sends it on its own.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status" style="color:#111"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="behind"><i class="h"></i><i></i><i></i><i class="short"></i><i class="pic"></i><i></i><i></i></div>
+        <div class="scrim"></div>
+        <div class="sheet share-sheet short">
+          <div class="share-head"><span class="text-btn">Cancel</span><b>Sikemux</b><span class="spacer"></span></div>
+          <div class="share-done"><div class="prompt-glyph small" style="color:var(--text-secondary);border-color:var(--border);background:var(--surface-raised)">{{IconGlobe:22}}</div><b>Couldn't stash this</b><span>Check the phone is online.</span><span class="dev-connect" style="margin-top:12px">Try again</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Offline</b><div class="note">When Sikemux can't be reached, the sheet says so and keeps what was being shared, so Try again picks up where it was. A phone that is not signed in says "Sign in to Sikemux first" with "Open the app and sign in, then share again", since a share extension can't open its app.</div></figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<section class="flow on-host">
+  <h2>Stash in the composer</h2>
+  <p>Stash joins Camera, Photos and Files on the composer's +. It lists what the account has stashed and not yet used, newest first, from any device. An item picked goes with the message like any photo or file.</p>
+  <div class="phones">
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Show the download size next to the button.</div>
+          <div class="prose">Done. The size comes from the latest release's DMG at build time, then from the visitor's browser.</div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet gallery-half">
+          <div class="grabber"></div>
+          <div class="attach-tiles">
+            <span><i>{{IconCamera:20}}</i>Camera</span>
+            <span><i>{{IconImage:20}}</i>Photos</span>
+            <span><i>{{IconFile:20}}</i>Files</span>
+            <span class="count-on"><i>{{IconStack:20}}</i><em class="badge">4</em>Stash</span>
+          </div>
+          <div class="gallery">
+            <span class="cam">{{IconCamera:20}}Camera</span>
+            <span class="photo ph1"></span><span class="photo ph2"></span><span class="photo ph3"></span>
+            <span class="photo ph4"></span><span class="photo ph5"></span><span class="photo"></span><span class="photo ph6"></span>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Stash on the +</b><div class="note">A fourth tile, after Files, with the count of what is waiting in the stash; no count when it is empty. On Android the sheet is these four tiles.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen gallery-full">
+        <div class="gallery-head"><span class="icon-btn">{{IconClose:15}}</span><b>Stash</b><span class="spacer"></span></div>
+        <div class="stash-list">
+          <div class="stash-item on"><span class="face og"></span><div class="body"><div class="t">Stash links from your phone for agents to read later</div><div class="s">github.com · 2m</div></div><span class="pick">1</span></div>
+          <div class="stash-item"><span class="face photo"></span><div class="body"><div class="t">PXL_20261027_0912.jpg</div><div class="n">The crash on resume, both times after a call</div><div class="s">2.1 MB · 1h</div></div><span class="pick"></span></div>
+          <div class="stash-item"><span class="face">{{IconText:18}}</span><div class="body"><div class="t">Rate limits: 60 a minute per account, 600 per host, and the burst…</div><div class="s">Text · 3h</div></div><span class="pick"></span></div>
+          <div class="stash-item on"><span class="face">{{IconFile:18}}</span><div class="body"><div class="t mono">invoice-2026-10.pdf</div><div class="s">240 KB · yesterday</div></div><span class="pick">2</span></div>
+          <div class="stash-item"><span class="face">{{IconLink:18}}</span><div class="body"><div class="t">docs.expo.dev/versions/latest/config/app</div><div class="s">docs.expo.dev · 2d</div></div><span class="pick"></span></div>
+        </div>
+        <div class="gallery-add"><span class="btn primary">Add 2</span></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>The stash</b><div class="note">The sheet rises to full height under × and Stash. Each item shows what it is: a link its page's picture, title and site; photos a thumbnail; text its first line; a file its icon and name in the code face, with its size. A note shows under the title, then the site, "Text" or the size, and when. Taps number the picks as photos are, up to what the message has room for, and Add puts them on the composer: a link or text goes into the message's text, and the host fetches a file or photo from the stash itself, so it sits on the composer as a file, past the 10 MB a file picked on the phone may be. Once the message is sent its items leave the stash. A long press offers Remove from stash.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen gallery-full">
+        <div class="gallery-head"><span class="icon-btn">{{IconClose:15}}</span><b>Stash</b><span class="spacer"></span></div>
+        <div class="stash-list">
+          <div class="stash-item ghost"><span class="face"></span><div class="body"><div class="t"></div><div class="s"></div></div></div>
+          <div class="stash-item ghost"><span class="face"></span><div class="body"><div class="t"></div><div class="s"></div></div></div>
+          <div class="stash-item ghost"><span class="face"></span><div class="body"><div class="t"></div><div class="s"></div></div></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Loading</b><div class="note">Three still rows in the raised grey hold the place of the first items while the stash is read, with no spinner. A stash read before shows at once from what the phone kept, and refreshes in place.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen gallery-full">
+        <div class="gallery-head"><span class="icon-btn">{{IconClose:15}}</span><b>Stash</b><span class="spacer"></span></div>
+        <div class="stash-empty"><div class="prompt-glyph small">{{IconStack:20}}</div><b>Nothing stashed</b><span>Share a link, a photo or a file to Sikemux from any app to keep it here.</span></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Empty</b><div class="note">The Stash glyph, one title and one line on how things get here.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen gallery-full">
+        <div class="gallery-head"><span class="icon-btn">{{IconClose:15}}</span><b>Stash</b><span class="spacer"></span></div>
+        <div class="stash-empty"><div class="prompt-glyph small">{{IconGlobe:20}}</div><b>Can't reach Sikemux</b><span>Check the phone is online.</span><span class="dev-connect">Try again</span></div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Offline</b><div class="note">With nothing kept from before, the sheet says the stash is out of reach, with Try again. With items kept, they stay listed; one picked that can't come down turns red on the composer, as a photo that did not get to the host does.</div></figcaption>
     </figure>
 
   </div>

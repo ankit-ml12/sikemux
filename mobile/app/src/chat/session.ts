@@ -12,6 +12,7 @@ import type { ChatDelivery } from '@/devices/hub';
 import { Folds } from './folds';
 import type { ChatStore, Kept } from './kept';
 import { fitting, pathsOf, uploadEach, type Attachment } from './uploads';
+import type { StashItem } from '@/stash/api';
 
 export type Attached = 'attaching' | 'live' | 'missing';
 
@@ -285,6 +286,27 @@ export class ChatSession {
     this.attachments = [...this.attachments, ...fits];
     this.notice = notice;
     this.emit();
+  };
+
+  /** A stash item's file, which the host fetches from the stash itself, ready to go with the next message. */
+  fromStash = async (item: StashItem): Promise<Attachment> => {
+    const connection = this.connection;
+    if (!connection?.isOpen()) throw new Error('the host is not connected');
+    const answer = JSON.parse(
+      await connection.call('attachStash', JSON.stringify({ id: item.id, agentId: this.agentId, draft: false })),
+    ) as { path?: string };
+    if (!answer.path) throw new Error('the host kept no file for it');
+    const name = item.name ?? 'file';
+    return {
+      id: `stash-${item.id}`,
+      kind: 'file',
+      name,
+      mime: item.mime ?? 'application/octet-stream',
+      uri: answer.path,
+      size: item.size ?? 0,
+      path: answer.path,
+      stashId: item.id,
+    };
   };
 
   removeAttachment = (id: string) => {

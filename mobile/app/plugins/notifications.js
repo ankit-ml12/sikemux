@@ -53,7 +53,10 @@ function extensionBundleId(config) {
 const withNotificationsIos = (config) => {
   config = withEntitlementsPlist(config, (config) => {
     config.modResults['aps-environment'] = 'development';
-    config.modResults['keychain-access-groups'] = [keychainGroup(config)];
+    // The first group is where the app's other Keychain items go, so it stays this one.
+    config.modResults['keychain-access-groups'] = [
+      ...new Set([keychainGroup(config), ...(config.modResults['keychain-access-groups'] ?? [])]),
+    ];
     return config;
   });
   config = withInfoPlist(config, (config) => {

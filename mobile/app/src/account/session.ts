@@ -16,6 +16,7 @@ import { joinShowing } from '@/devices/joining';
 import { pairedDevices } from '@/devices/paired';
 import { onNetworkChange } from '@/network/connectivity';
 import { syncPushToken } from '@/notify/token';
+import { stashChanged } from '@/stash/store';
 import { accountDevice, accountHosts, registerPhone, removeAccountDevice, type TokenSource } from './api';
 import { apiUrl } from './config';
 import { farewellFor } from './farewell';
@@ -168,6 +169,7 @@ export function useAccountSequence() {
       app: { platform: Platform.OS === 'ios' ? 'ios' : 'android', version: nativeApplicationVersion ?? 'unknown' },
       cursor: savedCursor,
       hostsChanged,
+      stashChanged,
       deviceAdded: (key) => void askAboutNewDevice(() => token(), key),
       ready: retryHosts,
       gone: (reason) => void leave(farewellFor(reason)),

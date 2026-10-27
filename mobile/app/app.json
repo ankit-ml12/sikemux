@@ -63,6 +63,7 @@
       "./plugins/small-apk",
       "./plugins/release-signing",
       "./plugins/notifications",
+      "./plugins/stash",
       "./plugins/backup-rules",
       "./plugins/scene-lifecycle",
       "./plugins/photo-thumbnails",
