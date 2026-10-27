@@ -15,10 +15,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 use sikemux_wire::codehost::{
-    ChangedFile, CheckTally, Comment, Issue, IssueList, IssuePage, Job, JobLog, Label, ListedJob,
-    ListedPull, ListedRun, MergeReadiness, OpenPull, OpenRun, Outcome, PendingApproval, Pull,
-    PullCounts, PullList, PullState, Release, ReleaseList, Review, ReviewVerdict, Run, RunDetail,
-    RunList, RunPage, RunTiming, TrackedItem, TrackedKind, WorkflowFile,
+    ChangedFile, Check, CheckTally, Comment, Issue, IssueList, IssuePage, Job, JobLog, Label,
+    ListedJob, ListedPull, ListedRun, MergeReadiness, OpenPull, OpenRun, Outcome, PendingApproval,
+    Pull, PullCounts, PullList, PullState, Release, ReleaseList, Review, ReviewVerdict, Run,
+    RunDetail, RunList, RunPage, RunTiming, TrackedItem, TrackedKind, WorkflowFile,
 };
 use tokio::sync::Notify;
 use tokio::task::JoinSet;
@@ -290,7 +290,25 @@ pub(crate) async fn pull(core: &Arc<Core>, client: ClientId, params: PullParams)
     let list = List::Pull {
         number: params.number,
     };
-    named_or_project(core, client, params.project, params.repo, list).await
+    let project = params.project.clone();
+    let answer = named_or_project(core, client, params.project, params.repo, list).await;
+    match (answer, project) {
+        (Answer::Value(mut view), Some(project)) if view["merge"] == "conflicts" => {
+            let folder = project_of(Path::new(&project), &core.workspaces.project_paths());
+            let ends = (
+                view["pull"]["base"].as_str(),
+                view["pull"]["headSha"].as_str(),
+            );
+            if let (Some(base), Some(head)) = ends {
+                let found = crate::git::remote::git_conflicts(folder, base.into(), head.into());
+                if let Ok(files) = found.await {
+                    view["conflicts"] = json!(files);
+                }
+            }
+            Answer::Value(view)
+        }
+        (answer, _) => answer,
+    }
 }
 
 /// The files a pull request changes, each with its patch as the rows of a diff.
@@ -874,7 +892,7 @@ async fn pull_list(core: &Core, repo: &Repo, state: &str) -> Result<PullList, Fa
                 .as_ref()
                 .and_then(|sha| by_sha.get(sha))
                 .filter(|runs| !runs.is_empty())
-                .map(|runs| tally(runs));
+                .map(|runs| tally(runs.iter().map(|run| run.outcome)));
             ListedPull {
                 state: state_of(&pull),
                 closes: closes(&pull.body),
@@ -1306,13 +1324,14 @@ fn closes(body: &str) -> Vec<u64> {
     found
 }
 
-fn tally(runs: &[Run]) -> CheckTally {
-    let mut tally = CheckTally {
-        total: runs.len() as u32,
-        ..CheckTally::default()
-    };
-    for run in runs {
-        match run.outcome {
+fn tally(outcomes: impl IntoIterator<Item = Outcome>) -> CheckTally {
+    let mut tally = CheckTally::default();
+    for outcome in outcomes {
+        tally.total += 1;
+        if outcome == Outcome::Skipped {
+            tally.skipped += 1;
+        }
+        match outcome {
             Outcome::Success | Outcome::Skipped => tally.passed += 1,
             Outcome::Failure => tally.failing += 1,
             Outcome::Running => tally.running += 1,
@@ -1429,15 +1448,27 @@ async fn open_pull(repo: &Repo, number: u64) -> Result<OpenPull, Failure> {
         .ok()
         .and_then(|found| serde_json::from_value(found).ok())
         .unwrap_or_default();
-    let runs: Vec<Run> = match &pull.head_sha {
-        Some(sha) => repo
-            .call("runs", json!({ "headSha": sha, "perPage": 30 }))
-            .await
-            .ok()
-            .and_then(|found| serde_json::from_value::<RunPage>(found).ok())
-            .map(|page| page.runs)
-            .unwrap_or_default(),
-        None => Vec::new(),
+    let (runs, jobs): (Vec<Run>, Vec<Check>) = match &pull.head_sha {
+        Some(sha) => {
+            let (runs, jobs) = tokio::join!(
+                repo.call("runs", json!({ "headSha": sha, "perPage": 30 })),
+                repo.call("checks", json!({ "sha": sha, "base": pull.base })),
+            );
+            (
+                runs.ok()
+                    .and_then(|found| serde_json::from_value::<RunPage>(found).ok())
+                    .map(|page| page.runs)
+                    .unwrap_or_default(),
+                jobs.ok()
+                    .and_then(|found| serde_json::from_value(found).ok())
+                    .unwrap_or_default(),
+            )
+        }
+        None => (Vec::new(), Vec::new()),
+    };
+    let checks = match jobs.is_empty() {
+        true => (!runs.is_empty()).then(|| tally(runs.iter().map(|run| run.outcome))),
+        false => Some(tally(jobs.iter().map(|job| job.outcome))),
     };
     let own = own_branch(&pull, repo.owner());
     Ok(OpenPull {
@@ -1448,7 +1479,9 @@ async fn open_pull(repo: &Repo, number: u64) -> Result<OpenPull, Failure> {
         verdict: verdict(&reviews),
         reviewed: !reviews.is_empty(),
         merge: readiness(pull.merge_state.as_deref()),
-        checks: (!runs.is_empty()).then(|| tally(&runs)),
+        checks,
+        jobs,
+        conflicts: Vec::new(),
         runs: runs
             .into_iter()
             .map(|run| ListedRun {
@@ -1865,9 +1898,13 @@ mod tests {
         );
     }
 
+    fn tally_runs(runs: &[Run]) -> CheckTally {
+        tally(runs.iter().map(|run| run.outcome))
+    }
+
     #[test]
     fn a_commit_fails_on_any_failure_and_runs_while_anything_goes() {
-        let failing = tally(&[
+        let failing = tally_runs(&[
             run(Outcome::Success),
             run(Outcome::Failure),
             run(Outcome::Running),
@@ -1877,22 +1914,22 @@ mod tests {
             (Outcome::Failure, 1, 3)
         );
         assert_eq!(
-            tally(&[run(Outcome::Success), run(Outcome::Running)]).outcome,
+            tally_runs(&[run(Outcome::Success), run(Outcome::Running)]).outcome,
             Outcome::Running
         );
         assert_eq!(
-            tally(&[run(Outcome::Success), run(Outcome::Queued)]).outcome,
+            tally_runs(&[run(Outcome::Success), run(Outcome::Queued)]).outcome,
             Outcome::Queued
         );
         assert_eq!(
-            tally(&[run(Outcome::Queued), run(Outcome::Blocked)]).outcome,
+            tally_runs(&[run(Outcome::Queued), run(Outcome::Blocked)]).outcome,
             Outcome::Queued
         );
         assert_eq!(
-            tally(&[run(Outcome::Blocked), run(Outcome::Success)]).outcome,
+            tally_runs(&[run(Outcome::Blocked), run(Outcome::Success)]).outcome,
             Outcome::Blocked
         );
-        let passed = tally(&[run(Outcome::Success), run(Outcome::Skipped)]);
+        let passed = tally_runs(&[run(Outcome::Success), run(Outcome::Skipped)]);
         assert_eq!((passed.outcome, passed.passed), (Outcome::Success, 2));
     }
 

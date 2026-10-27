@@ -23,6 +23,7 @@ mod annotations;
 mod approvals;
 mod artifacts;
 mod auth;
+mod checks;
 mod client;
 mod common;
 mod config;
@@ -179,6 +180,7 @@ async fn dispatch(ctx: &PluginContext, method: &str, input: Value) -> Result<Val
         "annotations" => answer(annotations::list(data_dir, params(input)?)).await,
         "jobSummary" => answer(annotations::summary(data_dir, params(input)?)).await,
         "runTiming" => answer(runs::timing(data_dir, params(input)?)).await,
+        "checks" => answer(checks::list(data_dir, params(input)?)).await,
         "workflowFile" => answer(workflows::file(data_dir, params(input)?)).await,
         "workflowFileAt" => answer(workflows::file_at(data_dir, params(input)?)).await,
 

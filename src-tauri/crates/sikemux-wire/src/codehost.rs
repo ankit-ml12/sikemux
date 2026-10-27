@@ -578,6 +578,9 @@ pub struct CheckTally {
     pub waiting: u32,
     pub cancelled: u32,
     pub unknown: u32,
+    /// Of those passing, how many were skipped.
+    #[serde(default)]
+    pub skipped: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -586,6 +589,25 @@ pub struct PullList {
     pub pulls: Vec<ListedPull>,
     /// How many are open and closed, from hosts that count them cheaply.
     pub counts: Option<PullCounts>,
+}
+
+/// One check on a commit: a job of one of its runs, or a status an app outside
+/// the host's CI posted.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Check {
+    pub name: String,
+    pub outcome: Outcome,
+    /// The run it is a job of, and its id there; none for an app's status.
+    pub run_id: Option<String>,
+    pub job_id: Option<String>,
+    /// The app that posted it, when that is not the host's CI.
+    pub app: Option<String>,
+    /// The base branch's rules require it to pass.
+    pub required: bool,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub url: Option<String>,
 }
 
 /// A run as a list shows it.
@@ -636,6 +658,14 @@ pub struct OpenPull {
     pub checks: Option<CheckTally>,
     /// The runs on its head commit.
     pub runs: Vec<ListedRun>,
+    /// Every check on its head commit, each job of its runs and each status an
+    /// app outside the host's CI posted, from hosts that list them.
+    #[serde(default)]
+    pub jobs: Vec<Check>,
+    /// The files its head and its base both changed in ways git cannot merge,
+    /// as the project's clone works them out while it conflicts.
+    #[serde(default)]
+    pub conflicts: Vec<String>,
     /// The local branch checking it out makes: its own branch when it lives on
     /// the repository, else `pr-<number>` from the host's ref for it. None when
     /// it comes from a fork the host keeps no ref for.

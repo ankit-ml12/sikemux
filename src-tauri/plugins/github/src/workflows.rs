@@ -148,7 +148,7 @@ pub fn is_in_repository(path: &str) -> bool {
 
 /// A file's path as it goes into an address: `#`, `?` and spaces would
 /// otherwise end or break it, so each piece between slashes is escaped.
-fn encode_path(path: &str) -> String {
+pub(crate) fn encode_path(path: &str) -> String {
     let mut encoded = String::with_capacity(path.len());
     for byte in path.bytes() {
         if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {

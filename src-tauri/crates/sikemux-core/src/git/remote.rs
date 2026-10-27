@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{default_remote, git_ok, open_repo, run_blocking};
+use super::{default_remote, git_ok, open_repo, run_blocking, run_git};
 
 /// A remote's address with its scheme, user and `.git` left out, so the same
 /// repository reads the same however it was cloned.
@@ -266,6 +266,65 @@ pub async fn git_fetch_ref(
         }
         let spec = format!("+{source}:refs/heads/{branch}");
         git_ok(&repo, &["fetch", "--end-of-options", &remote, &spec])
+    })
+    .await
+}
+
+/// The files commit `head` and the remote's branch `base` both changed in ways git cannot
+/// merge, worked out without touching the checkout. `head` is fetched first when this
+/// clone lacks it, as a pull request's head on the host may be.
+pub async fn git_conflicts(
+    repo: String,
+    base: String,
+    head: String,
+) -> Result<Vec<String>, String> {
+    run_blocking(move || -> Result<Vec<String>, String> {
+        for part in [&base, &head] {
+            if !plain_ref_part(part) {
+                return Err(format!("{part:?} cannot be merged"));
+            }
+        }
+        let remote = default_remote(&repo)?;
+        let commit = format!("{head}^{{commit}}");
+        if git_ok(&repo, &["cat-file", "-e", &commit]).is_err() {
+            git_ok(
+                &repo,
+                &[
+                    "fetch",
+                    "--no-tags",
+                    "--quiet",
+                    "--end-of-options",
+                    &remote,
+                    &head,
+                ],
+            )?;
+        }
+        let base = format!("refs/remotes/{remote}/{base}");
+        let (merged, out, err) = run_git(
+            &repo,
+            &[
+                "merge-tree",
+                "--write-tree",
+                "--name-only",
+                "--no-messages",
+                &base,
+                &head,
+            ],
+        )?;
+        if merged {
+            return Ok(Vec::new());
+        }
+        let mut files: Vec<String> = out
+            .lines()
+            .skip(1)
+            .take_while(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect();
+        if files.is_empty() {
+            return Err(err.trim().to_owned());
+        }
+        files.dedup();
+        Ok(files)
     })
     .await
 }
