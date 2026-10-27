@@ -7,16 +7,24 @@ use std::time::Duration;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use reqwest::Method;
+use ring::rand::{SecureRandom, SystemRandom};
 use sikemux_process::sync::Locked;
 
+use super::hosts::account::{as_host, host_request};
 use super::triggers::{self, HookDelivery};
-use super::Core;
+use super::{Core, CoreError, CoreResult};
 use crate::accounts::hooks::{
-    HookClientMessage, HookCloseCode, HookDelivery as Received, HookDone, HookHello, HookMethod,
-    HookPong, HookRole, HookServerMessage,
+    Hook, HookAdd, HookClientMessage, HookCloseCode, HookDelivery as Received, HookDone, HookHello,
+    HookMethod, HookPong, HookRole, HookServerMessage,
 };
 use crate::accounts::live::{parse_rfc3339, socket_url};
 use crate::accounts::socket::{self, Closed, Failures, Frame, Socket};
+
+pub(crate) struct AddedHook {
+    pub hook_id: String,
+    pub url: String,
+}
 
 #[derive(Default)]
 pub(crate) struct Hooks {
@@ -28,6 +36,40 @@ struct LinkState {
     running: bool,
     /// Asked for while running, so a connection the server just closed as idle is made again.
     again: bool,
+}
+
+/// Gives this host a new webhook.
+pub(crate) async fn register_hook(core: &Arc<Core>) -> CoreResult<AddedHook> {
+    let mut secret = [0u8; 32];
+    SystemRandom::new()
+        .fill(&mut secret)
+        .map_err(|_| CoreError::from("could not make a webhook's secret"))?;
+    let token = hex::encode(secret);
+    let hook: Hook = as_host(
+        core,
+        Method::POST,
+        "/v1/hooks",
+        Some(serde_json::to_value(add)?),
+    )
+    .await?;
+    connect(core);
+    Ok(AddedHook {
+        hook_id: hook.id,
+        url: hook.url,
+    })
+}
+
+/// Takes one of this host's webhooks away, with the requests the server still holds for it.
+pub(crate) async fn remove_hook(core: &Core, hook_id: &str) -> CoreResult<()> {
+    let is_id = hook_id.len() == 32
+        && hook_id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if !is_id {
+        return Err(CoreError::from("that is not one of this host's webhooks"));
+    }
+    host_request(core, Method::DELETE, &format!("/v1/hooks/{hook_id}"), None).await?;
+    Ok(())
 }
 
 /// Makes sure the connection runs while this host is signed in. The server closes it at once
