@@ -166,6 +166,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .subagents svg { fill: currentColor; stroke: none; color: var(--live); }
 .shells { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; font-size: 11px; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
 .shells svg { width: 11px; height: 11px; color: var(--warn); }
+.trigger { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; font-size: 11px; font-weight: 500; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.trigger svg { width: 11px; height: 11px; }
 .row:hover { background: rgba(255, 255, 255, 0.07); }
 .mark { width: 20px; height: 20px; flex: 0 0 auto; }
 .mark svg { width: 20px; height: 20px; display: block; }
@@ -542,6 +544,7 @@ async function loadIcons() {
         chevron: icon("IconChevron", 10),
         agent: icon("IconAgent", 10),
         command: icon("IconCommand", 11),
+        timer: icon("IconTimer", 11),
     };
 }
 const MARK = `<img src="../../../brand/mark/mark-white.svg" alt="">`;
@@ -579,7 +582,7 @@ function freshAgents() {
         { id: "a9", name: "Maple", type: "codex", title: "Move the ledger import", project: "server", tier: "needs", state: "blocked", time: "0:01",
           what: "Asks you", question: { via: "Otter", text: "Should amounts be stored in cents or as decimals? The API sends decimals but the ledger table uses integers.",
                       choices: ["Cents", "Decimals"] } },
-        { id: "a4", name: "Birch", type: "grok", title: "Bump Astro to 6", project: "sikemux-front", tier: "review", state: "done", time: "1m ago" },
+        { id: "a4", name: "Birch", type: "grok", title: "Bump Astro to 6", project: "sikemux-front", tier: "review", state: "done", time: "1m ago", trigger: "18m" },
         { id: "a10", name: "Pine", type: "claude", title: "Rotate the signing keys", project: "server", tier: "finished", state: "failed", time: "5m ago" },
         { id: "a11", name: "Moss", type: "claude", title: "Tidy the changelog", project: "sikemux", tier: "finished", state: "done", time: "15m ago" },
         { id: "a2", name: "Flint", type: "codex", title: "Refactor the auth middleware", project: "server", tier: "progress", state: "working", time: "4:12", subagents: 3 },
@@ -607,7 +610,7 @@ function agentName(a) {
 /** Laid out as the app's tab rail row: the task with how long ago, the project, then the name, counts and state together at the end. */
 function rowLine(a) {
     const since = a.reconnecting != null ? `<span class="word">Reconnecting…${a.reconnecting ? ` ${a.reconnecting}` : ""}</span>` : a.time ? `<span class="time">${a.time}</span>` : "";
-    const end = `${agentName(a)}${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}${a.tasks ? `<span class="shells">${GLYPH.command}${a.tasks}</span>` : ""}${stateMark(a.state)}`;
+    const end = `${agentName(a)}${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}${a.tasks ? `<span class="shells">${GLYPH.command}${a.tasks}</span>` : ""}${a.trigger && (a.state === "idle" || a.state === "done") ? `<span class="trigger">${GLYPH.timer}${a.trigger}</span>` : ""}${stateMark(a.state)}`;
     return `<span class="head"><span class="title">${a.title}</span>${since}</span><span class="proj">${GLYPH.folderSmall}${a.project}</span>${end ? `<span class="end">${end}</span>` : ""}`;
 }
 
@@ -1169,7 +1172,7 @@ const SECTIONS = [
               opts: { agents: () => freshAgents(), mode: "open", tab: "new", menu: "model", draft: "Turn the notch mockup into a SwiftUI spec" } },
             { id: "O4", name: "Empty", when: "Opened with no agent open.", shows: "No agents open, and one New agent button.", opts: { agents: [], mode: "open" } },
             { id: "O5", name: "Finished work", when: "Opened while turns wait to be seen.",
-              shows: "Changes to review, then finished turns, newest first, each with how long ago; one that ran into a problem has a red dot. Every row counts what its agent still has going: ✦ subagents in green, >_ shells and monitors in amber.",
+              shows: "Changes to review, then finished turns, newest first, each with how long ago; one that ran into a problem has a red dot. Every row counts what its agent still has going: ✦ subagents in green, >_ shells and monitors in amber, and an agent that waits shows how long until a trigger it set wakes it, ⏱ 18m in faint ink.",
               opts: { agents: () => only(["a2", "a4", "a10", "a11"]), mode: "open" } },
         ],
     },

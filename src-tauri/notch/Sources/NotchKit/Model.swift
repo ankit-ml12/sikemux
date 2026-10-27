@@ -64,6 +64,11 @@ struct Entry: Identifiable, Equatable {
     /// Subagents, and shells or monitors, its agent still has going.
     var subagents: Int { agent?.subagents ?? 0 }
     var tasks: Int { agent?.tasks ?? 0 }
+    /// When a trigger next wakes its agent, shown only while the agent waits.
+    var nextTrigger: Date? {
+        guard mark == .idle || mark == .done, let at = agent?.nextTrigger else { return nil }
+        return Date(timeIntervalSince1970: Double(at) / 1000)
+    }
     var isChat: Bool { item.agentId != nil && item.session == nil && item.cli != nil }
     var since: Date? { item.at > 0 ? Date(timeIntervalSince1970: Double(item.at) / 1000) : nil }
 

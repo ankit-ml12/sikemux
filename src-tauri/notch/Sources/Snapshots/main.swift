@@ -61,13 +61,13 @@ let fixture = #"""
   "inbox": {"working": 2, "rollup": {"subagents": 3, "tasks": 2}, "agents": [
     {"agentId": "a1", "title": "Fix the login flake", "group": "blocked", "subagents": 0, "tasks": 0},
     {"agentId": "a9", "title": "Move the ledger import", "group": "blocked", "subagents": 0, "tasks": 0},
-    {"agentId": "a4", "title": "Bump Astro to 6", "group": "done", "subagents": 0, "tasks": 0},
+    {"agentId": "a4", "title": "Bump Astro to 6", "group": "done", "subagents": 0, "tasks": 0, "nextTrigger": IN(1080)},
     {"agentId": "a10", "title": "Rotate the signing keys", "group": "done", "subagents": 0, "tasks": 0},
     {"agentId": "a11", "title": "Tidy the changelog", "group": "done", "subagents": 0, "tasks": 0},
     {"agentId": "a2", "title": "Refactor the auth middleware", "group": "working", "subagents": 3, "tasks": 0},
     {"agentId": "a3", "title": "Draft the notch spec", "group": "working", "subagents": 0, "tasks": 0},
     {"agentId": "a5", "title": "Profile the terminal flood", "group": "idle", "subagents": 0, "tasks": 2},
-    {"agentId": "t1", "title": "Tighten the rail spacing", "group": "idle", "subagents": 0, "tasks": 0}
+    {"agentId": "t1", "title": "Tighten the rail spacing", "group": "idle", "subagents": 0, "tasks": 0, "nextTrigger": IN(10800)}
   ], "items": [
     {"id": "permission:a1:p1", "tier": "needs", "kind": "permission", "agentId": "a1", "name": "Otter", "cli": "claude", "project": "p-sikemux",
      "title": "Fix the login flake", "what": "Needs your permission", "detail": "pnpm test --filter core -- --runInBand", "at": AGO(134), "requestId": "p1"},
@@ -108,10 +108,11 @@ _ = NSApplication.shared
 NSApp.setActivationPolicy(.prohibited)
 
 let now = Int(Date().timeIntervalSince1970 * 1000)
-let dated = try! NSRegularExpression(pattern: #"AGO\((\d+)\)"#).matches(in: source, range: NSRange(source.startIndex..., in: source))
+let dated = try! NSRegularExpression(pattern: #"(AGO|IN)\((\d+)\)"#).matches(in: source, range: NSRange(source.startIndex..., in: source))
     .reversed().reduce(source) { text, match in
-        let seconds = Int((source as NSString).substring(with: match.range(at: 1)))!
-        return (text as NSString).replacingCharacters(in: match.range, with: String(now - seconds * 1000))
+        let ahead = (source as NSString).substring(with: match.range(at: 1)) == "IN"
+        let seconds = Int((source as NSString).substring(with: match.range(at: 2)))!
+        return (text as NSString).replacingCharacters(in: match.range, with: String(now + (ahead ? 1 : -1) * seconds * 1000))
     }
 let decoded = try! JSONDecoder().decode(DeviceView.self, from: Data(dated.utf8))
 AgentCatalog.names = ["claude": "Claude", "codex": "Codex", "opencode": "OpenCode", "grok": "Grok"]
@@ -135,7 +136,7 @@ func catalogueFaces() -> [AgentFace] {
 }
 let faces = arguments.contains("--faces") ? catalogueFaces() : []
 let agents = faces.isEmpty ? decoded.inbox.agents : decoded.inbox.agents.enumerated().map { index, agent in
-    AgentShown(agentId: agent.agentId, title: agent.title, group: agent.group, subagents: agent.subagents, tasks: agent.tasks,
+    AgentShown(agentId: agent.agentId, title: agent.title, group: agent.group, subagents: agent.subagents, tasks: agent.tasks, nextTrigger: agent.nextTrigger,
                face: faces[index % faces.count])
 }
 let full = DeviceView(

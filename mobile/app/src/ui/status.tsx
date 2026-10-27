@@ -114,6 +114,27 @@ export function ShellCount({ count }: { count: number }) {
   );
 }
 
+/** How long until a trigger the agent set wakes it, in the Mac rail's tight column, rounded up: `now`, `1m`, `3h`, `4d`. */
+export function TriggerTime({ at, now }: { at: number; now: number }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const seconds = Math.max(0, Math.floor((at - now) / 1000));
+  const left =
+    seconds === 0
+      ? 'now'
+      : seconds < 3600
+        ? `${Math.ceil(seconds / 60)}m`
+        : seconds < 86_400
+          ? `${Math.floor(seconds / 3600)}h`
+          : `${Math.floor(seconds / 86_400)}d`;
+  return (
+    <View style={styles.count} accessible accessibilityLabel={`A trigger wakes it in ${left}`}>
+      <Icon name="IconTimer" size={11} color={colors.tertiary} />
+      <Text style={[styles.countText, { color: colors.tertiary }]}>{left}</Text>
+    </View>
+  );
+}
+
 /** Where an agent's turn is, as the Mac rail marks it: squares while it works, a dot once something waits, nothing idle. */
 export function AgentState({ group }: { group: AgentGroup }) {
   const colors = useColors();

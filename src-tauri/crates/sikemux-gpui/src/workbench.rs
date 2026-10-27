@@ -442,6 +442,8 @@ pub struct AgentRow {
     pub group: AgentGroup,
     /// When it last worked, in Unix milliseconds; 0 when the core does not know.
     pub active_at: u64,
+    /// When the soonest trigger set on it sends it a prompt, in Unix milliseconds.
+    pub next_trigger: Option<u64>,
     /// Its place on its lead's team, which the rows after a lead belong to.
     pub team: Option<TeamLink>,
 }
@@ -4471,6 +4473,7 @@ impl Workbench {
             .find(|row| row["agentId"] == agent.id.as_str());
         AgentRow {
             active_at: shown.and_then(|row| row["activeAt"].as_u64()).unwrap_or(0),
+            next_trigger: shown.and_then(|row| row["nextTrigger"].as_u64()),
             team: shown.and_then(|row| match row["team"].as_str()? {
                 "head" => Some(TeamLink::Head),
                 "member" => Some(TeamLink::Member),

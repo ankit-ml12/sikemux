@@ -1036,7 +1036,14 @@ const RECENT_ROW: &str = "recent-row";
 
 fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
     let t = Tokens::get(cx).clone();
-    (agent.subagents > 0 || agent.tasks > 0).then(|| {
+    let waits = !matches!(
+        agent.status,
+        sikemux_wire::protocol::AgentStatus::Working
+            | sikemux_wire::protocol::AgentStatus::Blocked
+            | sikemux_wire::protocol::AgentStatus::Starting
+    );
+    let trigger = agent.next_trigger.filter(|_| waits);
+    (agent.subagents > 0 || agent.tasks > 0 || trigger.is_some()).then(|| {
         let count = |glyph: Icon, size: f32, color, value: u32| {
             div()
                 .flex()
@@ -1058,7 +1065,31 @@ fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
             .when(agent.tasks > 0, |row| {
                 row.child(count(Icon::Command, 11., t.warn, agent.tasks))
             })
+            .children(trigger.map(|at| {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(3.))
+                    .text_color(t.text_tertiary)
+                    .child(ui::icon(Icon::Timer, 11.).text_color(t.text_tertiary))
+                    .child(
+                        ui::text(until(at), 11., FontWeight::MEDIUM)
+                            .font_features(crate::theme::tabular()),
+                    )
+            }))
     })
+}
+
+/// How long until, in the same tight column as [`age`], rounded up: `now`, `1m`, `3h`, `4d`.
+pub fn until(at: u64) -> String {
+    let now = chrono::Utc::now().timestamp_millis().max(0) as u64;
+    let seconds = at.saturating_sub(now) / 1000;
+    match seconds {
+        0 => "now".into(),
+        1..3600 => format!("{}m", seconds.div_ceil(60)),
+        3600..86_400 => format!("{}h", seconds / 3600),
+        _ => format!("{}d", seconds / 86_400),
+    }
 }
 
 /// How long ago, in a tight column: `now`, `5m`, `3h`, `4d`, `2mo`, `1y`.

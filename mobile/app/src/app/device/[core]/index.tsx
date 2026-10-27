@@ -25,7 +25,7 @@ import { Button, IconButton } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
 import { EmptyState, Prompt } from '@/ui/prompt';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
-import { AgentState, NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
+import { AgentState, NeedsYou, ShellCount, SubagentCount, TriggerTime, Working } from '@/ui/status';
 import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals' | 'board';
@@ -193,6 +193,7 @@ function Agents({
   onTab: (tab: Tab) => void;
 }) {
   const styles = useStyles(makeStyles);
+  const minute = useMinute();
   const open = openAgents(snapshot, scope, provider);
   const workers = snapshot.inbox.remoteAgents;
   const leads = new Set(open.map((agent) => (agent.kind === 'chat' ? agent.chat.agentId : agent.session.agentId)));
@@ -213,6 +214,7 @@ function Agents({
                   chat={agent.chat}
                   shown={agent.shown}
                   place={placeOf(projectOf(snapshot, agent.chat.agentId) ?? agent.chat.cwd)}
+                  minute={agent.shown.nextTrigger == null ? 0 : minute}
                 />
                 {workersOf(workers, agent.chat.agentId).map((worker) => (
                   <WorkerRow key={worker.agentId} worker={worker} nested />
@@ -224,6 +226,7 @@ function Agents({
                   session={agent.session}
                   shown={agent.shown}
                   place={placeOf(agent.session.project)}
+                  minute={agent.shown.nextTrigger == null ? 0 : minute}
                   onOpen={() => onTab('terminals')}
                 />
                 {agent.session.agentId
@@ -260,7 +263,20 @@ function terminalDetail(session: SessionInfo): string {
 
 /* A host sends its whole view several times a second while an agent works; each row redraws only when its own
    item changed, which the hub keeps as the same object otherwise. */
-const ChatRow = memo(function ChatRow({ core, chat, shown, place }: { core: string; chat: ChatInfo; shown: AgentShown; place?: string }) {
+const ChatRow = memo(function ChatRow({
+  core,
+  chat,
+  shown,
+  place,
+  minute,
+}: {
+  core: string;
+  chat: ChatInfo;
+  shown: AgentShown;
+  place?: string;
+  /** Counts down a trigger's time once a minute; 0 for a row without one, so the others keep still. */
+  minute: number;
+}) {
   return (
     <Row
       mark={<AgentFace agentId={chat.agentId} provider={chat.provider} group={shown.group} size={20} />}
@@ -271,6 +287,7 @@ const ChatRow = memo(function ChatRow({ core, chat, shown, place }: { core: stri
         <>
           {shown.subagents ? <SubagentCount count={shown.subagents} /> : null}
           {shown.tasks ? <ShellCount count={shown.tasks} /> : null}
+          <Trigger shown={shown} minute={minute} />
           <AgentState group={shown.group} />
         </>
       }
@@ -284,11 +301,13 @@ const TerminalAgentRow = memo(function TerminalAgentRow({
   session,
   shown,
   place,
+  minute,
   onOpen,
 }: {
   session: SessionInfo;
   shown: AgentShown;
   place?: string;
+  minute: number;
   onOpen: () => void;
 }) {
   const { group } = shown;
@@ -298,11 +317,22 @@ const TerminalAgentRow = memo(function TerminalAgentRow({
       name={session.agentName}
       title={shown.title}
       place={place}
-      end={<AgentState group={group} />}
+      end={
+        <>
+          <Trigger shown={shown} minute={minute} />
+          <AgentState group={group} />
+        </>
+      }
       onPress={onOpen}
     />
   );
 });
+
+/** How long until a trigger wakes the agent, while it waits rather than works. */
+function Trigger({ shown, minute }: { shown: AgentShown; minute: number }) {
+  if (shown.nextTrigger == null || shown.group === 'working' || shown.group === 'blocked') return null;
+  return <TriggerTime at={Number(shown.nextTrigger)} now={minute * 60_000} />;
+}
 
 const RecentRow = memo(function RecentRow({
   chat,

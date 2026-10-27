@@ -282,6 +282,31 @@ struct HoverCapsule<Label: View>: View {
 }
 
 /// How long an item has stood: a clock while it works or waits, how long ago once it finished.
+/// How long until a trigger wakes the agent, in the rail's tight column, rounded up: `now`, `1m`, `3h`, `4d`.
+struct TriggerTime: View {
+    let at: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            HStack(spacing: 3) {
+                IconView(icon: Icons.timer, size: 11).foregroundStyle(Theme.inkFaint)
+                Text(Self.format(at, context.date)).font(Theme.ui(11, .medium)).monospacedDigit().foregroundStyle(Theme.inkFaint)
+            }
+        }
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("A trigger wakes it in \(Self.format(at, .now))")
+    }
+
+    static func format(_ at: Date, _ now: Date) -> String {
+        let seconds = max(0, Int(at.timeIntervalSince(now)))
+        if seconds == 0 { return "now" }
+        if seconds < 3600 { return "\((seconds + 59) / 60)m" }
+        if seconds < 86_400 { return "\(seconds / 3600)h" }
+        return "\(seconds / 86_400)d"
+    }
+}
+
 struct SinceText: View {
     let mark: Mark
     let since: Date?

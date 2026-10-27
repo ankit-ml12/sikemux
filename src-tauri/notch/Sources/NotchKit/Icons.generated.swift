@@ -47,6 +47,10 @@ enum Icons {
         IconShape(d: "M2.4 8a5.6 5.6 0 1 0 11.2 0a5.6 5.6 0 1 0 -11.2 0z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
         IconShape(d: "M2.7 8h10.6M8 2.4c1.7 1.6 2.5 3.5 2.5 5.6S9.7 12 8 13.6C6.3 12 5.5 10.1 5.5 8S6.3 4 8 2.4Z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
     ])
+    static let timer = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
+        IconShape(d: "M3.5 9a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
+        IconShape(d: "M8 9V6.5M6.6 2.5h2.8M11.8 5.2l1-1", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
+    ])
     static let brand = IconDef(viewBox: ViewBox(x: 82, y: 24, width: 265, height: 265), shapes: [
         IconShape(d: "M257,72 L331,29 L331,114Z", style: .fill(.current), opacity: 1, evenOdd: false, translate: (0, 0)),
         IconShape(d: "M98,199 L172,241 L98,284Z", style: .fill(.current), opacity: 1, evenOdd: false, translate: (0, 0)),
