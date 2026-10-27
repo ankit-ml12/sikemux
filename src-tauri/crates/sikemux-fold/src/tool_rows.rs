@@ -1069,6 +1069,17 @@ pub(super) const SPECS: &[(&str, Spec)] = &[
         },
     ),
     (
+        "db_connect",
+        Spec {
+            verb: "add",
+            kind: "edit",
+            icon: "square-plus",
+            target: &["{name}", "database"],
+            detail: &[],
+            plugin: Some("sikemux.database"),
+        },
+    ),
+    (
         "gitlab_merge_requests",
         Spec {
             verb: "list",

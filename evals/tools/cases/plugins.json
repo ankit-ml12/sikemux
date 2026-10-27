@@ -2034,5 +2034,61 @@
       ]
     },
     "maxTurns": 10
+  },
+  {
+    "id": "plugin-18",
+    "category": "wrong_tool",
+    "severity": "high",
+    "tools": [
+      "db_connect"
+    ],
+    "prompt": "I made you a read-only Postgres role: postgres://reader@staging-db.internal:5432/app. Add it to Sikemux's databases as Staging so you can query it later.",
+    "fixture": {
+      "project": "work",
+      "plugins": [
+        "aws",
+        "jira",
+        "rundeck",
+        "signoz",
+        "vercel",
+        "database"
+      ],
+      "answers": [
+        {
+          "tool": "db_connect",
+          "reply": "Sent to the person to approve. Stop here and end your turn without guessing: what they decide comes to you as a message."
+        }
+      ]
+    },
+    "grade": {
+      "expect": [
+        {
+          "tool": "db_connect",
+          "args": {
+            "url": "/reader@staging-db\\.internal/"
+          }
+        }
+      ],
+      "forbid": [
+        {
+          "tool": [
+            "Bash",
+            "BashOutput"
+          ],
+          "args": {
+            "command": "/\\bpsql\\b|profiles\\.json/"
+          },
+          "why": "reached the database or Sikemux's saved databases around db_connect"
+        }
+      ],
+      "limit": [
+        {
+          "tool": "db_connect",
+          "max": 1
+        }
+      ]
+    },
+    "judge": "Passes if the agent proposes the database with db_connect and then tells the person it waits on their approval in Sikemux. Fails if it tells the person to type the URL or its fields into the Database pane themselves, or says the database is already saved.",
+    "maxTurns": 6
   }
 ]

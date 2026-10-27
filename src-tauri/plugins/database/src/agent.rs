@@ -1,15 +1,20 @@
 // What agents see: the saved databases by name, their tables, and SQL run on
 // a connection of the agent's own that stays read-only unless the person
-// allowed changes for that database.
+// allowed changes for that database. Agents may also propose a database,
+// which is saved only once the person approves it.
 
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sikemux_plugin_api::database::ProfileDraft;
 
 use crate::connections::{Access, Pool};
-use crate::error::DatabaseResult;
+use crate::engines::Session;
+use crate::error::{DatabaseError, DatabaseResult};
+use crate::form::{self, FromUrl, UrlAsk};
 use crate::history::Source;
-use crate::profiles::{self, Profile, Target};
+use crate::profiles::{self, Profile, SaveRequest, Target};
 use crate::queries::{self, QueryRequest};
 use crate::schema::{Table, TableInfo};
 use crate::values::{self, QueryOutcome};
@@ -51,6 +56,13 @@ pub struct AgentQueryRequest {
     pub limit: Option<usize>,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct AgentAddRequest {
+    pub url: String,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentOutcome {
@@ -69,16 +81,24 @@ pub struct AgentTables {
     pub tables: Vec<Table>,
 }
 
+fn address(target: &Target) -> String {
+    match target {
+        Target::Postgres(server) => server.address(profiles::POSTGRES_PORT),
+        Target::Mysql(server) => server.address(crate::engines::mysql::MYSQL_PORT),
+        Target::Sqlite { path } => path.clone(),
+    }
+}
+
 fn describe_profile(profile: &Profile) -> AgentDatabase {
-    let (engine, address) = match &profile.target {
-        Target::Postgres(server) => ("postgres", server.address(profiles::POSTGRES_PORT)),
-        Target::Mysql(server) => ("mysql", server.address(crate::engines::mysql::MYSQL_PORT)),
-        Target::Sqlite { path } => ("sqlite", path.clone()),
+    let engine = match &profile.target {
+        Target::Postgres(_) => "postgres",
+        Target::Mysql(_) => "mysql",
+        Target::Sqlite { .. } => "sqlite",
     };
     AgentDatabase {
         name: profile.name.clone(),
         engine,
-        address,
+        address: address(&profile.target),
         writable: profile.agent_writes && !profile.read_only,
     }
 }
@@ -157,4 +177,87 @@ pub async fn query(
         )
     });
     Ok(AgentOutcome { outcome, note })
+}
+
+/// The database an agent proposes, read from its URL as the form reads one, kept from changing
+/// data and never named as one already saved.
+fn proposed(data_dir: &Path, request: AgentAddRequest) -> DatabaseResult<FromUrl> {
+    let profile = ProfileDraft {
+        name: request.name.unwrap_or_default().trim().to_owned(),
+        read_only: true,
+        agent_writes: false,
+        ..form::blank()
+    };
+    let read = form::from_url(UrlAsk {
+        url: request.url,
+        profile,
+    })?;
+    let name = read.profile.name.trim();
+    if profiles::load(data_dir)?
+        .profiles
+        .iter()
+        .any(|kept| kept.name.eq_ignore_ascii_case(name))
+    {
+        return Err(DatabaseError::BadArg(format!(
+            "a database named {name} is already saved; propose this one under another name"
+        )));
+    }
+    Ok(read)
+}
+
+/// What the person is asked about a proposed database, once it is tried. Without a password a
+/// server is not tried, and the person types one into the form.
+pub async fn add_check(data_dir: &Path, request: AgentAddRequest) -> DatabaseResult<Value> {
+    let FromUrl { profile, password } = proposed(data_dir, request)?;
+    let draft = form::profile(profile.clone())?;
+    let named = format!(
+        "{} · {}\n{}",
+        draft.name,
+        crate::views::engine_name(&draft.target),
+        address(&draft.target)
+    );
+    let edit = json!({ "profile": profile, "password": password }).to_string();
+    let decline = json!({ "label": "Don't add", "does": "decline" });
+    if password.is_none() && !matches!(draft.target, Target::Sqlite { .. }) {
+        return Ok(json!({
+            "header": "New database",
+            "text": format!("{named}\nNo password given, so it was not tried."),
+            "choices": [
+                { "label": "Enter password", "detail": "Opens the connection form in the app", "does": "edit" },
+                decline,
+            ],
+            "edit": edit,
+        }));
+    }
+    let session = Session::open(&draft.target, password.as_deref(), true).await?;
+    let tried = match session.tables(None).await {
+        Ok(tables) => format!("Connected · {} tables", tables.len()),
+        Err(_) => "Connected".to_owned(),
+    };
+    Ok(json!({
+        "header": "New database",
+        "text": format!("{named}\n{tried}. Agents may read it but not change data."),
+        "choices": [
+            { "label": "Add", "does": "approve" },
+            { "label": "Edit first", "detail": "Opens the connection form in the app", "does": "edit" },
+            decline,
+        ],
+        "edit": edit,
+    }))
+}
+
+/// Saves the database the person approved, as the agent proposed it.
+pub fn add(data_dir: &Path, request: AgentAddRequest) -> DatabaseResult<String> {
+    let FromUrl { profile, password } = proposed(data_dir, request)?;
+    let saved = profiles::save(
+        data_dir,
+        SaveRequest {
+            profile: form::profile(profile)?,
+            password,
+        },
+    )?;
+    Ok(format!(
+        "{} is saved; use it by that name. Agents may read it but not change data.",
+        saved.name
+    ))
 }

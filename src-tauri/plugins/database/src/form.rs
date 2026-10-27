@@ -118,7 +118,7 @@ fn engines() -> Vec<EngineChoice> {
 
 /// A new PostgreSQL connection to every database on this host, as its usual user on its usual
 /// port, encrypted when the server offers it.
-fn blank() -> ProfileDraft {
+pub fn blank() -> ProfileDraft {
     ProfileDraft {
         id: None,
         name: String::new(),

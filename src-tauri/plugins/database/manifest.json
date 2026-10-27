@@ -9,7 +9,7 @@
     "tableView": { "everySecs": 120 },
     "historyView": { "everySecs": 30 }
   },
-  "writes": ["save", "remove", "connect", "disconnect", "query", "agentQuery", "clearHistory"],
+  "writes": ["save", "remove", "connect", "disconnect", "query", "agentQuery", "agentAdd", "clearHistory"],
   "tools": [
     {
       "name": "db_databases",
@@ -97,6 +97,29 @@
         }
       },
       "required": ["database", "sql"]
+    },
+    {
+      "name": "db_connect",
+      "method": "agentAdd",
+      "approve": { "check": "agentAddCheck" },
+      "always": true,
+      "description": "Propose a database for the person to save in Sikemux, read-only for agents. It is saved only once they approve it.",
+      "row": {
+        "verb": "add",
+        "kind": "edit",
+        "icon": "square-plus",
+        "target": ["{name}", "database"]
+      },
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "postgres://, mysql:// or sqlite:// URL. Leave out a password you don't hold; the person types it."
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": ["url"]
     }
   ]
 }

@@ -1,6 +1,7 @@
 // Databases: saved connections, their schemas, and SQL run against them.
 //
-//   agent       — the tools agents call: databases by name, tables, and SQL on a connection of their own
+//   agent       — the tools agents call: databases by name, tables, SQL on a connection of their own,
+//                 and a database proposed for the person to approve
 //   profiles    — the databases saved here, and their passwords in the Keychain
 //   form        — the connection form, and a filled-in one read back as a profile
 //   engines     — one open connection, whichever engine the database runs on
@@ -125,6 +126,11 @@ impl Plugin for Database {
                     answer(agent::describe(&self.pool, &data_dir, params(input)?)).await
                 }
                 "agentQuery" => answer(agent::query(&self.pool, &data_dir, params(input)?)).await,
+                "agentAddCheck" => answer(agent::add_check(&data_dir, params(input)?)).await,
+                "agentAdd" => {
+                    let request = params(input)?;
+                    answer(profiles::blocking(move || agent::add(&data_dir, request))).await
+                }
                 "clearHistory" => {
                     let profiles::IdRequest { id } = params(input)?;
                     answer(profiles::blocking(move || history::clear(&data_dir, &id))).await

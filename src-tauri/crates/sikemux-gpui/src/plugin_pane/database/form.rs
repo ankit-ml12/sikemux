@@ -13,6 +13,7 @@ use gpui_kit::{
     InteractiveElement, IntoElement, ParentElement, PathPromptOptions, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
+use serde::Deserialize;
 use serde_json::json;
 use sikemux_wire::database::{Engine, ProfileDraft, ProfileForm};
 
@@ -23,6 +24,31 @@ use crate::plugin_pane::Failure;
 use crate::plugin_pane::{after, listen};
 use crate::theme::{Tokens, RADIUS_2};
 use crate::ui::{self, Button, IconButton, Pick, Variant};
+
+/// A connection an agent proposed, which the core opens a new connection's form on.
+#[derive(Deserialize)]
+pub(super) struct Proposed {
+    profile: ProfileDraft,
+    #[serde(default)]
+    password: Option<String>,
+}
+
+/// The form the plugin sent, and the password an agent's proposal carried.
+pub(super) struct Arrived {
+    choices: Rc<ProfileForm>,
+    password: Option<String>,
+}
+
+impl Arrived {
+    pub(super) fn into_form(self, window: &mut Window, cx: &mut Context<PluginPane>) -> Form {
+        let form = Form::new(self.choices, window, cx);
+        if let Some(password) = self.password {
+            form.password
+                .update(cx, |input, cx| input.set_value(password, window, cx));
+        }
+        form
+    }
+}
 
 /// What the last Test or Save said.
 enum Said {
@@ -275,6 +301,7 @@ pub(super) fn open(
     database: &mut Database,
     host: &Host,
     id: Option<String>,
+    proposed: Option<Proposed>,
     cx: &mut Context<PluginPane>,
 ) {
     database.form = None;
@@ -285,7 +312,16 @@ pub(super) fn open(
         |database, host, done, cx| {
             database.form_loading = false;
             match done.map(serde_json::from_value::<ProfileForm>) {
-                Ok(Ok(form)) => database.form_arrived = Some(Rc::new(form)),
+                Ok(Ok(mut form)) => {
+                    let password = proposed.and_then(|proposed| {
+                        form.draft = proposed.profile;
+                        proposed.password
+                    });
+                    database.form_arrived = Some(Arrived {
+                        choices: Rc::new(form),
+                        password,
+                    });
+                }
                 Ok(Err(error)) => {
                     let failure = Failure {
                         category: "core".into(),

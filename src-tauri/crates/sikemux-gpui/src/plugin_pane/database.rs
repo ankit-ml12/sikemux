@@ -61,7 +61,7 @@ pub struct Database {
     /// The form is on its way from the plugin.
     form_loading: bool,
     /// The form the plugin sent, made into fields at the next draw.
-    form_arrived: Option<Rc<sikemux_wire::database::ProfileForm>>,
+    form_arrived: Option<form::Arrived>,
     /// The form this pane's slot left open was looked for.
     form_restored: bool,
     /// The connection the person is asked to remove.
@@ -138,7 +138,7 @@ impl Panel for Database {
             self.form = form::restore(host, window, cx);
         }
         if let Some(arrived) = self.form_arrived.take() {
-            self.form = Some(form::Form::new(arrived, window, cx));
+            self.form = Some(arrived.into_form(window, cx));
         }
         form::keep(host, self.form.as_ref(), cx);
         let read = host
@@ -182,6 +182,13 @@ impl Panel for Database {
             .child(main)
             .children(self.asking(cx))
             .into_any_element()
+    }
+
+    /// `at` is a connection an agent proposed, to finish in a new connection's form.
+    fn open_at(&mut self, at: &str, host: &mut Host, cx: &mut Context<PluginPane>) {
+        if let Ok(proposed) = serde_json::from_str(at) {
+            form::open(self, host, None, Some(proposed), cx);
+        }
     }
 }
 
@@ -460,7 +467,7 @@ impl Database {
                 IconButton::new("db-new-connection", Icon::Plus, "New connection")
                     .small()
                     .on_click(listen::<Database, _>(cx, |database, host, _, _, cx| {
-                        form::open(database, host, None, cx)
+                        form::open(database, host, None, None, cx)
                     })),
             );
         div()
@@ -1126,7 +1133,7 @@ fn welcome(cx: &mut Context<PluginPane>) -> AnyElement {
         .child(
             Button::new("db-welcome-add", "Add a connection", Variant::Primary).on_click(
                 listen::<Database, _>(cx, |database, host, _, _, cx| {
-                    form::open(database, host, None, cx)
+                    form::open(database, host, None, None, cx)
                 }),
             ),
         )
@@ -1457,7 +1464,7 @@ fn connection_menu(
                     PopupMenuItem::new("Edit connection…")
                         .icon(Icon::Pencil)
                         .on_click(on(&pane, move |database, host, _, cx| {
-                            form::open(database, host, Some(editing.clone()), cx)
+                            form::open(database, host, Some(editing.clone()), None, cx)
                         })),
                 )
             })

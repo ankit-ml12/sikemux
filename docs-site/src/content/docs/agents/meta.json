@@ -6,6 +6,7 @@
     "chats",
     "permissions",
     "accounts",
+    "databases",
     "providers",
     "linked-hosts"
   ]

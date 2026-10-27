@@ -67,7 +67,7 @@ Pass one of these as `topic`:
 - `browser-evidence` — `browser_screenshot`, `browser_annotate`, `browser_record`
 - `browser-debugging` — network, console, `app_console`, `browser_evaluate`
 - `simulator` — driving an iOS simulator with `sim_*`
-- `databases` — the `db_*` tools and SQL
+- `databases` — the `db_*` tools, SQL, and adding a database
 - `aws` — the `aws_*` tools, profiles and expired sign-ins
 - `skills` — skills every agent gets
 - `agents` — names, `@`, messages, committing, who broke CI
@@ -776,6 +776,15 @@ that database's history in Sikemux, marked as an agent's.
 
 Large integers and decimals arrive as text so no digit is lost; binary values
 arrive as the start of their hex.
+
+To add a database, such as one you set up a role for, call `db_connect` with
+its connection URL rather than telling the person to type it into the Database
+pane. It is not saved yet: Sikemux tries it and asks the person to add it, edit
+it first or turn it down, and their choice comes to you as a message, so end
+your turn and wait. Put a password in the URL only when you already hold it;
+otherwise leave it out and the person types it into the form. A database you
+add is read-only for agents, and only the person can change that. A name that
+is already saved is refused, so pick another with `name`.
 
 ## aws: AWS through the person's profiles
 
