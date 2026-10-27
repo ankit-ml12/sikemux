@@ -519,6 +519,7 @@ fn tall(item: &Value) -> f32 {
     match (compact, noted) {
         (true, true) => 128.,
         (true, false) => 106.,
+        (false, _) if item["kind"].as_str() == Some("text") => 352.,
         (false, _) => 372.,
     }
 }
@@ -627,11 +628,13 @@ fn card(bench: &Workbench, at: usize, item: &Value, cx: &mut Context<Workbench>)
         .flex()
         .flex_col()
         .gap(px(2.))
-        .child(
-            ui::text(label, 12.5, FontWeight::MEDIUM)
-                .text_color(t.text_primary)
-                .truncate(),
-        )
+        .when(item["kind"].as_str() != Some("text"), |words| {
+            words.child(
+                ui::text(label, 12.5, FontWeight::MEDIUM)
+                    .text_color(t.text_primary)
+                    .truncate(),
+            )
+        })
         .child(
             ui::text(place(item), 10.5, FontWeight::NORMAL)
                 .text_color(t.text_tertiary)
