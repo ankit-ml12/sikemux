@@ -1853,6 +1853,7 @@ pub fn pane(
                 ),
             )
         });
+    let no_pages = strip.is_none_or(|strip| strip.tabs.is_empty());
     let page = bench.desks.pages.get(agent);
     let (back, forward, reload) = (agent.to_owned(), agent.to_owned(), agent.to_owned());
     let bar = div()
@@ -1957,7 +1958,7 @@ pub fn pane(
         .min_h_0()
         .relative()
         .key_context("BrowserPage")
-        .children(page.map(|page| {
+        .children(page.filter(|_| !no_pages).map(|page| {
             if front.is_some_and(idle_blank) {
                 div()
                     .track_focus(&page.focus)
@@ -1973,7 +1974,7 @@ pub fn pane(
                 .into_any_element()
             }
         }))
-        .when(strip.is_none_or(|strip| strip.tabs.is_empty()), |body| {
+        .when(no_pages, |body| {
             body.child(
                 div()
                     .absolute()
@@ -1996,7 +1997,7 @@ pub fn pane(
             .flex()
             .flex_col()
             .child(head)
-            .child(bar)
+            .when(!no_pages, |content| content.child(bar))
             .child(body),
         cx,
     )
