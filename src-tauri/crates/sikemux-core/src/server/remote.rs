@@ -711,6 +711,13 @@ impl Remote {
         Some((key, hex::encode(secret.sign(message.as_bytes()).to_bytes())))
     }
 
+    /// The core's key and its signature over the webhook text for `nonce`.
+    pub(super) fn sign_hooks(&self, nonce: &str) -> Option<(String, String)> {
+        crate::accounts::check_live(nonce).ok()?;
+        self.sign_with_key(|key| crate::accounts::hooks_message(nonce, key))
+            .ok()
+    }
+
     /// The core's key and its signature over `request`, for calling the
     /// accounts API as this host. The time must be close to now, so no
     /// signature is made ahead for later use.
@@ -1808,6 +1815,7 @@ impl live::Account for HostAccount {
         if link == Link::Live {
             core.hosts.relink.now();
             super::stash::catch_up(&core);
+            super::hooks::connect(&core);
         }
     }
 

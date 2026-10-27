@@ -546,3 +546,31 @@ fn daily(value: &Value, weekdays: Option<&Value>) -> Result<(u32, Vec<u8>), Stri
     }
     Ok((minute, days))
 }
+
+/// A request one of this host's webhooks received, as its sender made it.
+pub(crate) struct HookDelivery {
+    pub hook_id: String,
+    pub delivery_id: String,
+    /// Milliseconds since the Unix epoch.
+    pub received_at: u64,
+    pub method: String,
+    pub headers: Vec<(String, String)>,
+    pub query: String,
+    pub body: Vec<u8>,
+}
+
+/// Takes a webhook's request. An error leaves it with the accounts server, which sends it again
+/// later.
+pub(crate) fn delivered(_core: &Arc<Core>, delivery: HookDelivery) -> Result<(), String> {
+    eprintln!(
+        "sikemux core: webhook {} received request {} at {}: {} with {} headers, query {:?} and {} bytes",
+        delivery.hook_id,
+        delivery.delivery_id,
+        delivery.received_at,
+        delivery.method,
+        delivery.headers.len(),
+        delivery.query,
+        delivery.body.len()
+    );
+    Ok(())
+}

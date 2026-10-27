@@ -35,6 +35,7 @@ mod from_app;
 mod git;
 mod handover;
 mod harness;
+mod hooks;
 mod host;
 mod host_key;
 mod hosts;
@@ -371,6 +372,7 @@ pub(crate) struct Core {
     pub(crate) chats: chat::Chats,
     pub(crate) remote: remote::Remote,
     pub(crate) shares: share::Shares,
+    pub(crate) hooks: hooks::Hooks,
     pub(crate) workspaces: workspace::Workspaces,
     pub(crate) seen: seen::Seen,
     pub(crate) lifecycle: lifecycle::Lifecycle,
@@ -496,6 +498,7 @@ impl Core {
             chats: chat::Chats::new(data_dir),
             remote: remote::Remote::default(),
             shares: share::Shares::default(),
+            hooks: hooks::Hooks::default(),
             workspaces: workspace::Workspaces::new(data_dir),
             seen: seen::Seen::default(),
             lifecycle: lifecycle::Lifecycle::default(),
