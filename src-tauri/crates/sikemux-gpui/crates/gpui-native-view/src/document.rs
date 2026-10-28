@@ -1,5 +1,5 @@
 //! A document macOS draws itself: a PDF in PDFKit's view, which pinches and
-//! scrolls; office, iWork and other files in Quick Look's.
+//! scrolls; office, iWork and other files, videos and sound in Quick Look's.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};

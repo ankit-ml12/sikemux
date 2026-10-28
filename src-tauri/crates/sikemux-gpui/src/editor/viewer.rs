@@ -114,9 +114,10 @@ impl RenderOnce for Picture {
 #[derive(PartialEq)]
 enum Kind {
     Image,
-    /// A document macOS's PDF or Quick Look viewer shows, and elsewhere a card opens.
+    /// A document, video or sound macOS's PDF or Quick Look viewer shows, and elsewhere a
+    /// card opens.
     Document,
-    /// What the window cannot play yet: sound and video.
+    /// Sound and video Quick Look cannot play, such as WebM.
     Elsewhere,
     Bytes,
 }
@@ -136,6 +137,14 @@ fn kind_of(mime: &str) -> Kind {
                 | "application/vnd.apple.keynote"
                 | "application/epub+zip"
                 | "image/vnd.adobe.photoshop"
+                | "video/mp4"
+                | "video/quicktime"
+                | "audio/mpeg"
+                | "audio/mp4"
+                | "audio/aac"
+                | "audio/wav"
+                | "audio/aiff"
+                | "audio/flac"
         );
     if documents {
         return Kind::Document;
