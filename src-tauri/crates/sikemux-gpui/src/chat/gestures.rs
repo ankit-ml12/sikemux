@@ -48,7 +48,7 @@ pub fn reactions(message: &ChatMessage, looks: &Drawn) -> Option<AnyElement> {
     )
 }
 
-/// A GIF the agent sent, where it sent it, credited as KLIPY asks.
+/// A GIF the agent sent, where it sent it, centred across the reply and credited as KLIPY asks.
 pub fn gif(id: &str, gif: &GifRef, looks: &Drawn, cx: &App) -> AnyElement {
     let (width, height) = fit(gif.width, gif.height);
     let asks = looks
@@ -65,8 +65,10 @@ pub fn gif(id: &str, gif: &GifRef, looks: &Drawn, cx: &App) -> AnyElement {
             .object_fit(ObjectFit::Cover)
     });
     div()
+        .w_full()
         .flex()
         .flex_col()
+        .items_center()
         .gap(px(4.))
         .child(
             div()
