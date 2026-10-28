@@ -334,7 +334,14 @@ impl Claude {
         if let Some(model) = model.filter(|model| *model != config::DEFAULT) {
             args.extend(["--model".to_owned(), model.to_owned()]);
         }
-        if let Some(config) = mcp_config(&servers::tool_servers(launch)) {
+        let tools = servers::tool_servers(launch);
+        if servers::offers_sikemux_tools(&tools) {
+            args.extend([
+                "--append-system-prompt".to_owned(),
+                crate::server::gestures::PERSONALITY.to_owned(),
+            ]);
+        }
+        if let Some(config) = mcp_config(&tools) {
             args.extend(["--mcp-config".to_owned(), config]);
         }
         match start {

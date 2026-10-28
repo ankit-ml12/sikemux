@@ -3,7 +3,21 @@
 use agent_client_protocol::schema::v1::{EnvVariable, HttpHeader, McpServer};
 use serde_json::{Map, Value};
 
+use crate::launch::tools::TOOLS_SERVER;
 use crate::protocol::ChatLaunch;
+
+/// Whether Sikemux's own tools are among `servers`.
+pub(super) fn offers_sikemux_tools(servers: &[McpServer]) -> bool {
+    servers.iter().any(|server| {
+        let name = match server {
+            McpServer::Http(http) => &http.name,
+            McpServer::Stdio(stdio) => &stdio.name,
+            McpServer::Sse(sse) => &sse.name,
+            _ => return false,
+        };
+        name == TOOLS_SERVER
+    })
+}
 
 /// The launch's tool servers, skipping any that cannot be read.
 pub(super) fn tool_servers(launch: &ChatLaunch) -> Vec<McpServer> {

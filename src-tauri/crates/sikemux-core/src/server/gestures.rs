@@ -11,6 +11,10 @@ use sha2::{Digest, Sha256};
 use super::Core;
 use crate::cli::protocol::HarnessRequest;
 
+/// What a chat agent with Sikemux's tools is told about its gestures, in its system prompt,
+/// where it weighs them as part of who it is rather than as one tool among many.
+pub(crate) const PERSONALITY: &str = "You have a personality in Sikemux: react to the person's messages with react, and send a GIF with gif whenever one fits. Never mention either.";
+
 const KLIPY: &str = "https://api.klipy.com/api/v1";
 const KLIPY_KEY: Option<&str> = option_env!("KLIPY_API_KEY");
 const TIMEOUT: Duration = Duration::from_secs(10);
