@@ -442,7 +442,9 @@ export function Message({
     return (
       <Pressable onPress={tap} onLongPress={keepLongPress} accessibilityHint={tap ? 'Tap for copy and the time it came' : undefined}>
         {letters.map((letter, index) =>
-          letter.kind === 'answer' ? (
+          letter.trigger ? (
+            <FiredTrigger key={index} id={`${message.id}/letter/${index}`} fired={letter.trigger} />
+          ) : letter.kind === 'answer' ? (
             <AnsweredQuestion
               key={index}
               own={letter.agentId === chatAgent}
@@ -734,6 +736,22 @@ const makeStyles = (colors: Palette) => {
     letterFrom: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 2 },
     letterRule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
     letterLabel: { fontFamily: fonts.ui, fontSize: 11.5, lineHeight: 16, color: colors.inkDim },
+    triggerFrom: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6, maxWidth: '85%' },
+    triggerTitle: { fontFamily: fonts.uiMedium, color: colors.ink, flexShrink: 1 },
+    requestLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, paddingVertical: 4, paddingHorizontal: 8 },
+    requestSummary: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkFaint, flexShrink: 1 },
+    requestCard: {
+      alignSelf: 'stretch',
+      marginTop: 4,
+      padding: 10,
+      gap: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      borderRadius: 8,
+      backgroundColor: colors.raised,
+    },
+    requestHeader: { fontFamily: fonts.mono, fontSize: 11, lineHeight: 17, color: colors.ink },
+    requestName: { color: colors.inkFaint },
     letterName: { fontFamily: fonts.uiSemibold, color: colors.ink },
     thought: { marginVertical: 8 },
     thoughtText: { ...italic, fontSize: 12.5, lineHeight: 19.5, color: colors.inkFaint },
@@ -784,3 +802,66 @@ const makeStyles = (colors: Palette) => {
     activityTime: { fontFamily: fonts.mono, fontSize: 10, color: colors.inkFaint },
   });
 };
+
+type Fired = NonNullable<NonNullable<ChatMessage['letters']>[number]['trigger']>;
+
+/** A trigger's prompt where the person's own messages sit, under a line naming the trigger, with the
+ *  webhook request that fired it folded beneath. */
+function FiredTrigger({ id, fired }: { id: string; fired: Fired }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const [open, setOpen] = useFold(`${id}/request`, false);
+  const request = fired.request;
+  const kind = request?.headers
+    .find((header) => header.name === 'content-type')
+    ?.value.split(';')[0]
+    ?.trim();
+  const size = request ? (request.body.length < 1024 ? `${request.body.length} B` : `${(request.body.length / 1024).toFixed(1)} KB`) : '';
+  const summary = request ? [request.method, kind, size, request.query ? `?${request.query}` : undefined].filter(Boolean).join(' · ') : '';
+  return (
+    <View style={styles.userRow}>
+      <View style={styles.triggerFrom}>
+        <Icon name="IconTimer" size={12} color={colors.cmd} />
+        <Text style={styles.letterLabel} numberOfLines={1}>
+          Trigger · <Text style={styles.triggerTitle}>{fired.title}</Text>
+        </Text>
+      </View>
+      <View style={styles.bubble}>
+        <Text style={styles.userText} selectable>
+          {fired.prompt}
+        </Text>
+      </View>
+      {request ? (
+        <>
+          <Pressable
+            onPress={() => setOpen(!open)}
+            style={styles.requestLine}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: open }}
+            accessibilityLabel={`The request that fired it: ${summary}`}>
+            <View style={open ? { transform: [{ rotate: '90deg' }] } : undefined}>
+              <Icon name="IconChevron" size={10} color={colors.inkFaint} />
+            </View>
+            <Text style={styles.requestSummary} numberOfLines={1}>
+              {summary}
+            </Text>
+          </Pressable>
+          {open ? (
+            <View style={styles.requestCard}>
+              <View>
+                {request.headers.map((header) => (
+                  <Text key={header.name} style={styles.requestHeader} selectable>
+                    <Text style={styles.requestName}>{header.name}</Text> {header.value}
+                  </Text>
+                ))}
+              </View>
+              {request.bodyTree ? (
+                <LongText id={`${id}/request/body`} text={request.body} md={request.bodyTree} live={false} style={styles.prose} />
+              ) : null}
+            </View>
+          ) : null}
+        </>
+      ) : null}
+    </View>
+  );
+}

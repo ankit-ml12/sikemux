@@ -415,6 +415,14 @@
   .reconnect b { font-weight: 600; color: var(--ink); }
   .reconnect .no { color: var(--danger); }
   .msg-user.failed { border-color: var(--danger); margin-bottom: 4px; }
+  .trigger-from { align-self: flex-end; display: flex; align-items: center; gap: 5px; margin: 12px 0 -4px; font-size: 11.5px; color: var(--ink-dim); }
+  .trigger-from svg { width: 12px; height: 12px; color: var(--cmd); }
+  .trigger-from b { font-weight: 500; color: var(--ink); }
+  .request-line { align-self: flex-end; display: flex; align-items: center; gap: 6px; margin: -2px 0 0; padding: 4px 8px; font: 11px var(--mono); color: var(--ink-faint); }
+  .request-line svg { width: 10px; height: 10px; transform: rotate(90deg); }
+  .request-card { align-self: stretch; margin: 2px 0 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--rail-2); font: 11px/17px var(--mono); color: var(--ink); white-space: pre-wrap; }
+  .request-card i { font-style: normal; color: var(--ink-faint); }
+  .request-card .body { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
   .unsent { align-self: flex-end; display: flex; align-items: center; gap: 5px; margin-bottom: 8px; font-size: 12px; font-weight: 500; color: var(--ink-faint); }
   .unsent .no { color: var(--danger); }
   .unsent b { font-weight: 500; color: var(--ink); }
@@ -2381,6 +2389,38 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>A message from another agent</b><div class="note">Another agent on the host sent this chat a message with agent_send. It reads as prose under a centred line with the sender's mark and name, as on the Mac, never in the person's bubble, so it is not taken for something the person wrote. Several sent together each get their own line. A tap shows its copy button and the time it came.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Keep main green</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="justify-content:flex-start">
+          <div class="trigger-from">{{IconTimer:12}}<span>Trigger · <b>CI on main</b></span></div>
+          <div class="msg-user">Read the failed run, fix it on a branch and open a pull request.</div>
+          <div class="request-line">{{IconChevron:10}}<span>POST · application/json · 163 B</span></div>
+          <div class="request-card"><i>content-type</i> application/json
+<i>x-github-event</i> workflow_run<div class="body">{
+  "action": "completed",
+  "conclusion": "failure",
+  "branch": "main"
+}</div></div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Working <span class="calls">· 3 tool calls</span>{{IconChevron:10}}</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A trigger fires</b><div class="note">A trigger the agent set sends its chat a prompt when its time comes or its webhook takes a request. It sits where your own messages sit, in the same bubble, under a line with the pink timer naming the trigger. A webhook's request is folded beneath as one line, its method, kind, size and query; a tap opens its headers and body, JSON laid out, as on the Mac. The request came from outside Sikemux, so it is shown as data and never as the prompt.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

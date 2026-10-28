@@ -25,8 +25,8 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_wire::chat::{
     ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView,
-    LetterKind, MoveReason, NoticeSeverity, NoticeState, PartTree, PermissionAsk, SubagentCard,
-    SubagentState, WorkFold,
+    FiredRequest, LetterKind, MoveReason, NoticeSeverity, NoticeState, PartTree, PermissionAsk,
+    SubagentCard, SubagentState, WorkFold,
 };
 use sikemux_wire::protocol::{
     AgentStatus, ChatAttachment, ChatContext, ChatMark, ConfigPicker, MidTurnSend, WorkspaceAgent,
@@ -184,11 +184,25 @@ impl ChatRow {
             .iter()
             .enumerate()
             .filter(|(_, letter)| letter.kind != LetterKind::Answer);
+        let bodies = self
+            .message
+            .letters
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, letter)| {
+                let request = letter.trigger.as_ref()?.request.as_ref()?;
+                Some(Doc::new(
+                    &request_doc(ix),
+                    &request.body,
+                    Some(request.body_tree.as_ref()?),
+                ))
+            });
         self.docs =
             parts
                 .chain(letters.map(|(ix, letter)| {
                     Doc::new(&letter_doc(ix), &letter.text, letter.tree.as_ref())
                 }))
+                .chain(bodies)
                 .collect();
     }
 
@@ -305,6 +319,11 @@ impl ChatRow {
 
 fn letter_doc(ix: usize) -> String {
     format!("letter-{ix}")
+}
+
+/// The doc of the body of the webhook request that fired letter `ix`'s trigger.
+fn request_doc(ix: usize) -> String {
+    format!("letter-{ix}-request")
 }
 
 /// `fields` laid over `on`; a field sent as null is gone.
@@ -4322,7 +4341,8 @@ fn answered_question(
 }
 
 /// The prompts of the chat's triggers that came due, drawn where the person's own messages
-/// sit, under a line saying a trigger sent them.
+/// sit: a line naming the trigger, its prompt in a bubble, and the webhook request that fired
+/// it folded beneath.
 fn fired(
     row: &ChatRow,
     pen: &Pen,
@@ -4330,43 +4350,185 @@ fn fired(
     window: &mut Window,
     cx: &mut App,
 ) -> gpui_kit::Div {
-    let texts = (0..row.message.letters.len()).filter_map(|ix| {
-        let id = SharedString::from(format!("{}:{}", row.message.id, letter_doc(ix)));
-        row.doc(&letter_doc(ix)).map(|doc| {
-            let look = looks.styles.borrow().text.clone();
-            pen.markdown_with(&look, id, &doc.markdown, window, cx)
-        })
-    });
-    div()
-        .max_w(relative(0.8))
-        .flex()
-        .flex_col()
-        .items_end()
-        .gap(px(5.))
-        .child(
-            div()
+    let t = Tokens::get(cx).clone();
+    let drawn: Vec<AnyElement> = row
+        .message
+        .letters
+        .iter()
+        .enumerate()
+        .filter_map(|(ix, letter)| Some((ix, letter.trigger.as_ref()?)))
+        .map(|(ix, trigger)| {
+            let id = SharedString::from(format!("{}:{}", row.message.id, letter_doc(ix)));
+            let prompt = row.doc(&letter_doc(ix)).map(|doc| {
+                let look = looks.styles.borrow().text.clone();
+                pen.markdown_with(&look, id.clone(), &doc.markdown, window, cx)
+            });
+            let named = div()
                 .flex()
                 .items_center()
                 .gap(px(5.))
                 .text_size(crate::theme::ui_text(11.5))
                 .text_color(looks.quiet)
-                .child(ui::icon(Icon::Timer, 11.).text_color(looks.quiet))
-                .child("Trigger"),
-        )
-        .child(
-            div()
+                .child(ui::icon(Icon::Timer, 11.).text_color(t.cmd))
+                .child("Trigger")
+                .child("·")
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(looks.ink)
+                        .child(trigger.title.clone()),
+                );
+            let bubble = div()
                 .max_w_full()
                 .px(px(12.))
                 .py(px(8.))
-                .flex()
-                .flex_col()
-                .gap(px(8.))
                 .border_1()
                 .border_color(looks.line)
                 .rounded(theme::RADIUS_3)
                 .bg(looks.bubble)
-                .children(texts),
-        )
+                .children(prompt);
+            div()
+                .max_w_full()
+                .flex()
+                .flex_col()
+                .items_end()
+                .gap(px(5.))
+                .child(named)
+                .child(bubble)
+                .children(trigger.request.as_ref().map(|request| {
+                    let body = row.doc(&request_doc(ix)).map(|doc| {
+                        let look = looks.styles.borrow().text.clone();
+                        let body_id = SharedString::from(format!("{id}:request"));
+                        pen.markdown_with(&look, body_id, &doc.markdown, window, cx)
+                    });
+                    fired_request(&format!("request:{id}"), request, body, looks, &t)
+                }))
+                .into_any_element()
+        })
+        .collect();
+    div()
+        .max_w(relative(0.8))
+        .flex()
+        .flex_col()
+        .items_end()
+        .gap(px(14.))
+        .children(drawn)
+}
+
+/// The webhook request that fired a trigger: one line saying what it was, which opens onto
+/// its headers and body.
+fn fired_request(
+    key: &str,
+    request: &FiredRequest,
+    body: Option<AnyElement>,
+    looks: &Drawn,
+    t: &Tokens,
+) -> AnyElement {
+    let open = looks.reading.opened.contains(key);
+    let kind = request
+        .headers
+        .iter()
+        .find(|header| header.name == "content-type")
+        .and_then(|header| header.value.split(';').next())
+        .map(str::trim);
+    let size = match request.body.len() {
+        bytes @ 0..1024 => format!("{bytes} B"),
+        bytes => format!("{:.1} KB", bytes as f64 / 1024.),
+    };
+    let summary = [Some(request.method.as_str()), kind, Some(size.as_str())]
+        .into_iter()
+        .flatten()
+        .map(str::to_owned)
+        .chain((!request.query.is_empty()).then(|| format!("?{}", request.query)))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let (reader, toggled, hover) = (
+        looks.reader.clone(),
+        key.to_owned(),
+        theme::mix(t.text_primary, t.surface_raised, 0.05),
+    );
+    let line = div()
+        .id(SharedString::from(key.to_owned()))
+        .min_w_0()
+        .py(px(3.))
+        .px(px(9.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .rounded(theme::RADIUS_2)
+        .cursor_pointer()
+        .hover(move |line| line.bg(hover))
+        .on_click(move |_, _, cx| {
+            reader.update(cx, |reading, cx| {
+                reading.toggle(&toggled);
+                cx.notify();
+            })
+        })
+        .child(motion::turn(
+            format!("{key}:chevron"),
+            motion::fold_angle(open),
+            motion::DETAIL_FOLD,
+            ui::icon(Icon::Chevron, 9.).text_color(looks.quiet),
+        ))
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .font_family(theme::MONO)
+                .text_size(crate::theme::ui_text(10.5))
+                .text_color(looks.faint)
+                .child(summary),
+        );
+    let details = open.then(|| {
+        let headers = request.headers.iter().map(|header| {
+            div()
+                .flex()
+                .gap(px(8.))
+                .child(
+                    div()
+                        .flex_none()
+                        .text_color(looks.faint)
+                        .child(header.name.clone()),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .text_color(looks.ink)
+                        .child(header.value.clone()),
+                )
+        });
+        div()
+            .w_full()
+            .p(px(10.))
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .border_1()
+            .border_color(looks.line)
+            .rounded(theme::RADIUS_2)
+            .bg(t.surface_raised)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .font_family(theme::MONO)
+                    .text_size(crate::theme::ui_text(10.5))
+                    .children(headers),
+            )
+            .children(body)
+    });
+    div()
+        .max_w_full()
+        .flex()
+        .flex_col()
+        .items_end()
+        .gap(px(4.))
+        .child(line)
+        .children(details)
+        .into_any_element()
 }
 
 /// Messages other agents sent and the person's answers to questions, which the core hands
