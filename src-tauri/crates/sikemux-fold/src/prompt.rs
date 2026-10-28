@@ -112,7 +112,7 @@ fn unescaped(value: &str) -> String {
         .replace("&amp;", "&")
 }
 
-fn attributes(source: &str) -> Vec<(&str, String)> {
+pub(super) fn attributes(source: &str) -> Vec<(&str, String)> {
     let mut found = Vec::new();
     let mut rest = source;
     while let Some(eq) = rest.find("=\"") {
@@ -183,21 +183,27 @@ pub(super) fn agent_letters(text: &str) -> Option<Vec<AgentLetter>> {
                 text: body,
                 secret: attribute("secret") == "true",
                 tree: None,
+                trigger: None,
             }
         } else {
             let agent_id = attribute("agent-id");
+            let trigger = (agent_id == TRIGGER)
+                .then(|| super::trigger::parse(&body))
+                .flatten();
+            let text = trigger.as_ref().map_or(body, |fired| fired.prompt.clone());
             AgentLetter {
-                kind: match agent_id.as_str() {
-                    TRIGGER => LetterKind::Trigger,
-                    _ => LetterKind::Message,
+                kind: match trigger {
+                    Some(_) => LetterKind::Trigger,
+                    None => LetterKind::Message,
                 },
                 name: attribute("from"),
                 agent_id,
                 cli: attribute("cli"),
                 question: String::new(),
-                tree: Some(super::send::read(&body)),
-                text: body,
+                tree: Some(super::send::read(&text)),
+                text,
                 secret: false,
+                trigger,
             }
         });
         rest = &rest[body_start + body_len + close.len()..];

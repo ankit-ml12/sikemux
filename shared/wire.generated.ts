@@ -1345,9 +1345,41 @@ export interface AgentLetter {
     secret?: boolean;
     /** The tree of a message's `text`, for a client that cannot read markdown itself. */
     tree?: PartTree;
+    /**
+     * For a trigger's prompt, what the trigger is called and the request that fired it;
+     * `text` then holds the prompt alone.
+     */
+    trigger?: TriggerFired;
 }
 
 export type LetterKind = "message" | "answer" | "trigger";
+
+/** A trigger that fired, as its chat is sent it. */
+export interface TriggerFired {
+    title: string;
+    prompt: string;
+    /** The webhook request that fired it. */
+    request?: FiredRequest;
+}
+
+/** A request to a trigger's webhook, as its sender made it. */
+export interface FiredRequest {
+    method: string;
+    /** When it arrived, as the host's clock read it, such as "at 14:40". */
+    received: string;
+    /** The query, without its leading `?`. */
+    query: string;
+    headers: RequestHeader[];
+    /** As much of the body as the prompt carries. */
+    body: string;
+    /** The body as a code block, laid out when it is JSON, for the apps to draw. */
+    bodyTree?: PartTree;
+}
+
+export interface RequestHeader {
+    name: string;
+    value: string;
+}
 
 /** The line under a prompt, or under the last message of an answer. */
 export interface RowMeta {

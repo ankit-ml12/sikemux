@@ -13,6 +13,7 @@ mod send;
 mod tests;
 mod tool_rows;
 mod tools;
+pub mod trigger;
 mod turns;
 
 use std::cell::RefCell;

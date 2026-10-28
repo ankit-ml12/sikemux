@@ -504,6 +504,45 @@ pub struct AgentLetter {
     /// The tree of a message's `text`, for a client that cannot read markdown itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tree: Option<PartTree>,
+    /// For a trigger's prompt, what the trigger is called and the request that fired it;
+    /// `text` then holds the prompt alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<TriggerFired>,
+}
+
+/// A trigger that fired, as its chat is sent it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TriggerFired {
+    pub title: String,
+    pub prompt: String,
+    /// The webhook request that fired it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<FiredRequest>,
+}
+
+/// A request to a trigger's webhook, as its sender made it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FiredRequest {
+    pub method: String,
+    /// When it arrived, as the host's clock read it, such as "at 14:40".
+    pub received: String,
+    /// The query, without its leading `?`.
+    pub query: String,
+    pub headers: Vec<RequestHeader>,
+    /// As much of the body as the prompt carries.
+    pub body: String,
+    /// The body as a code block, laid out when it is JSON, for the apps to draw.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_tree: Option<PartTree>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestHeader {
+    pub name: String,
+    pub value: String,
 }
 
 /// The core's markdown tree of a part's text and how much of the text it covers.
