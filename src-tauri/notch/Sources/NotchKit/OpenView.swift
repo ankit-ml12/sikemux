@@ -156,10 +156,41 @@ struct EntryRow: View {
                 .padding(.horizontal, 12)
                 .frame(height: 36)
                 .background(RoundedRectangle(cornerRadius: 12).fill(hovering ? Theme.hover : .clear))
+                .modifier(CalledWave(calledAt: entry.calledAt))
                 .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+/// A band of light that passes once over a row each time its agent is named with `@` or messaged by another agent, as on the app's rail.
+struct CalledWave: ViewModifier {
+    let calledAt: Int?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var through: CGFloat = 1
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            GeometryReader { proxy in
+                LinearGradient(
+                    colors: [Theme.ink.opacity(0), Theme.ink.opacity(0.09), Theme.ink.opacity(0)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: proxy.size.width * 0.6)
+                .offset(x: proxy.size.width * (through * 1.6 - 0.6))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .allowsHitTesting(false)
+        }
+        .onChange(of: calledAt) { _, _ in
+            guard !reduceMotion else { return }
+            through = 0
+            DispatchQueue.main.async {
+                withAnimation(.timingCurve(0.3, 0, 0.2, 1, duration: 0.7)) { through = 1 }
+            }
+        }
     }
 }
 

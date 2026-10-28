@@ -444,6 +444,8 @@ pub struct AgentRow {
     pub active_at: u64,
     /// When the soonest trigger set on it sends it a prompt, in Unix milliseconds.
     pub next_trigger: Option<u64>,
+    /// When it was last named with `@` or messaged by another agent, in Unix milliseconds.
+    pub called_at: Option<u64>,
     /// Its place on its lead's team, which the rows after a lead belong to.
     pub team: Option<TeamLink>,
 }
@@ -4474,6 +4476,7 @@ impl Workbench {
         AgentRow {
             active_at: shown.and_then(|row| row["activeAt"].as_u64()).unwrap_or(0),
             next_trigger: shown.and_then(|row| row["nextTrigger"].as_u64()),
+            called_at: shown.and_then(|row| row["calledAt"].as_u64()),
             team: shown.and_then(|row| match row["team"].as_str()? {
                 "head" => Some(TeamLink::Head),
                 "member" => Some(TeamLink::Member),

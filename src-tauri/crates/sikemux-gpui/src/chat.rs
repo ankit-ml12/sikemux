@@ -54,6 +54,7 @@ pub(crate) mod draft;
 mod edit;
 mod files;
 mod find;
+mod gestures;
 mod installing;
 mod link;
 pub(crate) mod live;
@@ -4071,7 +4072,12 @@ fn row(
                 .child(note)
         });
     let noted = worktree.is_some();
-    if parts.is_empty() && message.letters.is_empty() && summary.is_none() && !carried {
+    if parts.is_empty()
+        && message.letters.is_empty()
+        && message.gifs.is_empty()
+        && summary.is_none()
+        && !carried
+    {
         return div().children(lost).children(worktree).into_any_element();
     }
     let lettered = !message.letters.is_empty();
@@ -4124,6 +4130,7 @@ fn row(
                                 .children(parts),
                         )
                     })
+                    .children(gestures::reactions(message, looks))
                     .children(meta::line(rows, ix, &group, looks, cx))
             }
         }
@@ -4141,7 +4148,8 @@ fn row(
                     .gap(px(PART_GAP))
                     .min_w_0()
                     .children(summary)
-                    .children(parts),
+                    .children(parts)
+                    .children(gestures::gifs(message, looks, cx)),
             )
             .children(meta::line(rows, ix, &group, looks, cx))
     };
@@ -4442,6 +4450,7 @@ fn letters(
         .gap(px(14.))
         .min_w_0()
         .children(drawn)
+        .children(gestures::reactions(&row.message, looks))
 }
 
 enum Shown<'a> {

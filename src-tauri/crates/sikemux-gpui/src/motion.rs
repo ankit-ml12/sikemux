@@ -100,6 +100,9 @@ pub const NEEDS_YOU: Ease = Ease::new(900, Curve::Linear);
 pub const RING: Ease = Ease::new(520, Curve::Bezier(0.2, 0.6, 0.3, 1.));
 pub const SECOND_RING: Duration = Duration::from_millis(380);
 
+/// The light that passes over an agent's row when it is named or messaged.
+pub const CALLED: Ease = Ease::new(700, Curve::Bezier(0.3, 0., 0.2, 1.));
+
 /// An animation that plays once as its element first draws, on `ease`. It holds still while
 /// macOS asks for less motion, so it is only for what the Mac stills then too.
 pub fn entrance(ease: Ease) -> Animation {

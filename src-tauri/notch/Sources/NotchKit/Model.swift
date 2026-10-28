@@ -69,6 +69,8 @@ struct Entry: Identifiable, Equatable {
         guard mark == .idle || mark == .done, let at = agent?.nextTrigger else { return nil }
         return Date(timeIntervalSince1970: Double(at) / 1000)
     }
+    /// When its agent was last named with `@` or messaged by another agent.
+    var calledAt: Int? { agent?.calledAt }
     var isChat: Bool { item.agentId != nil && item.session == nil && item.cli != nil }
     var since: Date? { item.at > 0 ? Date(timeIntervalSince1970: Double(item.at) / 1000) : nil }
 

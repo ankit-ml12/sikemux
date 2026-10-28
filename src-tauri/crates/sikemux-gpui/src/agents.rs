@@ -5,8 +5,8 @@ use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, fill, point, px, radians, size, Anchor, AnyElement, App, Bounds, ClickEvent,
-    Context, Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
+    canvas, div, fill, point, px, radians, relative, size, Anchor, AnyElement, App, Bounds,
+    ClickEvent, Context, Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
     SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
 };
 use serde_json::Value;
@@ -997,6 +997,7 @@ fn agent_row(
             cx.listener(|bench, _, _, cx| bench.close_card(cx)),
         )
         .child(row)
+        .children(called(agent, cx))
         .child(actions)
         .children(lines)
         .when(card.is_some(), |wrap| {
@@ -1007,6 +1008,56 @@ fn agent_row(
             Some(menu) => menu.build(popup),
             None => popup,
         }))
+}
+
+/// A band of light that passes once over the row each time the agent is named with `@` or
+/// messaged by another agent.
+pub fn called(agent: &AgentRow, cx: &App) -> Option<AnyElement> {
+    let called_at = agent.called_at?;
+    let lit = Hsla {
+        a: 0.09,
+        ..Tokens::get(cx).text_primary
+    };
+    let clear = Hsla { a: 0., ..lit };
+    Some(
+        motion::replay(
+            format!("called:{}", agent.id),
+            called_at,
+            motion::CALLED,
+            move |through| {
+                let band = |from: Hsla, to: Hsla| {
+                    div()
+                        .w(relative(0.5))
+                        .h_full()
+                        .bg(gpui_kit::linear_gradient(
+                            90.,
+                            gpui_kit::linear_color_stop(from, 0.),
+                            gpui_kit::linear_color_stop(to, 1.),
+                        ))
+                };
+                div()
+                    .absolute()
+                    .inset_0()
+                    .rounded(theme::RADIUS_2)
+                    .overflow_hidden()
+                    .when(through > 0. && through < 1., |light| {
+                        light.child(
+                            div()
+                                .absolute()
+                                .top_0()
+                                .bottom_0()
+                                .left(relative(through * 1.6 - 0.6))
+                                .w(relative(0.6))
+                                .flex()
+                                .child(band(clear, lit))
+                                .child(band(lit, clear)),
+                        )
+                    })
+                    .into_any_element()
+            },
+        )
+        .into_any_element(),
+    )
 }
 
 /// The hover group of an agent's rail row, whose pin and close buttons show on hover.
