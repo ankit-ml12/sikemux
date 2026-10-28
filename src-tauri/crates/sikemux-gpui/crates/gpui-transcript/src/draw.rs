@@ -9,14 +9,22 @@ use std::time::{Duration, Instant};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, combine_highlights, div, img, point, px, relative, rgb, rgba, size, AnyElement, App,
-    AvailableSpace, Bounds, ClipboardItem, Div, Element, ElementId, Font, FontStyle, FontWeight,
-    GlobalElementId, HighlightStyle, Hsla, InspectorElementId, InteractiveElement, InteractiveText,
-    IntoElement, LayoutId, MouseButton, ParentElement, Pixels, Point, SharedString, Stateful,
-    StatefulInteractiveElement, StrikethroughStyle, Styled, StyledText, TextAlign, Window,
+    AvailableSpace, Bounds, ClipboardItem, DispatchPhase, Div, Element, ElementId, Font, FontStyle,
+    FontWeight, GlobalElementId, HighlightStyle, HitboxBehavior, Hsla, InspectorElementId,
+    InteractiveElement, InteractiveText, IntoElement, LayoutId, MouseButton, ParentElement, Pixels,
+    Point, ScrollEvent, ScrollHandle, SharedString, Stateful, StatefulInteractiveElement,
+    StrikethroughStyle, Styled, StyledText, TextAlign, Window,
 };
 
 use crate::markdown::{superscript, Kind, Markdown, Marks, Node, Picture, Piece, Rich};
 use crate::select::{Key, Selecting, Shown};
+
+/// Where a long code block is scrolled to, and whose the gesture under way is.
+#[derive(Default)]
+struct CodeScroll {
+    handle: ScrollHandle,
+    latch: crate::scroll_latch::ScrollLatch,
+}
 
 /// A fenced code block, for a host that draws its own.
 pub struct Fence {
@@ -1257,7 +1265,7 @@ impl Draw<'_> {
                     .any(|known| lang.eq_ignore_ascii_case(known))
             });
         if let Some((fences, lang)) = fences {
-            let lines = self.lines(id.clone(), code, colours);
+            let lines = self.lines(id.clone(), code, colours, window, cx);
             let copy = self.copy(code.text.clone(), window, cx).into_any_element();
             return (fences.draw)(
                 Fence {
@@ -1282,7 +1290,7 @@ impl Draw<'_> {
             .text_color(style.ink_faint)
             .child(div().flex_1().min_w_0().truncate().children(lang))
             .child(self.copy(code.text.clone(), window, cx));
-        let body = self.lines(id, code, colours);
+        let body = self.lines(id, code, colours, window, cx);
         let frame = div()
             .rounded(style.radius)
             .border_1()
@@ -1294,14 +1302,26 @@ impl Draw<'_> {
             .into_any_element()
     }
 
-    /// A code block's text in its colours, scrolling once it is long.
-    fn lines(&mut self, id: ElementId, code: &Rich, colours: Option<CodeRuns>) -> AnyElement {
+    /// A code block's text in its colours, scrolling once it is long. It scrolls only by a
+    /// gesture that starts over it, so a chat scrolled past it keeps moving.
+    fn lines(
+        &mut self,
+        id: ElementId,
+        code: &Rich,
+        colours: Option<CodeRuns>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
         let style = &*self.on.style;
         let (mono, size, ink) = (style.mono.clone(), style.code_size, style.ink_dim);
-        div()
+        let key = ElementId::NamedChild(Arc::new(id.clone()), "scroll".into());
+        let scroll = window.use_keyed_state(key, cx, |_, _| CodeScroll::default());
+        let handle = scroll.read(cx).handle.clone();
+        let lines = div()
             .id(id)
             .max_h(px(420.))
-            .overflow_scroll()
+            .overflow_hidden()
+            .track_scroll(&handle)
             .px(px(12.))
             .py(px(9.))
             .font(mono)
@@ -1309,7 +1329,49 @@ impl Draw<'_> {
             .line_height(relative(1.55))
             .whitespace_nowrap()
             .text_color(ink)
-            .child(self.code(code, colours))
+            .child(self.code(code, colours));
+        div()
+            .relative()
+            .child(lines)
+            .child(
+                canvas(
+                    |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+                    move |_, hitbox, window, _| {
+                        let view = window.current_view();
+                        window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
+                            if phase != DispatchPhase::Bubble {
+                                return;
+                            }
+                            let room = handle.max_offset();
+                            let over = hitbox.should_handle_scroll(window)
+                                && (room.x > px(0.) || room.y > px(0.));
+                            let moves = |delta: Point<Pixels>| match delta.y.abs() >= delta.x.abs()
+                            {
+                                true => room.y > px(0.),
+                                false => room.x > px(0.),
+                            };
+                            let took = scroll
+                                .update(cx, |scroll, _| scroll.latch.takes(event, over, moves));
+                            if !took {
+                                return;
+                            }
+                            cx.stop_propagation();
+                            let delta = event.delta.pixel_delta(px(20.));
+                            let was = handle.offset();
+                            let to = point(
+                                (was.x + delta.x).clamp(-room.x, px(0.)),
+                                (was.y + delta.y).clamp(-room.y, px(0.)),
+                            );
+                            if to != was {
+                                handle.set_offset(to);
+                                cx.notify(view);
+                            }
+                        });
+                    },
+                )
+                .absolute()
+                .inset_0(),
+            )
             .into_any_element()
     }
 

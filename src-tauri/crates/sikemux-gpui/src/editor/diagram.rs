@@ -126,7 +126,7 @@ pub(crate) struct Diagram {
     /// The tallest an embedded diagram has drawn at its width, so it never shrinks as its text
     /// grows; with the width it was measured at.
     tallest: (f32, f32),
-    latch: crate::ui::scroll_latch::ScrollLatch,
+    latch: gpui_transcript::scroll_latch::ScrollLatch,
     hover: Option<Spot>,
     pointer: Option<Point<Pixels>>,
     drag: Option<Drag>,
@@ -736,7 +736,7 @@ fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
             let over = hitbox.is_hovered(window);
             let delta = event.delta.pixel_delta(px(20.));
             let took = this.update(cx, |diagram, cx| {
-                if !diagram.latch.takes(event, over) {
+                if !diagram.latch.takes(event, over, |_| true) {
                     return false;
                 }
                 if event.modifiers.platform || event.modifiers.control {

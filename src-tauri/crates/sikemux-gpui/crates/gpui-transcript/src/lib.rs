@@ -13,6 +13,7 @@ pub mod counts;
 mod draw;
 mod find;
 mod markdown;
+pub mod scroll_latch;
 mod select;
 mod transcript;
 

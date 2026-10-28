@@ -491,7 +491,7 @@ fn listener(
                     return;
                 }
                 if event.touch_phase == TouchPhase::Started {
-                    crate::ui::scroll_latch::gesture_starts();
+                    gpui_transcript::scroll_latch::gesture_starts();
                     let over = SCROLLERS.with(|scrollers| {
                         scrollers
                             .borrow()
@@ -500,7 +500,7 @@ fn listener(
                     });
                     OWNER.set(if over { SIDEWAYS } else { me });
                 }
-                let inside = crate::ui::scroll_latch::taken_inside();
+                let inside = gpui_transcript::scroll_latch::taken_inside();
                 if OWNER.get() == me && !inside && swiped(event, cx) {
                     cx.stop_propagation();
                 }
