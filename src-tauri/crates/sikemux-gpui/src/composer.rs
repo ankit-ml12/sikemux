@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
@@ -254,6 +255,15 @@ impl RenderOnce for Composer {
             cx,
         );
         let settable = self.ready && !self.running;
+        let width = window
+            .use_keyed_state(
+                ElementId::NamedInteger("composer-width".into(), self.draft.entity_id().as_u64()),
+                cx,
+                |_, _| Rc::new(Cell::new(0.)),
+            )
+            .read(cx)
+            .clone();
+        let room = Room::of(width.get());
         let attach = IconButton::new("composer-attach", Icon::Plus, "Add files")
             .glyph(17.)
             .width(31.)
@@ -271,10 +281,17 @@ impl RenderOnce for Composer {
             .child(attach)
             .children(
                 self.stash
-                    .map(|(fresh, open, toggle)| stash_button(fresh, open, toggle, cx)),
+                    .map(|(fresh, open, toggle)| stash_button(fresh, open, toggle, room, cx)),
             );
         if let Some((on, held, toggle)) = self.yolo {
-            bar = bar.child(yolo(on, settable && !held, &self.agent_label, toggle, cx));
+            bar = bar.child(yolo(
+                on,
+                settable && !held,
+                &self.agent_label,
+                toggle,
+                room,
+                cx,
+            ));
         }
         let waiting = self
             .model_menu
@@ -286,9 +303,18 @@ impl RenderOnce for Composer {
                 || self.agent_label.to_string(),
                 |model| chosen(model, "Model"),
             );
-            let trigger =
-                picker_trigger("model", label, "Model", Some(&self.provider), enabled, cx);
+            let trigger = picker_trigger(
+                "model",
+                label,
+                "Model",
+                Some(&self.provider),
+                enabled,
+                room,
+                cx,
+            );
             crate::model_picker::around(trigger, &self.provider, picked, &bench)
+                .min_w_0()
+                .flex()
         });
         let has_menu = model_menu.is_some();
         bar = bar.children(model_menu);
@@ -300,6 +326,7 @@ impl RenderOnce for Composer {
                     Some(&self.provider),
                     settable,
                     pick.clone(),
+                    room,
                     cx,
                 )
             }));
@@ -310,6 +337,7 @@ impl RenderOnce for Composer {
                     None,
                     settable || waiting,
                     pick,
+                    room,
                     cx,
                 )
             }));
@@ -338,8 +366,13 @@ impl RenderOnce for Composer {
             .flex()
             .flex_col()
             .items_center()
-            .on_children_prepainted(move |bounds, _, cx| {
-                let composer = bounds.last().map_or(0., |box_| box_.size.width.into());
+            .on_children_prepainted(move |bounds, window, cx| {
+                let composer = bounds
+                    .get(usize::from(has_strip))
+                    .map_or(0., |box_| box_.size.width.into());
+                if Room::of(composer) != Room::of(width.replace(composer)) {
+                    window.refresh();
+                }
                 Drawn::keep(cx, |drawn| Drawn {
                     composer,
                     strip: if has_strip { drawn.strip } else { 0. },
@@ -597,7 +630,7 @@ impl Drawn {
 }
 
 /// The Stash's button beside +: its mark and name, and how many items are new in an accent pill.
-fn stash_button(fresh: usize, open: bool, toggle: Act, cx: &App) -> impl IntoElement {
+fn stash_button(fresh: usize, open: bool, toggle: Act, room: Room, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     BaseButton::new("composer-stash")
         .accessibility_label("Stash")
@@ -623,7 +656,7 @@ fn stash_button(fresh: usize, open: bool, toggle: Act, cx: &App) -> impl IntoEle
         } else {
             t.text_secondary
         }))
-        .child("Stash")
+        .when(room == Room::Full, |button| button.child("Stash"))
         .when(fresh > 0, |button| {
             button.child(
                 div()
@@ -644,12 +677,41 @@ fn stash_button(fresh: usize, open: bool, toggle: Act, cx: &App) -> impl IntoEle
         })
 }
 
+/// How much of the bar fits at the composer's width. The model's name shortens first; past
+/// that the Stash and the effort lose their names, then YOLO, then the model's name goes.
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
+enum Room {
+    Bare,
+    Tight,
+    Compact,
+    Full,
+}
+
+impl Room {
+    /// The room at a composer drawn `width` wide, or all of it before it is first drawn.
+    fn of(width: f32) -> Self {
+        match width {
+            w if w == 0. || w >= 500. => Room::Full,
+            w if w >= 430. => Room::Compact,
+            w if w >= 380. => Room::Tight,
+            _ => Room::Bare,
+        }
+    }
+}
+
 /// How far the strip over the composer steps in from either side of it.
 const STRIP_STEP: f32 = 20.;
 
 /// YOLO or SAFE: whether the agent acts without asking. YOLO's letters run through the
 /// rainbow the app paints it with.
-fn yolo(on: bool, settable: bool, agent: &str, toggle: Act, cx: &App) -> impl IntoElement {
+fn yolo(
+    on: bool,
+    settable: bool,
+    agent: &str,
+    toggle: Act,
+    room: Room,
+    cx: &App,
+) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let press = crate::keymap::hint("agent.permissions", cx).unwrap_or("Click".into());
     let about = if on {
@@ -662,7 +724,7 @@ fn yolo(on: bool, settable: bool, agent: &str, toggle: Act, cx: &App) -> impl In
         .selected(on)
         .disabled(!settable)
         .h(px(31.))
-        .px(px(11.))
+        .px(px(if room >= Room::Compact { 11. } else { 9.5 }))
         .flex()
         .items_center()
         .gap(px(5.))
@@ -685,11 +747,14 @@ fn yolo(on: bool, settable: bool, agent: &str, toggle: Act, cx: &App) -> impl In
                 t.text_tertiary
             }),
         )
-        .child(match on {
-            true => ui::rainbow("YOLO", 10.5, cx),
-            false => ui::text("SAFE", 10.5, FontWeight::SEMIBOLD)
-                .letter_spacing(0.08)
-                .text_color(t.text_tertiary),
+        .when(room >= Room::Compact, |toggle| {
+            toggle.child(match on {
+                true => ui::rainbow("YOLO", 10.5, cx).into_any_element(),
+                false => ui::text("SAFE", 10.5, FontWeight::SEMIBOLD)
+                    .letter_spacing(0.08)
+                    .text_color(t.text_tertiary)
+                    .into_any_element(),
+            })
         })
 }
 
@@ -715,6 +780,7 @@ fn picker_trigger(
     name: &'static str,
     provider: Option<&str>,
     enabled: bool,
+    room: Room,
     cx: &App,
 ) -> BaseButton {
     let t = Tokens::get(cx).clone();
@@ -729,7 +795,7 @@ fn picker_trigger(
                 })
             })
         });
-    picker_face(trigger, label, provider, enabled, cx)
+    picker_face(trigger, label, provider, enabled, room, cx)
 }
 
 /// How a picker's trigger looks, on whichever button opens it: the agent's mark when it is
@@ -739,14 +805,22 @@ fn picker_face<E: Styled + ParentElement + IntoElement>(
     label: String,
     provider: Option<&str>,
     enabled: bool,
+    room: Room,
     cx: &App,
 ) -> E {
     let t = Tokens::get(cx).clone();
     let first = provider.is_some();
+    let named = match room {
+        Room::Full => true,
+        Room::Compact | Room::Tight => first,
+        Room::Bare => false,
+    };
     trigger
         .h(px(31.))
-        .px(px(11.))
+        .px(px(if named { 11. } else { 9.5 }))
         .max_w(px(220.))
+        .when(first, |trigger| trigger.min_w_0())
+        .when(!first, |trigger| trigger.flex_none())
         .flex()
         .items_center()
         .gap(px(6.))
@@ -764,14 +838,16 @@ fn picker_face<E: Styled + ParentElement + IntoElement>(
                 .text_color(t.text_tertiary)
                 .into_any_element(),
         })
-        .child(
-            div()
-                .min_w_0()
-                .overflow_hidden()
-                .text_ellipsis()
-                .whitespace_nowrap()
-                .child(label),
-        )
+        .when(named, |trigger| {
+            trigger.child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(label),
+            )
+        })
         .child(
             div().opacity(0.6).child(
                 ui::icon(Icon::Chevron, 10.)
@@ -787,13 +863,15 @@ fn picker(
     provider: Option<&str>,
     settable: bool,
     pick: Pick,
+    room: Room,
     cx: &App,
 ) -> impl IntoElement {
     let first = provider.is_some();
     let label = chosen(&picker, name);
     let enabled = settable && !picker.choices.is_empty();
     if !enabled {
-        return picker_trigger(&picker.id, label, name, provider, enabled, cx).into_any_element();
+        return picker_trigger(&picker.id, label, name, provider, enabled, room, cx)
+            .into_any_element();
     }
     let ConfigPicker {
         id,
@@ -804,7 +882,7 @@ fn picker(
         .ghost()
         .compact()
         .accessibility_label(name);
-    picker_face(trigger, label, provider, enabled, cx)
+    picker_face(trigger, label, provider, enabled, room, cx)
         .dropdown_menu_with_anchor(
             if first {
                 Anchor::BottomLeft
