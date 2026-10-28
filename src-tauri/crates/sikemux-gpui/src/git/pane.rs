@@ -36,6 +36,7 @@ use super::review::{review, Review};
 use crate::codehost::inbox::Inbox;
 use crate::core::Target;
 use crate::editor::OpenAt;
+use crate::files::Mark;
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens, RADIUS_2};
@@ -184,14 +185,14 @@ fn moved_to(file: &GitFile, side: Side) -> GitFile {
 fn decoration(code: &str, t: &Tokens) -> Option<(&'static str, Hsla, &'static str)> {
     Some(match code.trim() {
         "" => return None,
-        "?" => ("U", t.git_untracked, "untracked"),
-        "U" => ("U", t.danger, "unmerged"),
-        "A" => ("A", t.git_added, "added"),
-        "D" => ("D", t.git_deleted, "deleted"),
-        "R" => ("R", t.git_renamed, "renamed"),
-        "C" => ("C", t.git_renamed, "copied"),
-        "T" => ("T", t.git_modified, "type changed"),
-        _ => ("M", t.git_modified, "modified"),
+        "?" => ("U", Mark::Untracked.colour(t), "untracked"),
+        "U" => ("U", Mark::Conflicted.colour(t), "unmerged"),
+        "A" => ("A", Mark::Added.colour(t), "added"),
+        "D" => ("D", Mark::Deleted.colour(t), "deleted"),
+        "R" => ("R", Mark::Renamed.colour(t), "renamed"),
+        "C" => ("C", Mark::Renamed.colour(t), "copied"),
+        "T" => ("T", Mark::Modified.colour(t), "type changed"),
+        _ => ("M", Mark::Modified.colour(t), "modified"),
     })
 }
 

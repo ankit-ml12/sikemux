@@ -333,6 +333,18 @@ impl FileTree {
         })
     }
 
+    /// Git's letter for the changed file at `path`, drawn in its mark's colour.
+    pub fn letter(&self, path: &Path, cx: &App) -> Option<gpui_kit::Div> {
+        let (Some(letter), mark) = *self.marks.get(path)? else {
+            return None;
+        };
+        Some(
+            ui::text(letter.to_string(), 10., FontWeight::BOLD)
+                .opacity(0.8)
+                .text_color(mark.colour(Tokens::get(cx))),
+        )
+    }
+
     /// Takes in what git says of the project's files.
     pub fn mark(&mut self, overview: &Value) {
         if let Some(root) = &self.root {
@@ -396,6 +408,17 @@ impl Mark {
             " " | "" => return None,
             _ => (code.chars().next()?, Mark::Modified),
         })
+    }
+
+    pub fn colour(self, t: &Tokens) -> gpui_kit::Hsla {
+        match self {
+            Mark::Modified => t.git_modified,
+            Mark::Untracked => t.git_untracked,
+            Mark::Added => t.git_added,
+            Mark::Deleted => t.git_deleted,
+            Mark::Renamed => t.git_renamed,
+            Mark::Conflicted => t.danger,
+        }
     }
 }
 
@@ -717,14 +740,7 @@ fn row_view(
     let marks = &tree.marks;
     let t = Tokens::get(cx).clone();
     let mark = marks.get(&row.path).copied();
-    let colour = |mark: Mark| match mark {
-        Mark::Modified => t.git_modified,
-        Mark::Untracked => t.git_untracked,
-        Mark::Added => t.git_added,
-        Mark::Deleted => t.git_deleted,
-        Mark::Renamed => t.git_renamed,
-        Mark::Conflicted => t.danger,
-    };
+    let colour = |mark: Mark| mark.colour(&t);
     let active = !row.entry.dir && front == Some(row.path.as_path());
     let ink = match mark {
         _ if active => t.text_primary,
@@ -754,14 +770,9 @@ fn row_view(
         file_glyph(&row.entry.name, cx)
     };
     let tail = match mark {
-        Some((Some(letter), mark)) if !row.entry.dir => Some(
-            ui::text(letter.to_string(), 10., FontWeight::BOLD)
-                .ml_auto()
-                .pl(px(8.))
-                .opacity(0.8)
-                .text_color(colour(mark))
-                .into_any_element(),
-        ),
+        Some((Some(_), _)) if !row.entry.dir => tree
+            .letter(&row.path, cx)
+            .map(|letter| letter.ml_auto().pl(px(8.)).into_any_element()),
         Some((_, mark)) if row.entry.dir => Some(
             ui::text("●", 7., FontWeight::NORMAL)
                 .ml_auto()

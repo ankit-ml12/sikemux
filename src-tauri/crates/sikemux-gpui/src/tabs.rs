@@ -952,8 +952,19 @@ fn strip_tab(
                 .into_any_element(),
             })
             .tail(match ssh_link(bench, kind, target) {
-                Some(link) => Some(ui::dot(link, cx)),
-                None => unsaved.then(|| div().size(px(6.)).rounded_full().bg(t.warn)),
+                Some(link) => Some(ui::dot(link, cx).into_any_element()),
+                None if unsaved => Some(
+                    div()
+                        .size(px(6.))
+                        .rounded_full()
+                        .bg(t.warn)
+                        .into_any_element(),
+                ),
+                None if kind == PaneKind::Files => bench
+                    .files
+                    .letter(Path::new(target), cx)
+                    .map(IntoElement::into_any_element),
+                None => None,
             })
         }
         None => base,
