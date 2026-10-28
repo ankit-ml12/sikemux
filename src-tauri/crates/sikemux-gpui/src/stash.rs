@@ -1,5 +1,5 @@
 //! The account's Stash: what the person shared into Sikemux from other apps, kept on their
-//! account for every device. It has a place in the rail and a pane of its own; an item goes into
+//! account for every device. It has a pane of its own; an item goes into
 //! a chat's draft from the pane, by dragging it onto the chat, from the chip over a composer when
 //! items are new, or with `&` in the draft. The chat's core puts it there.
 
@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use crate::icons::Icon;
 use crate::picture::{Picture, Remote};
 use crate::theme::{self, Tokens};
-use crate::ui::{self, IconButton, Row};
+use crate::ui::{self, IconButton};
 use crate::workbench::Workbench;
 use sikemux_wire::protocol::PaneKind;
 
@@ -428,35 +428,6 @@ impl Workbench {
             .and_then(|tab| crate::tabs::first_view(&tab.pane))
             .is_some_and(|(kind, _)| kind == PaneKind::Stash)
     }
-}
-
-/// The Stash's place in the rail, with how many items wait in it.
-pub fn rail_row(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    let t = Tokens::get(cx).clone();
-    let stash = Stash::of(bench);
-    let count = (stash.signed_in && !stash.items.is_empty()).then(|| {
-        div()
-            .h(px(16.))
-            .min_w(px(16.))
-            .px(px(5.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .bg(t.surface_chosen)
-            .text_size(theme::ui_text(10.5))
-            .font_weight(FontWeight::MEDIUM)
-            .font_features(theme::tabular())
-            .text_color(t.text_secondary)
-            .child(stash.items.len().to_string())
-    });
-    Row::new("rail-stash", "Stash")
-        .mark(16., ui::icon(Icon::Stack, 13.).text_color(t.text_secondary))
-        .quiet()
-        .chosen(bench.settings.is_none() && bench.stash_in_front())
-        .status(count)
-        .on_click(cx.listener(|bench, _, _, _| bench.open_stash()))
-        .into_any_element()
 }
 
 /// Docked on a chat's composer, opened by its Stash button or by `&`: the newest items first as small

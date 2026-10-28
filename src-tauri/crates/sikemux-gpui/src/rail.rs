@@ -51,7 +51,6 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                 .px(px(10.))
                 .pb(px(16.))
                 .overflow_y_scroll()
-                .child(div().pb(px(10.)).child(crate::stash::rail_row(bench, cx)))
                 .child(
                     Group::new("Projects", empty)
                         .first()
