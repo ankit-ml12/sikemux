@@ -103,6 +103,7 @@ impl RenderOnce for Picture {
         match natural {
             Some(size) => picture
                 .flex_none()
+                .m_auto()
                 .w(px(size.width.0 as f32 * scale))
                 .h(px(size.height.0 as f32 * scale))
                 .object_fit(ObjectFit::Fill),
@@ -383,11 +384,9 @@ pub(super) fn pane(
                         .id("viewer-image")
                         .size_full()
                         .flex()
-                        .items_center()
-                        .justify_center()
                         .overflow_scroll()
-                        .on_pinch(cx.listener(move |bench, event: &PinchEvent, window, cx| {
-                            pinch(bench, &pinched, 1. + event.delta, window, cx)
+                        .on_pinch(cx.listener(move |bench, event: &PinchEvent, _, cx| {
+                            pinch(bench, &pinched, 1. + event.delta, cx)
                         }))
                         .child(picture),
                 )
@@ -407,13 +406,7 @@ pub(super) fn pane(
 }
 
 /// Scales the picture by `factor`, starting from the size it is fitted to while it is fitted.
-fn pinch(
-    bench: &mut Workbench,
-    key: &FileKey,
-    factor: f32,
-    window: &mut Window,
-    cx: &mut Context<Workbench>,
-) {
+fn pinch(bench: &mut Workbench, key: &FileKey, factor: f32, cx: &mut Context<Workbench>) {
     let Some(viewer) = bench.editors.viewers.get(key) else {
         return;
     };
@@ -422,8 +415,8 @@ fn pinch(
         Zoom::Fit => {
             let path = viewer.local.as_deref().unwrap_or(&key.path);
             let resource = Resource::Path(Arc::from(path));
-            let Some(natural) = window
-                .use_asset::<ImgResourceLoader>(&resource, cx)
+            let Some(natural) = cx
+                .fetch_asset::<ImgResourceLoader>(&resource)
                 .and_then(Result::ok)
                 .map(|image| image.size(0))
             else {
