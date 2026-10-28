@@ -1,0 +1,17 @@
+# For KLIPY's production review: the person shares good news, the agent reacts with an emoji,
+# answers, and sends a GIF from KLIPY, which plays under the answer with KLIPY's credit.
+replies gifs.json
+project shop shop
+chat Wren
+settle 6
+cursor 1200,700
+record
+wait 1.0
+move 600,768 1.0
+click
+type "we just passed 1,000 orders on the shop! can you check how many have shipped?" 30
+key enter
+zoom 690,420 1.45 1.2 &
+move 1000,560 1.0
+wait 11
+end 3
