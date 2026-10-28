@@ -22,7 +22,7 @@ use crate::macos as page;
 use crate::recording;
 use crate::{
     address, burst, documents, downloads, favicon, history, local_files, viewport, BrowserBounds,
-    BrowserDownload, BrowserSnapshot, BrowserTab, DocumentEvent, DownloadState, PageDialog,
+    BrowserDownload, BrowserSnapshot, BrowserTab, DocumentEvent, DownloadState, Opener, PageDialog,
     PageLoad, Tab, TabEvents, TabSpec, TabStall, BLANK_URL, PARKED_ORIGIN, USER_AGENT,
 };
 
@@ -300,31 +300,42 @@ impl BrowserManager {
     pub async fn open_tab(&self, agent_id: &str, url: Option<&str>) -> BrowserResult<String> {
         validate_agent_id(agent_id)?;
         let url = self.page_url(url.unwrap_or_default())?;
-        validate_url(&url)?;
-        let parsed = Url::parse(&url).map_err(|_| Error::BadArg("invalid browser url"))?;
+        let (tab_id, _) = self.add_tab(agent_id, &url, None)?;
+        self.until_desk_answers(agent_id).await;
+        Ok(tab_id)
+    }
+
+    /// Adds a tab at `url` to the end of the agent's strip and shows it.
+    fn add_tab(
+        &self,
+        agent_id: &str,
+        url: &str,
+        opened_by: Option<OpenedBy>,
+    ) -> BrowserResult<(String, Tab)> {
+        validate_url(url)?;
+        let parsed = Url::parse(url).map_err(|_| Error::BadArg("invalid browser url"))?;
         let tab_id = format!(
             "browser-{}-{}",
             label_safe(agent_id),
             self.next_tab.fetch_add(1, Ordering::AcqRel)
         );
-        let webview = self.create_view(agent_id, &tab_id, parsed, USER_AGENT)?;
+        let webview = self.create_view(agent_id, &tab_id, parsed, USER_AGENT, opened_by)?;
         {
             let mut agents = self.agents.locked();
             let agent = agents.entry(agent_id.to_owned()).or_default();
             agent.strip.insert(
                 tab_id.clone(),
                 TabPage {
-                    url: url.clone(),
+                    url: url.to_owned(),
                     loading: url != BLANK_URL,
                     ..TabPage::default()
                 },
             );
-            agent.views.insert(tab_id.clone(), webview);
+            agent.views.insert(tab_id.clone(), webview.clone());
         }
         self.relayout(agent_id);
         self.announce();
-        self.until_desk_answers(agent_id).await;
-        Ok(tab_id)
+        Ok((tab_id, webview))
     }
 
     /// While the app brings the agent's desk on screen, a new tab waits a moment to be laid
@@ -353,6 +364,7 @@ impl BrowserManager {
         tab_id: &str,
         url: Url,
         user_agent: &str,
+        opened_by: Option<OpenedBy>,
     ) -> BrowserResult<Tab> {
         let parent = self.host().window().map_err(Error::Window)?;
         let size = self
@@ -365,6 +377,7 @@ impl BrowserManager {
             manager: self.me.clone(),
             agent_id: agent_id.to_owned(),
             tab_id: tab_id.to_owned(),
+            opened_from: opened_by.as_ref().map(|by| by.tab_id.clone()),
             popups: Mutex::new(burst::Burst::new(POPUP_LIMIT, POPUP_WINDOW)),
             downloads: Mutex::new(burst::Burst::new(DOWNLOAD_LIMIT, DOWNLOAD_WINDOW)),
         });
@@ -376,6 +389,7 @@ impl BrowserManager {
                 url: url.as_str(),
                 user_agent,
                 size,
+                opener: opened_by.and_then(|by| by.opener),
             },
             events,
         )
@@ -406,7 +420,7 @@ impl BrowserManager {
             .filter(tab_may_load)
             .unwrap_or_else(|| Url::parse(BLANK_URL).expect("about:blank parses"));
         let blank = parsed.as_str() == BLANK_URL;
-        let view = match self.create_view(agent_id, tab_id, parsed, user_agent) {
+        let view = match self.create_view(agent_id, tab_id, parsed, user_agent, None) {
             Ok(view) => view,
             Err(error) => {
                 eprintln!("Sikemux could not reload browser tab {tab_id}: {error}");
@@ -664,6 +678,17 @@ impl BrowserManager {
                 manager.relayout(&agent_id);
             }
         });
+    }
+
+    /// A page closed the window it was opened as. The tab that opened it comes back
+    /// in its place if it was the one shown.
+    fn close_window(&self, agent_id: &str, tab_id: &str, opened_from: &str) {
+        if let Some(agent) = self.agents.locked().get_mut(agent_id) {
+            if agent.strip.active.as_deref() == Some(tab_id) {
+                agent.strip.activate(opened_from);
+            }
+        }
+        let _ = self.close_tab(agent_id, tab_id);
     }
 
     pub fn close_tab(&self, agent_id: &str, tab_id: &str) -> BrowserResult<()> {
@@ -1060,11 +1085,19 @@ impl BrowserManager {
     }
 }
 
+/// The tab whose page opened another as its window, and what the engine makes that one from.
+pub(crate) struct OpenedBy {
+    tab_id: String,
+    opener: Option<Opener>,
+}
+
 /// What one tab's page tells the manager.
 struct TabListener {
     manager: Weak<BrowserManager>,
     agent_id: String,
     tab_id: String,
+    /// The tab whose page opened this one as its window, which alone may close it.
+    opened_from: Option<String>,
     popups: Mutex<burst::Burst>,
     downloads: Mutex<burst::Burst>,
 }
@@ -1126,17 +1159,34 @@ impl TabEvents for TabListener {
         });
     }
 
-    fn new_window(&self, url: String) {
+    fn new_window(&self, url: String, opener: Option<Opener>) -> Option<Tab> {
         if !self.popups.locked().admit(Instant::now()) {
-            return;
+            return None;
         }
-        let Some(manager) = self.manager.upgrade() else {
+        let url = if url.is_empty() {
+            BLANK_URL.to_owned()
+        } else {
+            url
+        };
+        let opened_by = OpenedBy {
+            tab_id: self.tab_id.clone(),
+            opener,
+        };
+        let (_, tab) = self
+            .manager
+            .upgrade()?
+            .add_tab(&self.agent_id, &url, Some(opened_by))
+            .ok()?;
+        Some(tab)
+    }
+
+    fn closed(&self) {
+        let (Some(manager), Some(opened_from)) = (self.manager.upgrade(), self.opened_from.clone())
+        else {
             return;
         };
-        let agent = self.agent_id.clone();
-        crate::spawn(async move {
-            let _ = manager.open_tab(&agent, Some(url.as_str())).await;
-        });
+        let (agent, tab) = (self.agent_id.clone(), self.tab_id.clone());
+        crate::spawn(async move { manager.close_window(&agent, &tab, &opened_from) });
     }
 
     fn download_started(&self, url: String, suggested: &Path) -> Option<PathBuf> {

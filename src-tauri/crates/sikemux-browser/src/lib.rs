@@ -47,7 +47,7 @@ pub use linux::choose_page_rendering;
 #[cfg(target_os = "linux")]
 pub use linux_page::give_keyboard_back;
 pub use manager::{BrowserManager, TabPage};
-pub use tab::{ParentView, Tab, TabSpec};
+pub use tab::{Opener, ParentView, Tab, TabSpec};
 
 pub(crate) use sikemux_core::runtime::spawn;
 
@@ -217,8 +217,11 @@ pub trait TabEvents: Send + Sync + 'static {
     fn titled(&self, title: String);
     /// The page changed its address without loading a new document.
     fn moved(&self, url: String, can_go_back: bool, can_go_forward: bool);
-    /// The page asked for a window of its own; it never gets one.
-    fn new_window(&self, url: String);
+    /// The page opened a window at `url`. It becomes a new tab, made from `opener` where
+    /// the engine gives one, and that tab is handed back; None blocks the window.
+    fn new_window(&self, url: String, opener: Option<Opener>) -> Option<Tab>;
+    /// The page closed its own window.
+    fn closed(&self);
     /// Where a file the page saves goes, or None to refuse it. `suggested` is
     /// the name the page or the server gave it.
     fn download_started(&self, url: String, suggested: &Path) -> Option<PathBuf>;

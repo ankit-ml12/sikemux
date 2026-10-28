@@ -12,7 +12,7 @@ use objc2::MainThreadMarker;
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSView;
 #[cfg(target_os = "macos")]
-use objc2_web_kit::WKWebView;
+use objc2_web_kit::{WKWebView, WKWebViewConfiguration};
 
 #[cfg(not(target_os = "linux"))]
 use crate::TabEvents;
@@ -56,7 +56,22 @@ pub struct TabSpec<'a> {
     pub user_agent: &'a str,
     /// The size the page lays out at while it waits off screen to be shown.
     pub size: (f64, f64),
+    /// The page that opened this tab as its window. The engine then loads `url` itself.
+    pub opener: Option<Opener>,
 }
+
+/// What a page that opens a window hands over for it. A tab made from it stays linked
+/// to that page, so a sign-in popup can post its answer back to the page that opened it.
+#[cfg(target_os = "macos")]
+pub struct Opener(pub(crate) Retained<WKWebViewConfiguration>);
+
+// SAFETY: WebKit hands an opener over on the main thread, and the tab is made from it
+// there before the call returns, so it never reaches another thread.
+#[cfg(target_os = "macos")]
+unsafe impl Send for Opener {}
+
+#[cfg(not(target_os = "macos"))]
+pub enum Opener {}
 
 #[cfg(target_os = "macos")]
 #[derive(Clone)]
@@ -110,11 +125,12 @@ impl Tab {
         events: Arc<dyn TabEvents>,
     ) -> Result<Tab, String> {
         let id: Arc<str> = spec.tab_id.into();
-        let (agent_id, url, user_agent, size) = (
+        let (agent_id, url, user_agent, size, opener) = (
             spec.agent_id.to_owned(),
             spec.url.to_owned(),
             spec.user_agent.to_owned(),
             spec.size,
+            spec.opener,
         );
         let tab_id = id.to_string();
         let make = move || {
@@ -130,7 +146,10 @@ impl Tab {
                 },
                 agent_id,
                 tab_id,
-                &url,
+                match opener {
+                    Some(opener) => crate::macos::Start::Opened(opener),
+                    None => crate::macos::Start::Load(&url),
+                },
                 &user_agent,
                 size,
                 events,
@@ -156,8 +175,12 @@ impl Tab {
 
     /// The page's view, to code already on the main thread.
     pub fn view_here(&self) -> Option<Retained<NSView>> {
+        self.webview_here().map(Retained::into_super)
+    }
+
+    pub(crate) fn webview_here(&self) -> Option<Retained<WKWebView>> {
         MainThreadMarker::new()?;
-        self.view.0.clone().map(Retained::into_super)
+        self.view.0.clone()
     }
 
     /// Runs `act` on the page on the main thread, at once when called there.

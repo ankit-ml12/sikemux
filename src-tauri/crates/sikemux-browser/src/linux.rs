@@ -354,7 +354,7 @@ impl Tab {
                 })
                 .with_document_title_changed_handler(move |name| title.titled(name))
                 .with_new_window_req_handler(move |url, _| {
-                    popup.new_window(url);
+                    popup.new_window(url, None);
                     wry::NewWindowResponse::Deny
                 })
                 .with_download_started_handler(move |url, path: &mut PathBuf| {

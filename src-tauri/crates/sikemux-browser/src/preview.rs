@@ -10,7 +10,8 @@ use tokio::sync::watch;
 
 use crate::host::Host;
 use crate::{
-    viewport, DocumentEvent, PageDialog, PageLoad, Tab, TabEvents, TabSpec, TabStall, USER_AGENT,
+    viewport, DocumentEvent, Opener, PageDialog, PageLoad, Tab, TabEvents, TabSpec, TabStall,
+    USER_AGENT,
 };
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -38,6 +39,7 @@ impl Preview {
                 url,
                 user_agent: USER_AGENT,
                 size,
+                opener: None,
             },
             Arc::new(PreviewEvents { load: sender }),
         )?;
@@ -92,7 +94,11 @@ impl TabEvents for PreviewEvents {
 
     fn moved(&self, _url: String, _can_go_back: bool, _can_go_forward: bool) {}
 
-    fn new_window(&self, _url: String) {}
+    fn new_window(&self, _url: String, _opener: Option<Opener>) -> Option<Tab> {
+        None
+    }
+
+    fn closed(&self) {}
 
     fn download_started(&self, _url: String, _suggested: &Path) -> Option<PathBuf> {
         None

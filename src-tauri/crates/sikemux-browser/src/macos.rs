@@ -42,7 +42,7 @@ use sikemux_process::sync::Locked;
 
 use crate::burst::Burst;
 use crate::documents::DocumentEvent;
-use crate::{BrowserShortcut, PageDialog, PageLoad, TabEvents, TabStall};
+use crate::{BrowserShortcut, Opener, PageDialog, PageLoad, TabEvents, TabStall};
 
 /// The property the tab watches to hear about a page that moved on its own.
 const URL_KEY_PATH: &str = "URL";
@@ -210,39 +210,27 @@ impl Parent<'_> {
     }
 }
 
+/// What a new tab's page starts as.
+pub enum Start<'a> {
+    Load(&'a str),
+    /// The window another page opened, which WebKit loads itself and keeps linked to that page.
+    Opened(Opener),
+}
+
 pub fn open(
     parent: Parent<'_>,
     agent_id: String,
     tab_id: String,
-    url: &str,
+    start: Start<'_>,
     user_agent: &str,
     size: (f64, f64),
     events: Arc<dyn TabEvents>,
 ) -> Retained<WKWebView> {
     let mtm = parent.view.mtm();
-    // SAFETY: main thread, as `mtm` proves; the configuration is fresh and only ours.
-    let configuration = unsafe { WKWebViewConfiguration::new(mtm) };
-    let yes = NSNumber::numberWithBool(true);
-    // SAFETY: main thread, and every value set is one WebKit reads with that type.
-    unsafe {
-        let script = WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
-            WKUserScript::alloc(mtm),
-            &NSString::from_str(crate::RECORDER_SCRIPT),
-            WKUserScriptInjectionTime::AtDocumentStart,
-            true,
-        );
-        configuration.userContentController().addUserScript(&script);
-        let preferences = configuration.preferences();
-        preferences.setElementFullscreenEnabled(true);
-        preferences.setValue_forKey(Some(&yes), &NSString::from_str("tabFocusesLinks"));
-        preferences.setValue_forKey(
-            Some(&yes),
-            &NSString::from_str("allowsPictureInPictureMediaPlayback"),
-        );
-        if cfg!(debug_assertions) {
-            preferences.setValue_forKey(Some(&yes), &NSString::from_str("developerExtrasEnabled"));
-        }
-    }
+    let (configuration, url) = match start {
+        Start::Load(url) => (tab_configuration(mtm), Some(url)),
+        Start::Opened(Opener(configuration)) => (configuration, None),
+    };
     let frame = NSRect::new(
         NSPoint::new(crate::PARKED_ORIGIN, crate::PARKED_ORIGIN),
         NSSize::new(size.0, size.1),
@@ -304,8 +292,39 @@ pub fn open(
             },
         );
     });
-    load(&webview, url);
+    if let Some(url) = url {
+        load(&webview, url);
+    }
     webview
+}
+
+/// What a tab's page is made with: the recorder in every document, and the preferences
+/// tabs browse with.
+fn tab_configuration(mtm: MainThreadMarker) -> Retained<WKWebViewConfiguration> {
+    // SAFETY: main thread, as `mtm` proves; the configuration is fresh and only ours.
+    let configuration = unsafe { WKWebViewConfiguration::new(mtm) };
+    let yes = NSNumber::numberWithBool(true);
+    // SAFETY: main thread, and every value set is one WebKit reads with that type.
+    unsafe {
+        let script = WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
+            WKUserScript::alloc(mtm),
+            &NSString::from_str(crate::RECORDER_SCRIPT),
+            WKUserScriptInjectionTime::AtDocumentStart,
+            true,
+        );
+        configuration.userContentController().addUserScript(&script);
+        let preferences = configuration.preferences();
+        preferences.setElementFullscreenEnabled(true);
+        preferences.setValue_forKey(Some(&yes), &NSString::from_str("tabFocusesLinks"));
+        preferences.setValue_forKey(
+            Some(&yes),
+            &NSString::from_str("allowsPictureInPictureMediaPlayback"),
+        );
+        if cfg!(debug_assertions) {
+            preferences.setValue_forKey(Some(&yes), &NSString::from_str("developerExtrasEnabled"));
+        }
+    }
+    configuration
 }
 
 /// Runs `script` in the page's own world and hands back its value as JSON, or
@@ -1611,11 +1630,14 @@ define_class!(
             }
         }
 
+        /* The new tab's page must be made from `configuration` and handed back, or the
+        page that opened it loses its link to it, and a sign-in popup can never post
+        its answer back. */
         #[unsafe(method_id(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:))]
         unsafe fn create_web_view(
             &self,
             _webview: &WKWebView,
-            _configuration: &WKWebViewConfiguration,
+            configuration: &WKWebViewConfiguration,
             action: &WKNavigationAction,
             _features: &WKWindowFeatures,
         ) -> Option<Retained<WKWebView>> {
@@ -1623,11 +1645,18 @@ define_class!(
             let url = unsafe { action.request() }
                 .URL()
                 .and_then(|url| url.absoluteString())
-                .map(|url| url.to_string());
-            if let Some(url) = url {
-                self.ivars().events.new_window(url);
-            }
-            None
+                .map(|url| url.to_string())
+                .unwrap_or_default();
+            let opener = Opener(configuration.retain());
+            self.ivars()
+                .events
+                .new_window(url, Some(opener))
+                .and_then(|tab| tab.webview_here())
+        }
+
+        #[unsafe(method(webViewDidClose:))]
+        unsafe fn did_close(&self, _webview: &WKWebView) {
+            self.ivars().events.closed();
         }
     }
 );
