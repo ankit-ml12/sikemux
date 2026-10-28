@@ -57,6 +57,7 @@ mod motion;
 mod new_tab;
 pub mod notifications;
 mod opening;
+mod page_view;
 mod pairing;
 mod palette;
 mod panes;

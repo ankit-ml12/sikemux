@@ -1,5 +1,5 @@
-//! A markdown file drawn the way it reads, beside its source: links open,
-//! a web address in the browser and a file in its editor.
+//! A markdown, DBML or HTML file drawn the way it reads, beside its source. In markdown,
+//! links open, a web address in the browser and a file in its editor.
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -66,6 +66,8 @@ pub(super) enum Look {
     Markdown,
     /// A DBML schema, drawn as its tables.
     Diagram,
+    /// An HTML file, drawn by WebKit as a browser would.
+    Page,
 }
 
 pub(super) fn look(path: &Path) -> Option<Look> {
@@ -73,15 +75,17 @@ pub(super) fn look(path: &Path) -> Option<Look> {
     match extension.as_str() {
         "md" | "markdown" => Some(Look::Markdown),
         "dbml" => Some(Look::Diagram),
+        "html" | "htm" => Some(Look::Page),
         _ => None,
     }
 }
 
-/// The editor a file opens in first: markdown and DBML read as themselves.
+/// The editor a file opens in first: markdown and DBML read as themselves, and HTML, which
+/// is mostly edited and often only draws once built, as its text.
 pub(super) fn first_mode(path: &Path) -> Mode {
     match look(path) {
-        Some(_) => Mode::Preview,
-        None => Mode::Source,
+        Some(Look::Markdown | Look::Diagram) => Mode::Preview,
+        Some(Look::Page) | None => Mode::Source,
     }
 }
 
@@ -94,7 +98,7 @@ pub(crate) fn render(text: &str) -> Markdown {
     Markdown::new(&blocks, text.encode_utf16().count())
 }
 
-/// The bar over a markdown or DBML file's editor that switches it between its
+/// The bar over a markdown, DBML or HTML file's editor that switches it between its
 /// source and how it reads.
 pub(super) fn toolbar(
     this: &Entity<Workbench>,
@@ -142,7 +146,7 @@ pub(super) fn toolbar(
         .child(choice(
             "markdown-preview",
             match look {
-                Look::Markdown => "Preview",
+                Look::Markdown | Look::Page => "Preview",
                 Look::Diagram => "Diagram",
             },
             Mode::Preview,

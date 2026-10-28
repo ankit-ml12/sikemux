@@ -169,7 +169,8 @@ struct Document {
     peek: Option<Peek>,
     /// The selection ⌘D started from, and where the match it last added ends.
     next_match: Option<(std::ops::Range<usize>, usize)>,
-    /// Whether it shows its text or, for markdown and DBML, how it reads, and that rendering.
+    /// Whether it shows its text or, for markdown, DBML and HTML, how it reads, and that
+    /// rendering.
     mode: preview::Mode,
     rendered: Option<Rendered>,
     /// The find bar over the markdown as it reads, while it is open.
@@ -186,6 +187,8 @@ struct Document {
 enum Rendered {
     Markdown(Rc<gpui_transcript::Markdown>),
     Diagram(Entity<diagram::Diagram>),
+    /// None once WebKit would not make the page's view.
+    Page(Option<crate::page_view::View>),
 }
 
 impl Document {
@@ -290,7 +293,9 @@ pub fn pane(
             if let Some(document) = bench.editors.open.get(&focused) {
                 let look = preview::look(&focused.path);
                 match document.mode {
-                    preview::Mode::Preview if look == Some(preview::Look::Markdown) => {
+                    preview::Mode::Preview
+                        if matches!(look, Some(preview::Look::Markdown | preview::Look::Page)) =>
+                    {
                         document.preview_focus.focus(window, cx)
                     }
                     _ => document
@@ -453,6 +458,15 @@ pub fn pane(
                         .children(finding.map(|finding| preview::bar(&this, &key, finding, cx))),
                 )
             }
+            (preview::Mode::Preview, Some(Rendered::Page(Some(page)))) => pane.child(
+                gpui_native_view::native_view(
+                    SharedString::from(format!("html-preview-{}", path.display())),
+                    &page.surface,
+                )
+                .track_focus(&document.preview_focus)
+                .flex_1()
+                .min_h_0(),
+            ),
             (preview::Mode::Preview, Some(Rendered::Diagram(diagram))) => pane.child(
                 div().flex_1().min_h_0().child(
                     gpui_kit::AnyView::from(diagram.clone())
@@ -1230,7 +1244,7 @@ fn read(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
                     document.notice = None;
                     if document.mode == preview::Mode::Preview {
                         let text = document.saved.clone();
-                        show_rendered(document, &key, &text, cx);
+                        show_rendered(document, &key, &text, window, cx);
                         preview::refind(document, cx);
                     }
                     lsp::changed(document, &asks, cx);
@@ -1614,10 +1628,13 @@ fn show_mode(
     match mode {
         preview::Mode::Preview => {
             let text = document.state.read(cx).value();
-            show_rendered(document, key, &text, cx);
+            show_rendered(document, key, &text, window, cx);
             document.goto = None;
             preview::refind(document, cx);
-            if document.markdown().is_some() {
+            if matches!(
+                document.rendered,
+                Some(Rendered::Markdown(_) | Rendered::Page(Some(_)))
+            ) {
                 document.preview_focus.focus(window, cx);
             }
         }
@@ -1629,9 +1646,39 @@ fn show_mode(
 }
 
 /// Renders `text` as the file reads: markdown as a page, DBML as a diagram that keeps
-/// where its tables were moved to.
-fn show_rendered(document: &mut Document, key: &FileKey, text: &str, cx: &mut Context<Workbench>) {
+/// where its tables were moved to, and HTML in WebKit, which opens its web links in the browser.
+fn show_rendered(
+    document: &mut Document,
+    key: &FileKey,
+    text: &str,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
     match preview::look(&key.path) {
+        Some(preview::Look::Page) => {
+            if let Some(Rendered::Page(Some(page))) = &document.rendered {
+                page.show(text);
+                return;
+            }
+            let file = (key.place == Host::This).then_some(key.path.as_path());
+            let (events, mut heard) = tokio::sync::mpsc::unbounded_channel();
+            let page = crate::page_view::open(
+                text,
+                crate::page_view::Room::Fills(file),
+                events,
+                window,
+                cx,
+            );
+            cx.spawn(async move |_, cx| {
+                while let Some(event) = heard.recv().await {
+                    if let crate::page_view::PageEvent::Link(url) = event {
+                        cx.update(|cx| cx.open_url(&url));
+                    }
+                }
+            })
+            .detach();
+            document.rendered = Some(Rendered::Page(page));
+        }
         Some(preview::Look::Diagram) => {
             if let Some(Rendered::Diagram(diagram)) = &document.rendered {
                 diagram.update(cx, |diagram, cx| diagram.set_source(text, cx));

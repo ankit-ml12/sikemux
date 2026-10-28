@@ -6,7 +6,7 @@ use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOn
 use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventPhase, NSView};
 use objc2_foundation::{
     NSNumber, NSObject, NSObjectNSKeyValueCoding, NSObjectProtocol, NSPoint, NSRect, NSSize,
-    NSString,
+    NSString, NSURL,
 };
 use objc2_web_kit::{
     WKNavigationAction, WKNavigationActionPolicy, WKNavigationDelegate, WKNavigationType,
@@ -14,10 +14,12 @@ use objc2_web_kit::{
     WKUserScriptInjectionTime, WKWebView, WKWebViewConfiguration, WKWebsiteDataStore,
 };
 
-use super::{PageEvent, BOOTSTRAP};
+use super::{PageEvent, Room, BOOTSTRAP};
 
 pub struct PageIvars {
     events: Box<dyn Fn(PageEvent)>,
+    /// The address the page's text is read from.
+    loaded: String,
 }
 
 define_class!(
@@ -69,11 +71,11 @@ define_class!(
                         .unwrap_or_default(),
                 )
             };
-            let first_load = kind == WKNavigationType::Other && url == "about:blank";
+            let stays = super::stays(&url, &self.ivars().loaded, kind == WKNavigationType::Other);
             if kind == WKNavigationType::LinkActivated && url.starts_with("http") {
                 (self.ivars().events)(PageEvent::Link(url));
             }
-            handler.call((if first_load {
+            handler.call((if stays {
                 WKNavigationActionPolicy::Allow
             } else {
                 WKNavigationActionPolicy::Cancel
@@ -82,13 +84,20 @@ define_class!(
     }
 );
 
+pub struct WebIvars {
+    /// Whether the page fills its room and scrolls itself.
+    fills: bool,
+    /// Whether the scroll under way goes up or down.
+    vertical: Cell<bool>,
+}
+
 define_class!(
-    /// A page drawn at its full height, so it never scrolls up or down itself: those
-    /// scrolls go straight on to the app, and only sideways ones and pinches stay with WebKit.
-    // SAFETY: WKWebView subclassed with one plain ivar and no dealloc, used on the main thread.
+    /// A page drawn at its full height never scrolls up or down itself: those scrolls go
+    /// straight on to the app, and only sideways ones and pinches stay with WebKit.
+    // SAFETY: WKWebView subclassed with plain ivars and no dealloc, used on the main thread.
     #[unsafe(super(WKWebView))]
     #[thread_kind = MainThreadOnly]
-    #[ivars = Cell<bool>]
+    #[ivars = WebIvars]
     struct PageWebView;
 
     impl PageWebView {
@@ -97,10 +106,10 @@ define_class!(
         fn scroll_wheel(&self, event: &NSEvent) {
             let (phase, momentum) = (event.phase(), event.momentumPhase());
             if phase.contains(NSEventPhase::Began) || (phase.is_empty() && momentum.is_empty()) {
-                self.ivars().set(is_vertical(event));
+                self.ivars().vertical.set(is_vertical(event));
             }
             // SAFETY: main thread, where AppKit delivers scrolls; the next responder holds the page.
-            let next = (self.ivars().get())
+            let next = (!self.ivars().fills && self.ivars().vertical.get())
                 .then(|| unsafe { self.nextResponder() })
                 .flatten();
             match next {
@@ -123,15 +132,35 @@ fn is_vertical(event: &NSEvent) -> bool {
 /// The page's view, which the app places, and the handler its events go through.
 pub struct PageView {
     view: Retained<PageWebView>,
+    base: Option<Retained<NSURL>>,
     _messages: Retained<PageMessages>,
 }
 
 impl PageView {
-    /// Shows `html`, which the app has already given its theme, and tells `events` what
-    /// the page's script reports.
-    pub fn new(mtm: MainThreadMarker, html: &str, events: impl Fn(PageEvent) + 'static) -> Self {
+    /// Shows `html` in `room`, and tells `events` what the page's script reports. A reply's
+    /// page has already been given the app's theme.
+    pub fn new(
+        mtm: MainThreadMarker,
+        html: &str,
+        room: Room,
+        events: impl Fn(PageEvent) + 'static,
+    ) -> Self {
+        let (fills, base) = match room {
+            Room::Grows => (false, None),
+            Room::Fills(path) => (
+                true,
+                path.map(|path| {
+                    NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()))
+                }),
+            ),
+        };
+        let loaded = base
+            .as_ref()
+            .and_then(|base| base.absoluteString())
+            .map(|base| base.to_string());
         let messages = mtm.alloc::<PageMessages>().set_ivars(PageIvars {
             events: Box::new(events),
+            loaded: super::loads_as(loaded.as_deref()).to_owned(),
         });
         // SAFETY: NSObject's `init` takes nothing and returns the object it was sent to.
         let messages: Retained<PageMessages> = unsafe { msg_send![super(messages), init] };
@@ -141,34 +170,52 @@ impl PageView {
             let configuration = WKWebViewConfiguration::new(mtm);
             configuration.setWebsiteDataStore(&WKWebsiteDataStore::nonPersistentDataStore(mtm));
             let controller = configuration.userContentController();
-            let script = WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
-                WKUserScript::alloc(mtm),
-                &NSString::from_str(BOOTSTRAP),
-                WKUserScriptInjectionTime::AtDocumentStart,
-                true,
-            );
-            controller.addUserScript(&script);
+            if !fills {
+                let script = WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
+                    WKUserScript::alloc(mtm),
+                    &NSString::from_str(BOOTSTRAP),
+                    WKUserScriptInjectionTime::AtDocumentStart,
+                    true,
+                );
+                controller.addUserScript(&script);
+            }
             controller.addScriptMessageHandler_name(
                 ProtocolObject::from_ref(&*messages),
                 &NSString::from_str("sikemux"),
             );
             let frame = NSRect::new(NSPoint::ZERO, NSSize::new(1.0, 1.0));
             let view: Retained<PageWebView> = msg_send![
-                super(PageWebView::alloc(mtm).set_ivars(Cell::new(false))),
+                super(PageWebView::alloc(mtm).set_ivars(WebIvars {
+                    fills,
+                    vertical: Cell::new(false),
+                })),
                 initWithFrame: frame,
                 configuration: &*configuration
             ];
             view.unregisterDraggedTypes();
             view.setNavigationDelegate(Some(ProtocolObject::from_ref(&*messages)));
-            let no = NSNumber::numberWithBool(false);
-            view.setValue_forKey(Some(&no), &NSString::from_str("drawsBackground"));
-            view.loadHTMLString_baseURL(&NSString::from_str(html), None);
+            if !fills {
+                let no = NSNumber::numberWithBool(false);
+                view.setValue_forKey(Some(&no), &NSString::from_str("drawsBackground"));
+            }
             view
         };
-        Self {
+        let page = Self {
             view,
+            base,
             _messages: messages,
-        }
+        };
+        page.show(html);
+        page
+    }
+
+    /// Shows `html` in place of what the page showed.
+    pub fn show(&self, html: &str) {
+        // SAFETY: main thread, as the view is only made there.
+        unsafe {
+            self.view
+                .loadHTMLString_baseURL(&NSString::from_str(html), self.base.as_deref())
+        };
     }
 
     pub fn view(&self) -> Retained<NSView> {

@@ -10,35 +10,55 @@ use webkit2gtk::{
 };
 use wry::WebViewExtUnix;
 
-use super::{PageEvent, BOOTSTRAP};
+use super::{PageEvent, Room, BOOTSTRAP};
 use crate::linux::{gtk_thread, on_gtk, Clip, Held, Page, X11Parent};
 
-/// The page's view in a clip window of its own, which the app places.
-pub struct PageView(Arc<Held>);
+/// The page's view in a clip window of its own, which the app places, and the address
+/// its text is read from.
+pub struct PageView(Arc<Held>, Option<String>);
 
 /// What the page's script reports, heard on the GTK thread.
 type Events = Arc<dyn Fn(PageEvent) + Send + Sync>;
 
 impl PageView {
-    /// Shows `html`, which the app has already given its theme, in the app's window `parent`,
-    /// out of sight until placed and on `ground` until its first frame, and tells `events`
-    /// what the page's script reports.
+    /// Shows `html` in `room` in the app's window `parent`, out of sight until placed and on
+    /// `ground` until its first frame, and tells `events` what the page's script reports. A
+    /// reply's page has already been given the app's theme.
     pub fn new(
         parent: u32,
         html: &str,
+        room: Room,
         ground: [u8; 3],
         events: impl Fn(PageEvent) + Send + Sync + 'static,
     ) -> Result<Self, String> {
         gtk_thread()?;
+        let (fills, base) = match room {
+            Room::Grows => (false, None),
+            Room::Fills(path) => (
+                true,
+                path.and_then(|path| url::Url::from_file_path(path).ok())
+                    .map(String::from),
+            ),
+        };
         let (html, events): (String, Events) = (html.to_owned(), Arc::new(events));
         let (sender, receiver) = std::sync::mpsc::channel();
+        let loads = base.clone();
         on_gtk(move || {
-            let _ = sender.send(open(c_ulong::from(parent), &html, ground, events).map(Held::new));
+            let opened = open(c_ulong::from(parent), &html, fills, loads, ground, events);
+            let _ = sender.send(opened.map(Held::new));
         });
         let held = receiver
             .recv()
             .map_err(|_| "the window cannot take a page".to_string())??;
-        Ok(Self(Arc::new(held)))
+        Ok(Self(Arc::new(held), base))
+    }
+
+    /// Shows `html` in place of what the page showed.
+    pub fn show(&self, html: &str) {
+        let (html, base) = (html.to_owned(), self.1.clone());
+        self.0.with(move |page| {
+            page.view.webview().load_html(&html, base.as_deref());
+        });
     }
 
     /// Shows the page at `bounds`, cut to the part in `visible`, both (x, y, width, height)
@@ -68,9 +88,16 @@ impl PageView {
     }
 }
 
-/// Makes the page's view with no storage, loads `html` once the page's script can report,
-/// and lets the page go nowhere: a link the person clicks is reported instead.
-fn open(parent: c_ulong, html: &str, ground: [u8; 3], events: Events) -> Result<Page, String> {
+/// Makes the page's view with no storage, loads `html` from `base` once the page's script can
+/// report, and lets the page go nowhere: a link the person clicks is reported instead.
+fn open(
+    parent: c_ulong,
+    html: &str,
+    fills: bool,
+    base: Option<String>,
+    ground: [u8; 3],
+    events: Events,
+) -> Result<Page, String> {
     let clip = Clip::new(parent, Some(ground))?;
     let view = wry::WebViewBuilder::new()
         .with_incognito(true)
@@ -86,13 +113,15 @@ fn open(parent: c_ulong, html: &str, ground: [u8; 3], events: Events) -> Result<
     let scripts = webview
         .user_content_manager()
         .ok_or("the page has no script manager")?;
-    scripts.add_script(&UserScript::new(
-        BOOTSTRAP,
-        UserContentInjectedFrames::TopFrame,
-        UserScriptInjectionTime::Start,
-        &[],
-        &[],
-    ));
+    if !fills {
+        scripts.add_script(&UserScript::new(
+            BOOTSTRAP,
+            UserContentInjectedFrames::TopFrame,
+            UserScriptInjectionTime::Start,
+            &[],
+            &[],
+        ));
+    }
     scripts.register_script_message_handler("sikemux");
     let heard = events.clone();
     scripts.connect_script_message_received(Some("sikemux"), move |_, result| {
@@ -101,6 +130,7 @@ fn open(parent: c_ulong, html: &str, ground: [u8; 3], events: Events) -> Result<
             heard(event);
         }
     });
+    let loaded = super::loads_as(base.as_deref()).to_owned();
     webview.connect_decide_policy(move |_, decision, kind| {
         if kind != PolicyDecisionType::NavigationAction {
             return false;
@@ -120,13 +150,13 @@ fn open(parent: c_ulong, html: &str, ground: [u8; 3], events: Events) -> Result<
         if kind == NavigationType::LinkClicked && url.starts_with("http") {
             events(PageEvent::Link(url.clone()));
         }
-        if kind == NavigationType::Other && url == "about:blank" {
+        if super::stays(&url, &loaded, kind == NavigationType::Other) {
             decision.use_();
         } else {
             decision.ignore();
         }
         true
     });
-    webview.load_html(html, None);
+    webview.load_html(html, base.as_deref());
     Ok(Page::new(view, clip, Some(ground)))
 }
