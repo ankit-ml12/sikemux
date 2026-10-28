@@ -374,6 +374,11 @@ export interface SessionInfo {
      * Unix milliseconds.
      */
     nextTrigger?: number;
+    /**
+     * When the agent was last named with `@` or sent a message by another agent, in Unix
+     * milliseconds, so a list can greet it.
+     */
+    calledAt?: number;
     attentionRank: number | null;
     /** For an SSH terminal, where its connection last stood. */
     ssh?: SshLink;
@@ -469,6 +474,11 @@ export interface ChatInfo {
     status: AgentStatus;
     /** When the soonest trigger set on it sends it a prompt, in Unix milliseconds. */
     nextTrigger?: number;
+    /**
+     * When the agent was last named with `@` or sent a message by another agent, in Unix
+     * milliseconds, so a list can greet it.
+     */
+    calledAt?: number;
     /**
      * Its place among the open agents, chats and agent terminals together,
      * in the order they want the person: 0 first.
@@ -662,6 +672,8 @@ export interface AgentShown {
     activeAt: number | null;
     /** When the soonest trigger set on it sends it a prompt, in Unix milliseconds. */
     nextTrigger?: number;
+    /** When the agent was last named with `@` or messaged by another agent. */
+    calledAt?: number;
     /**
      * The face it wears, as the workspace's agent does; none while it shows
      * its CLI's logo.
@@ -1185,6 +1197,10 @@ export interface ChatMessage {
     meta?: RowMeta;
     /** The finished turn it belongs to, when that turn folds its work away. */
     fold?: WorkFold;
+    /** Emoji the agent reacted to it with, on a message to the agent. */
+    reactions?: string[];
+    /** GIFs the agent sent in the turn, on the turn's last message. */
+    gifs?: GifRef[];
     /**
      * The index of the chat event that opened it, where a client pages from: `chatPage`'s
      * `before`, `after` and `around` take it. Clients read it here, never out of the id.
@@ -1348,6 +1364,15 @@ export interface WorkFold {
     took?: number;
     /** Everything folded is thinking. */
     thought: boolean;
+}
+
+/** A GIF an agent sent with `gif_send`, which clients load from `url`. */
+export interface GifRef {
+    id: string;
+    url: string;
+    width: number;
+    height: number;
+    title: string;
 }
 
 /** Rows from before or after what a client holds, oldest first. */

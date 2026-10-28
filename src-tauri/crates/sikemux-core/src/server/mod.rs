@@ -32,6 +32,7 @@ mod entry;
 mod faces;
 mod follow;
 mod from_app;
+mod gestures;
 mod git;
 mod handover;
 mod harness;
@@ -858,6 +859,7 @@ impl Core {
                 info.unread = self.seen.unread(agent_id);
                 info.active_at = self.seen.active_at(agent_id);
                 info.next_trigger = self.triggers.next_at(agent_id);
+                info.called_at = self.seen.called_at(agent_id);
             }
             let asking = info
                 .agent_id
@@ -878,6 +880,7 @@ impl Core {
             chat.unread = self.seen.unread(&chat.agent_id);
             chat.active_at = self.seen.active_at(&chat.agent_id);
             chat.next_trigger = self.triggers.next_at(&chat.agent_id);
+            chat.called_at = self.seen.called_at(&chat.agent_id);
             let asking = self.harness.questions.blocks_on_person(&chat.agent_id);
             display::show_chat(chat, asking);
         }

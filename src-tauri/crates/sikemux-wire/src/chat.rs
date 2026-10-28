@@ -421,6 +421,12 @@ pub struct ChatMessage {
     /// The finished turn it belongs to, when that turn folds its work away.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fold: Option<WorkFold>,
+    /// Emoji the agent reacted to it with, on a message to the agent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reactions: Vec<String>,
+    /// GIFs the agent sent in the turn, on the turn's last message.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gifs: Vec<GifRef>,
     /// The index of the chat event that opened it, where a client pages from: `chatPage`'s
     /// `before`, `after` and `around` take it. Clients read it here, never out of the id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -737,6 +743,17 @@ pub struct ToolOutput {
 pub struct OutputImage {
     pub data: String,
     pub mime_type: String,
+}
+
+/// A GIF an agent sent with `gif_send`, which clients load from `url`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GifRef {
+    pub id: String,
+    pub url: String,
+    pub width: u32,
+    pub height: u32,
+    pub title: String,
 }
 
 /// A page an agent showed with `page_show`.

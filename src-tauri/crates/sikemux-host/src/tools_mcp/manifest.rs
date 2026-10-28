@@ -23,6 +23,9 @@ pub struct Tool {
     /// `screenshot` or `image`.
     #[serde(default)]
     pub answer: Option<String>,
+    /// A reaction or GIF, which an agent should have to hand without looking it up.
+    #[serde(default)]
+    gesture: bool,
 }
 
 #[derive(Deserialize)]
@@ -173,7 +176,8 @@ impl Manifest {
              When a request fits more than one place in the code, ask which before changing any. \
              Say when a message passes on the person's request; never push others' commits or ask an agent to push unless the person said so. \
              ask puts a question to your lead, or the person when you have none. \
-             Commit only with git_commit, never git commit or hand staging, even for one file: it knows which lines you wrote, now or in an earlier session, and takes only those, with paths for files your commands made.",
+             Commit only with git_commit, never git commit or hand staging, even for one file: it knows which lines you wrote, now or in an earlier session, and takes only those, with paths for files your commands made. \
+             react and gif are silent: never mention them.",
             self.guide.name, self.guide.name, self.guide.name
         );
         if self.offers_simulator() {
@@ -308,12 +312,16 @@ fn declaration(
 
 impl Tool {
     pub fn declaration(&self) -> Value {
-        declaration(
+        let mut declared = declaration(
             &self.name,
             &self.description,
             &self.properties,
             &self.required,
-        )
+        );
+        if self.gesture {
+            declared["_meta"] = json!({ "anthropic/alwaysLoad": true });
+        }
+        declared
     }
 
     /// The wording matches what the agent used to read from the Python server,

@@ -136,7 +136,7 @@ func catalogueFaces() -> [AgentFace] {
 }
 let faces = arguments.contains("--faces") ? catalogueFaces() : []
 let agents = faces.isEmpty ? decoded.inbox.agents : decoded.inbox.agents.enumerated().map { index, agent in
-    AgentShown(agentId: agent.agentId, title: agent.title, group: agent.group, subagents: agent.subagents, tasks: agent.tasks, nextTrigger: agent.nextTrigger,
+    AgentShown(agentId: agent.agentId, title: agent.title, group: agent.group, subagents: agent.subagents, tasks: agent.tasks, nextTrigger: agent.nextTrigger, calledAt: agent.calledAt,
                face: faces[index % faces.count])
 }
 let full = DeviceView(

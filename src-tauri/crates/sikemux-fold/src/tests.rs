@@ -1387,6 +1387,8 @@ mod reducer {
                 meta: None,
                 fold: None,
                 from_event: Some(0),
+                reactions: Vec::new(),
+                gifs: Vec::new(),
             }
         );
         let mut plain = Chat::new();

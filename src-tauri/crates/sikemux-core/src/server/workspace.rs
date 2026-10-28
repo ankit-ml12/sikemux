@@ -1694,6 +1694,7 @@ impl Workspaces {
                 group: Default::default(),
                 status: Default::default(),
                 next_trigger: None,
+                called_at: None,
                 attention_rank: 0,
             })
             .collect();
@@ -2702,6 +2703,7 @@ mod tests {
             group: Default::default(),
             status: Default::default(),
             next_trigger: None,
+            called_at: None,
             attention_rank: 0,
         };
         let held = workspaces.recent(std::slice::from_ref(&live));

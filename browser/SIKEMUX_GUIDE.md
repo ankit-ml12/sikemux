@@ -326,6 +326,15 @@ theme, so style with them rather than fixed colours:
 The base styles set the page's colour and font from these, a 14px body and no
 body margin; your own CSS overrides them.
 
+### Reactions and GIFs
+
+`react` puts one emoji on the message you are answering. `gif` with a `query`
+lists GIFs by title and tags; `gif` with one's `id` puts it under your reply.
+The person sees only the emoji or the GIF, never the calls, so never mention,
+announce or describe them, before or after. React when it fits; send a GIF
+only for a moment that earns one, such as a win or a joke, and no more than
+one a turn.
+
 ## browser-reading: Reading a page
 
 `browser_state` returns page state: url, title, numbered interactive elements,

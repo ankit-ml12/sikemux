@@ -2,7 +2,7 @@
 //! turn took and how fast it was written, and which finished turns fold their
 //! work away behind the reply they closed with.
 
-use sikemux_wire::chat::{ChatPart, ChatRole, RowMeta, WorkFold};
+use sikemux_wire::chat::{ChatPart, ChatRole, GifRef, RowMeta, WorkFold};
 
 use super::{Fold, Row};
 
@@ -144,6 +144,23 @@ fn set_meta(row: &mut Row, meta: Option<RowMeta>) -> bool {
     true
 }
 
+/// The GIFs sent anywhere in a run, which show under its last message.
+fn run_gifs(rows: &[Row], start: usize, end: usize) -> Vec<GifRef> {
+    rows[start..=end]
+        .iter()
+        .flat_map(|row| row.gifs.iter().cloned())
+        .collect()
+}
+
+fn set_gifs(row: &mut Row, gifs: Vec<GifRef>) -> bool {
+    if row.msg.gifs == gifs {
+        return false;
+    }
+    row.msg.gifs = gifs;
+    row.set("gifs");
+    true
+}
+
 fn set_fold(row: &mut Row, fold: Option<WorkFold>) -> bool {
     if row.msg.fold == fold {
         return false;
@@ -190,9 +207,18 @@ impl Fold {
             let live = running && end == rows.len() - 1;
             let fold = (!live).then(|| work_fold(rows, at, end)).flatten();
             let meta = (!live).then(|| answer_meta(rows, at, end));
+            let gifs = run_gifs(rows, at, end);
             for (index, row) in rows.iter_mut().enumerate().take(end + 1).skip(at) {
                 let mut changed = set_fold(row, fold.clone());
                 changed |= set_meta(row, meta.clone().filter(|_| index == end));
+                changed |= set_gifs(
+                    row,
+                    if index == end {
+                        gifs.clone()
+                    } else {
+                        Vec::new()
+                    },
+                );
                 if changed {
                     touched.push(index);
                 }
@@ -222,9 +248,15 @@ pub(super) fn settle_all(rows: &mut [Row]) {
         }
         let fold = work_fold(rows, at, end);
         let meta = answer_meta(rows, at, end);
+        let gifs = run_gifs(rows, at, end);
         for (index, row) in rows.iter_mut().enumerate().take(end + 1).skip(at) {
             row.msg.fold = fold.clone();
             row.msg.meta = (index == end).then(|| meta.clone());
+            row.msg.gifs = if index == end {
+                gifs.clone()
+            } else {
+                Vec::new()
+            };
         }
         at = end + 1;
     }

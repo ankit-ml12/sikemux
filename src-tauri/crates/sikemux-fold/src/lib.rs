@@ -24,16 +24,22 @@ use sikemux_markdown::Doc;
 
 use sikemux_wire::chat::{
     AccountMove, AgentNotice, AsyncTask, ChatCommandInfo, ChatConnection, ChatDraft, ChatFailure,
-    ChatHead, ChatMessage, ChatPart, ChatRole, ChatTrigger, ContextUsage, FailureKind, MoveReason,
-    NoticeSeverity, NoticeState, PermissionAsk, PermissionOption, QueuedMessage, Retrying,
-    SentContext, SessionEnded, SubagentCard, SubagentState, TaskNotice, TaskState, TaskUsage,
-    ToolDetail, TurnStart, UsageCost, WorkflowAgent,
+    ChatHead, ChatMessage, ChatPart, ChatRole, ChatTrigger, ContextUsage, FailureKind, GifRef,
+    MoveReason, NoticeSeverity, NoticeState, PermissionAsk, PermissionOption, QueuedMessage,
+    Retrying, SentContext, SessionEnded, SubagentCard, SubagentState, TaskNotice, TaskState,
+    TaskUsage, ToolDetail, TurnStart, UsageCost, WorkflowAgent,
 };
 use tools::WithRow;
 
 pub use event::{ChatEvent, ChatEventKind};
 pub use find::{found_in, matches, searchable, Found, Query};
 pub use send::{with_trees, PageOf, PAGE_BYTES, TAIL_TURNS};
+
+/// Whether a call is one of our gestures, such as a reaction, which a chat shows
+/// only by what it did.
+pub fn is_gesture(title: &str) -> bool {
+    tools::is_gesture(title)
+}
 
 /// The change a call made and what it printed, from everything said of it.
 pub fn detail_of(raw: &Map<String, Value>, work: Option<(&Path, &Place)>) -> ToolDetail {
@@ -53,6 +59,9 @@ pub type Place = std::sync::Arc<dyn Fn(&str, &str) -> Option<u64> + Send + Sync>
 /// name instead of by its bytes: the row still says what it was.
 const MAX_IMAGE_DATA_CHARS: usize = 2 * 1024 * 1024;
 const MAX_COMMANDS: usize = 256;
+/// An agent reacting more than this to one message is noise.
+const MAX_REACTIONS: usize = 3;
+const MAX_GIFS: usize = 3;
 
 /// What streamed into an answer and when, which its speed is worked out from.
 #[derive(Clone, Copy, Default)]
@@ -94,6 +103,9 @@ struct Row {
     /// Parts added or replaced since the last flush.
     parts: Vec<usize>,
     fields: BTreeSet<&'static str>,
+    /// GIFs the agent sent while this message was being written; they show
+    /// on the turn's last message.
+    gifs: Vec<GifRef>,
 }
 
 impl Row {
@@ -113,6 +125,8 @@ impl Row {
                 meta: None,
                 fold: None,
                 from_event: Some(index),
+                reactions: Vec::new(),
+                gifs: Vec::new(),
             },
             index,
             v: 0,
@@ -125,6 +139,7 @@ impl Row {
             fresh: true,
             parts: Vec::new(),
             fields: BTreeSet::new(),
+            gifs: Vec::new(),
         }
     }
 
@@ -267,6 +282,8 @@ pub struct Fold {
     subs: HashMap<String, Transcript>,
     cards: HashMap<String, CardPlace>,
     tools: HashMap<(Option<String>, String), ToolPlace>,
+    /// Gesture calls by id: what has come of one still running, or nothing once it has finished.
+    gestures: HashMap<(Option<String>, String), Option<Raw>>,
     details: Details,
     notices: HashSet<String>,
     suppress_user_echo: bool,
@@ -524,6 +541,7 @@ fn workflow_agents(value: &Value) -> Option<Vec<WorkflowAgent>> {
 
 /// Which transcript an update lands in: the chat's own, or a subagent's.
 type Within = Option<String>;
+type Raw = Map<String, Value>;
 
 impl Fold {
     /// Makes the paths the agent names whole against `folder`, and numbers the lines of
@@ -545,6 +563,7 @@ impl Fold {
             subs: HashMap::new(),
             cards: HashMap::new(),
             tools: HashMap::new(),
+            gestures: HashMap::new(),
             details: Details::default(),
             notices: HashSet::new(),
             suppress_user_echo: false,
@@ -1388,6 +1407,11 @@ impl Fold {
             .unwrap_or_default()
             .to_owned();
         let key = (within.clone(), id.clone());
+        if self.gestures.contains_key(&key)
+            || text_of(update.get("title")).is_some_and(tools::is_gesture)
+        {
+            return self.gesture(index, within, key, update, merge);
+        }
         if let Some(place) = self.tools.get_mut(&key) {
             let patch = update.iter().filter(|(key, value)| {
                 !(value.is_null() || key.as_str() == "title" && value.as_str() == Some(""))
@@ -1466,6 +1490,91 @@ impl Fold {
         if ended {
             self.settle_tool(within, &row, part, update, at);
         }
+        true
+    }
+
+    /// A gesture shows nothing while it runs, and once it has finished only what it did.
+    fn gesture(
+        &mut self,
+        index: u64,
+        within: &Within,
+        key: (Within, String),
+        update: &Map<String, Value>,
+        merge: bool,
+    ) -> bool {
+        let slot = self.gestures.entry(key).or_insert_with(|| Some(Map::new()));
+        let Some(held) = slot.as_mut() else {
+            return false;
+        };
+        if !merge {
+            held.clear();
+        }
+        for (field, value) in update {
+            if !value.is_null() {
+                held.insert(field.clone(), value.clone());
+            }
+        }
+        if tools::running(text_of(held.get("status"))) {
+            return false;
+        }
+        let Some(raw) = slot.take() else {
+            return false;
+        };
+        match tools::gesture(&raw) {
+            Some(tools::Gesture::React(emoji)) => self.react(within, emoji),
+            Some(tools::Gesture::Gif(gif)) => self.add_gif(index, within, gif),
+            None => false,
+        }
+    }
+
+    /// Puts `emoji` on the latest message to the agent, the one it is answering.
+    fn react(&mut self, within: &Within, emoji: String) -> bool {
+        let Some(transcript) = self.transcript(within) else {
+            return false;
+        };
+        let Some(position) = transcript
+            .rows
+            .iter()
+            .rposition(|row| row.msg.role == ChatRole::User)
+        else {
+            return false;
+        };
+        let row = &mut transcript.rows[position];
+        if row.msg.reactions.contains(&emoji) || row.msg.reactions.len() >= MAX_REACTIONS {
+            return false;
+        }
+        row.msg.reactions.push(emoji);
+        row.set("reactions");
+        transcript.touch(position);
+        true
+    }
+
+    fn add_gif(&mut self, index: u64, within: &Within, gif: GifRef) -> bool {
+        let Some(transcript) = self.transcript(within) else {
+            return false;
+        };
+        let continues = transcript
+            .rows
+            .last()
+            .is_some_and(|last| last.msg.role == ChatRole::Assistant && !last.local);
+        let position = if continues {
+            transcript.rows.len() - 1
+        } else {
+            let id = transcript.next_id(index);
+            transcript.push(Row::new(id, ChatRole::Assistant, index))
+        };
+        let row = &mut transcript.rows[position];
+        if row.gifs.len() >= MAX_GIFS {
+            return false;
+        }
+        row.gifs.push(gif);
+        // A subagent's rows are not gathered into turns, so its GIFs stay where they were sent.
+        if within.is_some() {
+            row.msg.gifs = row.gifs.clone();
+            row.set("gifs");
+        }
+        transcript.touch(position);
+        self.note_main_change(within, position);
         true
     }
 

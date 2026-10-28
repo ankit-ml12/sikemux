@@ -5,9 +5,11 @@
 use serde_json::{Map, Value};
 
 use sikemux_wire::chat::{
-    DiffLine, DiffSummary, OutputImage, OutputSummary, PageRef, ToolCall, ToolDetail, ToolDiff,
-    ToolOutput,
+    DiffLine, DiffSummary, GifRef, OutputImage, OutputSummary, PageRef, ToolCall, ToolDetail,
+    ToolDiff, ToolOutput,
 };
+
+use super::tool_rows::GESTURES;
 
 /// Past this the transcript is the wrong place to read the change: the row
 /// still names the file, and the diff pane shows the whole thing.
@@ -422,6 +424,57 @@ pub(super) fn tool_failure(status: Option<&str>, raw_output: Option<&Value>) -> 
     })
 }
 
+/// The JSON one of our tools answered with.
+fn printed(raw_output: Option<&Value>, content: Option<&Value>) -> Option<Value> {
+    let printed = raw_output.and_then(output_text).or_else(|| {
+        let inner: Vec<Value> = content?
+            .as_array()?
+            .iter()
+            .map(|entry| entry.get("content").cloned().unwrap_or(Value::Null))
+            .collect();
+        output_text(&Value::Array(inner))
+    })?;
+    serde_json::from_str(&printed).ok()
+}
+
+/// One of our tools the chat never draws as a row, such as a reaction.
+pub(super) fn is_gesture(title: &str) -> bool {
+    let title = title.replace("sikemux_tools", "sikemux-tools");
+    let name = sikemux_tool_name(&title);
+    name != title.trim() && GESTURES.contains(&name)
+}
+
+/// What a gesture leaves in the chat once it has finished.
+pub(super) enum Gesture {
+    React(String),
+    Gif(GifRef),
+}
+
+pub(super) fn gesture(raw: &Map<String, Value>) -> Option<Gesture> {
+    if text(raw.get("status")) != Some("completed") {
+        return None;
+    }
+    let answer = printed(raw.get("rawOutput"), raw.get("content"))?;
+    if let Some(emoji) = text(answer.get("reacted")) {
+        return Some(Gesture::React(emoji.to_owned()));
+    }
+    let gif = answer.get("gif")?;
+    let dimension = |key: &str| {
+        gif.get(key)
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+    };
+    Some(Gesture::Gif(GifRef {
+        id: text(gif.get("id"))?.to_owned(),
+        url: text(gif.get("url"))
+            .filter(|url| url.starts_with("https://"))?
+            .to_owned(),
+        width: dimension("width")?,
+        height: dimension("height")?,
+        title: text(gif.get("title")).unwrap_or_default().to_owned(),
+    }))
+}
+
 /// The page a finished `page_show` call put in the reply, read from what it printed.
 pub(super) fn tool_page(
     title: &str,
@@ -432,18 +485,7 @@ pub(super) fn tool_page(
     if sikemux_tool_name(title) != "page_show" || status != Some("completed") {
         return None;
     }
-    let printed = raw_output.and_then(output_text).or_else(|| {
-        let inner: Vec<Value> = content?
-            .as_array()?
-            .iter()
-            .map(|entry| entry.get("content").cloned().unwrap_or(Value::Null))
-            .collect();
-        output_text(&Value::Array(inner))
-    })?;
-    let page = serde_json::from_str::<Value>(&printed)
-        .ok()?
-        .get("page")?
-        .clone();
+    let page = printed(raw_output, content)?.get("page")?.clone();
     let id = text(page.get("id"))?;
     let title = text(page.get("title"))?;
     if id.len() != 32

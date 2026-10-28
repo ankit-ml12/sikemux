@@ -253,12 +253,18 @@ const described = [
   ...plugins,
 ];
 const rows = {};
+const gestures = [];
 for (const { where, plugin, tools } of described) {
   for (const tool of tools) {
     const fail = (problem) => {
       throw new Error(`${where}: ${tool.name} ${problem}`);
     };
     const { row } = tool;
+    if (tool.gesture) {
+      if (row) fail("is a gesture, which the chat never draws as a row");
+      gestures.push(tool.name);
+      continue;
+    }
     if (!row) fail('has no "row" saying how the chat pane draws it');
     const extra = Object.keys(row).filter(
       (key) => !["verb", "kind", "icon", "target", "detail"].includes(key),
@@ -310,6 +316,8 @@ use super::row::Spec;
 pub(super) const SPECS: &[(&str, Spec)] = &[
 ${specs}
 ];
+
+pub(super) const GESTURES: &[&str] = &[${gestures.map((name) => JSON.stringify(name)).join(", ")}];
 `;
 await emit(
   rowsOutputPath,

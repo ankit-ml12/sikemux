@@ -197,6 +197,9 @@ pub(crate) struct Shown {
     /// When the soonest trigger set on it sends it a prompt, in Unix milliseconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_trigger: Option<u64>,
+    /// When the agent was last named with `@` or messaged by another agent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub called_at: Option<u64>,
     /// The face it wears, as the workspace's agent does; none while it shows
     /// its CLI's logo.
     pub face: Option<crate::protocol::AgentFace>,
@@ -237,6 +240,7 @@ impl Shown {
             background: false,
             active_at: None,
             next_trigger: None,
+            called_at: None,
             face: None,
             team: None,
         }
@@ -998,6 +1002,7 @@ fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown
             shown.unread = chat.unread;
             shown.active_at = chat.active_at;
             shown.next_trigger = chat.next_trigger;
+            shown.called_at = chat.called_at;
             (chat.attention_rank, shown)
         })
         .collect();
@@ -1022,6 +1027,7 @@ fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown
         shown.unread = session.unread;
         shown.active_at = session.active_at;
         shown.next_trigger = session.next_trigger;
+        shown.called_at = session.called_at;
         Some((session.attention_rank.unwrap_or(u32::MAX), shown))
     }));
     ranked.sort_by(|a, b| (a.0, &a.1.agent_id).cmp(&(b.0, &b.1.agent_id)));

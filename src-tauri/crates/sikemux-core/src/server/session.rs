@@ -345,6 +345,7 @@ impl Session {
             group: None,
             status: None,
             next_trigger: None,
+            called_at: None,
             attention_rank: None,
             ssh,
             ssh_alias: self.owner.ssh_host.clone(),

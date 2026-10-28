@@ -142,6 +142,7 @@ async fn woken(
 /// Writes the note of each agent `context` names that came without one, for the
 /// message `caller` is about to get. A named agent the core no longer has is dropped.
 pub(crate) fn fill(core: &Core, caller: &str, context: &mut Vec<ChatContext>) {
+    let mut named = false;
     context.retain_mut(|item| {
         if !item.text.is_empty() {
             return true;
@@ -152,11 +153,16 @@ pub(crate) fn fill(core: &Core, caller: &str, context: &mut Vec<ChatContext>) {
         match note(core, caller, id) {
             Some(note) => {
                 item.text = note;
+                core.seen.called(id);
+                named = true;
                 true
             }
             None => false,
         }
     });
+    if named {
+        core.agents_changed();
+    }
 }
 
 fn note(core: &Core, caller: &str, id: &str) -> Option<String> {

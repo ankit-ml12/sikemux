@@ -948,6 +948,7 @@ impl Chat {
             group: Default::default(),
             status: Default::default(),
             next_trigger: None,
+            called_at: None,
             attention_rank: 0,
         }
     }

@@ -1735,6 +1735,41 @@
       ]
     },
     {
+      "name": "react",
+      "gesture": true,
+      "method": "chat.react",
+      "description": "React with one emoji.",
+      "properties": {
+        "emoji": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      },
+      "required": [
+        "emoji"
+      ]
+    },
+    {
+      "name": "gif",
+      "gesture": true,
+      "method": "chat.gif",
+      "description": "Find GIFs, or send one by id.",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": []
+    },
+    {
       "name": "board_add",
       "row": {"verb": "add", "kind": "edit", "icon": "square-plus", "target": ["card {title}"]},
       "method": "board.add",

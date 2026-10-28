@@ -625,6 +625,10 @@ pub struct ChatInfo {
     /// When the soonest trigger set on it sends it a prompt, in Unix milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_trigger: Option<u64>,
+    /// When the agent was last named with `@` or sent a message by another agent, in Unix
+    /// milliseconds, so a list can greet it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub called_at: Option<u64>,
     /// Its place among the open agents, chats and agent terminals together,
     /// in the order they want the person: 0 first.
     #[serde(default)]
@@ -1860,6 +1864,10 @@ pub struct SessionInfo {
     /// Unix milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_trigger: Option<u64>,
+    /// When the agent was last named with `@` or sent a message by another agent, in Unix
+    /// milliseconds, so a list can greet it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub called_at: Option<u64>,
     #[serde(default)]
     pub attention_rank: Option<u32>,
     /// For an SSH terminal, where its connection last stood.

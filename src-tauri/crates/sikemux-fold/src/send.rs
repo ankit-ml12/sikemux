@@ -267,6 +267,8 @@ fn field(row: &ChatMessage, name: &str) -> Value {
         "fold" => serde_json::to_value(&row.fold),
         "context" => serde_json::to_value(&row.context),
         "letters" => serde_json::to_value(&row.letters),
+        "reactions" => serde_json::to_value(&row.reactions),
+        "gifs" => serde_json::to_value(&row.gifs),
         _ => Ok(Value::Null),
     };
     value.unwrap_or_default()

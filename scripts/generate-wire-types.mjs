@@ -403,7 +403,7 @@ const SWIFT_FIELDS = {
   Attention: "id agentId choices",
   PermissionChoices: "allowOnce allowAlways reject command title",
   Inbox: "items working agents rollup",
-  AgentShown: "agentId title group subagents tasks nextTrigger face",
+  AgentShown: "agentId title group subagents tasks nextTrigger calledAt face",
   AgentFace: "pack shape color box",
   FaceStyle: "motion",
   AgentRollup: "subagents tasks",

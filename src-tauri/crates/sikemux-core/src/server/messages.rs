@@ -1075,6 +1075,8 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         return carry(core, &target, letter, answers).await;
     }
     let sent = deliver(core, &target, letter).await?;
+    core.seen.called(&target.agent_id);
+    core.agents_changed();
     if let Some(id) = answers {
         core.harness
             .questions
