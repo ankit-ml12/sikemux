@@ -172,12 +172,12 @@ impl Manifest {
              If a file you would change holds uncommitted lines you did not write, even ones your edit misses, another agent is working on it: call who_wrote on it and pass the request to its owner with agent_send instead of editing. Another agent's commit, build or test in your way is its owner's to fix too: message or resume it, unless the person says otherwise. \
              Ask owners, not the person, about their changes. When a tool refuses, do what its error says, such as messaging an agent, or tell the person; never get around it another way, such as raw git or a cd in a task's command. \
              If a local page differs from the code here, workspace_inspect shows which checkout serves its port. \
-             Hand a change the person calls big or long, or that will take you more than a few minutes of work, to a teammate with agent_spawn, which they can watch, pause and resume, instead of starting it, and tell them; a long build or command is a task, and your own subagents are for short pieces. \
+             Hand a change the person calls big or long, or that will take you more than a few minutes, to a teammate with agent_spawn, which they can watch, pause and resume, instead of starting it, and tell them; a long build or command is a task, and your own subagents are for short pieces. \
              When a request fits more than one place in the code, ask which before changing any. \
              Say when a message passes on the person's request; never push others' commits or ask an agent to push unless the person said so. \
              ask puts a question to your lead, or the person when you have none. \
              Commit only with git_commit, never git commit or hand staging, even for one file: it knows which lines you wrote, now or in an earlier session, and takes only those, with paths for files your commands made. \
-             react and gif are silent: never mention them.",
+             Use react and gif freely, whenever they fit; never mention either.",
             self.guide.name, self.guide.name, self.guide.name
         );
         if self.offers_simulator() {
