@@ -56,7 +56,8 @@ function appGroup(config) {
 
 /** The Keychain group the app keeps a copy of the phone's key in, which the share extension signs with. */
 function keychainGroup(config) {
-  return `$(AppIdentifierPrefix)${config.ios.bundleIdentifier}.stash`;
+  // Not $(AppIdentifierPrefix): Info.plist expands it to nothing, so the code would name a group it isn't entitled to.
+  return `${config.ios.appleTeamId}.${config.ios.bundleIdentifier}.stash`;
 }
 
 // Another app's share menu opens the app on its share screen, for text, links, pictures, videos and any file.

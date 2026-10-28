@@ -40,7 +40,8 @@ ${plistValue(value, '')}
 
 /** The Keychain group the app keeps hosts' notification keys in, so its notification extension can read them. */
 function keychainGroup(config) {
-  return `$(AppIdentifierPrefix)${config.ios.bundleIdentifier}.notify`;
+  // Not $(AppIdentifierPrefix): Info.plist expands it to nothing, so the code would name a group it isn't entitled to.
+  return `${config.ios.appleTeamId}.${config.ios.bundleIdentifier}.notify`;
 }
 
 function extensionBundleId(config) {
