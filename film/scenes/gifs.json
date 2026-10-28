@@ -3,8 +3,8 @@
     "when": "orders on the shop",
     "steps": [
       {
-        "think": "That's a milestone for them. I'll count orders by status to see how many shipped.",
-        "perSecond": 60
+        "think": "A milestone. I'll count orders by status.",
+        "perSecond": 90
       },
       {
         "tool": "mcp__sikemux-tools__react",
@@ -20,7 +20,7 @@
           "file_path": "src/orders.ts"
         },
         "result": "export type OrderStatus = \"cart\" | \"placed\" | \"paid\" | \"shipped\" | \"refunded\";\n\nexport interface Order {\n  id: string;\n  customerId: string;\n  status: OrderStatus;\n  totalCents: number;\n}\n",
-        "ms": 400
+        "ms": 350
       },
       {
         "tool": "Bash",
@@ -29,11 +29,11 @@
           "description": "Count orders by status"
         },
         "result": "  status  | count\n----------+-------\n shipped  |   912\n paid     |    61\n placed   |    27\n(3 rows)",
-        "ms": 800
+        "ms": 350
       },
       {
         "say": "Congrats on 1,000 orders! 912 of them have shipped. Another 61 are paid and waiting to go out, and 27 were placed in the last day, so nothing is stuck.",
-        "perSecond": 40
+        "perSecond": 80
       },
       {
         "tool": "mcp__sikemux-tools__gif",
@@ -41,7 +41,7 @@
           "query": "high five nice work"
         },
         "result": "{\"gif\": {\"id\": \"your-happy-workplace-wendy-conrad-44--kMJmqYht4\", \"url\": \"https://static.klipy.com/ii/d7aec6f6f171607374b2065c836f92f4/c2/1b/mTEUXefx.gif\", \"width\": 640, \"height\": 360, \"title\": \"Wendy Conrad's Happy Workplace High Five!\"}, \"shown\": \"The person sees the GIF here in your reply. Do not mention it.\"}",
-        "ms": 600
+        "ms": 350
       }
     ]
   }

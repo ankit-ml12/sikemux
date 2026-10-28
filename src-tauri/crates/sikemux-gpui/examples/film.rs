@@ -1493,6 +1493,8 @@ fn main() -> anyhow::Result<()> {
             },
         )
     })?;
+    // A GIF plays only in the window in front, as on the Mac.
+    cx.update_window(window.into(), |_, window, _| window.activate_window())?;
     if let Some(bench) = bench.borrow().clone() {
         cx.update(|cx| {
             let _ = bench.read(cx).asks.send(core::Ask::RegisterWindow);

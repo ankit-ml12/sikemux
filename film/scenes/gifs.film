@@ -6,12 +6,12 @@ chat Wren
 settle 6
 cursor 1200,700
 record
-wait 1.0
-move 600,768 1.0
+wait 0.4
+move 600,768 0.6
 click
-type "we just passed 1,000 orders on the shop! can you check how many have shipped?" 30
+type "we just passed 1,000 orders on the shop! can you check how many have shipped?" 55
 key enter
-zoom 690,420 1.45 1.2 &
-move 1000,560 1.0
-wait 11
-end 3
+zoom 690,420 1.45 0.9 &
+move 1000,560 0.8
+wait 7.5
+end 1.5
