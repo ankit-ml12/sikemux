@@ -16,24 +16,32 @@ enum Handover {
         let descriptor = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
         guard descriptor >= 0 else { return false }
         if flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
-            if let text = try? String(contentsOfFile: path, encoding: .utf8),
-               let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 0, pid != getpid()
-            {
-                kill(pid, SIGTERM)
+            let holder = (try? String(contentsOfFile: path, encoding: .utf8))
+                .flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                .flatMap { $0 > 0 && $0 != getpid() ? $0 : nil }
+            // Helpers before this one could ignore SIGTERM, so one that outlives it is killed.
+            for signal in [SIGTERM, SIGKILL] {
+                if let holder { kill(holder, signal) }
+                if wait(for: descriptor, seconds: 1.5) { break }
             }
-            let deadline = Date().addingTimeInterval(3)
-            while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
-                guard Date() < deadline else {
-                    close(descriptor)
-                    return false
-                }
-                usleep(50_000)
+            guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+                close(descriptor)
+                return false
             }
         }
         ftruncate(descriptor, 0)
         let pid = "\(getpid())\n"
         _ = pid.withCString { write(descriptor, $0, strlen($0)) }
         held = descriptor
+        return true
+    }
+
+    private static func wait(for descriptor: Int32, seconds: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            guard Date() < deadline else { return false }
+            usleep(50_000)
+        }
         return true
     }
 

@@ -17,6 +17,7 @@ public func runNotch(_ arguments: [String]) -> Never {
     guard Handover.claim(stateDir: options.stateDir, dev: options.dev) else { exit(0) }
     Debug.on = FileManager.default.fileExists(atPath: (options.stateDir as NSString).appendingPathComponent("notch.debug"))
     if options.dev, let pid = options.appPid { exitWith(pid) }
+    exitOnTerminate()
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     let delegate = AppDelegate(options: options)
@@ -35,6 +36,18 @@ private func exitWith(_ pid: pid_t) {
 }
 
 private var appWatch: DispatchSourceProcess?
+
+/// The core and a newer helper end this one with SIGTERM, which a long-running
+/// helper was seen to survive, so it ends here whatever else hears it.
+private func exitOnTerminate() {
+    signal(SIGTERM, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
+    source.setEventHandler { exit(0) }
+    source.resume()
+    terminateWatch = source
+}
+
+private var terminateWatch: DispatchSourceSignal?
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store: NotchStore
