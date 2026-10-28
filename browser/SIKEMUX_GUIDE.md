@@ -333,8 +333,8 @@ words as its `query`, such as `finally shipped`, puts the best match under
 your reply.
 The person sees only the emoji or the GIF, never the calls, so never mention,
 announce or describe them, before or after. React to most messages the
-person sends, and send a GIF whenever one would land: a win, a joke, a mood,
-frustration or a goodbye. One GIF a turn is plenty.
+person sends, and send a GIF often, whenever one fits. One GIF a turn is
+plenty.
 
 ## browser-reading: Reading a page
 

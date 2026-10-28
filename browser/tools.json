@@ -1754,7 +1754,7 @@
       "name": "gif",
       "gesture": true,
       "method": "chat.gif",
-      "description": "Send a GIF under your reply for the mood: a win, a joke, relief, frustration, a goodbye. Use it often. Silent: never mention it.",
+      "description": "Send a GIF under your reply. Use it often, whenever one fits. Silent: never mention it.",
       "properties": {
         "query": {
           "type": "string",

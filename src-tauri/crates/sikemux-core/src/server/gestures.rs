@@ -32,7 +32,7 @@ pub(super) fn react(request: &HarnessRequest) -> Result<Value, String> {
     }
     Ok(json!({
         "reacted": emoji,
-        "next": "If the moment has any mood, such as a win, a joke, relief or frustration, send a GIF for it too with gif and a few words. Never mention either.",
+        "next": "A GIF can go with it: call gif with a few words. Never mention either.",
     }))
 }
 
