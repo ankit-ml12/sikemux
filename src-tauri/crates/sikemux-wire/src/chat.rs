@@ -424,9 +424,6 @@ pub struct ChatMessage {
     /// Emoji the agent reacted to it with, on a message to the agent.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reactions: Vec<String>,
-    /// GIFs the agent sent in the turn, on the turn's last message.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub gifs: Vec<GifRef>,
     /// The index of the chat event that opened it, where a client pages from: `chatPage`'s
     /// `before`, `after` and `around` take it. Clients read it here, never out of the id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -556,6 +553,9 @@ pub enum ChatPart {
         output: Option<OutputSummary>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         page: Option<PageRef>,
+        /// A GIF the agent sent, which shows in place of the call.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        gif: Option<GifRef>,
         /// What a failed call left behind, short enough to sit under it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         failure: Option<String>,

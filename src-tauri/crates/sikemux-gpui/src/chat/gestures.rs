@@ -1,11 +1,11 @@
 //! What an agent's gestures leave in a chat: emoji on the message it answered,
-//! and GIFs under its reply.
+//! and GIFs where it sent them.
 
 use gpui_kit::{
     div, img, px, AnyElement, App, FontWeight, InteractiveElement, IntoElement, ObjectFit,
     ParentElement, SharedString, Styled, StyledImage,
 };
-use sikemux_wire::chat::ChatMessage;
+use sikemux_wire::chat::{ChatMessage, GifRef};
 
 use super::Drawn;
 use crate::picture::{Picture, Remote};
@@ -48,43 +48,39 @@ pub fn reactions(message: &ChatMessage, looks: &Drawn) -> Option<AnyElement> {
     )
 }
 
-/// The GIFs the agent sent in its turn, under its reply, each credited as KLIPY asks.
-pub fn gifs(message: &ChatMessage, looks: &Drawn, cx: &App) -> Option<AnyElement> {
-    if message.gifs.is_empty() {
-        return None;
-    }
-    let asks = looks.bench.upgrade()?.read(cx).asks.clone();
-    let shown = message.gifs.iter().enumerate().map(|(at, gif)| {
-        let (width, height) = fit(gif.width, gif.height);
-        let picture = Picture::Remote(Remote::new(gif.url.clone(), asks.clone()));
-        div()
-            .w(px(width))
-            .h(px(height))
+/// A GIF the agent sent, where it sent it, credited as KLIPY asks.
+pub fn gif(id: &str, gif: &GifRef, looks: &Drawn, cx: &App) -> AnyElement {
+    let (width, height) = fit(gif.width, gif.height);
+    let asks = looks
+        .bench
+        .upgrade()
+        .map(|bench| bench.read(cx).asks.clone());
+    let shown = asks.map(|asks| {
+        let picture = Picture::Remote(Remote::new(gif.url.clone(), asks));
+        // Only an image with an id keeps the frame it is on, so without one a GIF holds still.
+        img(picture.source())
+            .id(SharedString::from(format!("gif:{id}")))
+            .size_full()
             .rounded(theme::RADIUS_3)
-            .overflow_hidden()
-            .bg(looks.bubble)
-            .child(
-                // Only an image with an id keeps the frame it is on, so without one a GIF holds still.
-                img(picture.source())
-                    .id(SharedString::from(format!("gif:{}:{at}", message.id)))
-                    .size_full()
-                    .rounded(theme::RADIUS_3)
-                    .object_fit(ObjectFit::Cover),
-            )
+            .object_fit(ObjectFit::Cover)
     });
-    Some(
-        div()
-            .pt(px(4.))
-            .flex()
-            .flex_col()
-            .gap(px(4.))
-            .child(div().flex().flex_wrap().gap(px(8.)).children(shown))
-            .child(
-                ui::text("Powered by KLIPY", 10., FontWeight::NORMAL)
-                    .text_color(Tokens::get(cx).text_tertiary),
-            )
-            .into_any_element(),
-    )
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .child(
+            div()
+                .w(px(width))
+                .h(px(height))
+                .rounded(theme::RADIUS_3)
+                .bg(looks.bubble)
+                .children(shown),
+        )
+        .child(
+            ui::text("Powered by KLIPY", 10., FontWeight::NORMAL)
+                .text_color(Tokens::get(cx).text_tertiary),
+        )
+        .into_any_element()
 }
 
 /// A GIF's size at no more than `GIF_SIDE` along its longer side, keeping its shape.

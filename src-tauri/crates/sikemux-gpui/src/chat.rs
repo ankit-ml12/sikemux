@@ -3982,7 +3982,10 @@ fn row(
     };
     let mut segments: Vec<(bool, Vec<&ChatPart>)> = Vec::new();
     for (index, part) in message.parts.iter().enumerate() {
-        let reply = matches!(part, ChatPart::Text { .. } | ChatPart::Content { .. });
+        let reply = matches!(
+            part,
+            ChatPart::Text { .. } | ChatPart::Content { .. } | ChatPart::Tool { gif: Some(_), .. }
+        );
         let tucked = !(from == 0 || outlives(part) || index >= from && reply);
         if tucked && work_shown <= 0. {
             continue;
@@ -4072,12 +4075,7 @@ fn row(
                 .child(note)
         });
     let noted = worktree.is_some();
-    if parts.is_empty()
-        && message.letters.is_empty()
-        && message.gifs.is_empty()
-        && summary.is_none()
-        && !carried
-    {
+    if parts.is_empty() && message.letters.is_empty() && summary.is_none() && !carried {
         return div().children(lost).children(worktree).into_any_element();
     }
     let lettered = !message.letters.is_empty();
@@ -4148,8 +4146,7 @@ fn row(
                     .gap(px(PART_GAP))
                     .min_w_0()
                     .children(summary)
-                    .children(parts)
-                    .children(gestures::gifs(message, looks, cx)),
+                    .children(parts),
             )
             .children(meta::line(rows, ix, &group, looks, cx))
     };
@@ -4463,18 +4460,33 @@ fn runs<'a>(parts: impl Iterator<Item = &'a ChatPart>) -> Vec<Shown<'a>> {
     let mut shown = Vec::new();
     for part in parts {
         match (part, shown.last_mut()) {
-            (ChatPart::Tool { page: None, .. }, Some(Shown::Run(calls))) => calls.push(part),
-            (ChatPart::Tool { page: None, .. }, _) => shown.push(Shown::Run(vec![part])),
+            (
+                ChatPart::Tool {
+                    page: None,
+                    gif: None,
+                    ..
+                },
+                Some(Shown::Run(calls)),
+            ) => calls.push(part),
+            (
+                ChatPart::Tool {
+                    page: None,
+                    gif: None,
+                    ..
+                },
+                _,
+            ) => shown.push(Shown::Run(vec![part])),
             _ => shown.push(Shown::Part(part)),
         }
     }
     shown
 }
 
-/// A page the agent showed and a subagent still at work stay in view when the turn around them folds.
+/// A page the agent showed, a GIF it sent and a subagent still at work stay in view when the
+/// turn around them folds.
 fn outlives(part: &ChatPart) -> bool {
     match part {
-        ChatPart::Tool { page, .. } => page.is_some(),
+        ChatPart::Tool { page, gif, .. } => page.is_some() || gif.is_some(),
         ChatPart::Subagent { subagent, .. } => subagent.state == SubagentState::Running,
         _ => false,
     }
@@ -4856,6 +4868,9 @@ fn part(
         ChatPart::Tool {
             page: Some(page), ..
         } => self::page::page(page, looks, window, cx),
+        ChatPart::Tool {
+            id, gif: Some(gif), ..
+        } => gestures::gif(id, gif, looks, cx),
         ChatPart::Tool { tool, failure, .. } => {
             let tint = if failure.is_some() {
                 Tokens::get(cx).danger

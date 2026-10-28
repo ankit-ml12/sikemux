@@ -24,10 +24,10 @@ use sikemux_markdown::Doc;
 
 use sikemux_wire::chat::{
     AccountMove, AgentNotice, AsyncTask, ChatCommandInfo, ChatConnection, ChatDraft, ChatFailure,
-    ChatHead, ChatMessage, ChatPart, ChatRole, ChatTrigger, ContextUsage, FailureKind, GifRef,
-    MoveReason, NoticeSeverity, NoticeState, PermissionAsk, PermissionOption, QueuedMessage,
-    Retrying, SentContext, SessionEnded, SubagentCard, SubagentState, TaskNotice, TaskState,
-    TaskUsage, ToolDetail, TurnStart, UsageCost, WorkflowAgent,
+    ChatHead, ChatMessage, ChatPart, ChatRole, ChatTrigger, ContextUsage, FailureKind, MoveReason,
+    NoticeSeverity, NoticeState, PermissionAsk, PermissionOption, QueuedMessage, Retrying,
+    SentContext, SessionEnded, SubagentCard, SubagentState, TaskNotice, TaskState, TaskUsage,
+    ToolDetail, TurnStart, UsageCost, WorkflowAgent,
 };
 use tools::WithRow;
 
@@ -61,7 +61,6 @@ const MAX_IMAGE_DATA_CHARS: usize = 2 * 1024 * 1024;
 const MAX_COMMANDS: usize = 256;
 /// An agent reacting more than this to one message is noise.
 const MAX_REACTIONS: usize = 3;
-const MAX_GIFS: usize = 3;
 
 /// What streamed into an answer and when, which its speed is worked out from.
 #[derive(Clone, Copy, Default)]
@@ -103,9 +102,6 @@ struct Row {
     /// Parts added or replaced since the last flush.
     parts: Vec<usize>,
     fields: BTreeSet<&'static str>,
-    /// GIFs the agent sent while this message was being written; they show
-    /// on the turn's last message.
-    gifs: Vec<GifRef>,
 }
 
 impl Row {
@@ -126,7 +122,6 @@ impl Row {
                 fold: None,
                 from_event: Some(index),
                 reactions: Vec::new(),
-                gifs: Vec::new(),
             },
             index,
             v: 0,
@@ -139,7 +134,6 @@ impl Row {
             fresh: true,
             parts: Vec::new(),
             fields: BTreeSet::new(),
-            gifs: Vec::new(),
         }
     }
 
@@ -1470,6 +1464,7 @@ impl Fold {
                 diff: None,
                 output: None,
                 page: None,
+                gif: None,
                 failure: None,
                 started_at: (!ended).then_some(at),
                 ended_at: None,
@@ -1522,7 +1517,21 @@ impl Fold {
         };
         match tools::gesture(&raw) {
             Some(tools::Gesture::React(emoji)) => self.react(within, emoji),
-            Some(tools::Gesture::Gif(gif)) => self.add_gif(index, within, gif),
+            Some(tools::Gesture::Gif(gif)) => {
+                let call = tools::root_call(self.folder.as_deref(), tools::call(&raw));
+                let part = |id| ChatPart::Tool {
+                    id,
+                    tool: call,
+                    diff: None,
+                    output: None,
+                    page: None,
+                    gif: Some(gif),
+                    failure: None,
+                    started_at: None,
+                    ended_at: None,
+                };
+                self.append_part(index, within, part, false).is_some()
+            }
             None => false,
         }
     }
@@ -1546,35 +1555,6 @@ impl Fold {
         row.msg.reactions.push(emoji);
         row.set("reactions");
         transcript.touch(position);
-        true
-    }
-
-    fn add_gif(&mut self, index: u64, within: &Within, gif: GifRef) -> bool {
-        let Some(transcript) = self.transcript(within) else {
-            return false;
-        };
-        let continues = transcript
-            .rows
-            .last()
-            .is_some_and(|last| last.msg.role == ChatRole::Assistant && !last.local);
-        let position = if continues {
-            transcript.rows.len() - 1
-        } else {
-            let id = transcript.next_id(index);
-            transcript.push(Row::new(id, ChatRole::Assistant, index))
-        };
-        let row = &mut transcript.rows[position];
-        if row.gifs.len() >= MAX_GIFS {
-            return false;
-        }
-        row.gifs.push(gif);
-        // A subagent's rows are not gathered into turns, so its GIFs stay where they were sent.
-        if within.is_some() {
-            row.msg.gifs = row.gifs.clone();
-            row.set("gifs");
-        }
-        transcript.touch(position);
-        self.note_main_change(within, position);
         true
     }
 

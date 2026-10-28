@@ -1211,8 +1211,6 @@ export interface ChatMessage {
   fold?: WorkFold;
   /** Emoji the agent reacted to it with, on a message to the agent. */
   reactions?: string[];
-  /** GIFs the agent sent in the turn, on the turn's last message. */
-  gifs?: GifRef[];
   /**
    * The index of the chat event that opened it, where a client pages from: `chatPage`'s
    * `before`, `after` and `around` take it. Clients read it here, never out of the id.
@@ -1252,6 +1250,8 @@ export type ChatPart =
       diff?: DiffSummary;
       output?: OutputSummary;
       page?: PageRef;
+      /** A GIF the agent sent, which shows in place of the call. */
+      gif?: GifRef;
       /** What a failed call left behind, short enough to sit under it. */
       failure?: string;
       startedAt?: number;
@@ -1299,6 +1299,15 @@ export interface PageRef {
   title: string;
   /** Its height at the reply width, when the agent measured it. */
   height?: number;
+}
+
+/** A GIF an agent sent with `gif_send`, which clients load from `url`. */
+export interface GifRef {
+  id: string;
+  url: string;
+  width: number;
+  height: number;
+  title: string;
 }
 
 /** What a background task left behind once it ended. */
@@ -1376,15 +1385,6 @@ export interface WorkFold {
   took?: number;
   /** Everything folded is thinking. */
   thought: boolean;
-}
-
-/** A GIF an agent sent with `gif_send`, which clients load from `url`. */
-export interface GifRef {
-  id: string;
-  url: string;
-  width: number;
-  height: number;
-  title: string;
 }
 
 /** Rows from before or after what a client holds, oldest first. */
