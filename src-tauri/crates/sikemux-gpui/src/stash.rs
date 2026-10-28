@@ -459,7 +459,7 @@ pub fn rail_row(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .into_any_element()
 }
 
-/// Over a chat's composer, opened by its Stash button or by `&`: the newest items first as small
+/// Docked on a chat's composer, opened by its Stash button or by `&`: the newest items first as small
 /// cards, the new ones tagged, to attach with a click or the keys; everything new at once; the
 /// whole Stash; and stashing the prompt being written.
 pub fn tray(
@@ -586,12 +586,10 @@ pub fn tray(
             .child(div().flex_1())
             .child(ui::kbd("⌘S", cx))
     };
-    ui::float(cx)
-        .w_full()
+    div()
         .p(px(12.))
         .flex()
         .flex_col()
-        .occlude()
         .child(head)
         .child(body)
         .child(stash_prompt)

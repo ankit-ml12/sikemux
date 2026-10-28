@@ -21,7 +21,7 @@ mod state_mark;
 
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
 pub use dialog::{Cheatsheet, Choice, Choices, Confirm, Prompt, Section};
-pub use dock::{DockMenu, DockRow, DockScope};
+pub use dock::{shell as dock_shell, DockMenu, DockRow, DockScope};
 pub use file_card::{file_head, Opens};
 pub use find_bar::FindBar;
 pub use floats::{

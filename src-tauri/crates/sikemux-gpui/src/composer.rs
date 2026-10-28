@@ -80,7 +80,7 @@ pub struct Composer {
     menu: Option<DockMenu>,
     /// The Stash's button: how many items are new, whether its tray is open, and what opens it.
     stash: Option<(usize, bool, Act)>,
-    /// The Stash's tray, floating over the composer.
+    /// The Stash's tray, docked over the top edge.
     tray: Option<AnyElement>,
     notice: Option<Notice>,
     /// The mic, and what it has heard so far.
@@ -393,15 +393,7 @@ impl RenderOnce for Composer {
                     }))
                     .child(bar)
                     .children(self.menu)
-                    .children(self.tray.map(|tray| {
-                        div()
-                            .absolute()
-                            .left_0()
-                            .right_0()
-                            .bottom(gpui_kit::relative(1.))
-                            .mb(px(10.))
-                            .child(tray)
-                    })),
+                    .children(self.tray.map(|tray| ui::dock_shell(cx).child(tray))),
             )
             .children(self.notice.map(|notice| {
                 let line = div()

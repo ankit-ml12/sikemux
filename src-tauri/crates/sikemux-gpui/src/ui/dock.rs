@@ -9,7 +9,7 @@ use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::Sizable;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, relative, AnyElement, App, InteractiveElement, IntoElement, MouseButton,
+    div, px, relative, AnyElement, App, Div, InteractiveElement, IntoElement, MouseButton,
     ParentElement, RenderOnce, SharedString, Styled, Window,
 };
 
@@ -336,25 +336,31 @@ impl RenderOnce for DockMenu {
                 .text_color(t.text_tertiary)
                 .child(text)
         });
-        div()
-            .absolute()
-            .left(px(19.))
-            .right(px(19.))
-            .bottom(relative(1.))
-            .mb(px(1.))
+        shell(cx)
             .py(px(4.))
-            .flex()
-            .flex_col()
-            .border_t_1()
-            .border_l_1()
-            .border_r_1()
-            .border_color(t.border)
-            .rounded_t(theme::RADIUS_3)
-            .bg(t.surface_composer)
-            .occlude()
             .children(heading)
             .children(placeholders)
             .children(rows)
             .children(empty)
     }
+}
+
+/// The tab docked over the composer's top edge, open at the bottom where it meets it.
+pub fn shell(cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    div()
+        .absolute()
+        .left(px(19.))
+        .right(px(19.))
+        .bottom(relative(1.))
+        .mb(px(1.))
+        .flex()
+        .flex_col()
+        .border_t_1()
+        .border_l_1()
+        .border_r_1()
+        .border_color(t.border)
+        .rounded_t(theme::RADIUS_3)
+        .bg(t.surface_composer)
+        .occlude()
 }
