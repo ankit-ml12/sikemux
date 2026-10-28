@@ -329,8 +329,8 @@ body margin; your own CSS overrides them.
 ### Reactions and GIFs
 
 `react` puts one emoji on the message you are answering. `gif` with a few
-words as its `query`, such as `finally shipped`, puts the best match under
-your reply.
+words for your own reaction puts the best match in your reply, where you call
+it.
 The person sees only the emoji or the GIF, never the calls, so never mention,
 announce or describe them, before or after. React to most messages the
 person sends, and send a GIF often, whenever one fits. One GIF a turn is

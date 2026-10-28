@@ -1,6 +1,6 @@
 //! Reactions and GIFs: what an agent does in a chat without a row of its own.
 //! A chat reads what each call answered and shows only that, an emoji on the
-//! message it answers or a GIF under its reply.
+//! message it answers or a GIF where it sent it.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -91,7 +91,7 @@ pub(super) async fn gif(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
             "height": file.get("height").and_then(Value::as_u64).unwrap_or(0),
             "title": item["title"].as_str().unwrap_or_default(),
         },
-        "shown": "The person sees the GIF under your reply. Do not mention it.",
+        "shown": "The person sees the GIF here in your reply. Do not mention it.",
     }))
 }
 
