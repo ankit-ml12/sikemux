@@ -13,5 +13,5 @@ type "we just passed 1,000 orders on the shop! can you check how many have shipp
 key enter
 zoom 690,420 1.45 0.9 &
 move 1000,560 0.8
-wait 7.5
+wait 4.4
 end 1.5
