@@ -244,6 +244,7 @@ pub fn open(
         Retained::into_super(view)
     });
     webview.setHidden(true);
+    leave_insets_to_the_app(&webview);
     webview.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinYMargin);
     // SAFETY: main thread, and `webview` is retained.
     unsafe {
@@ -392,6 +393,19 @@ pub fn out_of_fullscreen(webview: &WKWebView, then: impl FnOnce(&WKWebView) + 's
     });
     // SAFETY: main thread, and WebKit copies the block and calls it there.
     unsafe { webview.closeAllMediaPresentationsWithCompletionHandler(Some(&block)) };
+}
+
+/// Under an opaque title bar WebKit shortens the page by however far the view
+/// reaches above the window's content area, and a parked tab reaches 100,000
+/// points above it, so its page laid out with a negative height. Tabs are
+/// placed exactly where they show, so WebKit is told to leave the page whole.
+pub fn leave_insets_to_the_app(webview: &WKWebView) {
+    let selector = sel!(_setAutomaticallyAdjustsContentInsets:);
+    if webview.respondsToSelector(selector) {
+        // SAFETY: `respondsToSelector` just confirmed this private method exists; it takes
+        // one BOOL and returns nothing.
+        let _: () = unsafe { msg_send![webview, _setAutomaticallyAdjustsContentInsets: Bool::NO] };
+    }
 }
 
 /// WebKit stops a page's animation frames while another app covers the
