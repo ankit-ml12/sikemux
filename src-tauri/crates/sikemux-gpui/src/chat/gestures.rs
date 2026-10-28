@@ -15,7 +15,9 @@ use crate::ui;
 /// The longest side a GIF is drawn at, in points.
 const GIF_SIDE: f32 = 240.;
 /// How far the emoji hang over the bottom of the bubble.
-const OVERHANG: f32 = 8.;
+const OVERHANG: f32 = 9.;
+/// An emoji draws a little taller than its font size, so its chip leaves room around it.
+const CHIP_HEIGHT: f32 = 22.;
 
 /// The emoji the agent reacted with, hanging off the bottom of the message it answered.
 pub fn reactions(message: &ChatMessage, looks: &Drawn) -> Option<AnyElement> {
@@ -30,13 +32,17 @@ pub fn reactions(message: &ChatMessage, looks: &Drawn) -> Option<AnyElement> {
             .gap(px(4.))
             .children(message.reactions.iter().map(|emoji| {
                 div()
-                    .px(px(6.))
-                    .py(px(1.))
+                    .h(px(CHIP_HEIGHT))
+                    .min_w(px(CHIP_HEIGHT + 6.))
+                    .px(px(7.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .rounded_full()
                     .border_1()
                     .border_color(looks.line)
                     .bg(looks.bubble)
-                    .child(ui::text(emoji.clone(), 13., FontWeight::NORMAL))
+                    .child(ui::text(emoji.clone(), 12., FontWeight::NORMAL).line_height(px(12.)))
             }))
             .into_any_element(),
     )

@@ -1754,20 +1754,17 @@
       "name": "gif",
       "gesture": true,
       "method": "chat.gif",
-      "description": "Find GIFs, or send one by id.",
+      "description": "Send a GIF matching a query.",
       "properties": {
         "query": {
           "type": "string",
           "minLength": 1,
           "maxLength": 100
-        },
-        "id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200
         }
       },
-      "required": []
+      "required": [
+        "query"
+      ]
     },
     {
       "name": "board_add",

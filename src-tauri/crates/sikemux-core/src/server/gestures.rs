@@ -14,8 +14,8 @@ use crate::cli::protocol::HarnessRequest;
 const KLIPY: &str = "https://api.klipy.com/api/v1";
 const KLIPY_KEY: Option<&str> = option_env!("KLIPY_API_KEY");
 const TIMEOUT: Duration = Duration::from_secs(10);
+/// The fewest results KLIPY returns; the best match among them that has a GIF to show is sent.
 const RESULTS: &str = "8";
-const MAX_TAGS: usize = 6;
 /// Joined emoji such as a family or a flag run to several characters; anything
 /// longer is words.
 const MAX_EMOJI_CHARS: usize = 12;
@@ -42,15 +42,9 @@ fn is_emoji(text: &str) -> bool {
             .any(|char| char.is_whitespace() || char.is_alphabetic())
 }
 
-/// Finds GIFs for a `query`, or sends the one an `id` names.
+/// Sends KLIPY's best match for `query` under the agent's reply.
 pub(super) async fn gif(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
-    if request.params.get("id").is_some() {
-        return send(text(&request.params, "id")?).await;
-    }
-    search(core, text(&request.params, "query")?).await
-}
-
-async fn search(core: &Arc<Core>, query: &str) -> Result<Value, String> {
+    let query = text(&request.params, "query")?;
     let answer = klipy(
         "gifs/search",
         &[
@@ -62,46 +56,22 @@ async fn search(core: &Arc<Core>, query: &str) -> Result<Value, String> {
         ],
     )
     .await?;
-    let gifs: Vec<Value> = items(&answer)
-        .filter_map(|item| {
-            let tags: Vec<&str> = item["tags"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .take(MAX_TAGS)
-                .collect();
-            Some(json!({
-                "id": item["slug"].as_str()?,
-                "title": item["title"].as_str().unwrap_or_default(),
-                "tags": tags,
-            }))
+    let (item, file) = items(&answer)
+        .find_map(|item| {
+            let file = ["sm", "xs", "md"]
+                .iter()
+                .find_map(|size| item["file"][size]["gif"].as_object())?;
+            let shown = file
+                .get("url")
+                .and_then(Value::as_str)
+                .is_some_and(|url| url.starts_with("https://"));
+            shown.then_some((item, file))
         })
-        .collect();
-    if gifs.is_empty() {
-        return Err(format!("No GIFs for “{query}”; try other words"));
-    }
-    Ok(json!({ "gifs": gifs, "next": "Send the one that fits with gif and its id." }))
-}
-
-async fn send(id: &str) -> Result<Value, String> {
-    let answer = klipy("gifs/items", &[("slugs", id)]).await?;
-    let item = items(&answer)
-        .next()
-        .ok_or_else(|| format!("No GIF {id}; pass an id a gif search gave"))?;
-    let file = ["sm", "xs", "md"]
-        .iter()
-        .find_map(|size| item["file"][size]["gif"].as_object())
-        .ok_or("That GIF has no picture to show; pick another")?;
-    let url = file
-        .get("url")
-        .and_then(Value::as_str)
-        .filter(|url| url.starts_with("https://"))
-        .ok_or("That GIF has no picture to show; pick another")?;
+        .ok_or_else(|| format!("No GIF for “{query}”; try other words"))?;
     Ok(json!({
         "gif": {
-            "id": id,
-            "url": url,
+            "id": item["slug"].as_str().unwrap_or_default(),
+            "url": file["url"],
             "width": file.get("width").and_then(Value::as_u64).unwrap_or(0),
             "height": file.get("height").and_then(Value::as_u64).unwrap_or(0),
             "title": item["title"].as_str().unwrap_or_default(),
