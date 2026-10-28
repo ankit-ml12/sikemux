@@ -30,7 +30,10 @@ pub(super) fn react(request: &HarnessRequest) -> Result<Value, String> {
     if !is_emoji(emoji) {
         return Err("emoji must be one emoji, such as 👍".into());
     }
-    Ok(json!({ "reacted": emoji }))
+    Ok(json!({
+        "reacted": emoji,
+        "next": "If the moment has any mood, such as a win, a joke, relief or frustration, send a GIF for it too with gif and a few words. Never mention either.",
+    }))
 }
 
 fn is_emoji(text: &str) -> bool {
