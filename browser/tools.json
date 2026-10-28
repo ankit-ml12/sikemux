@@ -1738,7 +1738,7 @@
       "name": "react",
       "gesture": true,
       "method": "chat.react",
-      "description": "React with one emoji.",
+      "description": "React to the person's message with one emoji. Do it on most messages. Silent: never mention it.",
       "properties": {
         "emoji": {
           "type": "string",
@@ -1754,7 +1754,7 @@
       "name": "gif",
       "gesture": true,
       "method": "chat.gif",
-      "description": "Send a GIF matching a query.",
+      "description": "Send a GIF under your reply for the mood: a win, a joke, relief, frustration, a goodbye. Use it often. Silent: never mention it.",
       "properties": {
         "query": {
           "type": "string",
