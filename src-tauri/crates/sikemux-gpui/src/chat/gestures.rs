@@ -13,7 +13,7 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 
 /// The longest side a GIF is drawn at, in points.
-const GIF_SIDE: f32 = 240.;
+const GIF_SIDE: f32 = 300.;
 /// How far the emoji hang over the bottom of the bubble.
 const OVERHANG: f32 = 9.;
 /// An emoji draws a little taller than its font size, so its chip leaves room around it.

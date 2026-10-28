@@ -20,6 +20,9 @@ const KLIPY_KEY: Option<&str> = option_env!("KLIPY_API_KEY");
 const TIMEOUT: Duration = Duration::from_secs(10);
 /// The fewest results KLIPY returns; the best match among them that has a GIF to show is sent.
 const RESULTS: &str = "8";
+/// The medium GIF is sharp at the size a chat draws it; one larger than this falls back to the
+/// small one, since every frame of it is held decoded while it shows.
+const MAX_GIF_BYTES: u64 = 6 * 1024 * 1024;
 /// Joined emoji such as a family or a flag run to several characters; anything
 /// longer is words.
 const MAX_EMOJI_CHARS: usize = 12;
@@ -65,14 +68,19 @@ pub(super) async fn gif(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
     .await?;
     let (item, file) = items(&answer)
         .find_map(|item| {
-            let file = ["sm", "xs", "md"]
-                .iter()
-                .find_map(|size| item["file"][size]["gif"].as_object())?;
-            let shown = file
-                .get("url")
-                .and_then(Value::as_str)
-                .is_some_and(|url| url.starts_with("https://"));
-            shown.then_some((item, file))
+            let file = ["md", "sm", "xs"].iter().find_map(|size| {
+                let file = item["file"][size]["gif"].as_object()?;
+                let shown = file
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .is_some_and(|url| url.starts_with("https://"));
+                let small = file
+                    .get("size")
+                    .and_then(Value::as_u64)
+                    .is_some_and(|size| size <= MAX_GIF_BYTES);
+                (shown && small).then_some(file)
+            })?;
+            Some((item, file))
         })
         .ok_or_else(|| format!("No GIF for “{query}”; try other words"))?;
     Ok(json!({
