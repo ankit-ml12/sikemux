@@ -68,6 +68,7 @@ pub fn gifs(message: &ChatMessage, looks: &Drawn, cx: &App) -> Option<AnyElement
                 img(picture.source())
                     .id(SharedString::from(format!("gif:{}:{at}", message.id)))
                     .size_full()
+                    .rounded(theme::RADIUS_3)
                     .object_fit(ObjectFit::Cover),
             )
     });
