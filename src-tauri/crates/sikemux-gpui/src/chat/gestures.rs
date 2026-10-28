@@ -2,8 +2,8 @@
 //! and GIFs under its reply.
 
 use gpui_kit::{
-    div, img, px, AnyElement, App, FontWeight, IntoElement, ObjectFit, ParentElement, Styled,
-    StyledImage,
+    div, img, px, AnyElement, App, FontWeight, InteractiveElement, IntoElement, ObjectFit,
+    ParentElement, SharedString, Styled, StyledImage,
 };
 use sikemux_wire::chat::ChatMessage;
 
@@ -54,7 +54,7 @@ pub fn gifs(message: &ChatMessage, looks: &Drawn, cx: &App) -> Option<AnyElement
         return None;
     }
     let asks = looks.bench.upgrade()?.read(cx).asks.clone();
-    let shown = message.gifs.iter().map(|gif| {
+    let shown = message.gifs.iter().enumerate().map(|(at, gif)| {
         let (width, height) = fit(gif.width, gif.height);
         let picture = Picture::Remote(Remote::new(gif.url.clone(), asks.clone()));
         div()
@@ -64,7 +64,9 @@ pub fn gifs(message: &ChatMessage, looks: &Drawn, cx: &App) -> Option<AnyElement
             .overflow_hidden()
             .bg(looks.bubble)
             .child(
+                // Only an image with an id keeps the frame it is on, so without one a GIF holds still.
                 img(picture.source())
+                    .id(SharedString::from(format!("gif:{}:{at}", message.id)))
                     .size_full()
                     .object_fit(ObjectFit::Cover),
             )
