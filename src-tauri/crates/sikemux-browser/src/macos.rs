@@ -32,11 +32,12 @@ use objc2_foundation::{
 };
 use objc2_quartz_core::{kCAFillRuleEvenOdd, CACornerMask, CALayer, CAShapeLayer, CATransaction};
 use objc2_web_kit::{
-    WKContentWorld, WKDownload, WKDownloadDelegate, WKFrameInfo, WKMediaCaptureType, WKNavigation,
-    WKNavigationAction, WKNavigationActionPolicy, WKNavigationDelegate, WKNavigationResponse,
-    WKNavigationResponsePolicy, WKOpenPanelParameters, WKPDFConfiguration, WKPermissionDecision,
-    WKSecurityOrigin, WKSnapshotConfiguration, WKUIDelegate, WKUserScript,
-    WKUserScriptInjectionTime, WKWebView, WKWebViewConfiguration, WKWindowFeatures,
+    WKContentWorld, WKDownload, WKDownloadDelegate, WKFrameInfo, WKFullscreenState,
+    WKMediaCaptureType, WKNavigation, WKNavigationAction, WKNavigationActionPolicy,
+    WKNavigationDelegate, WKNavigationResponse, WKNavigationResponsePolicy, WKOpenPanelParameters,
+    WKPDFConfiguration, WKPermissionDecision, WKSecurityOrigin, WKSnapshotConfiguration,
+    WKUIDelegate, WKUserScript, WKUserScriptInjectionTime, WKWebView, WKWebViewConfiguration,
+    WKWindowFeatures,
 };
 use sikemux_process::sync::Locked;
 
@@ -363,10 +364,34 @@ pub fn load(webview: &WKWebView, url: &str) {
     let Some(address) = NSURL::URLWithString(&NSString::from_str(url)) else {
         return;
     };
-    // SAFETY: main thread, where `Tab` runs every call, and `webview` is alive.
-    unsafe {
-        let _ = webview.loadRequest(&NSURLRequest::requestWithURL(&address));
+    out_of_fullscreen(webview, move |webview| {
+        // SAFETY: main thread, where `Tab` runs every call, and `webview` is alive.
+        unsafe {
+            let _ = webview.loadRequest(&NSURLRequest::requestWithURL(&address));
+        }
+    });
+}
+
+/// WebKit crashes when a page going fullscreen is navigated away or taken out of
+/// its window, so `then` runs only once any fullscreen video or element is closed.
+pub fn out_of_fullscreen(webview: &WKWebView, then: impl FnOnce(&WKWebView) + 'static) {
+    // SAFETY: main thread, where `Tab` runs every call; the selector check covers
+    // macOS before 13.3, which has no fullscreen state to ask for.
+    let in_fullscreen = webview.respondsToSelector(sel!(fullscreenState))
+        && unsafe { webview.fullscreenState() } != WKFullscreenState::NotInFullscreen;
+    if !in_fullscreen {
+        then(webview);
+        return;
     }
+    let held = webview.retain();
+    let then = Cell::new(Some(then));
+    let block = RcBlock::new(move || {
+        if let Some(then) = then.take() {
+            then(&held);
+        }
+    });
+    // SAFETY: main thread, and WebKit copies the block and calls it there.
+    unsafe { webview.closeAllMediaPresentationsWithCompletionHandler(Some(&block)) };
 }
 
 /// WebKit stops a page's animation frames while another app covers the
@@ -474,15 +499,16 @@ impl AddressObserver {
 }
 
 pub fn history(webview: &WKWebView, delta: i32) {
-    let webview = webview.retain();
-    // SAFETY: main thread (where `Tab` runs every call), and `webview` is retained.
-    unsafe {
-        if delta < 0 {
-            webview.goBack();
-        } else {
-            webview.goForward();
+    out_of_fullscreen(webview, move |webview| {
+        // SAFETY: main thread (where `Tab` runs every call), and `webview` is alive.
+        unsafe {
+            if delta < 0 {
+                webview.goBack();
+            } else {
+                webview.goForward();
+            }
         }
-    }
+    });
 }
 
 /// Send `agent` as the tab's agent string, reloading so the site sees the change.
@@ -497,8 +523,11 @@ pub fn introduce_as(webview: &WKWebView, agent: &str) {
             return;
         }
         webview.setCustomUserAgent(Some(&NSString::from_str(agent)));
-        let _ = webview.reload();
     }
+    // SAFETY: as above.
+    out_of_fullscreen(&webview, |webview| unsafe {
+        let _ = webview.reload();
+    });
 }
 
 /// Puts the tab's view at `frame`, given top-down in the window's content

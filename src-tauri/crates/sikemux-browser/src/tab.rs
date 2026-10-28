@@ -217,8 +217,10 @@ impl Tab {
     pub fn close(&self) {
         let id = self.id.clone();
         self.run(move |webview| {
-            crate::macos::forget(&id);
-            webview.removeFromSuperview();
+            crate::macos::out_of_fullscreen(webview, move |webview| {
+                crate::macos::forget(&id);
+                webview.removeFromSuperview();
+            })
         });
     }
 
@@ -228,9 +230,11 @@ impl Tab {
     }
 
     pub fn reload(&self) {
-        // SAFETY: as above.
         self.run(|webview| {
-            let _ = unsafe { webview.reload() };
+            // SAFETY: as above.
+            crate::macos::out_of_fullscreen(webview, |webview| unsafe {
+                let _ = webview.reload();
+            })
         });
     }
 
