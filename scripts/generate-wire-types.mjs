@@ -837,13 +837,13 @@ function typescript(roots, preamble) {
     .join("\n\n")}\n\n${callMap}\n`;
 }
 
-/** The methods in the core's `calls!` that name their params and answer, as `"method" (Params) -> Answer`. */
+/** The methods in the core's `calls!` that name their params and answer, as `"method" Marker (Params) -> Answer`. */
 function coreCalls() {
   const file = `${CORE}/server/calls.rs`;
   const text = texts[SOURCES.indexOf(file)];
   return [
     ...text.matchAll(
-      /^\s*"([\w.]+)"\s*\((.*?)\)\s*->\s*(.+?):\s*[A-Z]\w*(?:,\s*any_program)?\s*=>/gm,
+      /^\s*"([\w.]+)"\s*\w+\s*\((.*?)\)\s*->\s*(.+?):\s*[A-Z]\w*(?:,\s*any_program)?\s*=>/gm,
     ),
   ].map(([, method, takes, gives]) => ({
     method,

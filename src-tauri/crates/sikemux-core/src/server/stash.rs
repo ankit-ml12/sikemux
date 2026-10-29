@@ -253,7 +253,7 @@ async fn take(core: &Core, id: &str) -> CoreResult<()> {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ItemParams {
+pub struct ItemParams {
     id: String,
 }
 
@@ -312,7 +312,7 @@ pub(crate) async fn picture(core: &Core, params: ItemParams) -> CoreResult<Value
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AttachParams {
+pub struct AttachParams {
     id: String,
     agent_id: String,
     /// False when the app keeps its own draft: the item's file is only kept here, and the app
@@ -324,7 +324,7 @@ pub(crate) struct AttachParams {
 /// What attaching an item put in the chat's draft.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Attached {
+pub struct Attached {
     agent_id: String,
     /// Where the item's file was kept on this host, when it has one.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -408,12 +408,12 @@ async fn files(core: &Core, item: &StashItem) -> CoreResult<Vec<PathBuf>> {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PromptParams {
+pub struct PromptParams {
     agent_id: String,
 }
 
 #[derive(Serialize)]
-pub(crate) struct Stashed {
+pub struct Stashed {
     id: String,
 }
 

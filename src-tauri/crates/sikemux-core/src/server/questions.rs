@@ -1008,7 +1008,7 @@ fn views_of(core: &Core, open: Vec<Question>, answered: Vec<Answered>) -> Vec<Ag
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AnswerParams {
+pub struct AnswerParams {
     id: String,
     #[serde(default)]
     answer: Option<String>,
@@ -1035,7 +1035,7 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<(),
 }
 
 #[derive(Deserialize)]
-pub(crate) struct AnswersParams {
+pub struct AnswersParams {
     answers: Vec<AnswerParams>,
 }
 

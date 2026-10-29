@@ -209,7 +209,7 @@ pub(crate) async fn find(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SearchParams {
+pub struct SearchParams {
     query: String,
     #[serde(default)]
     projects: Option<Vec<PathBuf>>,

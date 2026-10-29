@@ -158,7 +158,7 @@ pub(crate) struct ProjectFilesParams {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ProjectEntriesParams {
+pub struct ProjectEntriesParams {
     project: String,
     #[serde(default)]
     query: String,

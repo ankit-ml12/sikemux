@@ -98,6 +98,7 @@ mod window;
 mod workspace;
 mod worktree;
 
+pub use calls::call;
 pub use entry::main;
 pub use host::{info as host_info, PLATFORM as HOST_PLATFORM};
 pub use remote::trust_remote_file;

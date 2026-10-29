@@ -19,7 +19,7 @@ pub(crate) fn set_access(core: &Core, id: &str, access: DeviceAccess) -> CoreRes
 /// it or asking to be, for the owner's devices.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Pairing {
+pub struct Pairing {
     pending: Vec<PendingDevice>,
     devices: Vec<DeviceInfo>,
     links: Vec<crate::server::hosts::LinkView>,
@@ -37,7 +37,7 @@ pub(crate) fn pairing(core: &Core) -> Pairing {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct PairingAnswer {
+pub struct PairingAnswer {
     id: String,
     allow: bool,
     access: DeviceAccess,
@@ -51,7 +51,7 @@ pub(crate) fn answer_pairing(core: &Core, answer: PairingAnswer) -> CoreResult<P
 }
 
 #[derive(Deserialize)]
-pub(crate) struct DeviceChange {
+pub struct DeviceChange {
     id: String,
     /// None unpairs the device.
     #[serde(default)]
@@ -60,7 +60,7 @@ pub(crate) struct DeviceChange {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ApprovalSetting {
+pub struct ApprovalSetting {
     pub require_approval: bool,
 }
 

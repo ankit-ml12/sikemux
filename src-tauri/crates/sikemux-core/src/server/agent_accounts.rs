@@ -33,13 +33,13 @@ pub(super) struct Forget {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Resuming {
+pub struct Resuming {
     agent_id: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Moving {
+pub struct Moving {
     agent_id: String,
     account_id: String,
 }
@@ -47,7 +47,7 @@ pub(super) struct Moving {
 /// The account a chat runs on and those it may move to, as a client offers them.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct ChatAccounts {
+pub struct ChatAccounts {
     account: Option<Named>,
     others: Vec<Named>,
 }

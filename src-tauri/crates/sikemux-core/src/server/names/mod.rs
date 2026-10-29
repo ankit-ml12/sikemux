@@ -148,7 +148,7 @@ pub(crate) struct AgentName {
 /// A closed agent the person named, which can be opened again under its name.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ClosedAgent {
+pub struct ClosedAgent {
     pub agent_id: String,
     pub name: String,
     pub provider: String,

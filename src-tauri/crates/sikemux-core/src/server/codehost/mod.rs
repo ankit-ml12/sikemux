@@ -298,7 +298,7 @@ pub(crate) struct IssuesParams {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ReleasesParams {
+pub struct ReleasesParams {
     project: String,
 }
 
@@ -972,7 +972,7 @@ const CONTEXT_COMMENT: usize = 2_000;
 const CONTEXT_COMMENTS: usize = 5;
 
 #[derive(Deserialize)]
-pub(crate) struct TrackedParams {
+pub struct TrackedParams {
     project: String,
     kind: TrackedKind,
     number: u64,

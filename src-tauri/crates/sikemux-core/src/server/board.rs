@@ -848,7 +848,7 @@ fn ticket_above(board: &Board, card: &Card) -> Option<String> {
 /// A board as the app and devices read it.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BoardView {
+pub struct BoardView {
     project: String,
     cards: Vec<CardView>,
     settings: Settings,
@@ -1714,7 +1714,7 @@ fn project_at(core: &Core, path: &str) -> Result<String, String> {
 
 /// The project a board call is about, by its absolute path.
 #[derive(Deserialize)]
-pub(crate) struct BoardParams {
+pub struct BoardParams {
     project: String,
 }
 

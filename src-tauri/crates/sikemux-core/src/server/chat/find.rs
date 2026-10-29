@@ -20,7 +20,7 @@ const PREVIEW_CHARS: usize = 30;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum Direction {
+pub enum Direction {
     #[default]
     Older,
     Newer,
@@ -30,7 +30,7 @@ pub(crate) enum Direction {
 /// An empty `part` stands before or after every part of its row, as the direction goes.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct FindAt {
+pub struct FindAt {
     pub event: u64,
     #[serde(default)]
     pub part: String,
@@ -42,7 +42,7 @@ pub(crate) struct FindAt {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct FindParams {
+pub struct FindParams {
     pub agent_id: String,
     pub feed: String,
     pub query: String,
@@ -62,7 +62,7 @@ pub(crate) struct FindParams {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Hit {
+pub struct Hit {
     pub row: String,
     pub from_event: u64,
     pub part: String,
@@ -73,21 +73,21 @@ pub(crate) struct Hit {
 
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Scanned {
+pub struct Scanned {
     pub from_event: Option<u64>,
     pub to_event: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Counted {
+pub struct Counted {
     pub matches: u64,
     pub complete: bool,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct FindAnswer {
+pub struct FindAnswer {
     pub hits: Vec<Hit>,
     /// Where to go on from; none once the chat's start, or end, is reached.
     pub next: Option<FindAt>,

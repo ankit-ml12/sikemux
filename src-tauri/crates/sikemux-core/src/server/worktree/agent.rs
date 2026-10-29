@@ -17,7 +17,7 @@ use crate::tasks::config::{self, ConfigLoad};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ForAgentParams {
+pub struct ForAgentParams {
     agent_id: String,
     /// What the agent was asked first, which names the branch.
     message: String,
@@ -28,7 +28,7 @@ pub(crate) struct ForAgentParams {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ForAgent {
+pub struct ForAgent {
     worktree: AgentWorktree,
     cwd: PathBuf,
     /// Why the project's worktree setup did not all finish, when it did not.
