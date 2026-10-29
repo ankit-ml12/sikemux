@@ -10,6 +10,49 @@ export const MAX_TEXT_SCALE = 2;
 export const MAX_PROJECT_DEPTH = 8;
 export const MAX_ATTACHMENTS = 32;
 
+/** What the phone reads once it opens a sealed notification. */
+export interface NotificationCard {
+    v: number;
+    kind: NotificationKind;
+    /** `None` for `clear`. */
+    channel: NotificationChannel | null;
+    /** `None` for `clear`. `permission` only when both answers are offered. */
+    category: NotificationCategory | null;
+    /** The same id the push carried, for removing this card later. */
+    collapseId: string;
+    /** Groups one agent's cards: `<hostKey>/<agentId>`. */
+    thread: string;
+    hostKey: string;
+    hostName: string;
+    agentId: string;
+    provider: string;
+    chatTitle: string | null;
+    title: string;
+    body: string;
+    /** One line to show in monospace, such as the command an agent wants to run. */
+    detail: string | null;
+    /** Where tapping the card goes. */
+    url: string;
+    /** The permission request to answer with `answer_permission`. */
+    requestId: string | null;
+    allowOptionId: string | null;
+    rejectOptionId: string | null;
+    /** Milliseconds since the Unix epoch. */
+    at: number;
+    expiresAt: number;
+}
+
+export type NotificationKind = "permission" | "input" | "finished" | "problem" | "pairing" | "clear";
+
+/** The Android channel a card goes to. */
+export type NotificationChannel = "needs-you" | "finished" | "problems";
+
+/**
+ * The iOS category, which decides the card's buttons. Only `permission`
+ * has any: Reject and Allow.
+ */
+export type NotificationCategory = "permission" | "needs-you" | "finished" | "problem";
+
 export interface DeviceView {
     workspace: Workspace;
     sessions: SessionInfo[];

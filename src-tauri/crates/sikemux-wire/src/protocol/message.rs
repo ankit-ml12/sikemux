@@ -13,9 +13,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{
-    ask, Attention, BuildChannel, BuildIdentity, CallId, ChatAttachment, ChatInfo,
-    ChatStart, Event, HostInfo, RemoteStatus, RequestId, SessionId, SessionInfo, StreamId,
-    Workspace,
+    ask, Attention, BuildChannel, BuildIdentity, CallId, ChatAttachment, ChatInfo, ChatStart,
+    Event, HostInfo, RemoteStatus, RequestId, SessionId, SessionInfo, StreamId, Workspace,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

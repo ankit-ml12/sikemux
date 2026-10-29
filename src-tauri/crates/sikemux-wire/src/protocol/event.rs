@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{
-    AgentStateEvent, Attention, ChatInfo, DeviceView, NetworkChange, RemoteStatus,
-    SessionId,
+    AgentStateEvent, Attention, ChatInfo, DeviceView, NetworkChange, RemoteStatus, SessionId,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

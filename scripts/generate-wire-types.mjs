@@ -19,6 +19,7 @@ const SOURCES = [
   `${WIRE}/protocol.rs`,
   `${WIRE}/protocol/ask.rs`,
   `${WIRE}/protocol/message.rs`,
+  `${WIRE}/push.rs`,
   `${WIRE}/protocol/chats.rs`,
   `${WIRE}/protocol/agent.rs`,
   `${WIRE}/protocol/workspace.rs`,
@@ -85,6 +86,7 @@ const SOURCES = [
 
 /** Names the clients know a type by where the Rust one would clash or say too little. */
 const RENAMES = {
+  [`${WIRE}/push.rs`]: { Notification: "NotificationCard" },
   [`${WIRE}/catalog.rs`]: { Driver: "ChatDriver" },
   [`${CORE}/server/chat/queue.rs`]: { Message: "QueuedMessageParams" },
   [`${CORE}/server/agent_accounts.rs`]: {
@@ -160,6 +162,7 @@ const JSON_FIELDS = {
 };
 
 const TS_ROOTS = [
+  "NotificationCard",
   "DeviceView",
   "ChatView",
   "ChatPage",
@@ -266,7 +269,13 @@ const LIMITS = [
 const OUTPUTS = {
   ts: "shared/wire.generated.ts",
   notch: "src-tauri/notch/Sources/NotchKit/Wire.generated.swift",
+  cardSwift: "mobile/app/modules/notify/ios/Shared/Card.generated.swift",
+  cardKotlin:
+    "mobile/app/modules/notify/android/src/main/java/com/nodelike/sikemux/notify/Card.generated.kt",
 };
+
+/** What the phone's own notification code reads of a sealed card, in Swift and Kotlin. */
+const CARD_ROOTS = ["NotificationCard"];
 
 const fail = (message) => {
   throw new Error(`generate-wire-types: ${message}`);
@@ -845,57 +854,53 @@ function coreCalls() {
 
 const swiftCase = (name) => renameAll(name.replaceAll("-", "_"), "camelCase");
 
-/**
- * Swift for the notch. It decodes only the fields it reads, and a value the
- * core added after the notch was built reads as the enum's unknown case.
- */
-function swift() {
-  const swiftType = (type) => {
-    switch (type.kind) {
-      case "string":
-        return "String";
-      case "bool":
-        return "Bool";
-      case "int":
-        return "Int";
-      case "float":
-        return "Double";
-      case "named":
-        return type.name;
-      case "list":
-        return `[${swiftType(type.of)}]`;
-      case "map":
-        return `[String: ${swiftType(type.of)}]`;
-      case "option":
-        return `${swiftType(type.of)}?`;
-      case "null":
-        return "Nothing?";
-      default:
-        fail(`the notch cannot read ${type.kind}`);
-    }
-  };
-  const docs = (lines, indent) =>
-    lines.map((line) => `${indent}/// ${line}`.trimEnd() + "\n").join("");
-  const declare = (d) => {
-    if (d.kind === "struct") {
-      const fields = d.fields.map((f) => {
-        if (!/^[a-z]\w*$/.test(f.name))
-          fail(`${d.name}.${f.name} is no Swift name`);
-        return property(f, "    ", sent.has(d.name));
-      });
-      return `${docs(d.docs, "")}struct ${d.name}: Codable, Hashable {${fields.length ? `\n${fields.join("\n")}\n` : ""}}`;
-    }
-    if (d.kind !== "strings") fail(`the notch cannot read ${d.name}`);
-    const fallback = d.variants.find((v) => v.other);
-    const cases = d.variants
-      .filter((v) => !v.other)
-      .map((v) => {
-        const name = swiftCase(v.name);
-        const raw = name === v.name ? "" : ` = ${JSON.stringify(v.name)}`;
-        return `${docs(v.docs, "    ")}    case ${name}${raw}`;
-      });
-    const unknown = fallback ? swiftCase(fallback.name) : "unknown";
-    return `${docs(d.docs, "")}enum ${d.name}: String, Codable, Hashable {
+function swiftType(type) {
+  switch (type.kind) {
+    case "string":
+      return "String";
+    case "bool":
+      return "Bool";
+    case "int":
+      return "Int";
+    case "float":
+      return "Double";
+    case "named":
+      return type.name;
+    case "list":
+      return `[${swiftType(type.of)}]`;
+    case "map":
+      return `[String: ${swiftType(type.of)}]`;
+    case "option":
+      return `${swiftType(type.of)}?`;
+    case "null":
+      return "Nothing?";
+    default:
+      fail(`Swift cannot read ${type.kind}`);
+  }
+}
+const swiftDocs = (lines, indent) =>
+  lines.map((line) => `${indent}/// ${line}`.trimEnd() + "\n").join("");
+/** A Swift declaration; the types in `sent` are sent, so they may leave out what is optional. */
+function swiftDeclare(d, sent = new Set()) {
+  if (d.kind === "struct") {
+    const fields = d.fields.map((f) => {
+      if (!/^[a-z]\w*$/.test(f.name))
+        fail(`${d.name}.${f.name} is no Swift name`);
+      return swiftProperty(f, "    ", sent.has(d.name));
+    });
+    return `${swiftDocs(d.docs, "")}struct ${d.name}: Codable, Hashable {${fields.length ? `\n${fields.join("\n")}\n` : ""}}`;
+  }
+  if (d.kind !== "strings") fail(`Swift cannot read ${d.name}`);
+  const fallback = d.variants.find((v) => v.other);
+  const cases = d.variants
+    .filter((v) => !v.other)
+    .map((v) => {
+      const name = swiftCase(v.name);
+      const raw = name === v.name ? "" : ` = ${JSON.stringify(v.name)}`;
+      return `${swiftDocs(v.docs, "    ")}    case ${name}${raw}`;
+    });
+  const unknown = fallback ? swiftCase(fallback.name) : "unknown";
+  return `${swiftDocs(d.docs, "")}enum ${d.name}: String, Codable, Hashable {
 ${cases.join("\n")}
     /// One added after this build.
     case ${unknown}
@@ -904,7 +909,31 @@ ${cases.join("\n")}
         self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .${unknown}
     }
 }`;
-  };
+}
+
+/** A Swift property; one that is sent may leave out what is optional. */
+function swiftProperty(f, indent, sending = false) {
+  if (!/^[a-z]\w*$/.test(f.name)) fail(`${f.name} is no Swift name`);
+  const type = swiftType(f.type);
+  const optional = f.mayBeAbsent && !type.endsWith("?") ? "?" : "";
+  const empty =
+    { Bool: "false", Int: "0", Double: "0", String: '""' }[type] ??
+    (type.startsWith("[") ? "[]" : null);
+  const given =
+    sending && f.defaulted && !optional && !type.endsWith("?") && empty
+      ? ` = ${empty}`
+      : "";
+  const keyword =
+    sending && (optional || type.endsWith("?") || given) ? "var" : "let";
+  return `${swiftDocs(f.docs, indent)}${indent}${keyword} ${f.name}: ${type}${optional}${given}`;
+}
+
+/**
+ * Swift for the notch. It decodes only the fields it reads, and a value the
+ * core added after the notch was built reads as the enum's unknown case.
+ */
+function swift() {
+  const declare = (d) => swiftDeclare(d, sent);
   const pick = (fields, key) => {
     const wanted = SWIFT_FIELDS[key]?.split(" ");
     if (!wanted) return fields;
@@ -913,22 +942,6 @@ ${cases.join("\n")}
     );
     if (missing.length) fail(`${key} has no ${missing.join(", ")}`);
     return fields.filter((field) => wanted.includes(field.name));
-  };
-  // What the notch sends may leave out what is optional.
-  const property = (f, indent, sending = false) => {
-    if (!/^[a-z]\w*$/.test(f.name)) fail(`${f.name} is no Swift name`);
-    const type = swiftType(f.type);
-    const optional = f.mayBeAbsent && !type.endsWith("?") ? "?" : "";
-    const empty =
-      { Bool: "false", Int: "0", Double: "0", String: '""' }[type] ??
-      (type.startsWith("[") ? "[]" : null);
-    const given =
-      sending && f.defaulted && !optional && !type.endsWith("?") && empty
-        ? ` = ${empty}`
-        : "";
-    const keyword =
-      sending && (optional || type.endsWith("?") || given) ? "var" : "let";
-    return `${docs(f.docs, indent)}${indent}${keyword} ${f.name}: ${type}${optional}${given}`;
   };
   // A type named like one of the structs around it is named by its module there.
   const module = /Sources\/(\w+)\//.exec(OUTPUTS.notch)[1];
@@ -1016,7 +1029,7 @@ enum CoreResponse {
 ${answers
   .map(
     ({ rust, fields }) =>
-      `    struct ${rust}: Decodable {${fields.length ? `\n${fields.map((f) => property(f, "        ")).join("\n")}\n    ` : ""}}`,
+      `    struct ${rust}: Decodable {${fields.length ? `\n${fields.map((f) => swiftProperty(f, "        ")).join("\n")}\n    ` : ""}}`,
   )
   .join("\n")}
     struct Called<Result: Decodable>: Decodable {
@@ -1028,10 +1041,10 @@ ${answers
 enum CoreRequest {
 ${requests
   .map((request) =>
-    `${docs(request.docs, "    ")}    struct ${request.name}: CoreAsk {
+    `${swiftDocs(request.docs, "    ")}    struct ${request.name}: CoreAsk {
         static let op = ${JSON.stringify(renameAll(request.name, "camelCase"))}
         typealias Answer = CoreResponse.${request.answer}
-${request.fields.map((f) => outside(property(f, "        ", true), SWIFT_REQUESTS)).join("\n")}
+${request.fields.map((f) => outside(swiftProperty(f, "        ", true), SWIFT_REQUESTS)).join("\n")}
     }`.replace(/\n\n    \}/, "\n    }"),
   )
   .join("\n\n")}
@@ -1054,8 +1067,8 @@ ${notchCalls
   .join("\n\n")}
 }
 
-${docs(event.docs, "")}enum Event: Decodable {
-${events.map((v) => `${docs(v.docs, "    ")}    case ${v.name}${v.fields.length ? `(${v.fields.map((f) => `${f.name}: ${swiftType(f.type)}`).join(", ")})` : ""}`).join("\n")}
+${swiftDocs(event.docs, "")}enum Event: Decodable {
+${events.map((v) => `${swiftDocs(v.docs, "    ")}    case ${v.name}${v.fields.length ? `(${v.fields.map((f) => `${f.name}: ${swiftType(f.type)}`).join(", ")})` : ""}`).join("\n")}
     /// One the notch does not read.
     case other
 
@@ -1106,6 +1119,122 @@ ${closure(
 )
   .map(declare)
   .join("\n\n")}
+`;
+}
+
+const BANNER =
+  "Generated by scripts/generate-wire-types.mjs from the core's Rust. Do not edit by hand.";
+
+/** The card in Swift, for the phone's notification extension. */
+function cardSwift() {
+  return `// ${BANNER}
+
+import Foundation
+
+${closure(CARD_ROOTS)
+  .map((d) => swiftDeclare(d))
+  .join("\n\n")}
+`;
+}
+
+const kotlinDocs = (lines, indent) =>
+  lines.length ? `${indent}/** ${lines.join(" ")} */\n` : "";
+const kotlinCase = (name) =>
+  words(name.replaceAll("-", "_")).join("_").toUpperCase();
+
+/** The card in Kotlin, read from org.json, which the phone's Android code already uses. */
+function cardKotlin() {
+  const typeOf = (type) => {
+    switch (type.kind) {
+      case "string":
+        return "String";
+      case "bool":
+        return "Boolean";
+      case "int":
+        return "Long";
+      case "float":
+        return "Double";
+      case "named":
+        return type.name;
+      case "option":
+        return `${typeOf(type.of)}?`;
+      default:
+        fail(`Kotlin cannot read ${type.kind}`);
+    }
+  };
+  const declarations = closure(CARD_ROOTS);
+  const kinds = new Map(declarations.map((d) => [d.name, d.kind]));
+  const read = (type, key) => {
+    switch (type.kind) {
+      case "string":
+        return `json.getString(${key})`;
+      case "bool":
+        return `json.getBoolean(${key})`;
+      case "int":
+        return `json.getLong(${key})`;
+      case "float":
+        return `json.getDouble(${key})`;
+      case "named":
+        if (kinds.get(type.name) !== "strings")
+          fail(`Kotlin reads only strings enums, not ${type.name}`);
+        return `${type.name}.of(json.getString(${key}))`;
+      case "option":
+        return `if (json.isNull(${key})) null else ${read(type.of, key)}`;
+      default:
+        fail(`Kotlin cannot read ${type.kind}`);
+    }
+  };
+  const declare = (d) => {
+    if (d.kind === "strings") {
+      const cases = d.variants
+        .filter((v) => !v.other)
+        .map(
+          (v) =>
+            `${kotlinDocs(v.docs, "  ")}  ${kotlinCase(v.name)}(${JSON.stringify(v.name)}),`,
+        );
+      return `${kotlinDocs(d.docs, "")}enum class ${d.name}(val wire: String) {
+${cases.join("\n")}
+  /** One added after this build. */
+  UNKNOWN("");
+
+  companion object {
+    fun of(wire: String): ${d.name} = entries.firstOrNull { it.wire == wire } ?: UNKNOWN
+  }
+}`;
+    }
+    if (d.kind !== "struct") fail(`Kotlin cannot read ${d.name}`);
+    const fields = d.fields.map((f) => {
+      const optional = f.mayBeAbsent && f.type.kind !== "option";
+      const type = optional ? { kind: "option", of: f.type } : f.type;
+      return { ...f, type };
+    });
+    return `${kotlinDocs(d.docs, "")}data class ${d.name}(
+${fields.map((f) => `${kotlinDocs(f.docs, "  ")}  val ${f.name}: ${typeOf(f.type)},`).join("\n")}
+) {
+  companion object {
+    /** Null when \`json\` is not one. */
+    fun of(json: JSONObject): ${d.name}? =
+      try {
+        ${d.name}(
+${fields.map((f) => `          ${f.name} = ${read(f.type, JSON.stringify(f.name))},`).join("\n")}
+        )
+      } catch (_: JSONException) {
+        null
+      }
+  }
+}`;
+  };
+  const pkg = /java\/(.+)\/[^/]+$/
+    .exec(OUTPUTS.cardKotlin)[1]
+    .replaceAll("/", ".");
+  return `// ${BANNER}
+
+package ${pkg}
+
+import org.json.JSONException
+import org.json.JSONObject
+
+${declarations.map(declare).join("\n\n")}
 `;
 }
 
@@ -1258,7 +1387,7 @@ const defaults = DEFAULTS.map(
 
 async function emit(path, contents) {
   const full = resolve(root, path);
-  if (!path.endsWith(".swift"))
+  if (path.endsWith(".ts"))
     contents = await format(contents, {
       ...(await resolveConfig(full)),
       filepath: full,
@@ -1280,3 +1409,5 @@ await emit(
   `${typescript(TS_ROOTS, `${limits}\n\n`)}\n${defaults}\n`,
 );
 await emit(OUTPUTS.notch, swift());
+await emit(OUTPUTS.cardSwift, cardSwift());
+await emit(OUTPUTS.cardKotlin, cardKotlin());

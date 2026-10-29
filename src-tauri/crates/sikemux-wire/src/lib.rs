@@ -11,6 +11,7 @@ pub mod inbox;
 pub mod notch;
 pub mod protocol;
 pub mod pty;
+pub mod push;
 pub mod questions;
 pub mod share;
 pub mod theme;
