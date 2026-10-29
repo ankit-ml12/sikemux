@@ -3,7 +3,8 @@ import { AppState } from 'react-native';
 import { CoreEvent, MobileError, type ConnectionLike, type CoreListener } from '@sikemux/native';
 
 import { problem } from '@/core/problem';
-import { setAgentCatalog, type CatalogAgent } from '@shared/agents/catalog';
+import { forgetAgentCatalog, setAgentCatalog, type CatalogAgent } from '@shared/agents/catalog';
+import { externalValue, useExternalValue } from '@shared/lib/externalValue';
 import { keepUnchanged, readHost, readView, type HostInfo, type Snapshot } from '@/core/protocol';
 import { goOffline, thisDevice } from '@/device/identity';
 import { onNetworkChange } from '@/network/connectivity';
@@ -68,25 +69,17 @@ const FORGOTTEN: Live = { status: 'closed', problem: 'Forgotten.' };
 const entries = new Map<string, Entry>();
 /** Hosts left for good; a screen still open on one must not reconnect to it. */
 const forgotten = new Set<string>();
-const listeners = new Set<() => void>();
 const hostListeners = new Map<string, Set<() => void>>();
-let devices: PairedDevice[] = [];
-let devicesLoaded = false;
-let devicesProblem: string | null = null;
+/** The paired hosts as last read from disk; `problem` while the list could not be read. */
+const paired = externalValue<{ devices: PairedDevice[]; loaded: boolean; problem: string | null }>({
+  devices: [],
+  loaded: false,
+  problem: null,
+});
 let devicesLoad = 0;
 let away = false;
 
 const anyListeners = new Set<() => void>();
-
-function changed() {
-  listeners.forEach((listener) => listener());
-  anyListeners.forEach((listener) => listener());
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
 
 function hostChanged(core: string) {
   hostListeners.get(core)?.forEach((listener) => listener());
@@ -96,14 +89,16 @@ function hostChanged(core: string) {
 /** Hears every change to the paired hosts or any host's live state. */
 export function onAnyHost(listener: () => void) {
   anyListeners.add(listener);
+  const offPaired = paired.subscribe(listener);
   return () => {
     anyListeners.delete(listener);
+    offPaired();
   };
 }
 
 /** The paired hosts as last read, without reading them again. */
 export function knownDevices(): readonly PairedDevice[] {
-  return devices;
+  return paired.get().devices;
 }
 
 function subscribeHost(core: string, listener: () => void) {
@@ -152,16 +147,13 @@ function settled(found: Entry): boolean {
 export async function reloadDevices() {
   const load = (devicesLoad += 1);
   try {
-    const list = await pairedDevices();
+    const devices = await pairedDevices();
     if (load !== devicesLoad) return;
-    devices = list;
-    devicesProblem = pairedListDamaged() ? DAMAGED : null;
+    paired.set({ devices, loaded: true, problem: pairedListDamaged() ? DAMAGED : null });
   } catch (error) {
     if (load !== devicesLoad) return;
-    devicesProblem = problem(error);
+    paired.set({ ...paired.get(), loaded: true, problem: problem(error) });
   }
-  devicesLoaded = true;
-  changed();
 }
 
 /** Reads the list of paired hosts from disk again, clearing the problem it showed if it now reads cleanly. */
@@ -293,22 +285,22 @@ async function connect(core: string, found: Entry) {
   set(core, found, { status: 'open', connection, snapshot: found.live.snapshot });
   if (AppState.currentState !== 'active') connection.setForeground(false).catch(() => {});
   shareKey(core, connection).then(() => withdrawIfForgotten(core));
-  readCatalog(found, connection);
+  readCatalog(core, found, connection);
   hostOf(connection)
     .then((host) => {
-      const known = devices.find((device) => device.core === core);
+      const known = knownDevices().find((device) => device.core === core);
       if (known?.name === host.name && known.model === host.model && known.channel === host.channel) return;
       return updateDevice(core, { name: host.name, model: host.model, channel: host.channel }).then(reloadDevices);
     })
-    .catch(() => {});
+    .catch((error: unknown) => console.warn('sikemux: could not keep what the host says it is', error));
 }
 
 /** Takes the agents the host can run, which every screen names and draws agents from, then shows the view that waited on them. */
-function readCatalog(found: Entry, connection: ConnectionLike) {
+function readCatalog(core: string, found: Entry, connection: ConnectionLike) {
   connection
     .call('agentCatalog', '{}')
-    .then((json) => setAgentCatalog(JSON.parse(json) as CatalogAgent[]))
-    .catch(() => {})
+    .then((json) => setAgentCatalog(core, JSON.parse(json) as CatalogAgent[]))
+    .catch((error: unknown) => console.warn("sikemux: could not read the host's agents", error))
     .finally(() => {
       found.catalogRead = true;
       const held = found.heldView;
@@ -463,12 +455,9 @@ onNetworkChange(() => {
 
 export function useDevices(): { devices: PairedDevice[]; loaded: boolean; problem: string | null } {
   useEffect(() => {
-    if (!devicesLoaded) reloadDevices();
+    if (!paired.get().loaded) reloadDevices();
   }, []);
-  const list = useSyncExternalStore(subscribe, () => devices);
-  const loaded = useSyncExternalStore(subscribe, () => devicesLoaded);
-  const unreadable = useSyncExternalStore(subscribe, () => devicesProblem);
-  return { devices: list, loaded, problem: unreadable };
+  return useExternalValue(paired);
 }
 
 export function liveOf(core: string): Live {
@@ -503,7 +492,7 @@ export function useLive(core: string, watching = true): Live {
 /** How a host is doing, worded as the screens show it; the device stays connected while this is mounted and `watching`. */
 export function useHostStatus(core: string, watching = true): HostStatus {
   const live = useLive(core, watching);
-  const device = useSyncExternalStore(subscribe, () => devices.find((known) => known.core === core));
+  const device = useExternalValue(paired, ({ devices }) => devices.find((known) => known.core === core));
   return useMemo(() => hostStatus(live, device), [live, device]);
 }
 
@@ -521,6 +510,7 @@ export async function forget(core: string) {
   })().catch(() => {});
   await Promise.race([goodbye, new Promise((settle) => setTimeout(settle, UNPAIR_WAIT_MS))]);
   dismissHostCards(core);
+  forgetAgentCatalog(core);
   if (found) {
     release(core, found);
     found.live = FORGOTTEN;

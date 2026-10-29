@@ -530,6 +530,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
               ) : (
                 <Composer
                   session={session}
+                  core={core}
                   provider={provider}
                   running={state.running && !chat.stoppingTurn}
                   steers={steers}

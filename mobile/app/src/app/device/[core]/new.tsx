@@ -437,7 +437,13 @@ export default function NewChat() {
               </Pressable>
               <StashButton onPress={() => setSheet('stash')} />
               {launcher ? (
-                <YoloToggle mode={mode} provider={launcher.provider} locked={starting || Boolean(started)} onToggle={setChosenMode} />
+                <YoloToggle
+                  core={core}
+                  mode={mode}
+                  provider={launcher.provider}
+                  locked={starting || Boolean(started)}
+                  onToggle={setChosenMode}
+                />
               ) : null}
               {launcher ? (
                 <Pressable

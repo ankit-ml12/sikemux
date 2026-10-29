@@ -10,8 +10,8 @@ import { currentLabel } from '@shared/chat/sessionConfig';
 import { toolKind, toolPath } from '@shared/chat/toolLabels';
 import type { ChatRows } from '@shared/chat/rows';
 import type { ChatCommandInfo, ContextUsage, PermissionAsk, ToolCall } from '@shared/chat/types';
-import { canSwitchMode, isYolo } from '@shared/agents/agentLaunch';
-import { agentLabel, useAgentBrand } from '@shared/agents/catalog';
+import { isYolo } from '@shared/agents/agentLaunch';
+import { agentLabel, canSwitchMode, useAgentBrand } from '@shared/agents/catalog';
 import { problem } from '@/core/problem';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
@@ -250,11 +250,14 @@ function YoloWord() {
 }
 
 export function YoloToggle({
+  core,
   mode,
   provider,
   locked,
   onToggle,
 }: {
+  /** The host the agent runs on. */
+  core: string;
   mode: string;
   provider: string;
   /** A turn is running or something waits on an answer, and the host refuses a switch then. */
@@ -264,7 +267,7 @@ export function YoloToggle({
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const on = isYolo(mode);
-  const switches = canSwitchMode(provider);
+  const switches = canSwitchMode(provider, core);
   const look = (
     <>
       <Icon name={on ? 'IconShieldBolt' : 'IconShield'} size={13} color={on ? colors.accent : colors.inkFaint} />
@@ -410,6 +413,7 @@ const PULL_UP = 18;
 
 export const Composer = memo(function Composer({
   session,
+  core,
   provider,
   running,
   steers,
@@ -434,6 +438,8 @@ export const Composer = memo(function Composer({
   inputRef,
 }: {
   session: ChatSession;
+  /** The host the chat is on. */
+  core: string;
   provider: string;
   running: boolean;
   /** Sending while the turn runs steers into it rather than waiting behind it. */
@@ -604,7 +610,7 @@ export const Composer = memo(function Composer({
             <Icon name="IconPlus" size={17} color={colors.inkDim} />
           </Pressable>
           <StashButton onPress={() => setAdding('stash')} />
-          <YoloToggle mode={permissionMode} provider={provider} locked={modeLocked} onToggle={session.setPermissionMode} />
+          <YoloToggle core={core} mode={permissionMode} provider={provider} locked={modeLocked} onToggle={session.setPermissionMode} />
           {modelLabel ? (
             <Pressable
               style={[styles.picker, styles.model]}
