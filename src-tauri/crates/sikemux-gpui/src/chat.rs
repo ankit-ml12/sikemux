@@ -21,12 +21,12 @@ use gpui_transcript::{
     AwayChanged, Change, CodeColours, EmptyChanged, FoundChanged, Markdown, Pen, Row, RowsChanged,
     Style, Transcript,
 };
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use sikemux_wire::catalog::Driver;
 use sikemux_wire::chat::{
-    ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView,
-    FiredRequest, LetterKind, MoveReason, NoticeSeverity, NoticeState, PartTree, PermissionAsk,
-    SubagentCard, SubagentState, WorkFold,
+    ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, FiredRequest,
+    LetterKind, MoveReason, NoticeSeverity, NoticeState, PartTree, PermissionAsk, SubagentCard,
+    SubagentState, WorkFold,
 };
 use sikemux_wire::protocol::{
     AgentStatus, ChatAttachment, ChatContext, ChatMark, ConfigPicker, MidTurnSend, PermissionMode,
@@ -47,9 +47,11 @@ use crate::ui::shimmer::shimmer;
 use crate::ui::{self, Button, IconButton, Variant};
 use crate::workbench::{AgentRow, Workbench};
 use crate::worktree_switch::Switch;
+use changes::Changed;
 use tokio::sync::mpsc::UnboundedSender;
 
 mod attach;
+pub mod changes;
 mod content;
 pub(crate) mod draft;
 mod edit;
@@ -246,18 +248,14 @@ impl ChatRow {
         }
     }
 
-    fn set(&mut self, fields: &Value) {
-        let Ok(mut whole) = serde_json::to_value(&self.message) else {
-            return;
-        };
-        merge(&mut whole, fields);
-        if let Ok(message) = serde_json::from_value(whole) {
-            self.message = message;
-            // A part's own tree is the one it arrived with; its text's later patches live only
-            // in its doc, so the docs are read again only when the parts themselves changed.
-            if fields.get("parts").is_some() || fields.get("letters").is_some() {
-                self.read_docs();
-            }
+    fn set(&mut self, fields: changes::Fields<ChatMessage>, docs: bool) {
+        for field in fields {
+            field(&mut self.message);
+        }
+        // A part's own tree is the one it arrived with; its text's later patches live only
+        // in its doc, so the docs are read again only when the parts themselves changed.
+        if docs {
+            self.read_docs();
         }
     }
 }
@@ -326,20 +324,6 @@ fn letter_doc(ix: usize) -> String {
 /// The doc of the body of the webhook request that fired letter `ix`'s trigger.
 fn request_doc(ix: usize) -> String {
     format!("letter-{ix}-request")
-}
-
-/// `fields` laid over `on`; a field sent as null is gone.
-fn merge(on: &mut Value, fields: &Value) {
-    let (Some(on), Some(fields)) = (on.as_object_mut(), fields.as_object()) else {
-        return;
-    };
-    for (key, value) in fields {
-        if value.is_null() {
-            on.remove(key);
-        } else {
-            on.insert(key.clone(), value.clone());
-        }
-    }
 }
 
 actions!(
@@ -500,8 +484,7 @@ pub struct Chat {
     activity_line: Entity<status::Activity>,
     /// The core of the host the agent runs on, which every ask of the chat goes to.
     pub target: Target,
-    head: Map<String, Value>,
-    /// The head as last changed, read once for each change.
+    /// The head as last changed.
     state: Option<ChatHead>,
     /// The head changed since the window last drew what stands around the rows.
     head_moved: bool,
@@ -790,7 +773,6 @@ impl Chat {
             activity_line,
             target,
             _rows: [emptied, rows_changed],
-            head: Map::new(),
             state: None,
             head_moved: false,
             reader,
@@ -842,21 +824,45 @@ impl Chat {
                 }
                 self.mark = Some(mark);
             }
-            ChatAttachment::Resumed { changes, mark } => {
-                self.apply(changes, cx);
-                self.mark = Some(mark);
-            }
+            ChatAttachment::Resumed { changes, mark } => match changes::read(changes) {
+                Ok(changes) => {
+                    self.apply_all(changes, cx);
+                    self.mark = Some(mark);
+                }
+                Err(error) => {
+                    eprintln!("sikemux: the core's chat changes do not read: {error}");
+                    self.mark = None;
+                    return Some(ChatAsk::Attach {
+                        agent: agent.to_owned(),
+                        since: None,
+                    });
+                }
+            },
             ChatAttachment::Missing => {}
         }
         None
     }
 
     /// Takes the core's changes numbered `seq`, and says whether some before them went missing.
-    pub fn changed(&mut self, seq: u64, changes: Value, cx: &mut App) -> bool {
+    /// Applies the changes numbered `seq`, and says whether the chat must attach again from
+    /// its mark: some came before them, or they did not read.
+    pub fn changed(
+        &mut self,
+        seq: u64,
+        changes: Result<Vec<Changed>, String>,
+        cx: &mut App,
+    ) -> bool {
+        let changes = match changes {
+            Ok(changes) => changes,
+            Err(error) => {
+                eprintln!("sikemux: the core's chat changes do not read: {error}");
+                return self.mark.is_some() && !self.detached;
+            }
+        };
         if self.detached {
-            let changes = read_changes(changes).into_iter().filter(|change| {
-                matches!(change, ChatChange::Head { .. } | ChatChange::View { .. })
-            });
+            let changes = changes
+                .into_iter()
+                .filter(|change| matches!(change, Changed::Head { .. } | Changed::View { .. }));
             self.apply_all(changes.collect(), cx);
             return false;
         }
@@ -866,20 +872,16 @@ impl Chat {
         if seq <= mark.seq {
             return false;
         }
-        let follows = changes.pointer("/0/follows").and_then(Value::as_u64);
+        let follows = changes.first().and_then(Changed::follows);
         if seq != mark.seq + 1 && follows != Some(mark.seq) {
             return true;
         }
         mark.seq = seq;
-        self.apply(changes, cx);
+        self.apply_all(changes, cx);
         false
     }
 
     fn show(&mut self, view: ChatView, cx: &mut App) {
-        self.head = serde_json::to_value(&view.head)
-            .ok()
-            .and_then(|head| head.as_object().cloned())
-            .unwrap_or_default();
         let subagents = rows_by_session(view.subagents);
         self.reader.update(cx, |reading, cx| {
             reading.subagents = subagents;
@@ -1011,8 +1013,6 @@ impl Chat {
     }
 
     fn forget_choices(&mut self) {
-        self.head.remove("model");
-        self.head.remove("effort");
         if let Some(state) = self.state.as_mut() {
             state.model = None;
             state.effort = None;
@@ -1236,28 +1236,24 @@ impl Chat {
             .update(cx, |transcript, cx| transcript.extend(drops, cx));
     }
 
-    fn apply(&mut self, changes: Value, cx: &mut App) {
-        self.apply_all(read_changes(changes), cx);
-    }
-
-    fn apply_all(&mut self, changes: Vec<ChatChange>, cx: &mut App) {
+    fn apply_all(&mut self, changes: Vec<Changed>, cx: &mut App) {
         let mut rows = Vec::new();
         for change in changes {
             match change {
-                ChatChange::Head { set, .. } => {
-                    let mut head = Value::Object(std::mem::take(&mut self.head));
-                    merge(&mut head, &set);
-                    self.state = serde_json::from_value(head.clone()).ok();
+                Changed::Head { set, .. } => {
+                    let head = self.state.get_or_insert_with(ChatHead::default);
+                    for field in set {
+                        field(head);
+                    }
                     self.head_moved = true;
                     self.follow_head(cx);
-                    self.head = head.as_object().cloned().unwrap_or_default();
                 }
-                ChatChange::View { view } => {
+                Changed::View { view } => {
                     self.transcript
                         .update(cx, |transcript, cx| transcript.extend(rows.drain(..), cx));
                     self.show(*view, cx);
                 }
-                ChatChange::Row {
+                Changed::Row {
                     row,
                     within: Some(session),
                 } => {
@@ -1273,12 +1269,12 @@ impl Chat {
                         cx.notify();
                     });
                 }
-                ChatChange::Row { row, within: None } => rows.push(Change::Put(ChatRow::new(row))),
-                ChatChange::Part { row, part, within } => {
+                Changed::Row { row, within: None } => rows.push(Change::Put(ChatRow::new(row))),
+                Changed::Part { row, part, within } => {
                     self.wanted.extend(self.reader.read(cx).tools.stale(&part));
                     self.update(&mut rows, row, within, move |held| held.put_part(part), cx)
                 }
-                ChatChange::Text {
+                Changed::Text {
                     row,
                     part,
                     text,
@@ -1298,13 +1294,16 @@ impl Chat {
                         cx,
                     )
                 }
-                ChatChange::Set { row, set, within } => {
-                    self.update(&mut rows, row, within, move |held| held.set(&set), cx)
-                }
-                ChatChange::Keep { rows: kept } => rows.push(Change::Keep(
+                Changed::Set {
+                    row,
+                    set,
+                    docs,
+                    within,
+                } => self.update(&mut rows, row, within, move |held| held.set(set, docs), cx),
+                Changed::Keep { rows: kept } => rows.push(Change::Keep(
                     kept.into_iter().map(SharedString::from).collect(),
                 )),
-                ChatChange::Drop { from } => rows.push(Change::DropFrom(from.into())),
+                Changed::Drop { from } => rows.push(Change::DropFrom(from.into())),
             }
         }
         self.transcript
@@ -1747,13 +1746,6 @@ impl Chat {
             params: json!({ "agentId": agent, "ids": ids, "message": message }),
         }
     }
-}
-
-fn read_changes(changes: Value) -> Vec<ChatChange> {
-    serde_json::from_value(changes).unwrap_or_else(|error| {
-        eprintln!("sikemux: the core's chat changes do not read: {error}");
-        Vec::new()
-    })
 }
 
 fn rows_by_session(

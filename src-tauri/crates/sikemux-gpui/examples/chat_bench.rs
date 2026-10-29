@@ -6,6 +6,7 @@
 //! uses, and reach the window the way the core's do. Only the window's layout
 //! comes from a core, which must have a chat in its tab in front:
 //!   SIKEMUX_CORE_SOCKET=/tmp/sx/core.sock cargo run --release --example chat_bench
+//! Without a core it lays out one project with the chat in front itself.
 //! It draws offscreen on a simulated clock at 120 Hz and prints, for each phase,
 //! the CPU each frame's draw of the whole window took.
 
@@ -352,6 +353,8 @@ struct Bench {
     pages: Vec<(usize, u64)>,
     served: usize,
     frames: Vec<f64>,
+    /// The CPU spent taking in what the core sent, before each frame's draw, in ms.
+    taking_in: f64,
     frame_ix: usize,
 }
 
@@ -360,7 +363,9 @@ impl Bench {
         self.frame_ix += 1;
         self.answer();
         self.cx.advance_clock(FRAME);
+        let cpu = thread_cpu_ms();
         self.cx.run_until_parked();
+        self.taking_in += thread_cpu_ms() - cpu;
         let cpu = thread_cpu_ms();
         self.cx
             .update_window(self.window, |_, window, cx| window.draw(cx).clear(cx))
@@ -503,11 +508,43 @@ impl Bench {
     }
 }
 
+/// The layout of a core with one project and one chat in front, for a run with no core.
+fn standalone() -> anyhow::Result<DeviceView> {
+    Ok(serde_json::from_value(json!({
+        "workspace": {
+            "projects": [{ "id": "bench", "name": "bench", "path": "/tmp/chat-bench" }],
+            "launchers": [],
+            "palette": {},
+            "backdrop": { "texture": false, "image": null },
+            "agents": [{
+                "id": "bench-agent", "provider": "claude", "project": "bench",
+                "cwd": "/tmp/chat-bench", "permissionMode": "bypass", "title": "Bench"
+            }],
+        },
+        "sessions": [],
+        "chats": [{
+            "agentId": "bench-agent", "provider": "claude", "title": "Bench",
+            "cwd": "/tmp/chat-bench", "sessionId": null, "state": "ready", "running": false,
+            "pendingPermissions": [], "startedBy": null, "launcher": null,
+            "permissionMode": "bypass", "model": null, "effort": null, "unread": false,
+            "activeAt": null
+        }],
+        "attentions": [],
+        "layout": {
+            "activeProject": "bench",
+            "projects": { "bench": { "active": "tab", "tabs": [{
+                "id": "tab",
+                "pane": { "type": "view", "id": "view", "kind": "agent", "target": "bench-agent" }
+            }] } }
+        }
+    }))?)
+}
+
 fn layout() -> anyhow::Result<DeviceView> {
-    let socket = PathBuf::from(
-        std::env::var("SIKEMUX_CORE_SOCKET")
-            .map_err(|_| anyhow::anyhow!("which core's socket?"))?,
-    );
+    let Ok(socket) = std::env::var("SIKEMUX_CORE_SOCKET") else {
+        return standalone();
+    };
+    let socket = PathBuf::from(socket);
     tokio::runtime::Runtime::new()?.block_on(async {
         let (client, mut events) = CoreClient::connect(&socket).await?;
         client.watch_view().await?;
@@ -582,6 +619,7 @@ fn main() -> anyhow::Result<()> {
         pages: Vec::new(),
         served: 0,
         frames: Vec::new(),
+        taking_in: 0.,
         frame_ix: 0,
     };
     run.shown = run.folded.view(ROWS);
@@ -624,14 +662,19 @@ fn main() -> anyhow::Result<()> {
         run.frame();
     }
     run.frames.clear();
+    run.taking_in = 0.;
     let flushes = std::mem::take(&mut run.folded.flushes);
     let count = flushes.len();
     let mut lost = None;
+    let mut decoding = Duration::ZERO;
     for (seq, changes) in flushes.into_iter().enumerate() {
         if lost.is_none() && !run.place().following {
             lost = Some(seq);
         }
         let changes = serde_json::to_value(changes)?;
+        let read = Instant::now();
+        let changes = sikemux_gpui::chat_changes::read(changes);
+        decoding += read.elapsed();
         run.send(ChatNews::Changes {
             seq: seq as u64 + 1,
             changes,
@@ -652,7 +695,11 @@ fn main() -> anyhow::Result<()> {
     }
     run.report(
         &format!("stream {} characters in {count} flushes", run.folded.chars),
-        format!(" · {end} after"),
+        format!(
+            " · {end} after · taken in with {:.1} ms on the window's thread, read in {:.1} ms on the core's",
+            run.taking_in,
+            decoding.as_secs_f64() * 1e3
+        ),
     );
     Ok(())
 }

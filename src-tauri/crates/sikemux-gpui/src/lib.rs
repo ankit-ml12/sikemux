@@ -17,6 +17,7 @@ mod board_panels;
 mod boot;
 mod buddy_picker;
 mod chat;
+pub use chat::changes as chat_changes;
 mod ci_card;
 mod closing;
 #[cfg(target_os = "macos")]

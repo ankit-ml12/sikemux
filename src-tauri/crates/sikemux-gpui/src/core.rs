@@ -90,10 +90,11 @@ pub enum Update {
 
 pub enum ChatNews {
     Attached(ChatAttachment),
-    /// The chat's changes numbered `seq`, a list of `ChatChange` as JSON.
+    /// The chat's changes numbered `seq`, read on the thread that heard them, or why they
+    /// did not read.
     Changes {
         seq: u64,
-        changes: Value,
+        changes: Result<Vec<crate::chat::changes::Changed>, String>,
     },
     /// Earlier rows, a `ChatPage` as JSON, or null when the core had none to give.
     Page(Value),
@@ -1145,6 +1146,7 @@ async fn run(
                                 let _ = updates.send(Update::Remote(Box::new(status)));
                             }
                             Some(ClientEvent::Event(Event::Chat { agent_id, seq, changes })) => {
+                                let changes = crate::chat::changes::read(changes);
                                 let _ = updates.send(Update::Chat(agent_id, ChatNews::Changes { seq, changes }));
                             }
                             Some(ClientEvent::Event(Event::ChatBegun { chat })) if chat.started_by.is_none() => {
@@ -1213,6 +1215,7 @@ async fn run(
                                     }
                                 }
                                 ClientEvent::Event(Event::Chat { agent_id, seq, changes }) => {
+                                    let changes = crate::chat::changes::read(changes);
                                     let news = Update::Chat(agent_id, ChatNews::Changes { seq, changes });
                                     let _ = updates.send(Update::From(host, Box::new(news)));
                                 }
