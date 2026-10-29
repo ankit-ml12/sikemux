@@ -36,13 +36,13 @@ export interface DeviceView {
 
 export interface Workspace {
     projects: ProjectInfo[];
-    spaces: SpaceInfo[];
-    agents: WorkspaceAgent[];
-    pinned: PinnedChat[];
+    spaces?: SpaceInfo[];
+    agents?: WorkspaceAgent[];
+    pinned?: PinnedChat[];
     /** The mode agents that can bypass permissions start in. */
-    permissionMode: string;
+    permissionMode?: string;
     /** The plugins the person switched off, by id. */
-    disabledPlugins: string[];
+    disabledPlugins?: string[];
     launchers: LauncherInfo[];
     /**
      * Agents that run only in their own terminal, such as Pi, which the app on a host starts
@@ -59,7 +59,7 @@ export interface ProjectInfo {
     id: string;
     name: string;
     path: string;
-    pinned: boolean;
+    pinned?: boolean;
     /** The space it is shown in, by id; none shows it in every space. */
     space?: string;
     /**
@@ -151,9 +151,9 @@ export interface ProjectCodeHost {
      */
     sections: string[];
     /** What the host lets a pull request do, which clients offer accordingly. */
-    pulls: PullAbilities;
+    pulls?: PullAbilities;
     /** What the host's CI shows and lets a person do. */
-    ci: CiAbilities;
+    ci?: CiAbilities;
 }
 
 /** What a code host lets a pull request do. */
@@ -197,7 +197,7 @@ export interface SpaceInfo {
     id: string;
     name: string;
     /** Empty when the person removed it. */
-    icon: string;
+    icon?: string;
 }
 
 /** An agent in the workspace, kept whether or not it runs now. */
@@ -215,7 +215,7 @@ export interface WorkspaceAgent {
     cwd: string;
     title: string;
     /** The person named it, so the agent's own titles no longer replace it. */
-    renamed: boolean;
+    renamed?: boolean;
     /** The agent that started it, when one did. */
     lead?: string;
     /** The provider's session, which resumes it. */
@@ -228,9 +228,9 @@ export interface WorkspaceAgent {
     modelProvider?: string;
     effort?: string;
     /** Never put to sleep while idle. */
-    keepAlive: boolean;
+    keepAlive?: boolean;
     /** Stopped, and woken again on its saved conversation when opened. */
-    asleep: boolean;
+    asleep?: boolean;
     /** The git worktree it works in. */
     worktree?: AgentWorktree;
     /** The character drawn for it. */
@@ -247,9 +247,9 @@ export interface WorkspaceAgent {
      * It runs in its CLI in a terminal rather than as a chat, whether or not that terminal
      * runs now. One whose terminal ended starts it again once a client shows it.
      */
-    terminal: boolean;
+    terminal?: boolean;
     /** Unix milliseconds. */
-    createdAt: number;
+    createdAt?: number;
 }
 
 /** The checkout an agent was given, as its workspace record keeps it. */
@@ -356,7 +356,7 @@ export interface SessionInfo {
     paneId: string | null;
     agentId: string | null;
     /** What the core calls an agent terminal's agent, such as Otter. */
-    agentName: string | null;
+    agentName?: string | null;
     agentType: string | null;
     taskExecutionId: string | null;
     /** The last state published for an agent terminal. */
@@ -387,8 +387,8 @@ export interface SessionInfo {
      */
     activeAt: number | null;
     /** For an agent terminal the device view lists, as for a chat. */
-    group: AgentGroup | null;
-    status: AgentStatus | null;
+    group?: AgentGroup | null;
+    status?: AgentStatus | null;
     /**
      * For an agent terminal, when the soonest trigger set on its agent sends it a prompt, in
      * Unix milliseconds.
@@ -399,17 +399,17 @@ export interface SessionInfo {
      * milliseconds, so a list can greet it.
      */
     calledAt?: number;
-    attentionRank: number | null;
+    attentionRank?: number | null;
     /** For an SSH terminal, where its connection last stood. */
     ssh?: SshLink;
     /** The SSH config host an SSH terminal connects to. */
-    sshAlias: string | null;
+    sshAlias?: string | null;
     /**
      * What the rail calls a plain shell outside every project, agent and
      * SSH host, started with no command or name of its own: the lowest
      * number no other running one has when it started.
      */
-    railName: string | null;
+    railName?: string | null;
 }
 
 export type SessionKind = "terminal" | "task";
@@ -454,7 +454,7 @@ export type SshLink = "connecting" | "connected" | "disconnected";
 export interface ChatInfo {
     agentId: string;
     /** What the core calls the agent, such as Otter. */
-    name: string | null;
+    name?: string | null;
     provider: string;
     /** What the agent named the session, once it has. */
     title: string | null;
@@ -464,14 +464,14 @@ export interface ChatInfo {
     running: boolean;
     pendingPermissions: string[];
     /** Subagents still running for it. */
-    subagents: number;
+    subagents?: number;
     /** Background shells and monitors still running for it. */
-    tasks: number;
+    tasks?: number;
     /**
      * The agent is retrying a request that got no answer over the network:
      * the attempt it is on, or 0 when it did not say.
      */
-    reconnecting: number | null;
+    reconnecting?: number | null;
     /** The paired device that started it. The app started the rest. */
     startedBy: string | null;
     /** The app's launcher a device started it with. */
@@ -491,8 +491,8 @@ export interface ChatInfo {
      * in Unix milliseconds. Unknown for chats from before the core started.
      */
     activeAt: number | null;
-    group: AgentGroup;
-    status: AgentStatus;
+    group?: AgentGroup;
+    status?: AgentStatus;
     /** When the soonest trigger set on it sends it a prompt, in Unix milliseconds. */
     nextTrigger?: number;
     /**
@@ -504,7 +504,7 @@ export interface ChatInfo {
      * Its place among the open agents, chats and agent terminals together,
      * in the order they want the person: 0 first.
      */
-    attentionRank: number;
+    attentionRank?: number;
 }
 
 export type ChatState = "starting" | "ready" | "asleep" | "stopped";
@@ -523,7 +523,7 @@ export interface Attention {
     request: unknown;
     /** Milliseconds since the Unix epoch. */
     at: number;
-    choices: PermissionChoices;
+    choices?: PermissionChoices;
 }
 
 export type AttentionKind = "permission";
@@ -558,7 +558,7 @@ export interface RecentInfo {
     /** The agent in the workspace that holds the chat, open or asleep. */
     agentId?: string;
     /** The person pinned it, so it shows above the rest however long ago it ran. */
-    pinned: boolean;
+    pinned?: boolean;
 }
 
 export interface Inbox {
@@ -731,20 +731,20 @@ export interface AgentRollup {
 /** The tabs every desktop client draws, kept by the core. */
 export interface Layout {
     /** The project in front, by id. */
-    activeProject: string | null;
+    activeProject?: string | null;
     /** Each project's tabs, by project id. */
-    projects: Record<string, ProjectLayout>;
+    projects?: Record<string, ProjectLayout>;
     /** The SSH host in front instead of a project, by its alias. */
-    activeHost: string | null;
+    activeHost?: string | null;
     /**
      * The terminal tabs open to each SSH host, by its alias. A host with
      * none left has no strip.
      */
-    hosts: Record<string, ProjectLayout>;
+    hosts?: Record<string, ProjectLayout>;
     /** The tabs of terminals that belong to no project. */
-    terminals: ProjectLayout;
+    terminals?: ProjectLayout;
     /** Whether the terminals' strip is in front instead of a project or host. */
-    terminalsInFront: boolean;
+    terminalsInFront?: boolean;
     /**
      * The account's other host the person is on, by its key, whose own projects and tabs
      * are shown instead of this host's; none while they are on this host or an SSH host.
@@ -754,15 +754,15 @@ export interface Layout {
 
 export interface ProjectLayout {
     /** The tab in front, by id. */
-    active: string | null;
+    active?: string | null;
     /** In the order the tab strip shows them. */
-    tabs: Tab[];
+    tabs?: Tab[];
 }
 
 export interface Tab {
     id: string;
     /** What the person named it; clients name an unnamed tab from its pane. */
-    title: string | null;
+    title?: string | null;
     pane: Pane;
     /**
      * Opened to look at, by a single click: the next such tab takes its
@@ -956,7 +956,7 @@ export interface ChatHead {
     /** What the person sent mid-turn, waiting to go out once the turn ends. */
     queued: QueuedMessage[];
     /** The triggers that send this chat a message when their time comes. */
-    triggers: ChatTrigger[];
+    triggers?: ChatTrigger[];
     /** The host no longer keeps the turns before the first row. */
     earlierLost: boolean;
     /** Why the agent's session ended, once it has. */
@@ -1011,8 +1011,8 @@ export interface UsageCost {
 /** One step of the plan an agent keeps for its turn. */
 export interface PlanEntry {
     content: string;
-    priority: PlanPriority;
-    status: PlanStatus;
+    priority?: PlanPriority;
+    status?: PlanStatus;
 }
 
 export type PlanPriority = "high" | "medium" | "low";
@@ -1029,9 +1029,9 @@ export interface ChatCommandInfo {
 /** What the chat's agent can do beyond taking a prompt. */
 export interface ChatCapabilities {
     /** It takes a message in the middle of a turn. */
-    steering: boolean;
+    steering?: boolean;
     /** A sent message can be edited, which takes the chat back to it. */
-    editing: boolean;
+    editing?: boolean;
     /** The ways the person can sign its account in. */
     signInMethods?: SignInMethod[];
 }
@@ -1084,7 +1084,7 @@ export interface ToolCall {
     /** What the agent said a command is for. */
     description?: string;
     /** What its row shows, worked out from the rest. */
-    row: ToolRow;
+    row?: ToolRow;
 }
 
 /** How a tool call stands. */
@@ -1828,17 +1828,17 @@ export interface ProjectRoot {
     /** How many folders below it git repositories count as projects. */
     depth: number;
     /** The folder is a project itself, whether or not it is a git repository. */
-    selfIndex: boolean;
+    selfIndex?: boolean;
 }
 
 /** A shell command the person added to the command palette. */
 export interface CustomCommand {
     id: string;
     title: string;
-    detail: string;
+    detail?: string;
     command: string;
     /** The kinds of tab it is offered in; none means every tab. */
-    contexts: string[];
+    contexts?: string[];
     placement: CustomCommandPlacement;
 }
 
@@ -2136,19 +2136,19 @@ export interface RemoteStatus {
      * The live connection to that account, or why the account let this
      * host go.
      */
-    account: AccountLink | null;
+    account?: AccountLink | null;
     /**
      * Set while the accounts server no longer works with this build. Remote
      * access and the account stay off until it updates.
      */
-    updateRequired: UpdateRequired | null;
+    updateRequired?: UpdateRequired | null;
     /** The phones that asked this host for notifications. */
-    notifications: PhoneNotifications[];
+    notifications?: PhoneNotifications[];
     /**
      * The person asked to allow each new device and host here, rather than
      * let in whatever their account signed in (ADR 0018).
      */
-    requireApproval: boolean;
+    requireApproval?: boolean;
 }
 
 /** A device approved to reach this core from another machine. */
@@ -2177,7 +2177,7 @@ export interface PendingDevice {
      * The device came with a ticket from the host's account, as every
      * device does.
      */
-    fromAccount: boolean;
+    fromAccount?: boolean;
     /**
      * When the phone stops waiting for an answer, in milliseconds since the
      * Unix epoch.
@@ -2378,10 +2378,10 @@ export interface GitBranch {
     current: boolean;
     upstream: string | null;
     /** The commit at the branch's tip: what it says, who wrote it and how long ago. */
-    subject: string;
-    author: string;
-    author_email: string;
-    date: string;
+    subject?: string;
+    author?: string;
+    author_email?: string;
+    date?: string;
 }
 
 export interface GitCommit {
@@ -2531,7 +2531,7 @@ export interface Draft {
     text: string;
     extra?: unknown;
     /** Moves on with every change, so an app saving the draft says which one it last read. */
-    rev: number;
+    rev?: number;
 }
 
 /**
@@ -2653,8 +2653,8 @@ export interface QueuedParams {
 /** A message as the person wrote it. */
 export interface QueuedMessageParams {
     text: string;
-    paths: string[];
-    context: ChatContext[];
+    paths?: string[];
+    context?: ChatContext[];
 }
 
 /** Something read elsewhere and handed to the agent whole, such as an issue. */
@@ -2772,3 +2772,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
     tabRailAllAgents: false,
     recentCommandKeys: [],
 };
+
+/** What the core's `ToolRow::default()` serializes to. */
+export const DEFAULT_TOOL_ROW: ToolRow = { action: "other", target: "" };

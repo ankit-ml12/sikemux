@@ -7,7 +7,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { agentLabel } from '@shared/agents/catalog';
 import { formatAge } from '@shared/lib/format';
 import type { ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
-import type { AgentShown } from '@/core/wire.generated';
+import type { AgentShown } from '@shared/wire.generated';
 import { problem as problemOf } from '@/core/problem';
 import { connectionOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
 import { deviceKind, deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
@@ -200,7 +200,7 @@ function Agents({
   const strays = scope
     ? []
     : workers.filter((worker) => !(worker.lead && leads.has(worker.lead)) && (provider === 'all' || worker.cli === provider));
-  const placeOf = (project: string | undefined) => (scope || !project ? undefined : projectName(snapshot, project));
+  const placeOf = (project: string | null | undefined) => (scope || !project ? undefined : projectName(snapshot, project));
 
   return (
     <>

@@ -89,7 +89,7 @@ export function AgentFace({
   size,
   logoSize = size,
 }: {
-  agentId?: string;
+  agentId?: string | null;
   provider: string;
   group?: AgentGroup;
   size: number;

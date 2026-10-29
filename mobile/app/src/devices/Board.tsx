@@ -50,7 +50,7 @@ export function Board({
   onScope: (project: string) => void;
 }) {
   const seen = seenOf(snapshot);
-  const read = useHostCall(connection, 'questions', {}, seen) as HostRead<AgentQuestion[]>;
+  const read = useHostCall(connection, 'questions', {}, seen);
   const questions = read.data ?? NO_QUESTIONS;
   return (
     <>

@@ -11,7 +11,7 @@ import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import type { ChatQuestions } from './questions';
 
 /** Who is asking, above the question itself, and the ticket of the board card it works; `onFold` adds the chevron that folds the questions away. */
-function AskedBy({ cli, ticket, onFold, children }: { cli: string; ticket?: string; onFold?: () => void; children: ReactNode }) {
+function AskedBy({ cli, ticket, onFold, children }: { cli: string; ticket?: string | null; onFold?: () => void; children: ReactNode }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   return (

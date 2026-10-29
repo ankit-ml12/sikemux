@@ -13,7 +13,6 @@
     "command": "pnpm -s wire:generate",
     "outputs": [
       "shared/wire.generated.ts",
-      "mobile/app/src/core/wire.generated.ts",
       "src-tauri/notch/Sources/NotchKit/Wire.generated.swift"
     ]
   }

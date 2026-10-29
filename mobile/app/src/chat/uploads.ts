@@ -1,6 +1,6 @@
 import { formatBytes } from '@shared/lib/format';
 
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '@/core/wire.generated';
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '@shared/wire.generated';
 
 /** A photo or file picked on this phone for the next message. */
 export type Attachment = {

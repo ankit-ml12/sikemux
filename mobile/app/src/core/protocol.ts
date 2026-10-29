@@ -3,7 +3,7 @@
  * core adds reaches the phone with an over-the-air update. The types are generated from the core's Rust.
  */
 
-import type { DeviceView, HostInfo, Inbox, RemotePairing } from './wire.generated';
+import type { DeviceView, HostInfo, Inbox, RemotePairing } from '@shared/wire.generated';
 
 export type {
   AgentFace,
@@ -27,19 +27,12 @@ export type {
   RemotePairing,
   SessionInfo,
   BuildChannel,
-} from './wire.generated';
+} from '@shared/wire.generated';
 
 /** Everything the phone shows of one host, as it last sent it. */
 export type Snapshot = DeviceView;
 
-/** The core's JSON with its nulls left out, so an absent value reads as undefined, like any optional field. */
-function readCore<T>(json: string): T {
-  return JSON.parse(json, (_key, value) => (value === null ? undefined : value)) as T;
-}
-
-export function readView(json: string): Snapshot {
-  return readCore<Snapshot>(json);
-}
+export const readView = (json: string) => JSON.parse(json) as Snapshot;
 
 function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -99,5 +92,5 @@ function keepInbox(previous: Inbox, next: Inbox): Inbox {
   return [...keys].every((key) => kept[key] === previous[key]) ? previous : kept;
 }
 
-export const readHost = (json: string) => readCore<HostInfo>(json);
-export const readPairing = (json: string) => readCore<RemotePairing>(json);
+export const readHost = (json: string) => JSON.parse(json) as HostInfo;
+export const readPairing = (json: string) => JSON.parse(json) as RemotePairing;

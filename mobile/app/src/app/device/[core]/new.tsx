@@ -26,7 +26,7 @@ import { StashMenu } from '@/stash/StashMenu';
 import { stashToken, takeStash } from '@/stash/store';
 import { usePromptStash } from '@/stash/usePromptStash';
 import { contextChip, stashQuery, withContext, withoutQuery } from '@/stash/words';
-import { MAX_ATTACHMENTS } from '@/core/wire.generated';
+import { MAX_ATTACHMENTS } from '@shared/wire.generated';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf } from '@/core/problem';
 import { useLive } from '@/devices/hub';

@@ -310,7 +310,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   );
   const activity = chat.stoppingTurn ? 'Stopping…' : activityText({ ...state, permissions: chat.permissions }, activeToolLabel(state));
   const title = state.title ?? live.snapshot?.inbox.agents.find((shown) => shown.agentId === agentId)?.title ?? agentLabel(provider);
-  const steerable = state.capabilities.steering && state.running && !watchOnly;
+  const steerable = state.capabilities.steering === true && state.running && !watchOnly;
   // The person may change how sending mid-turn goes between turns, so each turn reads it afresh.
   const preferences = useHostCall(connection, 'preferences', {}, String(state.running)).data;
   const steers = steerable && preferences?.midTurnSend !== 'queue';

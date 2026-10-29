@@ -4,7 +4,7 @@ import type { ConnectionLike } from '@sikemux/native';
 import type { QuestionAnswer } from '@shared/agents/questions';
 import type { AgentQuestion } from '@/core/protocol';
 
-import { useHostCall, type HostRead } from '@/core/hostCalls';
+import { useHostCall } from '@/core/hostCalls';
 import { problem } from '@/core/problem';
 
 const NONE: AgentQuestion[] = [];
@@ -73,7 +73,7 @@ export function useQuestions(
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
 
   const [reads, setReads] = useState(0);
-  const read = useHostCall(connection, 'questions', {}, `${seen}|${reads}`) as HostRead<AgentQuestion[]>;
+  const read = useHostCall(connection, 'questions', {}, `${seen}|${reads}`);
   const all = read.data ?? NONE;
   useEffect(() => {
     if (read.problem) onError(`could not read this agent's questions: ${read.problem}`);

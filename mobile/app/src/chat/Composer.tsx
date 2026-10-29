@@ -7,7 +7,7 @@ import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import { unknownCommand } from '@shared/chat/composerInput';
 import { contextShare, contextTone, money, tokenCount } from '@shared/chat/contextUsage';
 import { currentLabel } from '@shared/chat/sessionConfig';
-import { toolKind, toolPath } from '@shared/chat/toolLabels';
+import { rowOf, toolKind, toolPath } from '@shared/chat/toolLabels';
 import type { ChatRows } from '@shared/chat/rows';
 import type { ChatCommandInfo, ContextUsage, PermissionAsk, ToolCall } from '@shared/chat/types';
 import { isYolo } from '@shared/agents/agentLaunch';
@@ -21,7 +21,7 @@ import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import { ComposerAttachments } from './Attachments';
 import { ComposerInput } from './ComposerInput';
 import { AttachSheet } from './AttachSheet';
-import { MAX_ATTACHMENTS } from '@/core/wire.generated';
+import { MAX_ATTACHMENTS } from '@shared/wire.generated';
 import type { StashItem } from '@/stash/api';
 import { StashMenu } from '@/stash/StashMenu';
 import { StashButton } from '@/stash/StashButton';
@@ -49,7 +49,7 @@ function asked(tool: ToolCall): string {
   const command = (tool.rawInput as { command?: unknown } | undefined)?.command;
   if (typeof command === 'string' && command.trim()) return command.trim();
   if (Array.isArray(command) && command.every((word) => typeof word === 'string')) return command.join(' ');
-  return toolPath(tool) ?? tool.row.target;
+  return toolPath(tool) ?? rowOf(tool).target;
 }
 
 /**

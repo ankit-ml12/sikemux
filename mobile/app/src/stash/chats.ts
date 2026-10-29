@@ -40,7 +40,7 @@ export function shareChats(hosts: readonly { device: PairedDevice; snapshot: Sna
         chatId: chat.agentId,
         provider: chat.provider,
         title: chat.title ?? shown?.title ?? 'New chat',
-        name: chat.name,
+        name: chat.name ?? undefined,
         project: projectName(snapshot, where, chat.cwd),
         projectPath: projectAt(snapshot, where)?.path ?? chat.cwd,
         activeAt: shown?.activeAt ?? 0,

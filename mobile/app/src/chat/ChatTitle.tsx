@@ -18,7 +18,7 @@ export function ChatTitle({
   agentId?: string;
   group?: AgentGroup;
   provider: string;
-  name?: string;
+  name?: string | null;
   title: string;
 }) {
   const styles = useStyles(makeStyles);

@@ -38,13 +38,13 @@ export function Row({
 }: {
   mark?: ReactNode;
   /** The agent's name, small and dim with the row's counts and state at its end, as the Mac's rail sets it. */
-  name?: string;
+  name?: string | null;
   /** The linked host the agent runs on, set after its name. */
   host?: string;
   title?: string;
   detail?: ReactNode;
   /** The project the row belongs to, marked with the folder the Mac's rail puts beside it. */
-  place?: string;
+  place?: string | null;
   end?: ReactNode;
   onPress?: () => void;
   dim?: boolean;

@@ -1,6 +1,12 @@
 import { safeWebUrl } from "../lib/urls";
 import type { ChatRows } from "./rows";
+import { DEFAULT_TOOL_ROW, type ToolRow } from "../wire.generated";
 import type { ToolAction, ToolCall } from "./types";
+
+/** What the call's row shows; a host older than the row sends none, which reads as the core's default. */
+export function rowOf(tool: ToolCall): ToolRow {
+    return tool.row ?? DEFAULT_TOOL_ROW;
+}
 
 /* The core works out what each call did and to what; these are only the words the app says it in. */
 const ACTION_WORDS: Record<ToolAction, string> = {
@@ -31,23 +37,23 @@ const ACTION_SENTENCES: Partial<Record<ToolAction, string>> = {
 
 /* The running row is one line, so it says what the agent is doing rather than quote the call back. */
 export function activityLabel(tool: ToolCall): string {
-    return tool.row.activity ?? ACTION_SENTENCES[tool.row.action] ?? "Working…";
+    return rowOf(tool).activity ?? ACTION_SENTENCES[rowOf(tool).action] ?? "Working…";
 }
 
 export function toolKind(tool: ToolCall): string {
-    return tool.row.verb ?? tool.row.server ?? ACTION_WORDS[tool.row.action];
+    return rowOf(tool).verb ?? rowOf(tool).server ?? ACTION_WORDS[rowOf(tool).action];
 }
 
 export function toolTarget(tool: ToolCall): string {
-    return tool.row.target;
+    return rowOf(tool).target;
 }
 
 export function toolDetail(tool: ToolCall): string | null {
-    return tool.row.detail ?? null;
+    return rowOf(tool).detail ?? null;
 }
 
 export function toolPath(tool: ToolCall): string | null {
-    return tool.row.path ?? null;
+    return rowOf(tool).path ?? null;
 }
 
 export function toolUrl(target: string): { before: string; raw: string; url: string; after: string } | null {

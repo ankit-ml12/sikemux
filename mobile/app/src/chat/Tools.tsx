@@ -2,7 +2,7 @@ import { createContext, memo, useContext, useEffect, useState, type ReactNode } 
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { durationLabel } from '@shared/chat/durationLabel';
-import { toolDetail, toolKind, toolPath, toolRunning, toolTarget, toolUrl } from '@shared/chat/toolLabels';
+import { rowOf, toolDetail, toolKind, toolPath, toolRunning, toolTarget, toolUrl } from '@shared/chat/toolLabels';
 import { attachmentName } from '@shared/chat/transcript';
 import {
   callCount,
@@ -142,7 +142,7 @@ const KIND_COLORS: Readonly<Record<string, keyof Palette>> = {
 
 /** The icon and colour of a call, as the Mac's tool rows draw them. */
 function look(tool: ToolCall, colors: Palette): { icon: IconName; color: string } {
-  const plugin = tool.status === 'failed' ? undefined : tool.row.plugin;
+  const plugin = tool.status === 'failed' ? undefined : rowOf(tool).plugin;
   const icon = (plugin && PLUGIN_MARKS[plugin]) || TOOL_ICONS[toolIconName(tool)];
   if (tool.status === 'failed') return { icon, color: colors.danger };
   const kind = toolRowKind(tool);

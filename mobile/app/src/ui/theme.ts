@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { AgentType } from '@shared/agents/catalog';
-import type { UiTokens } from '../core/wire.generated';
+import type { UiTokens } from '@shared/wire.generated';
 import { Platform, type TextStyle } from 'react-native';
 
 /** Aura Noir, the Mac app's default theme, with its neutral ramp mixed the same way (DESIGN.md §3). */
