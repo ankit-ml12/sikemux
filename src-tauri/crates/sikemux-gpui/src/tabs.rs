@@ -926,6 +926,7 @@ fn strip_tab(
                         .as_ref()
                         .map(|name| SharedString::from(format!("@{name}"))),
                 )
+                .counts(crate::agents::counts(&agent, cx))
                 .tail(ui::status_mark(&agent.id, agent.status, cx)),
             None => base,
         },

@@ -404,6 +404,7 @@ pub struct Tab {
     mark: Option<AnyElement>,
     label: SharedString,
     note: Option<SharedString>,
+    counts: Option<AnyElement>,
     tail: Option<AnyElement>,
     active: bool,
     /// The chosen surface is a copy gliding onto the tab, which draws none of its own yet.
@@ -421,6 +422,7 @@ impl Tab {
             mark: None,
             label: label.into(),
             note: None,
+            counts: None,
             tail: None,
             active: false,
             glided: false,
@@ -443,6 +445,12 @@ impl Tab {
     /// What follows the label, such as an agent's @name.
     pub fn note(mut self, note: Option<SharedString>) -> Self {
         self.note = note;
+        self
+    }
+
+    /// What an agent has going, as its rail row counts it: subagents, shells, a timer.
+    pub fn counts(mut self, counts: Option<impl IntoElement>) -> Self {
+        self.counts = counts.map(IntoElement::into_any_element);
         self
     }
 
@@ -517,7 +525,10 @@ impl RenderOnce for Tab {
                 .when(hidden, |way| way.opacity(0.))
                 .child(element)
         };
-        let room = self.note.is_none() && self.tail.is_none() && self.on_close.is_some();
+        let room = self.note.is_none()
+            && self.counts.is_none()
+            && self.tail.is_none()
+            && self.on_close.is_some();
         div()
             .id(wrap_id)
             .relative()
@@ -563,6 +574,7 @@ impl RenderOnce for Tab {
                         self.note
                             .map(|note| makes_way(meta(note, cx).pr(px(4.)).into_any_element())),
                     )
+                    .children(self.counts.map(makes_way))
                     .children(
                         self.tail
                             .map(|tail| makes_way(mark_box(20., tail).into_any_element())),
