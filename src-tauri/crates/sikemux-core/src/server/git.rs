@@ -1,16 +1,16 @@
 //! The git panel's methods, `git.*`, for every client, and the watch on each
 //! project that tells them all when to read again.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use git2::Repository;
 
 use super::codehost::repo as codehost;
 use super::connection::blocking;
-use crate::protocol::{ProjectCodeHost, ProjectPull, PullChecks};
+use crate::protocol::{ProjectCodeHost, ProjectGit, ProjectPull, PullChecks};
 use serde::Deserialize;
 use serde_json::Value;
 use sikemux_process::sync::Locked;
@@ -227,7 +227,7 @@ fn read_chips(core: &Arc<Core>, folders: Vec<String>) {
             .map(|path| path.to_string_lossy().into_owned())
             .collect();
         let changed = {
-            let mut chips = core.git_chips.locked();
+            let mut chips = core.git.chips.locked();
             let before = chips.len();
             chips.retain(|folder, _| projects.contains(folder));
             let mut changed = chips.len() != before;
@@ -245,17 +245,65 @@ fn read_chips(core: &Arc<Core>, folders: Vec<String>) {
     });
 }
 
+/// What the core keeps of its projects' git: their watches, branch chips and
+/// code hosts, each by project folder.
+#[derive(Default)]
+pub(crate) struct Projects {
+    watches: crate::git::watch::Watches,
+    chips: Mutex<HashMap<String, ProjectGit>>,
+    hosted: Mutex<HashMap<String, Hosted>>,
+    /// The projects whose code hosts were asked again lately, and whether their refs moved
+    /// since, so a burst of commits or staging asks them once.
+    refreshes: Mutex<HashMap<String, bool>>,
+}
+
+impl Projects {
+    /// The project at `folder` as clients are shown it: its code host, and its branch chip
+    /// with the pull request that branch is in.
+    pub(crate) fn shown(&self, folder: &str) -> (Option<ProjectCodeHost>, Option<ProjectGit>) {
+        let hosts = self.hosted.locked();
+        let hosted = hosts.get(folder);
+        let chip = self.chips.locked().get(folder).cloned().map(|mut chip| {
+            if let Some(hosted) =
+                hosted.filter(|hosted| hosted.branch.as_deref() == Some(chip.branch.as_str()))
+            {
+                chip.pull = hosted.pull.open().cloned();
+                chip.needs_pull = hosted.pull == BranchPull::Wanted;
+            }
+            chip
+        });
+        (hosted.and_then(|hosted| hosted.shown.clone()), chip)
+    }
+}
+
 /// A project's repository on its code host, and the pull request its branch
 /// was in when last read.
 #[derive(Clone, PartialEq)]
-pub(crate) struct Hosted {
-    pub shown: Option<ProjectCodeHost>,
-    pub branch: Option<String>,
-    pub pull: Option<ProjectPull>,
-    /// The branch has no open pull request and is not a usual base.
-    pub needs_pull: bool,
+struct Hosted {
+    shown: Option<ProjectCodeHost>,
+    branch: Option<String>,
+    pull: BranchPull,
     /// The repository as the CI watch names it, once an account reaches it.
-    pub watched: Option<super::codehost::ci::Shown>,
+    watched: Option<super::codehost::ci::Shown>,
+}
+
+/// The pull request a branch is in, as its code host said.
+#[derive(Clone, PartialEq)]
+enum BranchPull {
+    /// None, or none could be read; a usual base needs none.
+    None,
+    /// None, though the branch is not a usual base, so it wants one.
+    Wanted,
+    Open(ProjectPull),
+}
+
+impl BranchPull {
+    fn open(&self) -> Option<&ProjectPull> {
+        match self {
+            Self::Open(pull) => Some(pull),
+            Self::None | Self::Wanted => None,
+        }
+    }
 }
 
 /// Reads again where the projects at `folders` are on their code hosts and
@@ -287,23 +335,22 @@ pub(crate) fn read_hosts(core: &Arc<Core>, folders: Vec<String>) {
                 .map(|chip| chip.branch);
             let (pull, watched) = match (&shown, &branch) {
                 (Some(_), Some(branch)) => match codehost::find(&origin, &picks).await {
-                    Ok(repo) => (
-                        codehost::branch_pull(&repo, branch).await.ok(),
-                        Some(repo.watched()),
-                    ),
-                    Err(_) => (None, None),
+                    Ok(repo) => {
+                        let pull = match codehost::branch_pull(&repo, branch).await {
+                            Ok(Some(pull)) => BranchPull::Open(pull),
+                            Ok(None) if !codehost::is_usual_base(branch) => BranchPull::Wanted,
+                            Ok(None) | Err(_) => BranchPull::None,
+                        };
+                        (pull, Some(repo.watched()))
+                    }
+                    Err(_) => (BranchPull::None, None),
                 },
-                _ => (None, None),
+                _ => (BranchPull::None, None),
             };
-            let needs_pull = matches!(pull, Some(None))
-                && branch
-                    .as_deref()
-                    .is_some_and(|branch| !codehost::is_usual_base(branch));
             let hosted = Hosted {
                 shown,
                 branch,
-                pull: pull.flatten(),
-                needs_pull,
+                pull,
                 watched,
             };
             read.push((folder, Some(hosted)));
@@ -315,7 +362,7 @@ pub(crate) fn read_hosts(core: &Arc<Core>, folders: Vec<String>) {
             .map(|path| path.to_string_lossy().into_owned())
             .collect();
         let changed = {
-            let mut hosts = core.code_hosts.locked();
+            let mut hosts = core.git.hosted.locked();
             let before = hosts.len();
             hosts.retain(|folder, _| projects.contains(folder));
             let mut changed = hosts.len() != before;
@@ -336,13 +383,14 @@ pub(crate) fn read_hosts(core: &Arc<Core>, folders: Vec<String>) {
 /// The repositories whose pull request checks are still running, which the
 /// CI watch keeps checking until they settle.
 pub(crate) fn pending_pulls(core: &Core) -> Vec<super::codehost::ci::Shown> {
-    core.code_hosts
+    core.git
+        .hosted
         .locked()
         .values()
         .filter(|hosted| {
             hosted
                 .pull
-                .as_ref()
+                .open()
                 .is_some_and(|pull| pull.checks == Some(PullChecks::Pending))
         })
         .filter_map(|hosted| hosted.watched.clone())
@@ -353,7 +401,8 @@ pub(crate) fn pending_pulls(core: &Core) -> Vec<super::codehost::ci::Shown> {
 /// read again.
 pub(crate) fn ci_moved(core: &Arc<Core>, repo: &super::codehost::ci::Shown) {
     let folders: Vec<String> = core
-        .code_hosts
+        .git
+        .hosted
         .locked()
         .iter()
         .filter(|(_, hosted)| hosted.watched.as_ref() == Some(repo))
@@ -372,7 +421,7 @@ const HOST_REFRESH_GAP: Duration = Duration::from_secs(5);
 /// refs moved meanwhile.
 fn refresh_hosts(core: &Arc<Core>, projects: &[String]) {
     let fresh: Vec<String> = {
-        let mut refreshes = core.host_refreshes.locked();
+        let mut refreshes = core.git.refreshes.locked();
         projects
             .iter()
             .filter(|project| match refreshes.get_mut(*project) {
@@ -401,7 +450,7 @@ fn refresh_host_now(core: &Arc<Core>, project: String) {
         tokio::time::sleep(HOST_REFRESH_GAP).await;
         let Some(core) = weak.upgrade() else { return };
         let again = {
-            let mut refreshes = core.host_refreshes.locked();
+            let mut refreshes = core.git.refreshes.locked();
             match refreshes.get_mut(&project) {
                 Some(again) if *again => {
                     *again = false;
@@ -445,7 +494,8 @@ pub(crate) fn follow_projects(core: &Core) {
         }
     });
     tokio::task::spawn_blocking(move || {
-        core.git_watches
+        core.git
+            .watches
             .follow(|| core.workspaces.project_paths(), &changed);
         let identities = core
             .workspaces

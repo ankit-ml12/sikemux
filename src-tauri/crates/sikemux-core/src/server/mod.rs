@@ -380,14 +380,7 @@ pub(crate) struct Core {
     /// Rings when a window opens, so the day's usage counts it at once.
     pub(crate) usage_wake: Notify,
     pub(crate) tasks: tasks::Tasks,
-    pub(crate) git_watches: crate::git::watch::Watches,
-    /// Each project's branch chip, by project folder.
-    pub(crate) git_chips: Mutex<HashMap<String, crate::protocol::ProjectGit>>,
-    /// Each project's code host and branch pull request, by project folder.
-    pub(crate) code_hosts: Mutex<HashMap<String, git::Hosted>>,
-    /// The projects whose code hosts were asked again lately, and whether their refs moved
-    /// since, so a burst of commits or staging asks them once.
-    pub(crate) host_refreshes: Mutex<HashMap<String, bool>>,
+    pub(crate) git: git::Projects,
     /// The code-host lists clients look at, kept and read again while they do.
     pub(crate) code_host_lists: codehost::Lists,
     /// The plugin views panes look at, kept and read again while they do.
@@ -518,10 +511,7 @@ impl Core {
             remote_images: remote_image::RemoteImages::default(),
             usage_wake: Notify::new(),
             tasks: tasks::Tasks::new(data_dir),
-            git_watches: Default::default(),
-            git_chips: Default::default(),
-            code_hosts: Default::default(),
-            host_refreshes: Default::default(),
+            git: git::Projects::default(),
             code_host_lists: Default::default(),
             plugin_views: Default::default(),
             open_files: Default::default(),
@@ -933,8 +923,6 @@ impl Core {
         workspace.palette = themes::by_name(&self.palette.locked().tokens);
         self.names.fill(&mut workspace.agents);
         self.faces.fill(&mut workspace.agents);
-        let chips = self.git_chips.locked();
-        let hosts = self.code_hosts.locked();
         let accounts = self.workspaces.accounts();
         let preferred = preferences.last_agent_type.as_deref().and_then(|kind| {
             let ids = workspace
@@ -954,15 +942,7 @@ impl Core {
             if fresh && preferred.is_some() {
                 project.launcher.clone_from(&preferred);
             }
-            let hosted = hosts.get(&*folder);
-            project.code_host = hosted.and_then(|hosted| hosted.shown.clone());
-            project.git = chips.get(&*folder).cloned().map(|mut chip| {
-                let hosted =
-                    hosted.filter(|hosted| hosted.branch.as_deref() == Some(chip.branch.as_str()));
-                chip.pull = hosted.and_then(|hosted| hosted.pull.clone());
-                chip.needs_pull = hosted.is_some_and(|hosted| hosted.needs_pull);
-                chip
-            });
+            (project.code_host, project.git) = self.git.shown(&folder);
         }
         workspace
     }
