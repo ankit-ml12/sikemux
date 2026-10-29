@@ -25,7 +25,7 @@ use super::wake::{sooner, Wake};
 use super::Core;
 use sikemux_wire::inbox::InboxRecording;
 
-mod auto;
+pub(crate) mod auto;
 mod blind;
 mod finish;
 pub(crate) mod git;
@@ -1531,14 +1531,6 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
     .map_err(|error| error.to_string())
 }
 
-pub(crate) fn auto_turn_ended(core: &Arc<Core>, agent_id: &str, ending: &super::spawn::Ending) {
-    auto::turn_ended(core, agent_id, ending);
-}
-
-pub(crate) fn auto_has_work(core: &Core) -> bool {
-    auto::has_work(core)
-}
-
 /// The card the agent works, else the one it touched last.
 fn held_card<'a>(state: &'a mut State, agent_id: &str) -> Option<(&'a String, &'a mut Card)> {
     state
@@ -1946,10 +1938,6 @@ pub(crate) fn check_command(core: &Core, project: &str) -> Option<String> {
 
 /// Runs the project's check command in `dir`: whether it passed, and the end
 /// of what it wrote.
-pub(crate) fn run_check(dir: &Path, command: &str) -> Result<(bool, String), String> {
-    git::check(dir, command)
-}
-
 /// The person has Auto try a card it gave back to them again. Answers with
 /// the board.
 pub(crate) async fn person_retry(core: &Arc<Core>, params: Value) -> Result<BoardView, String> {

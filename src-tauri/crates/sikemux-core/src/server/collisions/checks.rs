@@ -139,7 +139,7 @@ pub(super) fn start(core: &Arc<Core>, state: &mut State) {
                             match regenerate(&owner, &dir, &checkout, &newest, &agents) {
                                 Ok(Some(_)) => Ok(None),
                                 Ok(None) => {
-                                    crate::server::board::run_check(&checkout, &command).map(Some)
+                                    crate::server::board::git::check(&checkout, &command).map(Some)
                                 }
                                 Err(error) => Ok(Some((false, error))),
                             }

@@ -263,7 +263,7 @@ fn describe(
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn scan(core: &Core) -> Vec<ListeningPort> {
+pub(crate) fn listening_now(core: &Core) -> Vec<ListeningPort> {
     let core_pid = std::process::id();
     let mut owners = HashMap::new();
     let mut pids = HashMap::new();
@@ -300,13 +300,13 @@ fn scan(core: &Core) -> Vec<ListeningPort> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn scan(_core: &Core) -> Vec<ListeningPort> {
+pub(crate) fn listening_now(_core: &Core) -> Vec<ListeningPort> {
     Vec::new()
 }
 
 /// Looks again and tells clients when what listens changed.
 fn look(core: &Core) -> Vec<ListeningPort> {
-    let found = scan(core);
+    let found = listening_now(core);
     let mut state = core.ports.state.locked();
     if state.found != found {
         state.found = found.clone();
@@ -437,10 +437,6 @@ pub(crate) fn in_use(port: u16) -> bool {
 }
 
 /// What listens now, for a check before a task starts.
-pub(crate) fn listening_now(core: &Core) -> Vec<ListeningPort> {
-    scan(core)
-}
-
 #[cfg(test)]
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};

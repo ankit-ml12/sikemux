@@ -654,7 +654,7 @@ impl Core {
             && self.clients.locked().is_empty()
             && self.running_sessions() == 0
             && self.chats.count() == 0
-            && !board::auto_has_work(self)
+            && !board::auto::has_work(self)
     }
 
     pub(crate) fn client_conn(&self, id: ClientId) -> Option<Arc<ClientConn>> {
