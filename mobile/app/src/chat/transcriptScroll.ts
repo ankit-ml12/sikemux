@@ -13,7 +13,7 @@ type Earlier = { has: boolean; idle: boolean; load: () => void };
  * How a transcript scrolls: it stays at its end while the reader is there, whatever grows or shrinks it,
  * shows the way back once they scroll away, and fetches earlier turns well before they reach the top.
  */
-export function useTranscriptScroll<T>(list: RefObject<FlashListRef<T> | null>, earlier: Earlier, holding: boolean) {
+export function useTranscriptScroll<T>(list: RefObject<FlashListRef<T> | null>, earlier: Earlier, holding = false) {
   const [away, setAway] = useState(false);
   const awayRef = useRef(false);
   const metrics = useRef({ offset: 0, content: 0, viewport: 0 });
