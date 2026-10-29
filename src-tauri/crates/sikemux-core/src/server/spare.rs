@@ -10,7 +10,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use crate::protocol::{SessionId, SpawnTarget, TerminalSpawn};
-use sikemux_wire::pty::launch::PtyContext;
+use sikemux_wire::pty::launch::{LaunchKind, PtyContext};
 
 use super::layout::At;
 use super::wake::Wake;
@@ -225,7 +225,7 @@ async fn shell(
     let context = PtyContext {
         session_id: project.to_owned(),
         session_name: name,
-        session_kind: "project".into(),
+        session_kind: LaunchKind::Project,
         project: Some(path.clone()),
         window_id: Some(window_id.to_owned()),
         pane_id: Some(pane_id.to_owned()),
@@ -310,7 +310,7 @@ async fn shell_at_home(
     let context = PtyContext {
         session_id,
         session_name,
-        session_kind: "command".into(),
+        session_kind: LaunchKind::Command,
         project: None,
         window_id: Some(format!("win-{}", uuid::Uuid::new_v4().simple())),
         pane_id: Some(format!("pane-{}", uuid::Uuid::new_v4().simple())),
@@ -445,7 +445,7 @@ pub(crate) async fn setup_shell(
     let context = PtyContext {
         session_id: format!("ssh:{host}"),
         session_name: host.to_owned(),
-        session_kind: "setup".into(),
+        session_kind: LaunchKind::Setup,
         project: None,
         window_id: Some(format!("win-{}", uuid::Uuid::new_v4().simple())),
         pane_id: Some(format!("pane-{}", uuid::Uuid::new_v4().simple())),
@@ -461,7 +461,7 @@ async fn ssh_shell(core: &Arc<Core>, host: &str) -> CoreResult<SessionId> {
     let context = PtyContext {
         session_id: format!("ssh:{host}"),
         session_name: host.to_owned(),
-        session_kind: "ssh".into(),
+        session_kind: LaunchKind::Ssh,
         project: None,
         window_id: Some(format!("win-{}", uuid::Uuid::new_v4().simple())),
         pane_id: Some(format!("pane-{}", uuid::Uuid::new_v4().simple())),

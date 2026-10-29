@@ -18,7 +18,7 @@ use crate::protocol::{
 };
 use serde_json::{json, Value};
 use sikemux_process::vars;
-use sikemux_pty::launch::{PtyAgentProfile, PtyContext, PtyDirectCommand};
+use sikemux_pty::launch::{LaunchKind, PtyAgentProfile, PtyContext, PtyDirectCommand};
 
 use super::chat;
 use super::connection::{blocking, ClientConn};
@@ -169,7 +169,7 @@ async fn launch_terminal(
         context: Some(PtyContext {
             session_id: agent.project.clone(),
             session_name: project.map(|project| project.name).unwrap_or_default(),
-            session_kind: "project".into(),
+            session_kind: LaunchKind::Project,
             project: Some(cwd),
             window_id: None,
             pane_id: None,

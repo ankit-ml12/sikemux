@@ -4,7 +4,7 @@ use portable_pty::CommandBuilder;
 use sikemux_process::vars;
 
 use crate::error::{PtyError, PtyResult};
-use crate::launch::PtyContext;
+use crate::launch::{LaunchKind, PtyContext};
 
 /// Execute startup commands before the interactive shell is launched. Sending
 /// text to readline makes it visible in the terminal (and multi-line commands
@@ -229,7 +229,10 @@ pub fn shell_integration_requested(
         && !inherited_ssh
         && context.agent_id.is_none()
         && context.agent_type.is_none()
-        && matches!(context.session_kind.as_str(), "project" | "command")
+        && matches!(
+            context.session_kind,
+            LaunchKind::Project | LaunchKind::Command
+        )
 }
 
 pub fn inherited_ssh_environment() -> bool {

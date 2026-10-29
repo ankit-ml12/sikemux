@@ -3,7 +3,7 @@
 pub struct PtyContext {
     pub session_id: String,
     pub session_name: String,
-    pub session_kind: String,
+    pub session_kind: LaunchKind,
     pub project: Option<String>,
     pub window_id: Option<String>,
     pub pane_id: Option<String>,
@@ -31,4 +31,33 @@ pub struct PtyDirectCommand {
     pub program: String,
     pub args: Vec<String>,
     pub profile: Option<PtyAgentProfile>,
+}
+
+/// What a terminal was opened for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LaunchKind {
+    /// A shell in a project.
+    Project,
+    /// A command the person or an agent runs.
+    Command,
+    Agent,
+    Task,
+    Ssh,
+    /// A project's setup script.
+    Setup,
+}
+
+impl LaunchKind {
+    /// How a shell's environment names it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Project => "project",
+            Self::Command => "command",
+            Self::Agent => "agent",
+            Self::Task => "task",
+            Self::Ssh => "ssh",
+            Self::Setup => "setup",
+        }
+    }
 }

@@ -19,7 +19,7 @@ use sikemux_core::protocol::{
     SpawnTarget, StreamId, TerminalSpawn, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
-use sikemux_pty::launch::PtyContext;
+use sikemux_pty::launch::{LaunchKind, PtyContext};
 use sikemux_pty::output_log::OutputQuery;
 use sikemux_pty::task::{TaskSource, TaskSpawnRequest};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -767,7 +767,7 @@ fn agent_terminal(agent_id: &str, startup: &str) -> SpawnTarget {
         context: Some(PtyContext {
             session_id: "session-1".into(),
             session_name: "test".into(),
-            session_kind: "project".into(),
+            session_kind: LaunchKind::Project,
             project: None,
             window_id: None,
             pane_id: None,

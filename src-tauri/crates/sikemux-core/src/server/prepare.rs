@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sikemux_process::vars;
 use sikemux_pty::launch::{
     account_dir, configure_interactive_command, configure_pty_environment, validate_direct_command,
-    PtyContext,
+    LaunchKind, PtyContext,
 };
 use sikemux_pty::shell::{
     configure_shell_integration, configure_task_command, inherited_ssh_environment,
@@ -62,7 +62,7 @@ impl Owner {
             task: None,
             started_by: None,
             account_home: None,
-            ssh_host: (context.session_kind == "ssh" && !context.session_name.is_empty())
+            ssh_host: (context.session_kind == LaunchKind::Ssh && !context.session_name.is_empty())
                 .then(|| context.session_name.clone()),
             rail_number: None,
             plain: false,
@@ -213,14 +213,14 @@ pub(crate) fn prepare_terminal(
         shell_integration,
         ssh: context
             .as_ref()
-            .is_some_and(|context| context.session_kind == "ssh"),
+            .is_some_and(|context| context.session_kind == LaunchKind::Ssh),
         initial_prompt_submitted: context
             .as_ref()
             .is_some_and(|context| context.initial_prompt_submitted),
         continues,
         setup: context
             .as_ref()
-            .is_some_and(|context| context.session_kind == "setup"),
+            .is_some_and(|context| context.session_kind == LaunchKind::Setup),
     })
 }
 
@@ -262,7 +262,7 @@ pub(crate) fn prepare_task(
     let context = PtyContext {
         session_id: execution_id.clone(),
         session_name: label,
-        session_kind: "task".into(),
+        session_kind: LaunchKind::Task,
         project: Some(paths.project.to_string_lossy().into_owned()),
         window_id: None,
         pane_id: None,

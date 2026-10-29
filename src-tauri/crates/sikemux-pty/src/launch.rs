@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use portable_pty::CommandBuilder;
 use sikemux_process::vars;
-pub use sikemux_wire::pty::launch::{PtyAgentProfile, PtyContext, PtyDirectCommand};
+pub use sikemux_wire::pty::launch::{LaunchKind, PtyAgentProfile, PtyContext, PtyDirectCommand};
 
 use crate::error::{PtyError, PtyResult};
 use crate::shell::{detect_shell_kind, ShellKind};
@@ -211,7 +211,7 @@ pub fn configure_pty_environment(
     if let Some(context) = context {
         cmd.env(vars::SESSION_ID, &context.session_id);
         cmd.env(vars::SESSION_NAME, &context.session_name);
-        cmd.env(vars::SESSION_KIND, &context.session_kind);
+        cmd.env(vars::SESSION_KIND, context.session_kind.as_str());
         if let Some(project) = non_empty(&context.project) {
             cmd.env(vars::PROJECT, project);
         }
@@ -244,7 +244,7 @@ pub fn configure_pty_environment(
 
 #[cfg(test)]
 mod tests {
-    use super::{configure_pty_environment, PtyContext};
+    use super::{configure_pty_environment, LaunchKind, PtyContext};
     use crate::tests::env;
     use portable_pty::CommandBuilder;
     use std::collections::HashMap;
@@ -324,7 +324,7 @@ mod tests {
         let context = PtyContext {
             session_id: "session-1".into(),
             session_name: "repo".into(),
-            session_kind: "project".into(),
+            session_kind: LaunchKind::Project,
             project: Some("/repo".into()),
             window_id: Some("window-1".into()),
             pane_id: Some("pane-1".into()),
@@ -497,7 +497,7 @@ mod tests {
         let context = PtyContext {
             session_id: "session-1".into(),
             session_name: "one".into(),
-            session_kind: "agent".into(),
+            session_kind: LaunchKind::Agent,
             project: None,
             window_id: None,
             pane_id: None,
@@ -530,7 +530,7 @@ mod tests {
         let context = PtyContext {
             session_id: "session-1".into(),
             session_name: "one".into(),
-            session_kind: "agent".into(),
+            session_kind: LaunchKind::Agent,
             project: None,
             window_id: None,
             pane_id: None,
@@ -601,7 +601,7 @@ mod tests {
         let context = PtyContext {
             session_id: "session-1".into(),
             session_name: "repo".into(),
-            session_kind: "project".into(),
+            session_kind: LaunchKind::Project,
             project: Some("/repo".into()),
             window_id: None,
             pane_id: None,
