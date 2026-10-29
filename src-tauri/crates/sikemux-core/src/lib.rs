@@ -19,6 +19,7 @@ pub mod download;
 pub mod files;
 mod flights;
 pub mod frozen;
+pub mod fuzzy;
 #[cfg(unix)]
 pub mod git;
 #[cfg(unix)]

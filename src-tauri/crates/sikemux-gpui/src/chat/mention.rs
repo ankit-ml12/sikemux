@@ -910,22 +910,11 @@ fn leaf(path: &str) -> &str {
 
 /// The best files and folders for `needle`, a file before a folder of the same name.
 fn ranked_entries(needle: &str, files: &Arc<Vec<String>>) -> Vec<Choice> {
-    let mut folders: Vec<&str> = files
-        .iter()
-        .flat_map(|file| file.match_indices('/').map(|(at, _)| &file[..at]))
-        .collect();
-    folders.sort_unstable();
-    folders.dedup();
-    let entries: Vec<String> = files
-        .iter()
-        .cloned()
-        .chain(folders.iter().map(|folder| (*folder).to_owned()))
-        .collect();
-    crate::fuzzy::rank_paths(needle, &entries, SHOWN)
+    crate::fuzzy::rank_entries(needle, files, SHOWN)
         .into_iter()
-        .map(|place| Choice::Entry {
-            path: entries[place].clone(),
-            folder: place >= files.len(),
+        .map(|entry| Choice::Entry {
+            path: entry.path,
+            folder: entry.folder,
         })
         .collect()
 }

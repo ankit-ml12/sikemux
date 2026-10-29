@@ -30,8 +30,11 @@ import { usePromptStash } from '@/stash/usePromptStash';
 import { stashQuery, withoutQuery, type ContextChip } from '@/stash/words';
 import type { ChatSession } from './session';
 import type { Attachment } from './uploads';
-import { useDraft } from './useChat';
+import { useDraft, useDraftTokens } from './useChat';
 import { matchingCommands } from './commands';
+import { typedMention } from './mentions';
+import { MentionMenu } from './MentionMenu';
+import { useMentions } from './useMentions';
 
 export function askTitle(request: PermissionAsk): string {
   const kind = toolKind(request.toolCall);
@@ -467,6 +470,7 @@ export const Composer = memo(function Composer({
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const draft = useDraft(session);
+  const tokens = useDraftTokens(session);
   const [adding, setAdding] = useState<'files' | 'stash' | false>(false);
   const uploading = attachments.some((attachment) => attachment.upload === 'sending');
   const room = MAX_ATTACHMENTS - attachments.length;
@@ -488,6 +492,7 @@ export const Composer = memo(function Composer({
       }),
     [pulls, onRecent],
   );
+  const mentions = useMentions(session, watchOnly ? undefined : typedMention(draft, tokens));
   const dock = requests.length ? (
     <PermissionDock requests={requests} provider={provider} answering={answering} onAnswer={session.answer} />
   ) : null;
@@ -550,8 +555,17 @@ export const Composer = memo(function Composer({
       {dock}
       <Commands matches={matches} onPick={(name) => session.setDraft(`/${name} `)} />
       {mention !== undefined ? <StashMenu query={mention} onPick={(item) => fromStash([item], withoutQuery(draft))} /> : null}
+      {mentions ? (
+        <MentionMenu
+          menu={mentions}
+          onScope={(trigger) => {
+            const at = mentions.typed.start;
+            session.setDraft(`${draft.slice(0, at)}${trigger}${draft.slice(at + 1)}`);
+          }}
+        />
+      ) : null}
       {prompt.toast}
-      {dock || matches.length || mention !== undefined ? null : strip}
+      {dock || matches.length || mention !== undefined || mentions ? null : strip}
       <View style={[styles.composer, focused && { borderColor: colors.borderSelected }]} {...pullUp.panHandlers}>
         {question ? <AnsweringChip question={question} /> : null}
         {attachments.length || chips.length ? (
@@ -567,6 +581,7 @@ export const Composer = memo(function Composer({
         <ComposerInput
           ref={input}
           value={draft}
+          tokens={tokens}
           editable={!uploading}
           onChangeText={session.setDraft}
           placeholder={placeholder}

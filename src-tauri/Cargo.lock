@@ -5301,6 +5301,7 @@ dependencies = [
  "ignore",
  "iroh",
  "libc",
+ "memchr",
  "minisign-verify",
  "notify",
  "portable-pty",

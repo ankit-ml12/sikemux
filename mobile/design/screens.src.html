@@ -997,6 +997,21 @@
   .stash-toast .add { height: 26px; padding: 0 10px; display: grid; place-items: center; font-weight: 600; color: var(--acc); }
   .mentions b { display: block; font-size: 13.5px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mentions em { display: block; margin-top: 1px; font-style: normal; font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mention-menu { margin: 0 0 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-overlay); overflow: hidden; }
+  .mention-menu .scopes { display: flex; align-items: center; gap: 2px; padding: 5px; border-bottom: 1px solid var(--border); }
+  .mention-menu .scopes > span { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 9px; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: var(--text-tertiary); white-space: nowrap; }
+  .mention-menu .scopes > span code { font-family: var(--mono); color: var(--ink-faint); }
+  .mention-menu .scopes > span.on { background: color-mix(in oklab, var(--ink) 8%, transparent); color: var(--ink); }
+  .mention-menu .scopes > span.on code { color: var(--acc); }
+  .mention-menu .heading { padding: 9px 14px 3px; font-size: 10.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-faint); }
+  .mention-menu .item { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0 3px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; }
+  .mention-menu .item .m { flex: none; width: 18px; display: grid; place-items: center; color: var(--text-tertiary); }
+  .mention-menu .item code { flex: none; max-width: 55%; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); color: var(--acc); }
+  .mention-menu .item .t { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+  .mention-menu .item .d { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .mention-menu .item .a { flex: none; font-size: 12px; color: var(--ink-faint); }
+  .mention-menu .none { min-height: 44px; display: flex; align-items: center; padding: 0 14px; font-size: 13px; color: var(--text-tertiary); }
+  .tok { color: var(--acc); background: color-mix(in oklab, var(--ink) 8%, transparent); border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -3597,6 +3612,167 @@ expected 1 write, got 2</div>
 
   </div>
 </section>
+
+<section class="flow on-host">
+  <h2>Mentions in the composer</h2>
+  <p>As on the Mac, a word that starts with <code>@</code>, <code>+</code>, <code>#</code> or <code>!</code> opens one menu over the composer, under the kinds of thing it names, and a tap on a kind turns the word into that one. A pick goes into the draft as a chip, coloured apart from the words around it, that a backspace into takes out whole, and that is kept with the draft on the host, so it follows the person to the Mac. The message sends what each chip stands for: an agent or chat for the host to describe, a file or folder as an attachment, an issue's or pull request's text.</p>
+  <div class="phones">
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="prose">The pairing screen builds and the Devices page shows the waiting phone.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="mention-menu">
+            <div class="scopes"><span class="on"><code>@</code>Agents</span><span><code>#</code>Issues</span><span><code>!</code>Pull requests</span><span><code>+</code>Files</span></div>
+            <div class="item"><span class="m codex">{{IconCodex:16}}</span><code>@Heron</code><span class="d">Fix the flaky PTY replay test</span><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+            <div class="item"><span class="m claude">{{IconClaude:16}}</span><code>@Hazel</code><span class="d">Tighten the rail spacing</span><span class="dot acc" style="width:7px;height:7px"></span></div>
+            <div class="heading">site</div>
+            <div class="item"><span class="m claude">{{IconClaude:16}}</span><code>@Hawk</code><span class="d">Download size on the hero</span></div>
+            <div class="heading">Closed</div>
+            <div class="item"><span class="m codex">{{IconCodex:16}}</span><code>@Hare</code><span class="d">Pairing codes expire</span></div>
+            <div class="heading">Earlier chats</div>
+            <div class="item"><span class="m claude">{{IconClaude:16}}</span><span class="t">Host approval sheet</span><span class="d"></span><span class="a">3d</span></div>
+          </div>
+          <div class="composer focus">
+            <div class="ta">Ask @H<span class="caret"></span></div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn">{{IconStack:16}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>@ for agents</b><div class="note">The host's other agents whose name starts with what is typed: this project's first, then each other project's under its name, each with its mark and task, and the rail's squares or dot while it works or is done. Then the closed agents the person named, and once something is typed the earlier chats of the project that hold it, with how long ago. A teammate goes as the host's note on who it is; an earlier chat opens again for the message, a named one as its chip, a found one as a chip above the draft.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="prose">The pairing screen builds and the Devices page shows the waiting phone.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="mention-menu">
+            <div class="scopes"><span><code>@</code>Agents</span><span><code>#</code>Issues</span><span><code>!</code>Pull requests</span><span class="on"><code>+</code>Files</span></div>
+            <div class="item"><span class="m">{{IconFile:15}}</span><code>pairing.tsx</code><span class="d">mobile/app/src/app/device/[core]</span></div>
+            <div class="item"><span class="m">{{IconFile:15}}</span><code>pairing.rs</code><span class="d">src-tauri/crates/sikemux-core/src/server</span></div>
+            <div class="item"><span class="m">{{IconFolder:15}}</span><code>pairing</code><span class="d">docs-site/src/content/docs</span></div>
+          </div>
+          <div class="composer focus">
+            <div class="ta">Compare <span class="tok">@Heron</span> with +pair<span class="caret"></span></div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn">{{IconStack:16}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>+ for files</b><div class="note">The project's files and folders, ranked by the host as the Mac ranks them: the name holding the text whole first, a file before a folder of the same name, eight at most. The chip writes the name, or the path when that name is already a chip, and the file goes with the message.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="prose">The pairing screen builds and the Devices page shows the waiting phone.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="mention-menu">
+            <div class="scopes"><span><code>@</code>Agents</span><span class="on"><code>#</code>Issues</span><span><code>!</code>Pull requests</span><span><code>+</code>Files</span></div>
+            <div class="item"><span class="m">{{IconIssue:15}}</span><code>#214</code><span class="d">Pairing code screen flickers on rotate</span></div>
+            <div class="item"><span class="m">{{IconIssue:15}}</span><code>#209</code><span class="d">Pair a second phone without signing out</span></div>
+          </div>
+          <div class="composer focus">
+            <div class="ta">Fix #2<span class="caret"></span></div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn">{{IconStack:16}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b># for issues, ! for pull requests</b><div class="note">The open ones of the project's repository, read from its code host the first time either is typed: by the start of the number while only digits are typed, else by every word in the title. The chip writes <code>#214</code>, and the issue's text goes with the message.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="prose">The pairing screen builds and the Devices page shows the waiting phone.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="mention-menu">
+            <div class="scopes"><span><code>@</code>Agents</span><span><code>#</code>Issues</span><span class="on"><code>!</code>Pull requests</span><span><code>+</code>Files</span></div>
+            <div class="none">Sign in to GitHub in the Git pane to pick from its issues</div>
+          </div>
+          <div class="composer focus">
+            <div class="ta">Review !<span class="caret"></span></div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn">{{IconStack:16}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>When nothing can be listed</b><div class="note">The menu says why in one line, as the Mac does: no project, "This project has no remote on a code host", a code host to sign in to, its own error, or that nothing matches. While a list is on its way, a spinner.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Fix <span class="tok">#214 Pairing code screen flickers on rotate</span> the way <span class="tok">@Heron</span> did in <span class="tok">+pairing.tsx</span> and look at <span class="tok">Image #1</span></div>
+          <div class="prose">On it. Heron kept the code in state across the rotate, so I will do the same here.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn">{{IconStack:16}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Chips in what was sent</b><div class="note">A sent message draws the chips its draft wrote, in the accent over a faint ground: <code>@Heron</code>, <code>+pairing.tsx</code>, <code>#214</code> with its title, and <code>Image #1</code> for a picture. An issue or chat drawn this way gets no separate chip above the bubble.</div></figcaption>
+    </figure>
+
+  </div>
+</section>
+
 
 <!-- ================================================================ -->
 <section class="flow on-host">

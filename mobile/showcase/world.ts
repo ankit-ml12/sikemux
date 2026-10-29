@@ -12,7 +12,12 @@ export const PANE_PICTURE = '/showcase/pane.jpg';
 const HOME = '/Users/edon/code';
 
 export const PROJECTS = [
-  { id: 'p-shop', name: 'acme-shop', path: `${HOME}/acme-shop` },
+  {
+    id: 'p-shop',
+    name: 'acme-shop',
+    path: `${HOME}/acme-shop`,
+    codeHost: { host: 'github', repo: 'edon/acme-shop', ciName: 'Actions', sections: ['pulls', 'actions', 'issues', 'releases'] },
+  },
   { id: 'p-site', name: 'marketing-site', path: `${HOME}/marketing-site` },
   { id: 'p-api', name: 'payments-api', path: `${HOME}/payments-api` },
 ];
@@ -473,4 +478,26 @@ export const MESSAGES = [
   logged(22, 'chat-dark-mode', 'chat-login-check', 'message', 'dropped'),
   logged(31, 'chat-dark-mode', 'chat-login-check', 'message', 'waiting'),
   logged(52, 'chat-dark-mode', 'chat-login', 'message', 'refused'),
+];
+
+/** The files `+` ranks in acme-shop, as its host's file list holds them. */
+export const PROJECT_FILES = [
+  'src/auth/login.tsx',
+  'src/auth/session.ts',
+  'src/auth/LoginForm.test.tsx',
+  'src/checkout/Cart.tsx',
+  'src/theme/dark.css',
+  'docs/login.md',
+];
+
+/** The open issues and pull requests of acme-shop's repository. */
+export const TRACKED = [
+  {
+    kind: 'issue',
+    number: 214,
+    title: 'Login form loses the email after a failed attempt',
+    url: 'https://github.com/edon/acme-shop/issues/214',
+  },
+  { kind: 'issue', number: 209, title: 'Dark mode flashes white on load', url: 'https://github.com/edon/acme-shop/issues/209' },
+  { kind: 'pull', number: 221, title: 'feat(auth): remember the last email', url: 'https://github.com/edon/acme-shop/pull/221' },
 ];

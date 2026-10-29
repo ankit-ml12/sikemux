@@ -15,6 +15,7 @@ sikemux-fold = { path = "../sikemux-fold" }
 sikemux-markdown = { path = "../sikemux-markdown" }
 agent-client-protocol = { version = "2.0.0", features = ["unstable_session_notices"] }
 hex = "0.4"
+memchr = "2"
 quick-xml = "0.42"
 regex = "1"
 serde = { version = "1", features = ["derive", "rc"] }

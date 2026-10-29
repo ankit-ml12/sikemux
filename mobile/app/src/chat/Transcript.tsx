@@ -9,6 +9,7 @@ import { cutLongBlocks, showRestLabel } from '@shared/chat/longText';
 import type { MdElement } from '@shared/markdown/types';
 import { revealBlocks, visibleText } from '@shared/markdown/visible';
 import { contextChip, type ContextChip } from '@shared/chat/promptContext';
+import { sentChips } from '@shared/chat/sentChips';
 import {
   attachmentName,
   groupParts,
@@ -30,6 +31,7 @@ import type {
   SubagentCard,
   TaskNotice as Notice,
 } from '@shared/chat/types';
+import { useAgentNames } from '@/devices/hub';
 import { CopyButton } from '@/ui/CopyButton';
 import { haptics } from '@/ui/haptics';
 import { AgentFace } from '@/ui/Buddy';
@@ -44,7 +46,7 @@ import { Markdown, plainBlocks } from './Markdown';
 import { useStreamedText } from './reveal';
 import { SentAttachments } from './Attachments';
 import { hostImagePath } from './FileRef';
-import { useHostFile } from './hostFiles';
+import { HostContext, useHostFile } from './hostFiles';
 import { ImageViewer } from './ImageViewer';
 import type { Strip as StripMeta } from './messageMeta';
 import type { Held, Unsent } from './session';
@@ -410,6 +412,12 @@ function Strip({ meta, mine }: { meta: StripMeta; mine: boolean }) {
 /** A long press is the text's own, for selecting it, so it must not also count as a tap. */
 const keepLongPress = () => {};
 
+/** The host's agent names, for the `@` chips a sent message wrote. */
+function useNamesIn(core: string): string[] {
+  const names = useAgentNames(core);
+  return useMemo(() => (names ? names.split('\n') : []), [names]);
+}
+
 export function Message({
   message,
   live = false,
@@ -435,6 +443,8 @@ export function Message({
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const chatAgent = useContext(AgentContext);
+  const host = useContext(HostContext);
+  const agentNames = useNamesIn(message.role === 'user' ? host : '');
   const tap = onTap
     ? () => {
         haptics.select();
@@ -478,8 +488,9 @@ export function Message({
   }
   if (message.role === 'user') {
     const failed = unsent?.state === 'failed';
-    const context = message.context ?? [];
     const text = message.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n\n');
+    const { spans, drawn } = sentChips(text, message.attachments ?? [], message.context ?? [], agentNames);
+    const context = (message.context ?? []).filter((item) => !drawn.has(item.uri));
     return (
       <View style={styles.userRow}>
         {message.attachments?.length ? <SentAttachments paths={message.attachments} sentFiles={sentFiles} /> : null}
@@ -491,7 +502,15 @@ export function Message({
             style={[styles.bubble, unsent?.state === 'sending' && { opacity: 0.7 }, failed && styles.failedBubble]}
             accessibilityHint={tap ? 'Tap for copy and the time it was sent' : undefined}>
             <Text style={styles.userText} selectable>
-              {text}
+              {spans.map((span, index) =>
+                typeof span === 'string' ? (
+                  span
+                ) : (
+                  <Text key={index} style={styles.sentChip}>
+                    {span.chip.label}
+                  </Text>
+                ),
+              )}
             </Text>
           </Pressable>
         ) : null}
@@ -710,6 +729,7 @@ const makeStyles = (colors: Palette) => {
       backgroundColor: colors.raised,
     },
     userText: { fontFamily: fonts.ui, fontSize: 14, lineHeight: 22, color: colors.ink },
+    sentChip: { color: colors.accent, backgroundColor: colors.active },
     failedBubble: { borderColor: colors.danger },
     unsent: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
     unsentText: { fontFamily: fonts.uiMedium, fontSize: 12, color: colors.inkFaint },

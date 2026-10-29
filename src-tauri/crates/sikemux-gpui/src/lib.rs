@@ -38,7 +38,7 @@ mod faces;
 pub mod file_icons;
 mod files;
 mod finder;
-mod fuzzy;
+use sikemux_core::fuzzy;
 pub mod git;
 #[cfg(target_os = "linux")]
 pub mod handoff;

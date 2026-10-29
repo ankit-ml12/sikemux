@@ -49,7 +49,6 @@ gpui-native-view = { path = "crates/gpui-native-view" }
 gpui-terminal-grid = { path = "crates/gpui-terminal-grid" }
 gpui-transcript = { path = "crates/gpui-transcript", features = ["fork"] }
 lsp-types = "0.97"
-memchr = "2"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 percent-encoding = "2"
 serde = { version = "1", features = ["derive"] }

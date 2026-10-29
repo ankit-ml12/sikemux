@@ -15,9 +15,11 @@ import {
   MESSAGES,
   PANE_PICTURE,
   PROJECTS,
+  PROJECT_FILES,
   QUESTIONS,
   RECENT,
   SESSIONS,
+  TRACKED,
   chatHead,
   chatRows,
   permissionPayload,
@@ -147,6 +149,15 @@ function view() {
   return {
     workspace: {
       projects: PROJECTS,
+      agents: CHATS.map((chat) => ({
+        id: chat.agentId,
+        provider: chat.provider,
+        name: chat.name,
+        project: chat.project,
+        cwd: projectPath(chat.project),
+        title: chat.title,
+        permissionMode: chat.permissionMode,
+      })),
       launchers: LAUNCHERS,
       palette: {},
       backdrop: { texture: true, image: 'pane' },
@@ -281,6 +292,19 @@ class Connection {
     }
     if (method === 'digest') return JSON.stringify({ away: false, finished: [], failed: [], waiting: [] });
     if (method === 'chatToolDetail') return '{}';
+    if (method === 'closedAgents' || method === 'agentSessions') return '[]';
+    if (method === 'projectEntries') {
+      const { query } = JSON.parse(params) as { query: string };
+      const found = PROJECT_FILES.filter((path) => path.toLowerCase().includes(query.toLowerCase()));
+      return JSON.stringify(found.map((path) => ({ path, folder: false })));
+    }
+    if (method === 'codeHostTracked') return JSON.stringify({ value: TRACKED });
+    if (method === 'codeHostTrackedContext') {
+      const { number } = JSON.parse(params) as { number: number };
+      const item = TRACKED.find((known) => known.number === number);
+      return JSON.stringify({ value: { uri: item?.url ?? '', title: `#${number} ${item?.title ?? ''}`, text: item?.title ?? '' } });
+    }
+    if (method === 'promptChat') return '{}';
     throw new Error(`the showcase host does not know ${method}`);
   }
   async callToFile(method: string): Promise<string> {

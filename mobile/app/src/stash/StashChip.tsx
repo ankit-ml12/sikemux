@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Icon } from '@/ui/Icon';
+import { AgentIcon, Icon } from '@/ui/Icon';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import type { StashItem } from './api';
 import { Face, useBearer } from './StashPicker';
@@ -28,15 +28,18 @@ export function useStashItem(id: string | undefined): StashItem | undefined {
   return id === undefined ? undefined : items.find((item) => item.id === id);
 }
 
-/** A link's site icon, or the text glyph for stashed text and a link whose site has none. */
+/** A link's site icon, an earlier chat's agent, or the text glyph for stashed text and a link whose site has none. */
 function ChipFace({ uri }: { uri: string }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const host = /^https?:\/\/([^/?#]+)/i.exec(uri)?.[1];
+  const earlier = /^sikemux:\/\/earlier\/([^/]+)\//.exec(uri)?.[1];
   const [broken, setBroken] = useState(false);
   return (
     <View style={styles.face}>
-      {host && !broken ? (
+      {earlier ? (
+        <AgentIcon provider={earlier} size={16} />
+      ) : host && !broken ? (
         <Image source={{ uri: `https://${host}/favicon.ico` }} style={styles.favicon} onError={() => setBroken(true)} />
       ) : (
         <Icon name={host ? 'IconLink' : 'IconText'} size={13} color={colors.secondary} />

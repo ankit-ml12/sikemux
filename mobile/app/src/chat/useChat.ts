@@ -67,3 +67,7 @@ export function useChat(
 export function useDraft(session: ChatSession): string {
   return useSyncExternalStore(session.subscribe, session.draftText);
 }
+
+export function useDraftTokens(session: ChatSession): ChatSnapshot['tokens'] {
+  return useSyncExternalStore(session.subscribe, () => session.snapshot().tokens);
+}

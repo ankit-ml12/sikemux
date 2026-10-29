@@ -7,6 +7,7 @@ use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use memchr::memmem::Finder;
+use serde::Serialize;
 
 const SUBSEQUENCE: u32 = 1_000_000;
 /// How many paths are ranked between looks at whether the ranking is still wanted.
@@ -174,4 +175,34 @@ pub fn matched(query: &str, text: &str) -> Vec<Range<usize>> {
         Some(_) => Vec::new(),
         None => ranges,
     }
+}
+
+/// A project's file or folder, as `rank_entries` finds it.
+#[derive(Clone, Debug, Serialize)]
+pub struct Entry {
+    pub path: String,
+    pub folder: bool,
+}
+
+/// The best `limit` of `files` and the folders that hold them for `query`, a file before a
+/// folder of the same name.
+pub fn rank_entries(query: &str, files: &[String], limit: usize) -> Vec<Entry> {
+    let mut folders: Vec<&str> = files
+        .iter()
+        .flat_map(|file| file.match_indices('/').map(|(at, _)| &file[..at]))
+        .collect();
+    folders.sort_unstable();
+    folders.dedup();
+    let entries: Vec<String> = files
+        .iter()
+        .cloned()
+        .chain(folders.iter().map(|folder| (*folder).to_owned()))
+        .collect();
+    rank_paths(query, &entries, limit)
+        .into_iter()
+        .map(|place| Entry {
+            path: entries[place].clone(),
+            folder: place >= files.len(),
+        })
+        .collect()
 }

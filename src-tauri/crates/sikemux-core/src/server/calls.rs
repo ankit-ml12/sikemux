@@ -80,7 +80,8 @@ calls! { core, client, params;
     "page": Watch, any_program => answer(page(&core, parse(params)?).await?),
     "nameAgent": Local => answer(name_agent(&core, parse(params)?).await?),
     "renameAgent": Full => answer(rename_agent(&core, parse(params)?).await?),
-    "closedAgents": Local => answer(closed_agents(&core, parse(params)?).await?),
+    "promptChat": Full => answer(prompt_chat(&core, parse(params)?).await?),
+    "closedAgents": Full => answer(closed_agents(&core, parse(params)?).await?),
     "agentNames": Watch, any_program => answer(agent_names(&core).await?),
     "agentCatalog": Watch, any_program => answer(super::catalog::view()),
     "agentNameTheme": Full => answer(NameThemeParams { theme: core.names.theme() }),
@@ -153,7 +154,7 @@ calls! { core, client, params;
         let params: QueuedParams = parse(params)?;
         answer(super::chat::queue::remove(&core, &params.agent_id, &params.ids)?)
     },
-    "agentSessions": Local, any_program => answer(saved::call(&core, parse(params)?).await?),
+    "agentSessions": Full, any_program => answer(saved::call(&core, parse(params)?).await?),
     "workspace": Watch, any_program => answer(core.workspace_view()),
     "runCommand": Local => answer(super::custom_command::run(parse(params)?).await?),
     "updateStatus": Watch, any_program => answer(core.updates.status()),
@@ -342,6 +343,10 @@ calls! { core, client, params;
     "projectFiles": Full => {
         let params = parse(params)?;
         answer(blocking(move || super::project_files::read(params).map_err(CoreError::from)).await?)
+    },
+    "projectEntries": Full => {
+        let params = parse(params)?;
+        answer(blocking(move || super::project_files::entries(params).map_err(CoreError::from)).await?)
     },
     "searchStream": Full => answer(search_stream(&core, client, parse(params)?)?),
     "searchReplace": Full => {
@@ -1129,6 +1134,38 @@ async fn closed_agents(
         Ok(core.names.closed(&project, core.open_agents()))
     })
     .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PromptChatParams {
+    agent_id: String,
+    #[serde(default)]
+    message_id: Option<String>,
+    text: String,
+    #[serde(default)]
+    paths: Vec<String>,
+    #[serde(default)]
+    context: Vec<crate::protocol::ChatContext>,
+}
+
+/// Sends the person's message as `AcpPrompt` does, for a client whose own request
+/// carries no context: the agents, earlier chats and issues the message names.
+async fn prompt_chat(core: &Arc<Core>, params: PromptChatParams) -> CoreResult<Value> {
+    let PromptChatParams {
+        agent_id,
+        message_id,
+        text,
+        paths,
+        mut context,
+    } = params;
+    if core.workspaces.in_terminal(&agent_id) {
+        messages::from_person(core, &agent_id, text)?;
+    } else {
+        super::chat::wake_for_prompt(core, &agent_id, &mut context).await?;
+        super::chat::prompt(core, &agent_id, message_id, text, paths, context)?;
+    }
+    Ok(json!({}))
 }
 
 #[derive(Deserialize)]

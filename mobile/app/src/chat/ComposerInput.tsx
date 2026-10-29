@@ -2,14 +2,36 @@ import { useState, type Ref } from 'react';
 import { Platform, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 
 import { fonts, isLight, type Palette, useColors, useStyles } from '@/ui/theme';
+import type { DraftToken } from './mentions';
 
-type Props = Omit<TextInputProps, 'style' | 'placeholder'> & { placeholder: string; ref?: Ref<TextInput> };
+type Props = Omit<TextInputProps, 'style' | 'placeholder'> & {
+  placeholder: string;
+  ref?: Ref<TextInput>;
+  /** The chips in the text, drawn apart from the words around them where the field can style its text, which the web's cannot. */
+  tokens?: readonly DraftToken[];
+};
+
+function withChips(text: string, tokens: readonly DraftToken[], chip: object) {
+  const spans = [];
+  let at = 0;
+  for (const token of [...tokens].sort((a, b) => a.start - b.start)) {
+    if (token.start > at) spans.push(text.slice(at, token.start));
+    spans.push(
+      <Text key={token.start} style={chip}>
+        {text.slice(token.start, token.end)}
+      </Text>,
+    );
+    at = token.end;
+  }
+  if (at < text.length) spans.push(text.slice(at));
+  return spans;
+}
 
 /**
  * The chat composer's text field. Android sizes a field by its text alone, so an empty one
  * would cut off a placeholder that wraps; a hidden copy of the placeholder sets its height.
  */
-export function ComposerInput({ placeholder, value, ref, ...props }: Props) {
+export function ComposerInput({ placeholder, value, ref, tokens, ...props }: Props) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const [placeholderHeight, setPlaceholderHeight] = useState(0);
@@ -27,7 +49,7 @@ export function ComposerInput({ placeholder, value, ref, ...props }: Props) {
       ) : null}
       <TextInput
         ref={ref}
-        value={value}
+        {...(tokens?.length && value && Platform.OS !== 'web' ? { children: withChips(value, tokens, styles.chip) } : { value })}
         placeholder={placeholder}
         placeholderTextColor={colors.inkFaint}
         multiline
@@ -57,5 +79,6 @@ const makeStyles = (colors: Palette) => {
       ...Platform.select({ ios: { lineHeight: 20 }, android: { includeFontPadding: false, textAlignVertical: 'top' } }),
     },
     measure: { position: 'absolute', left: 0, right: 0, opacity: 0 },
+    chip: { color: colors.accent, backgroundColor: colors.active },
   });
 };

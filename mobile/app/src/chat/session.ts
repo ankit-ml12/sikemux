@@ -12,6 +12,7 @@ import type { ChatDelivery } from '@/devices/hub';
 import { Folds } from './folds';
 import type { ChatStore, DraftStore, Kept } from './kept';
 import { fitting, pathsOf, uploadEach, type Attachment } from './uploads';
+import { editDraft, keptTokens, outgoing, tokensOf, trackedOf, type DraftToken } from './mentions';
 import type { StashItem } from '@/stash/api';
 import { contextChipsOf, withContext, type ContextChip } from '@/stash/words';
 
@@ -39,6 +40,8 @@ export type ChatSnapshot = {
   attachments: readonly Attachment[];
   /** Links and text the draft carries, as the host keeps them: shown as chips, sent as words. */
   chips: readonly ContextChip[];
+  /** The agents, files, chats and issues the draft names, over the words that name them. */
+  tokens: readonly DraftToken[];
   /** What this phone sent, by the path the host keeps it at. */
   sentFiles: ReadonlyMap<string, Attachment>;
   /** Permission requests whose answer is on its way. */
@@ -93,6 +96,9 @@ type Outgoing = {
   messageId: string;
   text: string;
   files: Attachment[];
+  /** The host's files its chips name, and the agents, chats and issues they send. */
+  paths: string[];
+  context: ContextChip[];
   at: number;
   state: Unsent['state'] | 'sent';
   problem?: string;
@@ -103,6 +109,11 @@ type Outgoing = {
 type Holding = Held & { key: number; taken: boolean };
 
 const shownPath = (file: Attachment) => file.path ?? file.uri;
+
+/** What a message's chips send besides its words. */
+type Named = Pick<Outgoing, 'paths' | 'context'>;
+
+const NAMED_NONE: Named = { paths: [], context: [] };
 
 /** The messages in `holding` the host's queue does not hold yet, matched one for one by text. */
 function notQueued(holding: readonly Holding[], host: readonly Held[]): Holding[] {
@@ -160,7 +171,8 @@ function ownRow(outgoing: Outgoing): ChatMessage {
     role: 'user',
     promptId: outgoing.messageId,
     parts: outgoing.text.trim() ? [{ kind: 'text', id: `${outgoing.messageId}/text`, text: outgoing.text }] : [],
-    attachments: outgoing.files.map(shownPath),
+    attachments: [...outgoing.files.map(shownPath), ...outgoing.paths],
+    ...(outgoing.context.length ? { context: outgoing.context.map(({ uri, title }) => ({ uri, title })) } : {}),
     sentAt: outgoing.at,
   };
 }
@@ -188,6 +200,9 @@ export class ChatSession {
   private chosen: ReadonlyMap<string, string> = new Map();
   private attachments: Attachment[] = [];
   private chips: ContextChip[] = [];
+  private tokens: DraftToken[] = [];
+  /** The issues and pull requests the draft's chips name, by chip. */
+  private tracked: Record<string, ContextChip> = {};
   private sentFiles: ReadonlyMap<string, Attachment> = new Map();
   private answering: ReadonlySet<string> = new Set();
   private stopping: ReadonlySet<string> = new Set();
@@ -243,7 +258,10 @@ export class ChatSession {
     if (unsaved) {
       this.draft = unsaved.text;
       this.attachments = unsaved.attachments.filter((attachment) => attachment.path || new File(attachment.uri).exists);
-      this.draftExtra = unsaved.extra;
+      const { tokens, tracked, ...extra } = unsaved.extra;
+      this.draftExtra = extra;
+      this.tokens = tokensOf(unsaved.text, tokens);
+      this.tracked = trackedOf(tracked);
       this.chips = unsaved.chips ?? [];
       this.draftRev = unsaved.rev;
       this.edits = 1;
@@ -283,9 +301,32 @@ export class ChatSession {
 
   setDraft = (text: string) => {
     if (text === this.draft) return;
-    this.draft = text;
+    const named = this.tokens.length > 0;
+    ({ text: this.draft, tokens: this.tokens } = editDraft(this.draft, text, this.tokens));
     this.edited();
-    this.notify();
+    if (named) this.emit();
+    else this.notify();
+  };
+
+  /** Writes what was picked from the mention menu over the word from `start` that asked for it, as a chip when it is one. */
+  mention = (start: number, pick: { written: string; id?: string; label?: string; context?: ContextChip }) => {
+    const before = this.draft.slice(0, start);
+    const kept = this.tokens.filter((token) => token.end <= start);
+    this.tokens = pick.id
+      ? [...kept, { start, end: start + pick.written.length, id: pick.id, ...(pick.label ? { label: pick.label } : {}) }]
+      : kept;
+    const context = pick.context;
+    if (context && !pick.id && !this.chips.some((chip) => chip.uri === context.uri)) this.chips = [...this.chips, context];
+    this.draft = pick.written ? `${before}${pick.written} ` : before;
+    this.edited();
+    this.emit();
+  };
+
+  /** Keeps what the issue or pull request chip `id` sends, once the host has read it. */
+  track = (id: string, context: ContextChip) => {
+    if (!this.tokens.some((token) => token.id === id)) return;
+    this.tracked = { ...this.tracked, [id]: context };
+    this.edited();
   };
 
   /** Keeps the chat attached over this connection until the returned function is called. */
@@ -360,6 +401,8 @@ export class ChatSession {
     this.draft = '';
     this.attachments = [];
     this.chips = [];
+    this.tokens = [];
+    this.tracked = {};
     this.emit();
     return id;
   };
@@ -387,12 +430,19 @@ export class ChatSession {
     this.notice = null;
     const files = this.attachments;
     this.attachments = [];
-    text = withContext(text, this.chips);
+    const named = outgoing(this.draft, this.tokens, this.tracked);
+    named.context.push(...this.chips.filter((chip) => !chip.text));
+    text = withContext(
+      text,
+      this.chips.filter((chip) => chip.text),
+    );
     this.chips = [];
+    this.tokens = [];
+    this.tracked = {};
     this.edited();
-    if (this.outbox.some((outgoing) => outgoing.waiting)) this.deliver(text, files, true);
-    else if (this.busy()) this.queue(text, files, steers && this.chat.running);
-    else this.deliver(text, files);
+    if (this.outbox.some((outgoing) => outgoing.waiting)) this.deliver(text, files, true, named);
+    else if (this.busy()) this.queue(text, files, steers && this.chat.running, named);
+    else this.deliver(text, files, false, named);
     return true;
   };
 
@@ -657,6 +707,7 @@ export class ChatSession {
       unsent: this.unsentView(),
       attachments: this.attachments,
       chips: this.chips,
+      tokens: this.tokens,
       sentFiles: this.sentFiles,
       answering: this.answering,
       stopping: this.stopping,
@@ -821,7 +872,7 @@ export class ChatSession {
       text: this.draft,
       attachments: this.attachments.filter((attachment) => !attachment.upload),
       chips: this.chips,
-      extra: this.draftExtra,
+      extra: { ...this.draftExtra, ...this.namedExtra() },
       rev: this.draftRev,
     });
   };
@@ -839,7 +890,12 @@ export class ChatSession {
     const draft = {
       key: `chat:${this.agentId}`,
       text: this.draft,
-      extra: { ...rest, ...(paths.length ? { attachments: paths } : {}), ...(this.chips.length ? { context: this.chips } : {}) },
+      extra: {
+        ...rest,
+        ...(paths.length ? { attachments: paths } : {}),
+        ...(this.chips.length ? { context: this.chips } : {}),
+        ...this.namedExtra(),
+      },
       ...(this.draftRev === undefined ? {} : { rev: this.draftRev }),
     };
     try {
@@ -853,18 +909,29 @@ export class ChatSession {
     this.takeDraft();
   }
 
+  /** The draft's chips as every app keeps them beside its text. */
+  private namedExtra() {
+    const tracked = Object.entries(this.tracked).filter(([id]) => this.tokens.some((token) => token.id === id));
+    return {
+      ...(this.tokens.length ? { tokens: keptTokens(this.draft, this.tokens) } : {}),
+      ...(tracked.length ? { tracked: Object.fromEntries(tracked) } : {}),
+    };
+  }
+
   /** Takes in the host's draft, unless changes made here are still to be saved over it. */
   private takeDraft() {
     if (this.edits) return;
     const host = this.chat.draft;
     if (host?.rev === this.draftRev && host) return;
     const extra = host?.extra && typeof host.extra === 'object' ? (host.extra as Record<string, unknown>) : {};
-    const { attachments, context, ...rest } = extra;
+    const { attachments, context, tokens, tracked, ...rest } = extra;
     const paths = Array.isArray(attachments) ? attachments.filter((path): path is string => typeof path === 'string') : [];
     const kept = new Map(this.attachments.flatMap((attachment) => (attachment.path ? [[attachment.path, attachment] as const] : [])));
     this.draftRev = host?.rev;
     this.draftExtra = rest;
     this.draft = host?.text ?? '';
+    this.tokens = tokensOf(this.draft, tokens);
+    this.tracked = trackedOf(tracked);
     this.chips = contextChipsOf(context);
     this.attachments = [
       ...paths.map((path) => kept.get(path) ?? hostFile(path)),
@@ -1027,13 +1094,15 @@ export class ChatSession {
       });
   }
 
-  private prompt(connection: ConnectionLike, messageId: string, text: string, paths: string[]) {
-    return connection.prompt(this.agentId, messageId, text, paths);
+  /** Sends a message; one that names agents, chats or issues goes as a call, since the phone's own request carries none. */
+  private async prompt(connection: ConnectionLike, messageId: string, text: string, paths: string[], context: readonly ContextChip[]) {
+    if (!context.length) return connection.prompt(this.agentId, messageId, text, paths);
+    await connection.call('promptChat', JSON.stringify({ agentId: this.agentId, messageId, text, paths, context }));
   }
 
-  private deliver(text: string, files: Attachment[], waiting = false) {
+  private deliver(text: string, files: Attachment[], waiting = false, named: Named = NAMED_NONE) {
     this.showFiles(files);
-    const entry: Outgoing = { messageId: randomUUID(), text, files, at: this.now(), state: 'sending', waiting };
+    const entry: Outgoing = { messageId: randomUUID(), text, files, ...named, at: this.now(), state: 'sending', waiting };
     this.outbox = [...this.outbox, entry];
     this.emit();
     if (!waiting) this.push(entry);
@@ -1056,18 +1125,21 @@ export class ChatSession {
    * Sends the message behind the running turn, or into it when it `steers`, showing it queued at once; when it
    * does not go, it goes back to the composer.
    */
-  private queue(text: string, files: Attachment[], steers: boolean) {
+  private queue(text: string, files: Attachment[], steers: boolean, named: Named) {
     const key = (this.held += 1);
     this.showFiles(files);
-    this.holding = [...this.holding, { id: `phone-${key}`, key, text, paths: files.map(shownPath), context: [], taken: false }];
+    const paths = [...files.map(shownPath), ...named.paths];
+    const context = named.context.map(({ uri, title }) => ({ uri, title }));
+    this.holding = [...this.holding, { id: `phone-${key}`, key, text, paths, context, taken: false }];
     this.emit();
     const connection = this.connection;
     this.inOrder(async () => {
       if (!connection?.isOpen()) throw new Error('the host is not connected');
       const sent = await this.putFiles(connection, files, () => {});
-      if (!steers) return this.prompt(connection, randomUUID(), text, pathsOf(sent));
+      const paths = [...pathsOf(sent), ...named.paths];
+      if (!steers) return this.prompt(connection, randomUUID(), text, paths, named.context);
       const ids = this.onHostQueue(this.chat.queued.map((held) => held.id));
-      const message = { text, paths: pathsOf(sent), context: [] };
+      const message = { text, paths, context: named.context };
       await connection.call('steerQueued', JSON.stringify({ agentId: this.agentId, ids, message }));
     })
       .then(() => {
@@ -1105,7 +1177,7 @@ export class ChatSession {
             : outgoing,
         );
       });
-      await this.prompt(connection, id, entry.text, pathsOf(sent));
+      await this.prompt(connection, id, entry.text, [...pathsOf(sent), ...entry.paths], entry.context);
     })
       .then(() => {
         this.update(id, { state: 'sent' });

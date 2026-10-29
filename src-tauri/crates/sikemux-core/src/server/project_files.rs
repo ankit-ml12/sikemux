@@ -156,6 +156,23 @@ pub(crate) struct ProjectFilesParams {
     since: Option<u64>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectEntriesParams {
+    project: String,
+    #[serde(default)]
+    query: String,
+    #[serde(default = "entries_shown")]
+    limit: usize,
+}
+
+fn entries_shown() -> usize {
+    8
+}
+
+/// The most entries `projectEntries` answers with.
+const MAX_ENTRIES: usize = 50;
+
 enum LimitedWalk {
     Complete(Vec<String>),
     LimitExceeded,
@@ -523,6 +540,20 @@ pub(crate) fn read(params: ProjectFilesParams) -> Result<ProjectFiles, String> {
     let mut slot = cell.slot.locked();
     slot.catch_up(&repo)?;
     Ok(slot.answer(params.since))
+}
+
+/// The project's files and folders that best match the query, for a client that keeps no
+/// list of its own.
+pub(crate) fn entries(params: ProjectEntriesParams) -> Result<Vec<crate::fuzzy::Entry>, String> {
+    let repo = repo_key(&params.project)?;
+    let cell = project_cache(&repo)?;
+    let files = {
+        let mut slot = cell.slot.locked();
+        slot.catch_up(&repo)?;
+        slot.entry.as_ref().expect("caught up").files.clone()
+    };
+    let limit = params.limit.min(MAX_ENTRIES);
+    Ok(crate::fuzzy::rank_entries(&params.query, &files, limit))
 }
 
 fn normalized_relative(repo_root: &Path, path: &Path) -> Result<Option<PathBuf>, ()> {
