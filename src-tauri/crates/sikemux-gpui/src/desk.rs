@@ -782,10 +782,19 @@ impl Workbench {
         Some(agent)
     }
 
-    /// Puts the terminal of each task an agent starts on that agent's desk, as its run opens one.
+    /// Puts the terminal of each task an agent starts on that agent's desk, as its run opens one,
+    /// in place of the terminal of the task's earlier run, and takes it off once the run is stopped.
     /// Runs going when the window first reads them join their desks behind.
-    pub(crate) fn place_agent_runs(&mut self) {
-        let runs: Vec<(String, String, u64, String)> = self
+    pub(crate) fn place_agent_runs(&mut self, cx: &mut Context<Self>) {
+        struct AgentRun {
+            execution: String,
+            agent: String,
+            session: u64,
+            task: String,
+            title: String,
+            stopped: bool,
+        }
+        let runs: Vec<AgentRun> = self
             .reads
             .runs
             .as_ref()
@@ -793,26 +802,59 @@ impl Workbench {
             .into_iter()
             .flatten()
             .filter_map(|run| {
-                Some((
-                    run["executionId"].as_str()?.to_owned(),
-                    run["agentId"].as_str()?.to_owned(),
-                    run["ptyId"].as_u64()?,
-                    run["label"]
+                Some(AgentRun {
+                    execution: run["executionId"].as_str()?.to_owned(),
+                    agent: run["agentId"].as_str()?.to_owned(),
+                    session: run["ptyId"].as_u64()?,
+                    task: run["terminalKey"].as_str().unwrap_or_default().to_owned(),
+                    title: run["label"]
                         .as_str()
                         .or(run["taskId"].as_str())
                         .unwrap_or("Task")
                         .to_owned(),
-                ))
+                    stopped: matches!(run["status"].as_str(), Some("stopping" | "stopped")),
+                })
             })
             .collect();
+        let terminal = |session| DeskItem::Terminal {
+            session,
+            title: String::new(),
+        };
         let front = self.desks.runs_read;
         self.desks.runs_read = true;
-        for (execution, agent, session, title) in runs {
-            if !self.desks.placed_runs.insert(execution) || self.agent_place(&agent).is_none() {
+        let mut emptied = HashSet::new();
+        for run in &runs {
+            if run.stopped {
+                if self.desk_holds(&run.agent, &terminal(run.session)) {
+                    self.take_off_desk(&run.agent, &terminal(run.session));
+                    emptied.insert(run.agent.clone());
+                }
                 continue;
             }
-            self.put_on_desk(&agent, DeskItem::Terminal { session, title }, front);
+            if !self.desks.placed_runs.insert(run.execution.clone())
+                || self.agent_place(&run.agent).is_none()
+            {
+                continue;
+            }
+            let earlier = runs.iter().filter(|other| {
+                other.session != run.session && other.agent == run.agent && other.task == run.task
+            });
+            for other in earlier {
+                self.take_off_desk(&run.agent, &terminal(other.session));
+            }
+            let item = DeskItem::Terminal {
+                session: run.session,
+                title: run.title.clone(),
+            };
+            self.put_on_desk(&run.agent, item, front);
         }
+        for agent in emptied {
+            self.shut_empty_desk(&agent, cx);
+        }
+    }
+
+    fn desk_holds(&self, agent: &str, item: &DeskItem) -> bool {
+        (self.desks.items.get(agent)).is_some_and(|items| items.iter().any(|held| held.same(item)))
     }
 
     /// Points the desks' files at `from`, or under it, to the same names under `to`.

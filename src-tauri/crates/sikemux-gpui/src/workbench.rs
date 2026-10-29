@@ -1188,7 +1188,7 @@ impl Workbench {
             Update::Read(key @ ("runs" | "ports"), value) => {
                 self.keep_read(key, value);
                 if key == "runs" {
-                    self.place_agent_runs();
+                    self.place_agent_runs(cx);
                     self.show_started_runs();
                 }
                 self.time_run(cx);
