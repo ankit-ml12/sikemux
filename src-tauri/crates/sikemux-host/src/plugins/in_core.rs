@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use serde_json::{json, Value};
 use sikemux_core::server::plugins::{Answer, Gated, Listing, Plugins, Sink};
-use sikemux_plugin_api::{AgentTool, StreamSink};
+use sikemux_plugin_api::{AgentTool, Manifest, StreamSink};
 use sikemux_process::user_environment::UserEnvironment;
 
 use super::host::PluginHost;
@@ -16,12 +16,8 @@ use super::host::PluginHost;
 struct InCore(PluginHost);
 
 impl Plugins for InCore {
-    fn manifests(&self) -> Vec<Value> {
-        self.0
-            .manifests()
-            .iter()
-            .filter_map(|manifest| serde_json::to_value(manifest).ok())
-            .collect()
+    fn manifests(&self) -> Vec<&Manifest> {
+        self.0.manifests().collect()
     }
 
     fn set_disabled(&self, ids: Vec<String>) {

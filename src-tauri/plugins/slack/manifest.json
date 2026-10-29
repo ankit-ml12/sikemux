@@ -10,6 +10,7 @@
     "threadView": { "everySecs": 20 }
   },
   "writes": ["post", "setDefault"],
+  "accountMethods": ["signIn", "signOut"],
   "tools": [
     {
       "name": "slack_thread",

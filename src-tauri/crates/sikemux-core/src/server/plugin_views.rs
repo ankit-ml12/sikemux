@@ -77,15 +77,8 @@ pub(crate) struct ViewParams {
     slot: Option<String>,
 }
 
-/// What the plugin's manifest says of its views and writes.
-fn manifest(plugin: &str) -> Option<Value> {
-    plugins::manifests()
-        .into_iter()
-        .find(|manifest| manifest["id"] == plugin)
-}
-
 fn every(plugin: &str, method: &str) -> Option<Duration> {
-    let secs = manifest(plugin)?["views"][method]["everySecs"].as_u64()?;
+    let secs = plugins::manifest(plugin)?.views.get(method)?.every_secs;
     Some(Duration::from_secs(secs.max(1)))
 }
 
@@ -140,18 +133,8 @@ fn pace(answer: &Value, every: Duration) -> Duration {
         .map_or(every, |secs| Duration::from_secs(secs.max(1)).min(every))
 }
 
-/// The plugin `plugin` ran `method`; when the manifest names it as a write,
-/// the plugin's views are read again at once, and again once the service has
-/// settled.
-pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str) {
-    let writes = manifest(plugin).is_some_and(|manifest| {
-        manifest["writes"]
-            .as_array()
-            .is_some_and(|writes| writes.iter().any(|write| write == method))
-    });
-    if !writes {
-        return;
-    }
+/// The plugin `plugin` ran one of its writes, so its views are read again.
+pub(crate) fn wrote(core: &Arc<Core>, plugin: &str) {
     let keys = core.plugin_views.0.keys(|key| key.plugin == plugin);
     shown_cache::read_again_settled::<Shown>(core, keys);
 }
@@ -180,16 +163,11 @@ pub(crate) fn read_again(core: &Arc<Core>, asked: ReadAgain) {
 /// An agent ran the tool `tool`, which may be one of a plugin's writes.
 pub(crate) fn tool_ran(core: &Arc<Core>, tool: &str) {
     let found = plugins::manifests().into_iter().find_map(|manifest| {
-        let method = manifest["tools"]
-            .as_array()?
-            .iter()
-            .find(|each| each["name"] == tool)?["method"]
-            .as_str()?
-            .to_owned();
-        Some((manifest["id"].as_str()?.to_owned(), method))
+        let tool = manifest.tools.iter().find(|each| each.name == tool)?;
+        Some((manifest.id.as_str(), tool.method.as_str()))
     });
     if let Some((plugin, method)) = found {
-        wrote(core, &plugin, &method);
+        plugins::wrote(core, plugin, method, &Value::Null);
     }
 }
 

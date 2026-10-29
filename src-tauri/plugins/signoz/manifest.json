@@ -15,6 +15,7 @@
     "dashboardView": { "everySecs": 300 },
     "panelView": { "everySecs": 30 }
   },
+  "accountMethods": ["signIn", "signOut"],
   "tools": [
     {
       "name": "signoz_services",

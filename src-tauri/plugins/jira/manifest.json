@@ -10,6 +10,7 @@
     "spacesView": { "everySecs": 300 }
   },
   "writes": ["comment", "transition", "assign", "setTask", "moveIssue", "create", "edit", "link", "worklog"],
+  "accountMethods": ["signIn", "signInWithBrowser", "signOut"],
   "tools": [
     {
       "name": "jira_search",

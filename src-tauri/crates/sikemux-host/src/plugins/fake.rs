@@ -10,7 +10,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
-use sikemux_core::server::plugins::{Answer, Category, Failure, Gated, Listing, Plugins, Sink};
+use sikemux_core::server::plugins::{
+    Answer, Category, Failure, Gated, Listing, Manifest, Plugins, Sink,
+};
 
 pub(super) struct Fake(pub(super) Box<dyn Plugins>);
 
@@ -79,7 +81,7 @@ fn note(folder: &Path, plugin: &str, method: &str, params: &Value) {
 }
 
 impl Plugins for Fake {
-    fn manifests(&self) -> Vec<Value> {
+    fn manifests(&self) -> Vec<&Manifest> {
         self.0.manifests()
     }
 

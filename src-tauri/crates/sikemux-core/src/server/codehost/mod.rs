@@ -630,30 +630,9 @@ pub(crate) fn picked(core: &Core, project: &str) {
     }
 }
 
-/// What a window asks of a code host's plugin that changes the repository.
-const WRITES: &[&str] = &[
-    "addComment",
-    "cancel",
-    "createIssue",
-    "createPull",
-    "deleteRun",
-    "deleteRunLogs",
-    "dispatch",
-    "editPull",
-    "mergePull",
-    "rerun",
-    "rerunJob",
-    "reviewDeployment",
-    "reviewPull",
-    "setIssueState",
-    "setPullState",
-];
 /// A window changed the repository `owner/name` through the plugin `plugin`,
 /// so its lists are read again at once, and again once the host has settled.
-pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str, params: &Value) {
-    if !WRITES.contains(&method) {
-        return;
-    }
+pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, params: &Value) {
     let (Some(owner), Some(name)) = (params["owner"].as_str(), params["name"].as_str()) else {
         return;
     };

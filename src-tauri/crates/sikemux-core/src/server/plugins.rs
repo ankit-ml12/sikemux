@@ -11,9 +11,11 @@ use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-pub use sikemux_plugin_api::Category;
+use sikemux_plugin_api::SignInStatus;
+pub use sikemux_plugin_api::{Category, Manifest};
 
 use crate::cli::protocol::HarnessRequest;
 
@@ -79,7 +81,7 @@ pub struct Gated {
 }
 
 pub trait Plugins: Send + Sync {
-    fn manifests(&self) -> Vec<Value>;
+    fn manifests(&self) -> Vec<&Manifest>;
     fn set_disabled(&self, ids: Vec<String>);
     fn disabled(&self) -> Vec<String>;
     /// Hands a waiting browser sign-in the address the browser came back to on
@@ -155,8 +157,7 @@ pub(crate) async fn window_call(core: &Core, call: WindowCall) -> Outcome {
         Err(failure) => Err(failure),
     };
     if let (true, Some(core)) = (outcome.is_ok(), core.arc()) {
-        super::codehost::wrote(&core, &call.plugin, &call.method, &call.params);
-        super::plugin_views::wrote(&core, &call.plugin, &call.method);
+        wrote(&core, &call.plugin, &call.method, &call.params);
     }
     tell_agents_if_theirs(core, &call.plugin);
     sign_in_moved(core, &call.plugin, &call.method);
@@ -175,11 +176,28 @@ pub(crate) fn tell_agents_if_theirs(core: &Core, plugin: &str) {
     }
 }
 
-pub(crate) fn manifests() -> Vec<Value> {
+pub(crate) fn manifests() -> Vec<&'static Manifest> {
     PLUGINS
         .get()
         .map(|plugins| plugins.manifests())
         .unwrap_or_default()
+}
+
+pub(crate) fn manifest(plugin: &str) -> Option<&'static Manifest> {
+    manifests()
+        .into_iter()
+        .find(|manifest| manifest.id == plugin)
+}
+
+/// `plugin` ran `method`; when its manifest names it as a write, what it
+/// shows is read again at once, and again once the service has settled.
+pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str, params: &Value) {
+    if !manifest(plugin).is_some_and(|manifest| manifest.writes.iter().any(|write| write == method))
+    {
+        return;
+    }
+    super::plugin_views::wrote(core, plugin);
+    super::codehost::wrote(core, plugin, params);
 }
 
 #[derive(Deserialize)]
@@ -257,16 +275,16 @@ pub(crate) struct Listed {
 /// service now.
 pub(crate) async fn listed() -> Vec<Listed> {
     let disabled = disabled();
-    let asked = manifests().into_iter().filter_map(|manifest| {
-        let id = manifest["id"].as_str()?.to_owned();
-        let name = manifest["name"].as_str().unwrap_or(&id).to_owned();
+    let asked = manifests().into_iter().map(|manifest| {
+        let id = manifest.id.clone();
+        let name = manifest.name.clone();
         let enabled = !disabled.contains(&id);
-        Some(async move {
+        async move {
             let signed_in = if enabled {
                 match call(&id, "status", Value::Null).await {
                     Ok(status) => Some(
-                        status["configured"] == Value::Bool(true)
-                            && status["authFailed"] != Value::Bool(true),
+                        serde_json::from_value::<SignInStatus<IgnoredAny>>(status)
+                            .is_ok_and(|status| status.configured && !status.auth_failed),
                     ),
                     Err(failure) if failure.category == Category::UnknownMethod => None,
                     Err(_) => Some(false),
@@ -280,7 +298,7 @@ pub(crate) async fn listed() -> Vec<Listed> {
                 enabled,
                 signed_in,
             }
-        })
+        }
     });
     futures_util::future::join_all(asked).await
 }
@@ -296,7 +314,7 @@ pub(crate) async fn link(params: LinkParams) -> Value {
     let disabled = disabled();
     let url = params.url;
     let asked = manifests().into_iter().filter_map(|manifest| {
-        let id = manifest["id"].as_str()?.to_owned();
+        let id = manifest.id.clone();
         let url = url.clone();
         (!disabled.contains(&id)).then_some(async move {
             let at = call(&id, "resolveLink", json!({ "url": url })).await.ok()?;
@@ -314,12 +332,13 @@ pub(crate) async fn link(params: LinkParams) -> Value {
 /// A plugin's call may have signed it in or out, or picked another account,
 /// so clients read the plugins again.
 pub(crate) fn sign_in_moved(core: &Core, plugin: &str, method: &str) {
-    if method.starts_with("signIn")
-        || method.starts_with("signOut")
-        || method.starts_with("login")
-        || method == "logout"
-        || method == "setDefaultAccount"
-    {
+    let account_moved = manifest(plugin).is_some_and(|manifest| {
+        manifest
+            .account_methods
+            .iter()
+            .any(|account| account == method)
+    });
+    if account_moved {
         core.changes.changed(Topic::Plugins, None, None);
         super::plugin_views::signed(core, plugin);
     }

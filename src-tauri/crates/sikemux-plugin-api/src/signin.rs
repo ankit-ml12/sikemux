@@ -1,11 +1,11 @@
 //! Whether a plugin is signed in and its sign-in still works, in the shape
 //! every plugin's sign-in view reads.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::service::{Service, ServiceError};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignInStatus<D> {
     pub configured: bool,

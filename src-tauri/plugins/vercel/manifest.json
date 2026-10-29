@@ -12,6 +12,7 @@
     "envView": { "everySecs": 60 }
   },
   "writes": ["redeploy", "promote", "cancel", "setTeam"],
+  "accountMethods": ["signIn", "signInWithBrowser", "signOut"],
   "tools": [
     {
       "name": "vercel_projects",

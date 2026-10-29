@@ -33,6 +33,10 @@ pub struct Manifest {
     /// again after one succeeds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub writes: Vec<String>,
+    /// The methods that sign the person in or out or pick another account, after
+    /// which clients read the plugins again and its views are read afresh.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub account_methods: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

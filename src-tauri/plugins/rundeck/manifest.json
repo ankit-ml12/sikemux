@@ -17,6 +17,7 @@
     "optionValues": { "everySecs": 60 }
   },
   "writes": ["run", "agentRun", "abort", "setLists"],
+  "accountMethods": ["login", "loginWithToken", "logout"],
   "tools": [
     {
       "name": "rundeck_projects",

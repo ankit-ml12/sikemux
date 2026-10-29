@@ -268,7 +268,7 @@ pub(crate) async fn settle(
                 .await
                 .map_err(|failure| failure.message)?;
             plugins::tell_agents_if_theirs(core, plugin);
-            super::plugin_views::wrote(core, plugin, method);
+            plugins::wrote(core, plugin, method, &Value::Null);
             Ok(match done {
                 Value::String(said) => format!("The person approved it. {said}"),
                 _ => "The person approved it, and it is done.".to_owned(),

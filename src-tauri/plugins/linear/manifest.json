@@ -9,6 +9,7 @@
     "issueView": { "everySecs": 20 }
   },
   "writes": ["signIn", "signOut", "setDefault", "comment", "update", "create"],
+  "accountMethods": ["signIn", "signInWithBrowser", "signOut"],
   "tools": [
     {
       "name": "linear_search",

@@ -186,11 +186,8 @@ impl PluginHost {
             .collect()
     }
 
-    pub fn manifests(&self) -> Vec<Manifest> {
-        self.plugins
-            .values()
-            .map(|loaded| loaded.plugin.manifest().clone())
-            .collect()
+    pub fn manifests(&self) -> impl Iterator<Item = &Manifest> {
+        self.plugins.values().map(|loaded| loaded.plugin.manifest())
     }
 
     /// Every tool the loaded plugins offer agents, beside the plugin that answers
@@ -444,7 +441,7 @@ mod tests {
             Echo::plugin("test.echo", ">=0.4"),
             Echo::plugin("test.future", ">=9"),
         ]);
-        let ids: Vec<String> = host.manifests().into_iter().map(|m| m.id).collect();
+        let ids: Vec<String> = host.manifests().map(|m| m.id.clone()).collect();
         assert_eq!(ids, ["test.echo"]);
     }
 

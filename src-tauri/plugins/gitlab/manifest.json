@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "sikemux": ">=0.4",
   "callTimeoutSecs": 120,
+  "writes": ["addComment", "cancel", "createIssue", "createPull", "deleteRun", "dispatch", "mergePull", "rerun", "rerunJob", "reviewPull", "setIssueState", "setPullState"],
+  "accountMethods": ["setDefaultAccount", "signInWithToken", "signOut"],
   "tools": [
     {
       "name": "gitlab_merge_requests",
