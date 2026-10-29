@@ -432,6 +432,19 @@ export class ChatSession {
     void this.ask((connection) => connection.call('steerQueued', JSON.stringify({ agentId: this.agentId, ids })), 'Could not steer');
   };
 
+  /** Acts on the turn that failed: sends it again, lets it go, or keeps it from resuming once a usage limit resets. */
+  failedTurn = (method: 'retryFailed' | 'discardFailed' | 'cancelResume') => {
+    void this.ask((connection) => connection.call(method, JSON.stringify({ agentId: this.agentId })), 'Could not do that');
+  };
+
+  /** Carries the chat on in another of the person's accounts, a turn that failed sent again there. */
+  moveToAccount = (accountId: string) => {
+    void this.ask(
+      (connection) => connection.call('moveChatAccount', JSON.stringify({ agentId: this.agentId, accountId })),
+      'Could not move the chat',
+    );
+  };
+
   dropQueued = (id: string) => {
     if (!this.onHostQueue([id]).length) return;
     void this.ask(

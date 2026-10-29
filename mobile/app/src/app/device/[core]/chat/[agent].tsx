@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AccessibilityInfo, type ScrollViewProps, type TextInput, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
@@ -25,6 +25,7 @@ import { useQuestions } from '@/chat/questions';
 import { hasLiveWork, liveKey, liveWork } from '@/chat/liveWork';
 import { stripOf, stripOwner } from '@/chat/messageMeta';
 import { ToolDetailContext } from '@/chat/Tools';
+import { Trouble } from '@/chat/Trouble';
 import {
   Activity,
   Earlier,
@@ -242,6 +243,16 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   // The person may change how sending mid-turn goes between turns, so each turn reads it afresh.
   const preferences = useHostCall<Preferences>(connection, 'preferences', null, String(state.running)).data;
   const steers = steerable && preferences?.midTurnSend !== 'queue';
+  const saved = live.snapshot?.workspace.agents?.find((shown) => shown.id === agentId);
+  const startOver = saved
+    ? () => {
+        const launcher = live.snapshot?.workspace.launchers.find(
+          (known) => known.provider === saved.provider && (!saved.profileId || known.id.endsWith(`:${saved.profileId}`)),
+        );
+        const params = { core, project: saved.project, ...(launcher ? { launcher: launcher.id } : {}) };
+        router.push({ pathname: '/device/[core]/new', params });
+      }
+    : undefined;
   const liveShown = hasLiveWork(fresh) && chat.attached === 'live';
   const recalls = !watchOnly && (queued.length > 0 || state.messages.some((message) => message.role === 'user'));
   const strip = liveShown ? <LiveStrip work={work} provider={provider} onOpen={openLive} /> : null;
@@ -346,7 +357,15 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                               <>
                                 {queued.length ? <Queued held={queued} sentFiles={chat.sentFiles} /> : null}
                                 {activity ? <Activity provider={provider} label={activity} since={chat.turnSince} /> : null}
-                                {state.error ? <Text style={styles.error}>{state.error}</Text> : null}
+                                <Trouble
+                                  state={state}
+                                  provider={provider}
+                                  hostName={hostName}
+                                  connection={connection}
+                                  session={session}
+                                  canAct={!watchOnly && chat.attached === 'live' && live.status === 'open'}
+                                  onStartOver={startOver}
+                                />
                                 {questions.answered.map((question) => (
                                   <AnsweredQuestion
                                     key={question.id}
@@ -532,7 +551,6 @@ const makeStyles = (colors: Palette) => {
     missing: { gap: 16, paddingHorizontal: 18, paddingVertical: 24 },
     bottomStatus: { borderTopWidth: 1, borderTopColor: colors.border },
     gone: { ...type.meta, textAlign: 'center' },
-    error: { fontFamily: fonts.ui, fontSize: 13.5, color: colors.danger, marginTop: 10 },
     reconnect: {
       flexDirection: 'row',
       alignItems: 'center',

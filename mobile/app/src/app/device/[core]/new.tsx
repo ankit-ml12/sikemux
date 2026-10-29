@@ -168,10 +168,14 @@ export default function NewChat() {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const type = useType();
-  const { core, project: linkedProject } = useLocalSearchParams<{ core: string; project?: string }>();
+  const {
+    core,
+    project: linkedProject,
+    launcher: linkedLauncher,
+  } = useLocalSearchParams<{ core: string; project?: string; launcher?: string }>();
   const live = useLive(core);
   const workspace = live.snapshot?.workspace;
-  const [launcherId, setLauncherId] = useState<string>();
+  const [launcherId, setLauncherId] = useState<string | undefined>(linkedLauncher);
   const [chosenMode, setChosenMode] = useState<string>();
   const [projectId, setProjectId] = useState<string | undefined>(linkedProject);
   const kept = useMemo(() => newChatDraft(core), [core]);

@@ -863,6 +863,13 @@
   .sub-head .calls { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
   .sub-head .st { width: 14px; display: grid; place-items: center; }
   .sub-body { padding: 4px 0 0 14px; }
+  .trouble { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .trouble .said { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 19px; color: var(--text-secondary); }
+  .trouble .said > i { height: 19px; display: grid; place-items: center; color: var(--danger); }
+  .trouble .details { margin-left: 22px; font-family: var(--mono); font-size: 11.5px; line-height: 16px; color: var(--text-tertiary); }
+  .trouble .host { margin-left: 22px; font-size: 13px; line-height: 18px; color: var(--text-tertiary); }
+  .trouble .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-left: 22px; }
+  .trouble .acts span { height: 32px; padding: 0 13px; border-radius: 16px; border: 1px solid var(--border); display: flex; align-items: center; font-size: 13px; font-weight: 600; color: var(--ink); }
   .notice { align-self: flex-start; max-width: 100%; margin: 5px 0; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--border); }
   .notice .h { display: flex; align-items: center; gap: 7px; color: var(--ink-faint); }
   .notice .nm { font-family: var(--mono); font-size: 11.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2854,6 +2861,92 @@ expected 1 write, got 2</div>
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Could not open</b><div class="note">A chat the host cannot wake or attach says why in one line, with Try again under it in place of the composer. While the phone is still reaching the host the squares read "Reaching MacBook Pro…" instead of "Opening the chat…"; if it cannot reach it, the line says so and Try again reconnects before opening the chat.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Wire the pairing screen to the new join tickets, then run the settings tests.</div>
+          <div class="prose">The screen now asks the host for a join ticket and shows it as a QR code. Running the settings tests next.</div>
+          <div class="trouble">
+            <div class="said"><i>{{IconPlug:14}}</i><span>This session dropped: the agent exited with code 1</span></div>
+            <div class="acts"><span>Reconnect</span><span>Start new chat</span></div>
+          </div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Session dropped</b><div class="note">The Mac's line at the end of the chat when its agent's session ends under it, with why when the host knows. Reconnect starts the session again on its conversation and takes the chat up; Start new chat opens a new chat with the same agent and account in the same project. A watching phone, or one out of reach of the host, shows the line without the buttons.</div></figcaption>
+    </figure>
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Wire the pairing screen to the new join tickets, then run the settings tests.</div>
+          <div class="prose">The screen now asks the host for a join ticket and shows it as a QR code. Running the settings tests next.</div>
+          <div class="trouble">
+            <div class="said"><i>{{IconWarning:14}}</i><span>Lost connection to Anthropic. Sikemux sends it again when you're back online.</span></div>
+            <div class="details">API Error: Connection error. (ECONNRESET)</div>
+            <div class="acts"><span>Retry now</span><span>Discard</span></div>
+          </div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Lost the provider</b><div class="note">A turn the network failed says whose servers it lost, with what the agent said under it in mono. The host sends the turn again once it is back online by itself; Retry now sends it at once, Discard lets it go.</div></figcaption>
+    </figure>
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Wire the pairing screen to the new join tickets, then run the settings tests.</div>
+          <div class="prose">The screen now asks the host for a join ticket and shows it as a QR code. Running the settings tests next.</div>
+          <div class="trouble">
+            <div class="said"><i>{{IconWarning:14}}</i><span>You've hit your limit · resets 3pm</span></div>
+            <div class="acts"><span>Don't resume</span><span>Continue on Work</span></div>
+          </div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>At a usage limit</b><div class="note">The host's words for the limit, then what it offers: Don't resume while it waits to send the turn again once the limit resets, and Continue on each of the person's other accounts that is signed in and keeps this chat's conversations, which the host lists. The chat moves there and the turn goes again. When a turn fails because the account is signed out, the line says to sign in to it on the host, since signing in runs there, with Retry for once it has.</div></figcaption>
     </figure>
 
 
