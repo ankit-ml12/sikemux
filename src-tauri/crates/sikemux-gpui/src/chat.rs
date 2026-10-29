@@ -478,6 +478,25 @@ impl Reading {
 
 /// A chat the window shows: its rows in a transcript, how it stands, its
 /// subagents' rows, and where in the core's changes it has got to.
+/// The chats the window holds and what waits on them.
+#[derive(Default)]
+pub struct Chats {
+    /// The chats of the agents with a tab open, by agent id.
+    pub open: HashMap<String, Chat>,
+    /// The chat in front and whether its session was ready when its draft last took the keys.
+    pub(crate) focused: Option<(String, bool)>,
+    /// Text handed to agents whose composer is not made yet, put in once it is.
+    pub(crate) deliveries: HashMap<String, String>,
+    /// What agents asked the person, and the assumptions they went on: this host's, then the
+    /// chosen account host's.
+    pub questions: Vec<Question>,
+    /// The chosen account host's questions, apart, so this host's reading again keeps them.
+    pub(crate) host_questions: Vec<Question>,
+    /// Lets go of the chats out of sight once they have been for a while, counted from when
+    /// the chat now in front came there.
+    pub(crate) resting: Option<(Option<String>, gpui_kit::Task<()>)>,
+}
+
 pub struct Chat {
     pub transcript: Entity<Transcript<ChatRow>>,
     /// Swapped for new looks when the theme changes, which the transcript's rows draw with.
@@ -625,7 +644,7 @@ impl Chat {
             cx.subscribe(&transcript, move |_, _: &RowsChanged, cx| {
                 stage
                     .update(cx, |bench, cx| {
-                        if let Some(chat) = bench.chats.get_mut(&chat) {
+                        if let Some(chat) = bench.chats.open.get_mut(&chat) {
                             chat.follow_activity(cx);
                             chat.trim(cx);
                         }
@@ -1371,6 +1390,7 @@ pub fn pane(
         })
         .children(welcome.map(|welcome| crate::home::centred(welcome).absolute().inset_0()));
     let open: Vec<&Question> = bench
+        .chats
         .questions
         .iter()
         .filter(|question| question.asks(&agent.id))
@@ -1391,6 +1411,7 @@ pub fn pane(
         waiting.push(("questions".into(), Waiting::Questions(asked)));
     }
     let answered: Vec<&Question> = bench
+        .chats
         .questions
         .iter()
         .filter(|question| question.of(&agent.id, QuestionState::Answered))
@@ -1567,11 +1588,12 @@ fn pressed<A: gpui::Action, F: Fn(&A) -> Press + 'static>(
     move |action: &A, _: &mut Window, cx: &mut App| {
         let taken = this.update(cx, |bench, cx| {
             let open: Vec<&Question> = bench
+                .chats
                 .questions
                 .iter()
                 .filter(|question| question.asks(&agent))
                 .collect();
-            let chat = bench.chats.get_mut(&agent)?;
+            let chat = bench.chats.open.get_mut(&agent)?;
             let (taken, ask) = chat.press(press(action), &open);
             if let Some(ask) = ask {
                 bench.ask_answering(&agent, ask, cx);
@@ -1592,7 +1614,7 @@ fn column() -> gpui_kit::Div {
 impl Workbench {
     /// How many tool calls of the chat in front have their detail held, and how many are open.
     pub fn tool_details(&self, cx: &App) -> Option<(usize, usize)> {
-        let chat = self.chats.get(&self.agent()?.id)?;
+        let chat = self.chats.open.get(&self.agent()?.id)?;
         Some(chat.reader.read(cx).tools.counts())
     }
 
@@ -1601,7 +1623,7 @@ impl Workbench {
         let Some(agent) = self.agent().map(|agent| agent.id) else {
             return;
         };
-        let Some(chat) = self.chats.get(&agent) else {
+        let Some(chat) = self.chats.open.get(&agent) else {
             return;
         };
         let first = chat.transcript.read(cx).rows().iter().find_map(|row| {
@@ -1632,12 +1654,12 @@ impl Workbench {
         menu: Entity<gpui_kit::component::menu::PopupMenu>,
         cx: &mut Context<Self>,
     ) {
-        let Some(chat) = self.chats.get_mut(agent) else {
+        let Some(chat) = self.chats.open.get_mut(agent) else {
             return;
         };
         let agent = agent.to_owned();
         let dismissed = cx.subscribe(&menu, move |bench, _, _: &gpui_kit::DismissEvent, cx| {
-            if let Some(chat) = bench.chats.get_mut(&agent) {
+            if let Some(chat) = bench.chats.open.get_mut(&agent) {
                 chat.file_menu = None;
             }
             bench.parts.redraw(&bench.parts.stage, cx);

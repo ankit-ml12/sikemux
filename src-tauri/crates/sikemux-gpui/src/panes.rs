@@ -971,6 +971,7 @@ impl Workbench {
             PaneKind::Agent => {
                 if let Some(composing) = self
                     .chats
+                    .open
                     .get(target)
                     .and_then(|chat| chat.composer.as_ref())
                 {

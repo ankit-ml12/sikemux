@@ -298,6 +298,7 @@ impl Workbench {
         }
         let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         else {
@@ -405,6 +406,7 @@ impl Workbench {
     pub fn forget(&mut self, agent: &str, index: usize, cx: &mut Context<Self>) {
         if let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         {
@@ -425,6 +427,7 @@ impl Workbench {
     ) {
         if let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         {
@@ -670,6 +673,7 @@ pub fn with_chips(
             let bench = bench.read(cx);
             let commands: Vec<String> = bench
                 .chats
+                .open
                 .get(agent)
                 .and_then(|chat| chat.state.as_ref())
                 .map(|head| {

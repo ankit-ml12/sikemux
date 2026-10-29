@@ -56,7 +56,7 @@ pub(super) fn permission(
                 })
                 .disabled(busy)
                 .on_click(cx.listener(move |bench, _, _, cx| {
-                    if let Some(chat) = bench.chats.get_mut(&agent) {
+                    if let Some(chat) = bench.chats.open.get_mut(&agent) {
                         chat.replying = Some(request.clone());
                     }
                     bench.parts.redraw(&bench.parts.stage, cx);

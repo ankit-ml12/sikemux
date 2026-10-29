@@ -461,7 +461,7 @@ impl Run {
         self.bench
             .read_with(&self.cx, |bench, cx| {
                 let agent = bench.agent()?;
-                let composing = bench.chats.get(&agent.id)?.composer.as_ref()?;
+                let composing = bench.chats.open.get(&agent.id)?.composer.as_ref()?;
                 Some(composing.draft.read(cx).value().to_string())
             })
             .unwrap_or_default()
@@ -477,6 +477,7 @@ impl Run {
                 let Some(draft) = bench
                     .read(cx)
                     .chats
+                    .open
                     .get(&agent.id)
                     .and_then(|chat| chat.composer.as_ref())
                     .map(|composing| composing.draft.clone())
@@ -496,7 +497,7 @@ impl Run {
                 let bench = bench.read(cx);
                 bench
                     .agent()
-                    .and_then(|agent| bench.chats.get(&agent.id))
+                    .and_then(|agent| bench.chats.open.get(&agent.id))
                     .and_then(|chat| chat.composer.as_ref())
                     .is_some_and(|composing| {
                         composing.draft.read(cx).focus_handle(cx).is_focused(window)
@@ -578,6 +579,7 @@ impl Run {
         self.bench.read_with(&self.cx, |bench, cx| {
             bench
                 .chats
+                .open
                 .get(&chat)
                 .map_or(0, |chat| chat.transcript.read(cx).rows().len())
         })
@@ -600,7 +602,7 @@ impl Run {
     fn at_last_held(&mut self, chat: &str) -> bool {
         let chat = chat.to_owned();
         self.bench.read_with(&self.cx, |bench, cx| {
-            bench.chats.get(&chat).is_some_and(|chat| {
+            bench.chats.open.get(&chat).is_some_and(|chat| {
                 let transcript = chat.transcript.read(cx);
                 !transcript.rows().is_empty() && transcript.visible().end >= transcript.rows().len()
             })
@@ -610,7 +612,7 @@ impl Run {
     fn row_ids(&mut self, chat: &str) -> Vec<String> {
         let chat = chat.to_owned();
         self.bench.read_with(&self.cx, |bench, cx| {
-            bench.chats.get(&chat).map_or_else(Vec::new, |chat| {
+            bench.chats.open.get(&chat).map_or_else(Vec::new, |chat| {
                 let transcript = chat.transcript.read(cx);
                 transcript
                     .rows()
@@ -679,7 +681,8 @@ fn agents(run: &mut Run, driver: &Arc<Driver>, minutes: Option<f64>) {
     );
     let front = run.front_chat().unwrap_or_default();
     let (open, rows) = (
-        run.bench.read_with(&run.cx, |bench, _| bench.chats.len()),
+        run.bench
+            .read_with(&run.cx, |bench, _| bench.chats.open.len()),
         run.rows(&front),
     );
     println!("  {open} chats held by the window, {rows} rows in the one in front");

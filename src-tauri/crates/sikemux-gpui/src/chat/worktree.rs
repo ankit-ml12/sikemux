@@ -22,7 +22,7 @@ impl Workbench {
             .projects()
             .iter()
             .find(|project| project.id == saved.project)?;
-        let chat = self.chats.get(agent);
+        let chat = self.chats.open.get(agent);
         let started = saved.resume_id.is_some() || chat.is_none_or(|chat| !chat.is_empty(cx));
         let preparing = chat
             .and_then(|chat| chat.composer.as_ref())
@@ -61,6 +61,7 @@ impl Workbench {
     pub(crate) fn begin_worktree(&mut self, agent: &str, message: String, cx: &mut Context<Self>) {
         let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         else {
@@ -89,6 +90,7 @@ impl Workbench {
     fn worktree_made(&mut self, agent: &str, made: Result<Value, String>, cx: &mut Context<Self>) {
         let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         else {
@@ -134,9 +136,15 @@ impl Workbench {
                 .iter()
                 .any(|saved| saved.id == agent && saved.worktree.is_some())
         });
-        let ready = moved && self.chats.get(agent).is_some_and(Chat::ready_in_worktree);
+        let ready = moved
+            && self
+                .chats
+                .open
+                .get(agent)
+                .is_some_and(Chat::ready_in_worktree);
         let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
             .filter(|composing| {

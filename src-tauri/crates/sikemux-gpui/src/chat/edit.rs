@@ -49,7 +49,7 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(chat) = self.chats.get(agent) else {
+        let Some(chat) = self.chats.open.get(agent) else {
             return;
         };
         let draft = cx.new(|cx| {
@@ -84,7 +84,7 @@ impl Workbench {
     }
 
     pub fn cancel_edit(&mut self, agent: &str, cx: &mut Context<Self>) {
-        if let Some(chat) = self.chats.get(agent) {
+        if let Some(chat) = self.chats.open.get(agent) {
             chat.reader.update(cx, |reading, cx| {
                 reading.editing = None;
                 cx.notify();
@@ -94,7 +94,7 @@ impl Workbench {
 
     /// Sends the message being written again in place of the one it was, and everything after it.
     pub fn send_edit(&mut self, agent: &str, cx: &mut Context<Self>) {
-        let Some(chat) = self.chats.get(agent) else {
+        let Some(chat) = self.chats.open.get(agent) else {
             return;
         };
         let Some(editing) = chat.reader.update(cx, |reading, cx| {

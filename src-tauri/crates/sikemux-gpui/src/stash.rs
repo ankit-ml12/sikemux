@@ -292,6 +292,7 @@ impl Workbench {
                         let id = kept["id"].as_str().map(str::to_owned);
                         if let Some(composing) = bench
                             .chats
+                            .open
                             .get_mut(&agent)
                             .and_then(|chat| chat.composer.as_mut())
                         {
@@ -305,6 +306,7 @@ impl Workbench {
                                 .update(cx, |bench, cx| {
                                     if let Some(composing) = bench
                                         .chats
+                                        .open
                                         .get_mut(&agent)
                                         .and_then(|chat| chat.composer.as_mut())
                                         .filter(|composing| composing.stashed == id)
@@ -331,6 +333,7 @@ impl Workbench {
     pub fn unstash_prompt(&mut self, agent: &str, id: &str, cx: &mut Context<Self>) {
         if let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         {

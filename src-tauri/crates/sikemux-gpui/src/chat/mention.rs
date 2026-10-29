@@ -296,6 +296,7 @@ impl Workbench {
     pub fn offer(&mut self, agent: &str, cx: &mut Context<Self>) {
         let Some(composing) = self
             .chats
+            .open
             .get(agent)
             .and_then(|chat| chat.composer.as_ref())
         else {
@@ -311,6 +312,7 @@ impl Workbench {
         let menu = typed.map(|typed| self.menu(agent, typed, cx));
         if let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         {
@@ -325,6 +327,7 @@ impl Workbench {
             '@' => self.mates(agent, &needle).into(),
             '/' => self
                 .chats
+                .open
                 .get(agent)
                 .and_then(|chat| chat.state.as_ref())
                 .map_or(Vec::new(), |head| {
@@ -400,6 +403,7 @@ impl Workbench {
     pub fn toggle_stash_tray(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         else {
@@ -420,6 +424,7 @@ impl Workbench {
         menu.pinned = true;
         if let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         {
@@ -429,7 +434,13 @@ impl Workbench {
     }
 
     fn tracked_of(&self, agent: &str) -> Option<&Tracked> {
-        self.chats.get(agent)?.composer.as_ref()?.tracked.as_ref()
+        self.chats
+            .open
+            .get(agent)?
+            .composer
+            .as_ref()?
+            .tracked
+            .as_ref()
     }
 
     /// Asks the chat's core for its project's open issues and pull requests, the first time
@@ -444,7 +455,7 @@ impl Workbench {
         let answer = self
             .chat_target(agent)
             .request("codeHostTracked", json!({ "project": path }));
-        let composing = self.chats.get_mut(agent)?.composer.as_mut()?;
+        let composing = self.chats.open.get_mut(agent)?.composer.as_mut()?;
         composing.tracked = Some(Tracked::Reading);
         let agent = agent.to_owned();
         Some(cx.spawn(async move |this, cx| {
@@ -473,6 +484,7 @@ impl Workbench {
                 let project = bench.project().cloned();
                 let Some(composing) = bench
                     .chats
+                    .open
                     .get_mut(&agent)
                     .and_then(|chat| chat.composer.as_mut())
                 else {
@@ -583,6 +595,7 @@ impl Workbench {
                 this.update(cx, |bench: &mut Workbench, cx| {
                     let menu = bench
                         .chats
+                        .open
                         .get_mut(&agent)
                         .and_then(|chat| chat.composer.as_mut())
                         .and_then(|composing| composing.menu.as_mut());
@@ -655,6 +668,7 @@ impl Workbench {
             this.update(cx, |bench, cx| {
                 if let Some(menu) = bench
                     .chats
+                    .open
                     .get_mut(&agent)
                     .and_then(|chat| chat.composer.as_mut())
                     .and_then(|composing| composing.menu.as_mut())
@@ -672,6 +686,7 @@ impl Workbench {
     pub fn files_listed(&mut self, cx: &mut Context<Self>) {
         let menus: Vec<(String, String)> = self
             .chats
+            .open
             .iter()
             .filter_map(|(agent, chat)| {
                 let typed = &chat.composer.as_ref()?.menu.as_ref()?.typed;
@@ -682,6 +697,7 @@ impl Workbench {
             let ranking = self.rank_entries(&agent, needle, cx);
             if let Some(menu) = self
                 .chats
+                .open
                 .get_mut(&agent)
                 .and_then(|chat| chat.composer.as_mut())
                 .and_then(|composing| composing.menu.as_mut())
@@ -695,6 +711,7 @@ impl Workbench {
     pub fn pick_choice(&mut self, agent: &str, by: isize, cx: &mut Context<Self>) {
         if let Some(menu) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
             .and_then(|composing| composing.menu.as_mut())
@@ -719,6 +736,7 @@ impl Workbench {
     ) {
         let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         else {
@@ -742,6 +760,7 @@ impl Workbench {
     pub fn dismiss_menu(&mut self, agent: &str, cx: &mut Context<Self>) {
         if let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         {
@@ -762,6 +781,7 @@ impl Workbench {
         let target = self.chat_target(agent);
         let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         else {
@@ -799,6 +819,7 @@ impl Workbench {
                 this.update(cx, |bench, cx| {
                     if let Some(composing) = bench
                         .chats
+                        .open
                         .get_mut(&agent)
                         .and_then(|chat| chat.composer.as_mut())
                     {

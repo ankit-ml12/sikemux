@@ -97,7 +97,7 @@ pub fn agent_view(
     }
     if let Some((agent, chat)) = agent
         .as_ref()
-        .and_then(|agent| Some((agent, bench.chats.get(&agent.id)?)))
+        .and_then(|agent| Some((agent, bench.chats.open.get(&agent.id)?)))
     {
         let resumes = bench.shown().is_some_and(|view| {
             view.workspace

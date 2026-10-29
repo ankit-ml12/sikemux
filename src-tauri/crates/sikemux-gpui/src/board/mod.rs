@@ -998,6 +998,7 @@ fn card_view(pane: &BoardPane, card: &Card, cx: &mut Context<BoardPane>) -> AnyE
             let bench = pane.bench.upgrade()?;
             let bench = bench.read(cx);
             bench
+                .chats
                 .questions
                 .iter()
                 .find_map(|question| question.open_from(owner))

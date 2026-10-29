@@ -29,6 +29,7 @@ impl Workbench {
         };
         if let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         {
@@ -43,7 +44,7 @@ impl Workbench {
 /// Sends each message that waited for an install that has now ended, or says it failed.
 pub(crate) fn installs_moved(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     let mut ready = Vec::new();
-    for (agent, chat) in bench.chats.iter_mut() {
+    for (agent, chat) in bench.chats.open.iter_mut() {
         let Some(composing) = chat.composer.as_mut() else {
             continue;
         };

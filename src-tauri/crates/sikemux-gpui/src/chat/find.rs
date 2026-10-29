@@ -111,7 +111,7 @@ impl WholeChat {
 impl Workbench {
     /// Opens the find bar of `agent`'s chat, or puts the reader back in it.
     pub fn open_find(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(chat) = self.chats.get_mut(agent) else {
+        let Some(chat) = self.chats.open.get_mut(agent) else {
             return;
         };
         if chat.finding.is_none() {
@@ -143,7 +143,7 @@ impl Workbench {
 
     /// Looks for what the bar holds, as its options say, in the rows held and across the chat.
     fn search(&mut self, agent: &str, cx: &mut Context<Self>) {
-        let Some(chat) = self.chats.get_mut(agent) else {
+        let Some(chat) = self.chats.open.get_mut(agent) else {
             return;
         };
         let query = chat.finding.as_ref().map(|finding| Query {
@@ -225,13 +225,14 @@ impl Workbench {
 
     fn finding_mut(&mut self, agent: &str) -> Option<&mut Finding> {
         self.chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.finding.as_mut())
     }
 
     /// What the bar asks `chatFind` for now, without where to go on from.
     fn find_params(&self, agent: &str, cx: &Context<Self>) -> Option<Value> {
-        let chat = self.chats.get(agent)?;
+        let chat = self.chats.open.get(agent)?;
         let finding = chat.finding.as_ref()?;
         let feed = chat.mark.as_ref()?.feed.clone();
         Some(json!({
@@ -244,6 +245,7 @@ impl Workbench {
     fn flip_find(&mut self, agent: &str, flip: fn(&mut Finding), cx: &mut Context<Self>) {
         if let Some(finding) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.finding.as_mut())
         {
@@ -256,7 +258,7 @@ impl Workbench {
     /// rows held, or to rows the core brings in around it.
     fn step_find(&mut self, agent: &str, forward: bool, cx: &mut Context<Self>) {
         let params = self.find_params(agent, cx);
-        let Some(chat) = self.chats.get_mut(agent) else {
+        let Some(chat) = self.chats.open.get_mut(agent) else {
             return;
         };
         let local = (chat.transcript.read(cx).found_at())
@@ -324,7 +326,7 @@ impl Workbench {
 
     /// Closes the bar, takes the marks away, and puts the reader back in the draft.
     pub fn close_find(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(chat) = self.chats.get_mut(agent) else {
+        let Some(chat) = self.chats.open.get_mut(agent) else {
             return;
         };
         chat.finding = None;

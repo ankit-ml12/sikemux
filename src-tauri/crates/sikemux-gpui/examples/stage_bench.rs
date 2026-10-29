@@ -276,6 +276,7 @@ fn main() -> anyhow::Result<()> {
                     .bench
                     .read(cx)
                     .chats
+                    .open
                     .get(&agent)
                     .and_then(|chat| chat.composer.as_ref())
                     .map(|composing| composing.draft.clone());
@@ -522,6 +523,7 @@ fn main() -> anyhow::Result<()> {
                 .bench
                 .read(cx)
                 .chats
+                .open
                 .get(&agent)
                 .and_then(|chat| chat.composer.as_ref())
                 .map(|composing| composing.draft.clone());

@@ -173,9 +173,7 @@ pub struct Workbench {
     /// The space whose projects the rail shows, else every project.
     pub space: Option<String>,
     pub git: crate::git::GitTab,
-    /// Lets go of the chats out of sight once they have been for a while, counted from when
-    /// the chat now in front came there.
-    resting_chats: Option<(Option<String>, Task<()>)>,
+    pub chats: crate::chat::Chats,
     pub run_clock: Entity<crate::tabs::RunClock>,
     pub files: FileTree,
     /// The file tree's, which its arrow keys and F2 move and act in.
@@ -203,17 +201,6 @@ pub struct Workbench {
     /// The front project's saved chats paged or searched to beyond the recent ones.
     pub older: Option<crate::recent::OlderChats>,
     pub asks: mpsc::UnboundedSender<Ask>,
-    /// The chats of the agents with a tab open, by agent id.
-    pub chats: HashMap<String, Chat>,
-    /// The chat in front and whether its session was ready when its draft last took the keys.
-    focused_chat: Option<(String, bool)>,
-    /// Text handed to agents whose composer is not made yet, put in once it is.
-    deliveries: HashMap<String, String>,
-    /// What agents asked the person, and the assumptions they went on: this host's, then the
-    /// chosen account host's.
-    pub questions: Vec<Question>,
-    /// The chosen account host's questions, apart, so this host's reading again keeps them.
-    host_questions: Vec<Question>,
     pub terminals: terminal::Terminals,
     pub editors: crate::editor::Editors,
     /// The Search pane of the project whose Search tab was last in front.
@@ -684,7 +671,7 @@ impl Workbench {
             trust_asked: HashSet::new(),
             skills_offered: HashSet::new(),
             trust_host: None,
-            resting_chats: None,
+            chats: crate::chat::Chats::default(),
             git: crate::git::GitTab {
                 pane: None,
                 area: Area::Local,
@@ -710,11 +697,6 @@ impl Workbench {
             filter_text: String::new(),
             older: None,
             asks,
-            chats: HashMap::new(),
-            focused_chat: None,
-            deliveries: HashMap::new(),
-            questions: Vec::new(),
-            host_questions: Vec::new(),
             terminals: terminal::Terminals::default(),
             editors: crate::editor::Editors::default(),
             search: None,
@@ -775,7 +757,7 @@ impl Workbench {
                 self.stopped = false;
                 self.stuck = None;
                 self.on_screen = None;
-                for (agent, chat) in self.chats.iter().filter(|(_, chat)| !chat.resting) {
+                for (agent, chat) in self.chats.open.iter().filter(|(_, chat)| !chat.resting) {
                     self.ask_chat(ChatAsk::Attach {
                         agent: agent.clone(),
                         since: chat.mark.clone(),
@@ -871,7 +853,7 @@ impl Workbench {
                 self.publish_on_screen();
             }
             Update::Chat(agent, news) => {
-                let Some(chat) = self.chats.get_mut(&agent) else {
+                let Some(chat) = self.chats.open.get_mut(&agent) else {
                     return;
                 };
                 match news {
@@ -940,6 +922,7 @@ impl Workbench {
                 }
                 let restage = self
                     .chats
+                    .open
                     .get_mut(&agent)
                     .is_some_and(Chat::take_head_moved);
                 if restage && self.agent().is_some_and(|front| front.id == agent) {
@@ -999,15 +982,19 @@ impl Workbench {
                             host: host.clone(),
                         });
                         if key == "host-questions" {
-                            self.host_questions = questions.collect();
+                            self.chats.host_questions = questions.collect();
                         } else {
-                            self.questions = questions.collect();
+                            self.chats.questions = questions.collect();
                         }
                     }
                     Err(error) => eprintln!("sikemux: the core's questions do not read: {error}"),
                 }
-                self.questions.retain(|question| question.host.is_none());
-                self.questions.extend(self.host_questions.iter().cloned());
+                self.chats
+                    .questions
+                    .retain(|question| question.host.is_none());
+                self.chats
+                    .questions
+                    .extend(self.chats.host_questions.iter().cloned());
             }
             Update::Read("theme", value) => {
                 if let Ok(palette) = serde_json::from_value(value) {
@@ -1098,7 +1085,7 @@ impl Workbench {
                     let on = preferences.voice_dictation;
                     self.voice.update(cx, |voice, cx| voice.follow(on, cx));
                     let scale = preferences.chat_text_scale as f32;
-                    for chat in self.chats.values_mut() {
+                    for chat in self.chats.open.values_mut() {
                         chat.rescale(scale, cx);
                     }
                     crate::ui::grain::set(&preferences, cx);
@@ -1320,7 +1307,7 @@ impl Workbench {
 
     /// Where `agent`'s chat asks: the core of the host the agent runs on.
     pub fn chat_target(&self, agent: &str) -> Target {
-        self.chats.get(agent).map_or_else(
+        self.chats.open.get(agent).map_or_else(
             || Target::new(&self.asks, self.place()),
             |chat| chat.target.clone(),
         )
@@ -1336,7 +1323,7 @@ impl Workbench {
         else {
             return;
         };
-        if let Some(chat) = self.chats.get_mut(&agent) {
+        if let Some(chat) = self.chats.open.get_mut(&agent) {
             if std::mem::take(&mut chat.resting) {
                 let since = chat.mark.clone();
                 self.ask_chat(ChatAsk::Attach { agent, since });
@@ -1351,7 +1338,7 @@ impl Workbench {
             cx,
         );
         chat.rescale(self.preferences().chat_text_scale as f32, cx);
-        self.chats.insert(agent.clone(), chat);
+        self.chats.open.insert(agent.clone(), chat);
         self.ask_chat(ChatAsk::Attach { agent, since: None });
     }
 
@@ -1360,14 +1347,16 @@ impl Workbench {
         let front = self.agent().map(|agent| agent.id);
         let anyone = self
             .chats
+            .open
             .iter()
             .any(|(agent, chat)| !chat.resting && Some(agent) != front.as_ref());
         if !anyone {
-            self.resting_chats = None;
+            self.chats.resting = None;
             return;
         }
         if self
-            .resting_chats
+            .chats
+            .resting
             .as_ref()
             .is_some_and(|(counted_from, _)| *counted_from == front)
         {
@@ -1380,14 +1369,15 @@ impl Workbench {
                 bench.rest_chats_later(cx);
             });
         });
-        self.resting_chats = Some((front, task));
+        self.chats.resting = Some((front, task));
     }
 
     fn rest_chats(&mut self) {
-        self.resting_chats = None;
+        self.chats.resting = None;
         let front = self.agent().map(|agent| agent.id);
         let resting: Vec<String> = self
             .chats
+            .open
             .iter_mut()
             .filter(|(agent, chat)| {
                 Some(*agent) != front.as_ref() && !chat.resting && chat.can_rest()
@@ -1409,6 +1399,7 @@ impl Workbench {
         };
         let Some(chat) = self
             .chats
+            .open
             .get_mut(&agent)
             .filter(|chat| chat.composer.is_none())
         else {
@@ -1445,6 +1436,7 @@ impl Workbench {
                         }
                         if let Some(composing) = bench
                             .chats
+                            .open
                             .get_mut(&agent)
                             .and_then(|chat| chat.composer.as_mut())
                         {
@@ -1511,7 +1503,7 @@ impl Workbench {
             composing.start_from(drafts, &agent, window, cx);
         }
         self.watch_drafts();
-        if let Some(text) = self.deliveries.remove(&agent) {
+        if let Some(text) = self.chats.deliveries.remove(&agent) {
             self.deliver(&agent, text, window, cx);
         }
     }
@@ -1550,10 +1542,12 @@ impl Workbench {
         }
         let Some(draft) = self
             .chats
+            .open
             .get(agent)
             .and_then(|chat| Some(chat.composer.as_ref()?.draft.clone()))
         else {
-            self.deliveries
+            self.chats
+                .deliveries
                 .entry(agent.to_owned())
                 .and_modify(|held| *held = format!("{held}\n\n{text}"))
                 .or_insert(text);
@@ -1567,7 +1561,7 @@ impl Workbench {
     /// Stops the turn running in `agent`'s chat. The messages waiting behind it come back
     /// to the draft rather than going out after it.
     pub fn stop(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(chat) = self.chats.get(agent) else {
+        let Some(chat) = self.chats.open.get(agent) else {
             return;
         };
         let waiting = chat.waiting().join("\n\n");
@@ -1586,7 +1580,7 @@ impl Workbench {
             return;
         };
         self.send_after_worktree(&agent, window, cx);
-        let Some(chat) = self.chats.get_mut(&agent) else {
+        let Some(chat) = self.chats.open.get_mut(&agent) else {
             return;
         };
         let mut returned = false;
@@ -1615,10 +1609,10 @@ impl Workbench {
         }
         self.focus_draft(&agent, window, cx);
         let steer_first = self.preferences().mid_turn_send == MidTurnSend::Steer;
-        let Some(chat) = self.chats.get_mut(&agent) else {
+        let Some(chat) = self.chats.open.get_mut(&agent) else {
             return;
         };
-        let hint = SharedString::from(chat.hint(&agent, &self.questions, steer_first));
+        let hint = SharedString::from(chat.hint(&agent, &self.chats.questions, steer_first));
         let Some(composing) = chat
             .composer
             .as_mut()
@@ -1636,11 +1630,11 @@ impl Workbench {
     /// once its session is ready, unless the person is typing somewhere other than a draft or
     /// the window itself.
     fn focus_draft(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(chat) = self.chats.get(agent) else {
+        let Some(chat) = self.chats.open.get(agent) else {
             return;
         };
         let shown = (agent.to_owned(), chat.ready());
-        if self.focused_chat.as_ref() == Some(&shown) {
+        if self.chats.focused.as_ref() == Some(&shown) {
             return;
         }
         let Some(draft) = chat
@@ -1650,11 +1644,11 @@ impl Workbench {
         else {
             return;
         };
-        self.focused_chat = Some(shown);
+        self.chats.focused = Some(shown);
         let held = window.focused(cx);
         let free = held.as_ref().is_none_or(|held| {
             *held == self.focus
-                || self.chats.values().any(|chat| {
+                || self.chats.open.values().any(|chat| {
                     chat.composer
                         .as_ref()
                         .is_some_and(|composing| composing.draft.read(cx).focus_handle(cx) == *held)
@@ -1684,6 +1678,7 @@ impl Workbench {
         }
         let preparing = self
             .chats
+            .open
             .get(agent)
             .and_then(|chat| chat.composer.as_ref())
             .is_some_and(|composing| matches!(composing.stage, ComposeStage::Worktree { .. }));
@@ -1693,6 +1688,7 @@ impl Workbench {
         if self.starts_in_worktree(agent, cx) {
             let text = self
                 .chats
+                .open
                 .get(agent)
                 .and_then(|chat| Some(chat.composer.as_ref()?.draft.read(cx).value().to_string()))
                 .unwrap_or_default();
@@ -1700,6 +1696,7 @@ impl Workbench {
         }
         let Some(composing) = self
             .chats
+            .open
             .get(agent)
             .and_then(|chat| chat.composer.as_ref())
         else {
@@ -1724,12 +1721,14 @@ impl Workbench {
         }
         let unknown = self
             .chats
+            .open
             .get(agent)
             .and_then(|chat| chat.unknown_command(&text))
             .map(|name| format!("/{name} is not available in this session"));
         if let Some(refused) = unknown {
             if let Some(composing) = self
                 .chats
+                .open
                 .get_mut(agent)
                 .and_then(|chat| chat.composer.as_mut())
             {
@@ -1762,13 +1761,18 @@ impl Workbench {
     pub fn keep_secret(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Some(field) = self
             .chats
+            .open
             .get(agent)
             .and_then(|chat| Some(chat.composer.as_ref()?.secret.clone()))
         else {
             return;
         };
         let text = field.read(cx).value().to_string();
-        let sending = self.chats.get(agent).is_some_and(Chat::sending_answers);
+        let sending = self
+            .chats
+            .open
+            .get(agent)
+            .is_some_and(Chat::sending_answers);
         if text.is_empty() || sending {
             return;
         }
@@ -1785,12 +1789,14 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         let open: Vec<&Question> = self
+            .chats
             .questions
             .iter()
             .filter(|question| question.asks(agent))
             .collect();
         if let Some(ask) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| change(chat, &open))
         {
@@ -1800,8 +1806,8 @@ impl Workbench {
 
     /// Lets go of the questions `keep` turns down, of this host and of the host in front.
     pub fn keep_questions(&mut self, keep: impl Fn(&Question) -> bool) {
-        self.questions.retain(&keep);
-        self.host_questions.retain(keep);
+        self.chats.questions.retain(&keep);
+        self.chats.host_questions.retain(keep);
     }
 
     /// Whether the agent asks before it acts, kept for its next session and changed in the one running.
@@ -1830,16 +1836,22 @@ impl Workbench {
         let shown: Vec<&String> = tabs.filter_map(|tab| shows(tab, PaneKind::Agent)).collect();
         let gone: Vec<String> = self
             .chats
+            .open
             .keys()
             .filter(|agent| !shown.contains(agent))
             .cloned()
             .collect();
         let closed = !gone.is_empty();
         for agent in gone {
-            if let Some(composing) = self.chats.remove(&agent).and_then(|chat| chat.composer) {
+            if let Some(composing) = self
+                .chats
+                .open
+                .remove(&agent)
+                .and_then(|chat| chat.composer)
+            {
                 self.release_keys(composing.draft.read(cx).focus_handle(cx), cx);
             }
-            self.focused_chat.take_if(|(shown, _)| *shown == agent);
+            self.chats.focused.take_if(|(shown, _)| *shown == agent);
             self.ask_chat(ChatAsk::Detach { agent });
         }
         if closed {
@@ -1849,7 +1861,12 @@ impl Workbench {
 
     /// Asks for the rows after the last the chat holds, when those were dropped.
     pub fn ask_later(&mut self, agent: &str) {
-        if let Some(ask) = self.chats.get_mut(agent).and_then(|chat| chat.later(agent)) {
+        if let Some(ask) = self
+            .chats
+            .open
+            .get_mut(agent)
+            .and_then(|chat| chat.later(agent))
+        {
             self.ask_chat(ask);
         }
     }
@@ -1858,6 +1875,7 @@ impl Workbench {
     pub fn show_latest(&mut self, agent: &str, cx: &mut Context<Self>) {
         if let Some(ask) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.show_latest(agent, cx))
         {
@@ -1869,6 +1887,7 @@ impl Workbench {
     pub fn ask_earlier(&mut self, agent: &str) {
         if let Some(ask) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.earlier(agent))
         {
@@ -2073,7 +2092,7 @@ impl Workbench {
                     "host-trust",
                     Watch::new("trustAsks", json!({}), &[Topic::Trust]),
                 );
-                self.host_questions.clear();
+                self.chats.host_questions.clear();
                 target.watch(
                     "host-questions",
                     Watch::new("questions", json!({}), &[Topic::Questions]),
@@ -2085,8 +2104,10 @@ impl Workbench {
                     self.reads.forget(key);
                 }
                 self.trust_host = None;
-                self.host_questions.clear();
-                self.questions.retain(|question| question.host.is_none());
+                self.chats.host_questions.clear();
+                self.chats
+                    .questions
+                    .retain(|question| question.host.is_none());
             }
             _ => {}
         }
@@ -2145,6 +2166,7 @@ impl Workbench {
     fn watch_drafts(&self) {
         let keys = |elsewhere: bool| -> Vec<String> {
             self.chats
+                .open
                 .iter()
                 .filter(|(_, chat)| {
                     chat.composer.is_some() && crate::chat::draft::is_elsewhere(chat) == elsewhere
@@ -2288,7 +2310,7 @@ impl Workbench {
         if let Some(id) = crate::terminal::focused(self) {
             return crate::terminal::take_dropped(self, id, paths);
         }
-        if let Some((agent, _)) = self.focused_chat.clone() {
+        if let Some((agent, _)) = self.chats.focused.clone() {
             self.attach(&agent, paths.to_vec(), window, cx);
         }
     }
@@ -3998,6 +4020,7 @@ impl Workbench {
             Some(AnyInputState::Editor(state)) => Some(state.read(cx).selected_text().to_string()),
             _ => self
                 .chats
+                .open
                 .values()
                 .find_map(|chat| chat.transcript.read(cx).focused_selection(window))
                 .or_else(|| Some(gpui_kit::base::TextSelection::selected_text(window, cx))),
@@ -4413,7 +4436,7 @@ impl Workbench {
 
     /// The agent whose chat last took the keys.
     pub fn focused_agent(&self) -> Option<&str> {
-        self.focused_chat.as_ref().map(|(agent, _)| agent.as_str())
+        self.chats.focused.as_ref().map(|(agent, _)| agent.as_str())
     }
 
     pub fn agent_by_id(&self, id: &str) -> Option<AgentRow> {

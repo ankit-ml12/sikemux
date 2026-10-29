@@ -107,7 +107,16 @@ pub(super) fn select_chip(
     move |_, _, cx| {
         let draft = this
             .update(cx, |bench, _| {
-                Some(bench.chats.get(&agent)?.composer.as_ref()?.draft.clone())
+                Some(
+                    bench
+                        .chats
+                        .open
+                        .get(&agent)?
+                        .composer
+                        .as_ref()?
+                        .draft
+                        .clone(),
+                )
             })
             .ok()
             .flatten();
@@ -144,7 +153,7 @@ pub(super) fn recall<A: gpui::Action>(
     let (agent, this) = (agent.to_owned(), cx.weak_entity());
     move |_: &A, window: &mut Window, cx: &mut App| {
         let brought = this.update(cx, |bench, cx| {
-            let chat = bench.chats.get_mut(&agent)?;
+            let chat = bench.chats.open.get_mut(&agent)?;
             let draft = chat.composer.as_ref()?.draft.clone();
             let typed = draft.read(cx).value().to_string();
             let prompt = chat.recall(older, &typed, cx)?;
@@ -179,7 +188,7 @@ pub(super) fn stop_turn(
     let (agent, this) = (agent.to_owned(), cx.weak_entity());
     move |_: &StopTurn, window: &mut Window, cx: &mut App| {
         let stopped = this.update(cx, |bench, cx| {
-            let chat = bench.chats.get(&agent)?;
+            let chat = bench.chats.open.get(&agent)?;
             let empty = chat.composer.as_ref()?.draft.read(cx).value().is_empty();
             (chat.running() && empty).then(|| bench.stop(&agent, window, cx))
         });
@@ -208,7 +217,7 @@ impl gpui::Render for ComposerView {
         let covered = self.covered;
         self.bench
             .update(cx, |bench, cx| {
-                let chat = bench.chats.get(&agent.id)?;
+                let chat = bench.chats.open.get(&agent.id)?;
                 mounted_composer(bench, &agent, chat, covered, cx)
             })
             .ok()

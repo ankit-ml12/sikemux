@@ -150,6 +150,7 @@ impl Workbench {
     pub fn typed_draft(&mut self, agent: &str, cx: &mut Context<Self>) {
         let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         else {
@@ -167,6 +168,7 @@ impl Workbench {
     pub fn keep_draft(&mut self, agent: &str, cx: &mut Context<Self>) {
         let Some(composing) = self
             .chats
+            .open
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         else {
@@ -187,7 +189,7 @@ impl Workbench {
 
     /// Takes the drafts the core keeps into every open composer that has not moved on.
     pub fn drafts(&mut self, drafts: &Value, elsewhere: bool, cx: &mut Context<Self>) {
-        for (agent, chat) in &mut self.chats {
+        for (agent, chat) in &mut self.chats.open {
             if is_elsewhere(chat) != elsewhere {
                 continue;
             }

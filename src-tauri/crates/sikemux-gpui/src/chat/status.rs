@@ -655,7 +655,7 @@ pub(super) fn plan(
         .child("Plan")
         .on_click(move |_, _, cx| {
             this.update(cx, |bench, cx| {
-                if let Some(chat) = bench.chats.get_mut(&agent) {
+                if let Some(chat) = bench.chats.open.get_mut(&agent) {
                     chat.plan_open = !chat.plan_open;
                 }
                 bench.parts.redraw(&bench.parts.stage, cx);

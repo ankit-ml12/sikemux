@@ -6,7 +6,7 @@ impl Workbench {
     /// Moves a chat that has not started to another agent, account or provider. The model and
     /// effort it offered belong to the agent it leaves, so they go until the core says the new ones.
     pub fn move_chat(&mut self, agent: &str, to: crate::chat::model_picker::Moving) {
-        if let Some(chat) = self.chats.get_mut(agent) {
+        if let Some(chat) = self.chats.open.get_mut(agent) {
             chat.forget_choices();
         }
         let account = to
@@ -27,7 +27,7 @@ impl Workbench {
     /// The model menu of the chat in front, as its composer offers it: the model chosen and
     /// the ones it lists.
     pub fn front_models(&self) -> Option<(String, Vec<String>)> {
-        let chat = self.chats.get(&self.agent()?.id)?;
+        let chat = self.chats.open.get(&self.agent()?.id)?;
         let model = chat.state.as_ref()?.model.as_ref()?;
         let offered = model.choices.iter().map(|choice| choice.value.clone());
         Some((model.current.clone(), offered.collect()))
@@ -40,6 +40,7 @@ impl Workbench {
         };
         let Some(config) = self
             .chats
+            .open
             .get(&agent)
             .and_then(|chat| Some(chat.state.as_ref()?.model.as_ref()?.id.clone()))
         else {

@@ -113,7 +113,7 @@ fn fetch(page: &PageRef, looks: &Looks, window: &mut Window, cx: &mut App) {
                     }
                     PageEvent::Wheel(delta) => {
                         let _ = bench.update(cx, |bench, cx| {
-                            if let Some(chat) = bench.chats.get(&agent) {
+                            if let Some(chat) = bench.chats.open.get(&agent) {
                                 chat.transcript.update(cx, |transcript, cx| {
                                     transcript.list().scroll_by(px(delta as f32));
                                     cx.notify();

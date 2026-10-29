@@ -415,7 +415,7 @@ impl crate::workbench::Workbench {
         if let Some(id) = crate::terminal::focused(self) {
             return Some(Target::Terminal(id));
         }
-        self.chats.iter().find_map(|(agent, chat)| {
+        self.chats.open.iter().find_map(|(agent, chat)| {
             let draft = &chat.composer.as_ref()?.draft;
             let focused = gpui_kit::Focusable::focus_handle(draft.read(cx), cx).is_focused(window);
             focused.then(|| Target::Chat(agent.clone()))
@@ -433,6 +433,7 @@ impl crate::workbench::Workbench {
             Heard::Words(Some(Target::Chat(agent)), text) => {
                 let Some(draft) = self
                     .chats
+                    .open
                     .get(agent)
                     .and_then(|chat| Some(chat.composer.as_ref()?.draft.clone()))
                 else {

@@ -952,8 +952,9 @@ impl Workbench {
     /// The chat in front, while it shows a question its keys answer.
     pub fn front_asks(&self) -> Option<String> {
         let agent = self.agent()?;
-        let chat = self.chats.get(&agent.id)?;
+        let chat = self.chats.open.get(&agent.id)?;
         let open: Vec<&Question> = self
+            .chats
             .questions
             .iter()
             .filter(|question| question.asks(&agent.id))
@@ -984,7 +985,7 @@ impl Workbench {
             )
             .map(str::to_owned)
             .collect();
-        if let Some(chat) = self.chats.get_mut(agent) {
+        if let Some(chat) = self.chats.open.get_mut(agent) {
             chat.answering.extend(ids.iter().cloned());
             if let Some(composing) = chat.composer.as_mut() {
                 composing.refusal = None;
@@ -1002,7 +1003,7 @@ impl Workbench {
                             question.state == QuestionState::Answered || !ids.contains(&question.id)
                         });
                     }
-                    if let Some(chat) = bench.chats.get_mut(&agent) {
+                    if let Some(chat) = bench.chats.open.get_mut(&agent) {
                         chat.took_answers(&ids, error);
                     }
                     bench.parts.redraw(&bench.parts.stage, cx);

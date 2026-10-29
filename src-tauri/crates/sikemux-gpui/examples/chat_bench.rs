@@ -428,7 +428,7 @@ impl Bench {
     fn place(&mut self) -> Place {
         let agent = self.agent.clone().unwrap_or_default();
         self.bench.read_with(&self.cx, |bench, cx| {
-            let Some(chat) = bench.chats.get(&agent) else {
+            let Some(chat) = bench.chats.open.get(&agent) else {
                 return Place::default();
             };
             let transcript = chat.transcript.read(cx);
