@@ -42,7 +42,7 @@ pub fn render(
     let body = match plugins.is_empty() {
         true => rows::note("No plugins in this build.", cx),
         false => div()
-            .children(plugins.all().filter_map(|plugin| {
+            .children(plugins.all().map(|plugin| {
                 let id = plugin.id.clone();
                 let name = plugin.name.clone();
                 let on = plugin.enabled;
@@ -63,13 +63,13 @@ pub fn render(
                         let on = *on;
                         this.update(cx, |bench, _| switch(bench, &id, on))
                     });
-                Some(rows::row_with(
+                rows::row_with(
                     Some(ui::picture(mark, 16., ink).into_any_element()),
                     name,
                     Some(about),
                     toggle,
                     cx,
-                ))
+                )
             }))
             .into_any_element(),
     };

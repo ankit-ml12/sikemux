@@ -639,19 +639,18 @@ impl Workbench {
         self.reads
             .plugins
             .on()
-            .filter_map(|plugin| {
+            .flat_map(|plugin| {
                 let name = plugin.name.clone();
                 let palettes = crate::plugin_pane::palettes(&plugin.id);
-                Some(palettes.iter().map(move |palette| {
+                palettes.iter().map(move |palette| {
                     Row::new(
                         format!("{PLUGIN_PALETTE}{}/{}", palette.plugin, palette.id),
                         palette.title,
                     )
                     .meta(name.clone())
                     .also(&name)
-                }))
+                })
             })
-            .flatten()
             .collect()
     }
 }
