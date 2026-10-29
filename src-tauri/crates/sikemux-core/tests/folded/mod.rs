@@ -57,7 +57,7 @@ impl Folded {
 
     fn change(&mut self, change: ChatChange) {
         match change {
-            ChatChange::Head { set } => {
+            ChatChange::Head { set, .. } => {
                 let was = self.view.head.running;
                 self.view.head = merged(&self.view.head, &set);
                 if set.get("error").is_some_and(|error| !error.is_null()) {

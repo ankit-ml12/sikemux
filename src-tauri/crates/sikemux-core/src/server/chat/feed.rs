@@ -77,6 +77,9 @@ struct Entry {
     event: ChatEvent,
     bytes: usize,
     index: u64,
+    /// The number of the last change it made; 0 when it came without one.
+    #[serde(default)]
+    seq: u64,
     starts_turn: bool,
     /// A page of history can start here.
     point: bool,
@@ -189,6 +192,17 @@ pub(crate) struct Replay {
     /// Every subagent's start and latest state, so a slice of the chat that
     /// speaks of one started before it can carry them too.
     spawns: Vec<Spawn>,
+    /// The number of the chat's latest delivery to its clients. A change made now takes
+    /// the one after it, the delivery it goes out in.
+    #[serde(skip)]
+    seq: u64,
+    /// A change took the next number and no delivery carried it yet.
+    #[serde(skip)]
+    unsent: bool,
+    /// What an event that came without a number counts as: the change at which this core
+    /// took the chat over.
+    #[serde(skip)]
+    unnumbered: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -541,7 +555,23 @@ impl Replay {
             standing: Vec::new(),
             work: Work::default(),
             spawns: Vec::new(),
+            seq: 0,
+            unsent: false,
+            unnumbered: 0,
         }
+    }
+
+    /// The number a change made now goes out under.
+    fn numbered(&mut self) -> u64 {
+        self.unsent = true;
+        self.seq + 1
+    }
+
+    /// The change numbered next went out to the clients.
+    fn delivered(&mut self) -> u64 {
+        self.seq += 1;
+        self.unsent = false;
+        self.seq
     }
 
     /// The replay of a chat an earlier core left, read back from its history
@@ -549,16 +579,20 @@ impl Replay {
     /// stands from all of them.
     fn recovered(dir: &std::path::Path, name: &str) -> Self {
         let mut replay = Self::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
+        let mut highest = 0;
         let history = History::recover(dir, name, MAX_HISTORY_BYTES, |recovered| {
+            highest = highest.max(recovered.seq);
             replay.restore(recovered);
         });
         replay.history = Some(history);
+        replay.seq = highest;
         replay
     }
 
     fn restore(&mut self, recovered: Recovered) {
         let Recovered {
             index,
+            seq,
             starts_turn,
             point,
             bytes,
@@ -585,6 +619,7 @@ impl Replay {
             event,
             bytes,
             index,
+            seq,
             starts_turn,
             point,
             on_disk: true,
@@ -652,6 +687,7 @@ impl Replay {
                 event: line.event,
                 bytes: line.bytes,
                 index: line.index,
+                seq: line.seq,
                 starts_turn: line.starts_turn,
                 point: line.point,
                 on_disk: true,
@@ -711,10 +747,11 @@ impl Replay {
             }
             events.push((index, event, point, starts_turn));
         }
+        let seq = self.numbered();
         let Some(history) = self.history.as_mut() else {
             return false;
         };
-        history.prepend(&events);
+        history.prepend(&events, seq);
         history.first().is_some_and(|now| now < first)
     }
 
@@ -731,7 +768,13 @@ impl Replay {
         }
         entry.on_disk = true;
         if let Some(history) = history.as_mut() {
-            history.append(entry.index, &entry.event, entry.point, entry.starts_turn);
+            history.append(
+                entry.index,
+                entry.seq,
+                &entry.event,
+                entry.point,
+                entry.starts_turn,
+            );
         }
     }
 
@@ -764,7 +807,7 @@ impl Replay {
         }
     }
 
-    fn join_text(&mut self, payload: &Value) -> bool {
+    fn join_text(&mut self, payload: &Value, seq: u64) -> bool {
         let Some(later) = chunk(payload) else {
             return false;
         };
@@ -793,6 +836,7 @@ impl Replay {
         if let Some(at) = payload.get("at") {
             last.event.payload["until"] = at.clone();
         }
+        last.seq = seq;
         last.bytes += later.text.len();
         self.bytes += later.text.len();
         self.since_point += later.text.len();
@@ -806,7 +850,8 @@ impl Replay {
         if !is_kept(kind) {
             return self.next_index;
         }
-        if kind == ChatEventKind::SessionUpdate && self.join_text(payload) {
+        let seq = self.numbered();
+        if kind == ChatEventKind::SessionUpdate && self.join_text(payload, seq) {
             let index = self
                 .entries
                 .back()
@@ -857,6 +902,7 @@ impl Replay {
             event,
             bytes,
             index,
+            seq,
             starts_turn,
             point,
             on_disk: false,
@@ -1108,8 +1154,8 @@ impl Replay {
 
     /// Every event the replay holds, with what still stands from before
     /// them and the starts of the subagents they speak of, for folding the
-    /// chat again.
-    pub(crate) fn fold_events(&self) -> Vec<(u64, ChatEvent)> {
+    /// chat again: each by its index and the number of the last change it made.
+    pub(crate) fn fold_events(&self) -> Vec<(u64, u64, ChatEvent)> {
         let Some(first) = self.entries.front().map(|entry| entry.index) else {
             return Vec::new();
         };
@@ -1129,12 +1175,14 @@ impl Replay {
         before.sort_by_key(|(index, _)| *index);
         before
             .into_iter()
-            .map(|(index, event)| (index, event.clone()))
-            .chain(
-                self.entries
-                    .iter()
-                    .map(|entry| (entry.index, entry.event.clone())),
-            )
+            .map(|(index, event)| (index, self.unnumbered, event.clone()))
+            .chain(self.entries.iter().map(|entry| {
+                let seq = match entry.seq {
+                    0 => self.unnumbered,
+                    seq => seq,
+                };
+                (entry.index, seq, entry.event.clone())
+            }))
             .collect()
     }
 
@@ -1447,7 +1495,6 @@ const CATCH_UP: Duration = Duration::from_millis(50);
 
 struct Inner {
     subscribers: HashMap<ClientId, Subscriber>,
-    seq: u64,
     replay: Replay,
     /// The chat folded into rows, while a client watches it or a turn runs.
     fold: Option<Fold>,
@@ -1615,7 +1662,6 @@ impl Feed {
             earlier: Mutex::new(None),
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
-                seq: 0,
                 replay: Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, history),
                 fold: Some(Fold::new(&permission_mode)),
                 offers_effort: false,
@@ -1680,6 +1726,9 @@ impl Feed {
     pub(crate) fn restored(agent_id: String, state: FeedState) -> Arc<Self> {
         let mut replay = state.replay;
         replay.history = state.history.map(History::reopen);
+        replay.seq = state.seq;
+        replay.unsent = true;
+        replay.unnumbered = state.seq + 1;
         let feed = Self::counted(Arc::new_cyclic(|me| Self {
             me: me.clone(),
             agent_id,
@@ -1691,7 +1740,6 @@ impl Feed {
             earlier: Mutex::new(None),
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
-                seq: state.seq,
                 replay,
                 fold: None,
                 offers_effort: false,
@@ -1789,7 +1837,7 @@ impl Feed {
         self.account(&inner);
         let state = FeedState {
             id: self.id.clone(),
-            seq: inner.seq,
+            seq: replay.seq,
             replay,
             history,
             start: inner.start.clone(),
@@ -1808,7 +1856,7 @@ impl Feed {
     fn mark(&self, inner: &Inner) -> ChatMark {
         ChatMark {
             feed: self.id.clone(),
-            seq: inner.seq,
+            seq: inner.replay.seq,
         }
     }
 
@@ -1849,12 +1897,13 @@ impl Feed {
                     0,
                 );
             }
-            for (index, event) in inner.replay.fold_events() {
+            for (index, seq, event) in inner.replay.fold_events() {
                 let at = event
                     .payload
                     .get("at")
                     .and_then(Value::as_u64)
                     .unwrap_or_default();
+                fold.number(seq);
                 fold.apply(index, event.kind, &event.payload, at);
             }
             fold.set_queued(queued_view(&inner.queued));
@@ -1862,10 +1911,11 @@ impl Feed {
             if inner.replay.is_trimmed() && !inner.replay.keeps_history() {
                 fold.set_earlier_lost();
             }
-            // Events folded in now were never numbered, so a client that heard up to the
-            // last number must still be sent them.
-            inner.seq += 1;
-            fold.rebuilt(inner.seq);
+            fold.rebuilt();
+            if inner.replay.unsent {
+                inner.replay.delivered();
+            }
+            fold.number(inner.replay.seq + 1);
             inner.fold = Some(fold);
         }
         inner.fold.as_mut().expect("just built")
@@ -1897,12 +1947,12 @@ impl Feed {
         if !fold.is_dirty() {
             return;
         }
-        let seq = inner.seq + 1;
-        let changes = fold.flush(seq);
+        let changes = fold.flush();
         if inner.holding || changes.is_empty() {
             return;
         }
-        inner.seq = seq;
+        let seq = inner.replay.delivered();
+        fold.number(seq + 1);
         let frame = self.frame(seq, &changes);
         let mut behind = false;
         inner.subscribers.retain(|_, subscriber| {
@@ -1940,7 +1990,7 @@ impl Feed {
         let mut inner = self.inner.locked();
         inner.catch_up_scheduled = false;
         self.flush_locked(&mut inner);
-        let seq = inner.seq;
+        let seq = inner.replay.seq;
         let mut still = false;
         let ready: Vec<(ClientId, u64)> = inner
             .subscribers
@@ -2209,7 +2259,7 @@ impl Feed {
         fold.set_draft(standing.draft);
         self.flush_locked(&mut inner);
         let resumed = since
-            .filter(|since| since.feed == self.id && since.seq <= inner.seq)
+            .filter(|since| since.feed == self.id && since.seq <= inner.replay.seq)
             .and_then(|since| self.fold(&mut inner).catch_up(since.seq));
         let mark = self.mark(&inner);
         let attachment = match resumed {
@@ -2274,9 +2324,9 @@ impl Feed {
         if inner.replay.is_trimmed() && !inner.replay.keeps_history() {
             self.fold(&mut inner).set_earlier_lost();
         }
-        let seq = inner.seq + 1;
-        self.fold(&mut inner).flush(seq);
-        inner.seq = seq;
+        self.fold(&mut inner).flush();
+        let seq = inner.replay.delivered();
+        self.fold(&mut inner).number(seq + 1);
         let older = Self::holds_older(&inner);
         let view = self.fold(&mut inner).view(older);
         let frame = self.frame(
@@ -2881,11 +2931,11 @@ mod tests {
                 0,
             );
         }
-        fold.flush(1);
+        fold.flush();
         fold.forget_permission("a");
-        fold.flush(2);
+        fold.flush();
         let missed = fold.catch_up(0).expect("still holds what it missed");
-        let ChatChange::Head { set } = &missed[0] else {
+        let ChatChange::Head { set, .. } = &missed[0] else {
             panic!("a client catching up hears the head first");
         };
         let asked: Vec<&str> = set["permissions"]
@@ -3024,8 +3074,8 @@ mod tests {
         assert!(replay.is_trimmed());
 
         let held = replay.fold_events();
-        assert_eq!(held[0].1.payload, commands());
-        assert_eq!(asked(held.iter().map(|(_, event)| event)), asks(78..80));
+        assert_eq!(held[0].2.payload, commands());
+        assert_eq!(asked(held.iter().map(|(_, _, event)| event)), asks(78..80));
 
         let mut earlier: Vec<(u64, ChatEvent)> = Vec::new();
         let mut before = Some(1 + 78 * 5);
@@ -3049,10 +3099,10 @@ mod tests {
         json!({ "sessionId": session, "update": update })
     }
 
-    fn standing_kinds(events: &[(u64, ChatEvent)]) -> Vec<(String, String)> {
+    fn standing_kinds(events: &[(u64, u64, ChatEvent)]) -> Vec<(String, String)> {
         events
             .iter()
-            .map(|(_, event)| event)
+            .map(|(_, _, event)| event)
             .filter(|event| event.kind == ChatEventKind::SessionUpdate)
             .map(|event| {
                 let update = &event.payload["update"];
@@ -3243,7 +3293,7 @@ mod tests {
         let starts: Vec<String> = replay
             .fold_events()
             .iter()
-            .map(|(_, event)| event)
+            .map(|(_, _, event)| event)
             .filter(|event| session_update_kind(&event.payload) == Some("subagent_spawned"))
             .map(|event| {
                 event.payload["update"]["subagentSessionId"]
@@ -3435,5 +3485,116 @@ mod tests {
         let page = feed.history(&feed.id, first as u64 * 5, 100).unwrap();
         assert_eq!(prompts(&page.rows), asks(0..first));
         assert!(!feed.excerpt(None, 3, usize::MAX).said.is_empty());
+    }
+
+    fn said_turn(feed: &Arc<Feed>, n: usize) {
+        feed.prompted(None, &format!("ask {n}"), &[], &[]);
+        feed.emit(ChatEventKind::TurnStarted, json!({}));
+        for piece in ["work", "ing"] {
+            feed.emit(
+                ChatEventKind::SessionUpdate,
+                text("agent_message_chunk", Some(&format!("m{n}")), piece),
+            );
+        }
+        feed.emit(
+            ChatEventKind::TurnCompleted,
+            json!({ "stopReason": "end_turn" }),
+        );
+    }
+
+    fn attached(
+        feed: &Arc<Feed>,
+        client: &Arc<ClientConn>,
+        frames: &mut tokio::sync::mpsc::UnboundedReceiver<Arc<[u8]>>,
+        since: Option<ChatMark>,
+    ) -> ChatAttachment {
+        feed.attach(
+            client,
+            1,
+            Standing {
+                running: false,
+                turned: true,
+                draft: None,
+            },
+            since,
+        );
+        while let Ok(frame) = frames.try_recv() {
+            let frame = crate::protocol::read_frame_sync(&mut &frame[..])
+                .unwrap()
+                .unwrap();
+            if let Ok(ServerMessage::Response {
+                response: Response::ChatAttached { attachment },
+                ..
+            }) = serde_json::from_slice(&frame.payload)
+            {
+                return attachment;
+            }
+        }
+        panic!("the attach was not answered");
+    }
+
+    fn rows_sent(attachment: &ChatAttachment) -> Vec<String> {
+        let ChatAttachment::Resumed { changes, .. } = attachment else {
+            panic!("the chat was sent whole rather than resumed");
+        };
+        let changes: Vec<ChatChange> = serde_json::from_value(changes.clone()).unwrap();
+        changes
+            .into_iter()
+            .filter_map(|change| match change {
+                ChatChange::Row { row, .. } => Some(
+                    row.parts
+                        .iter()
+                        .filter_map(|part| match part {
+                            sikemux_wire::chat::ChatPart::Text { text, .. } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn mark_of(attachment: &ChatAttachment) -> ChatMark {
+        match attachment {
+            ChatAttachment::Live { mark, .. } | ChatAttachment::Resumed { mark, .. } => {
+                mark.clone()
+            }
+            ChatAttachment::Missing => panic!("the chat is missing"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_client_back_after_the_chat_moved_on_unwatched_gets_just_what_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = crate::server::Core::new(Default::default(), None).unwrap();
+        let (client, mut frames) = ClientConn::inside(&core, crate::server::access::Peer::Local);
+        let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
+        feed.set_start(ChatStart {
+            session_id: "s".into(),
+            capabilities: json!({}),
+            setup: json!({}),
+        });
+        said_turn(&feed, 0);
+        let left_at = mark_of(&attached(&feed, &client, &mut frames, None));
+        feed.unsubscribe(client.id);
+        assert!(feed.inner.lock().unwrap().fold.is_none());
+
+        said_turn(&feed, 1);
+        said_turn(&feed, 2);
+        let back = attached(&feed, &client, &mut frames, Some(left_at));
+        assert_eq!(
+            rows_sent(&back),
+            ["ask 1", "working", "ask 2", "working"],
+            "the two turns it missed, and nothing it held"
+        );
+
+        let caught_up = mark_of(&back);
+        feed.unsubscribe(client.id);
+        let again = attached(&feed, &client, &mut frames, Some(caught_up));
+        assert!(
+            rows_sent(&again).is_empty(),
+            "a fold built again keeps every row's number"
+        );
     }
 }

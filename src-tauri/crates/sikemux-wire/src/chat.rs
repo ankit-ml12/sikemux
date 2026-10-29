@@ -44,8 +44,13 @@ pub struct ChatPage {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ChatChange {
-    /// These fields of the head change; the rest stay.
-    Head { set: Value },
+    /// These fields of the head change; the rest stay. A delivery that catches a client up
+    /// opens with one naming the number it follows, rather than one less than its own.
+    Head {
+        set: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        follows: Option<u64>,
+    },
     /// A new row goes at the end, or a row already held is replaced whole.
     Row {
         row: ChatMessage,

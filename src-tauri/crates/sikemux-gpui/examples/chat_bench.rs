@@ -226,7 +226,7 @@ impl Folded {
         for (index, event) in &events {
             fold.apply(*index, event.kind, &event.payload, 0);
         }
-        fold.flush(1);
+        fold.flush();
         let head = fold.view(false).head;
         let rows = fold
             .page_of(&events, PageOf::Before(u64::MAX), usize::MAX, None, None)
@@ -274,8 +274,7 @@ impl Folded {
             self.fold.apply(index, event.kind, &event.payload, 0);
             self.events.push((index, event));
         }
-        let seq = self.flushes.len() as u64 + 1;
-        self.flushes.push(self.fold.flush(seq));
+        self.flushes.push(self.fold.flush());
     }
 
     /// The view a client opens on: the rows from `start`, with earlier ones paged in.

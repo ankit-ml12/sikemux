@@ -57,9 +57,10 @@ fn main() -> io::Result<()> {
                 chat.fold.apply(chat.next, event.kind, &event.payload, at);
                 chat.next += 1;
             }
-            let changes = chat.fold.flush(chat.seq + 1);
+            let changes = chat.fold.flush();
             if !changes.is_empty() {
                 chat.seq += 1;
+                chat.fold.number(chat.seq + 1);
             }
             json!({ "changes": changes, "seq": chat.seq })
         };

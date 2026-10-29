@@ -23,6 +23,9 @@ pub(crate) const MAX_HISTORY_BYTES: u64 = 512 * 1024 * 1024;
 #[serde(rename_all = "camelCase")]
 struct Line<E> {
     index: u64,
+    /// The number of the last change the event made in the chat; 0 when written without one.
+    #[serde(default)]
+    seq: u64,
     starts_turn: bool,
     point: bool,
     event: E,
@@ -31,6 +34,7 @@ struct Line<E> {
 /// An event read back from a file an earlier core left.
 pub(crate) struct Recovered {
     pub index: u64,
+    pub seq: u64,
     pub starts_turn: bool,
     pub point: bool,
     pub bytes: usize,
@@ -202,6 +206,7 @@ impl History {
             history.next = kept.index + 1;
             each(Recovered {
                 index: kept.index,
+                seq: kept.seq,
                 starts_turn: kept.starts_turn,
                 point: kept.point,
                 bytes: read,
@@ -274,7 +279,14 @@ impl History {
         self.file.as_ref().map(|_| self.first)
     }
 
-    pub(crate) fn append(&mut self, index: u64, event: &ChatEvent, point: bool, starts_turn: bool) {
+    pub(crate) fn append(
+        &mut self,
+        index: u64,
+        seq: u64,
+        event: &ChatEvent,
+        point: bool,
+        starts_turn: bool,
+    ) {
         if self.file.is_none() {
             return;
         }
@@ -283,6 +295,7 @@ impl History {
         }
         let Ok(mut line) = serde_json::to_vec(&Line {
             index,
+            seq,
             starts_turn,
             point,
             event,
@@ -371,7 +384,8 @@ impl History {
 
     /// Puts `events`, each with its index and whether a page or a turn starts there, before
     /// everything the file holds, as a chat reads further back into a session it took up.
-    pub(crate) fn prepend(&mut self, events: &[(u64, ChatEvent, bool, bool)]) {
+    /// Reading them is change `seq` of the chat.
+    pub(crate) fn prepend(&mut self, events: &[(u64, ChatEvent, bool, bool)], seq: u64) {
         if self.file.is_none() || events.is_empty() {
             return;
         }
@@ -382,6 +396,7 @@ impl History {
             let offset = text.len() as u64;
             let Ok(line) = serde_json::to_vec(&Line {
                 index: *index,
+                seq,
                 starts_turn: *starts_turn,
                 point: *point,
                 event,
@@ -549,6 +564,7 @@ impl Reader {
                 let line = serde_json::from_slice::<Line<ChatEvent>>(text).ok()?;
                 Some(Recovered {
                     index: line.index,
+                    seq: line.seq,
                     starts_turn: line.starts_turn,
                     point: line.point,
                     bytes: text.len() + 1,
@@ -598,14 +614,22 @@ mod tests {
     fn turns(history: &mut History, count: u64) {
         for turn in 0..count {
             let base = turn * 3;
-            history.append(base, &event(ChatEventKind::TurnStarted, base), true, true);
             history.append(
+                base,
+                base,
+                &event(ChatEventKind::TurnStarted, base),
+                true,
+                true,
+            );
+            history.append(
+                base + 1,
                 base + 1,
                 &event(ChatEventKind::Error, base + 1),
                 false,
                 false,
             );
             history.append(
+                base + 2,
                 base + 2,
                 &event(ChatEventKind::TurnCompleted, base + 2),
                 false,
@@ -632,7 +656,7 @@ mod tests {
         turns(&mut history, 4);
         history.truncate(6);
         assert_eq!(read(&history, 0, 100), [0, 1, 2, 3, 4, 5]);
-        history.append(20, &event(ChatEventKind::TurnStarted, 20), true, true);
+        history.append(20, 20, &event(ChatEventKind::TurnStarted, 20), true, true);
         assert_eq!(read(&history, 0, 100), [0, 1, 2, 3, 4, 5, 20]);
     }
 
@@ -649,9 +673,15 @@ mod tests {
     fn answered_permission_requests_are_left_out() {
         let dir = tempfile::tempdir().unwrap();
         let mut history = History::open(dir.path(), "chat", MAX_HISTORY_BYTES);
-        history.append(0, &event(ChatEventKind::TurnStarted, 0), true, true);
-        history.append(1, &event(ChatEventKind::PermissionRequest, 1), false, false);
-        history.append(2, &event(ChatEventKind::TurnCompleted, 2), false, false);
+        history.append(0, 0, &event(ChatEventKind::TurnStarted, 0), true, true);
+        history.append(
+            1,
+            1,
+            &event(ChatEventKind::PermissionRequest, 1),
+            false,
+            false,
+        );
+        history.append(2, 2, &event(ChatEventKind::TurnCompleted, 2), false, false);
         assert_eq!(read(&history, 0, 3), [0, 2]);
     }
 

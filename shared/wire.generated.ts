@@ -1425,10 +1425,14 @@ export interface ChatPage {
  * rows it changes; without it, the chat's own.
  */
 export type ChatChange =
-    /** These fields of the head change; the rest stay. */
+    /**
+     * These fields of the head change; the rest stay. A delivery that catches a client up
+     * opens with one naming the number it follows, rather than one less than its own.
+     */
     | {
           op: "head";
           set: unknown;
+          follows?: number;
       }
     /** A new row goes at the end, or a row already held is replaced whole. */
     | {

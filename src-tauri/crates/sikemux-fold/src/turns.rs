@@ -158,7 +158,8 @@ fn set_fold(row: &mut Row, fold: Option<WorkFold>) -> bool {
 
 impl Fold {
     /// Works out the folds and lines again for the runs from the first main
-    /// row that changed, which is only ever the end of a long chat.
+    /// row that changed, which is only ever the end of a long chat. A run's fold
+    /// and line count as changed by the latest change to anything they are read from.
     pub(super) fn settle_runs(&mut self) {
         let Some(from) = self.settle_from.take() else {
             return;
@@ -190,20 +191,28 @@ impl Fold {
                 end += 1;
             }
             // The run still being written has no fold or line until its turn ends.
-            let live = running && end == rows.len() - 1;
+            let last = end == rows.len() - 1;
+            let live = running && last;
             let fold = (!live).then(|| work_fold(rows, at, end)).flatten();
             let meta = (!live).then(|| answer_meta(rows, at, end));
+            let read_from = rows[at.saturating_sub(1)..=end]
+                .iter()
+                .map(|row| row.v)
+                .chain(last.then_some(self.running_v))
+                .max()
+                .unwrap_or_default();
             for (index, row) in rows.iter_mut().enumerate().take(end + 1).skip(at) {
                 let mut changed = set_fold(row, fold.clone());
                 changed |= set_meta(row, meta.clone().filter(|_| index == end));
                 if changed {
+                    row.v = row.v.max(read_from);
                     touched.push(index);
                 }
             }
             at = end + 1;
         }
         for index in touched {
-            self.main.touch(index);
+            self.main.queue(index);
         }
     }
 }

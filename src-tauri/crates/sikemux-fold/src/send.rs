@@ -287,12 +287,10 @@ fn row_changes(
     transcript: &mut Transcript,
     position: usize,
     within: &Option<String>,
-    seq: u64,
     out: &mut Vec<ChatChange>,
 ) {
     let open = open_part(transcript, position);
     let row = &mut transcript.rows[position];
-    row.v = seq;
     let role = row.msg.role;
     if row.fresh {
         let mut msg = row.msg.clone();
@@ -378,14 +376,13 @@ fn row_changes(
 fn flush_transcript(
     transcript: &mut Transcript,
     within: &Option<String>,
-    seq: u64,
     out: &mut Vec<ChatChange>,
 ) {
     let mut first = transcript.rows.len().saturating_sub(2);
     for id in std::mem::take(&mut transcript.touched) {
         if let Some(position) = transcript.position(&id) {
             first = first.min(position);
-            row_changes(transcript, position, within, seq, out);
+            row_changes(transcript, position, within, out);
             let row = &mut transcript.rows[position];
             let bytes = row_bytes(row);
             transcript.bytes = transcript.bytes + bytes - row.bytes;
@@ -419,8 +416,8 @@ fn flush_transcript(
 }
 
 impl Fold {
-    /// What changed since the last flush, as change number `seq`.
-    pub fn flush(&mut self, seq: u64) -> Flushed {
+    /// What changed since the last flush.
+    pub fn flush(&mut self) -> Flushed {
         self.settle_runs();
         let mut out = Vec::new();
         if let Some(from) = self.dropped.take() {
@@ -439,6 +436,7 @@ impl Fold {
                 .collect();
             out.push(ChatChange::Head {
                 set: Value::Object(set),
+                follows: None,
             });
         }
         let active = self.active_tool();
@@ -446,9 +444,10 @@ impl Fold {
             self.head.active_tool = active.clone();
             out.push(ChatChange::Head {
                 set: json!({ "activeTool": active }),
+                follows: None,
             });
         }
-        flush_transcript(&mut self.main, &None, seq, &mut out);
+        flush_transcript(&mut self.main, &None, &mut out);
         let mut sessions: Vec<String> = self
             .subs
             .iter()
@@ -458,10 +457,9 @@ impl Fold {
         sessions.sort();
         for session in sessions {
             if let Some(sub) = self.subs.get_mut(&session) {
-                flush_transcript(sub, &Some(session.clone()), seq, &mut out);
+                flush_transcript(sub, &Some(session.clone()), &mut out);
             }
         }
-        self.seq = seq;
         self.trim();
         out
     }
@@ -662,7 +660,10 @@ impl Fold {
             }
         }
         let mut out = vec![
-            ChatChange::Head { set },
+            ChatChange::Head {
+                set,
+                follows: Some(since),
+            },
             ChatChange::Keep {
                 rows: rows.iter().map(|row| row.msg.id.clone()).collect(),
             },
@@ -805,17 +806,15 @@ impl Fold {
         row.msg.parts.get(place.part).cloned()
     }
 
-    /// Every row the fold holds now counts as changed, for a fold built again
-    /// from the chat's events: a client coming back gets the rows whole.
-    pub fn rebuilt(&mut self, seq: u64) {
-        self.seq = seq;
+    /// Readies a fold built again from the chat's events to send only what changes from
+    /// here on. Each row keeps the number of the last change that touched it.
+    pub fn rebuilt(&mut self) {
         for transcript in std::iter::once(&mut self.main).chain(self.subs.values_mut()) {
             transcript.touched.clear();
             transcript.bytes = 0;
             for row in &mut transcript.rows {
                 row.bytes = row_bytes(row);
                 transcript.bytes += row.bytes;
-                row.v = seq;
                 row.fresh = false;
                 row.parts.clear();
                 row.fields.clear();

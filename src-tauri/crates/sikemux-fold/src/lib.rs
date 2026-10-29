@@ -173,6 +173,8 @@ struct Transcript {
     touched: Vec<String>,
     /// What its rows hold, about, as of the last flush.
     bytes: usize,
+    /// The number of the change it takes in now.
+    now: u64,
 }
 
 impl Transcript {
@@ -196,6 +198,12 @@ impl Transcript {
     }
 
     fn touch(&mut self, at: usize) {
+        self.rows[at].v = self.now;
+        self.queue(at);
+    }
+
+    /// Sends the row's changes with the next flush, without counting it as changed now.
+    fn queue(&mut self, at: usize) {
         let id = &self.rows[at].msg.id;
         if !self.touched.iter().any(|touched| touched == id) {
             self.touched.push(id.clone());
@@ -288,7 +296,10 @@ pub struct Fold {
     dropped: Option<String>,
     /// The main rows from this position on may have new folds or meta.
     settle_from: Option<usize>,
+    /// The number of the change it takes in now.
     seq: u64,
+    /// The change that last said whether a turn runs.
+    running_v: u64,
     /// The agent always offers an effort picker, empty until its session
     /// lists the levels.
     offers_effort: bool,
@@ -565,7 +576,8 @@ impl Fold {
             head_dirty: BTreeSet::new(),
             dropped: None,
             settle_from: None,
-            seq: 0,
+            seq: 1,
+            running_v: 0,
             offers_effort: false,
             folder: None,
             place: None,
@@ -600,7 +612,16 @@ impl Fold {
         }
     }
 
+    /// Counts what it takes in from now on as change `seq`.
+    pub fn number(&mut self, seq: u64) {
+        self.seq = seq;
+        self.main.now = seq;
+    }
+
     fn set_head(&mut self, field: &'static str) {
+        if field == "running" {
+            self.running_v = self.seq;
+        }
         self.head_dirty.insert(field);
     }
 
@@ -687,10 +708,13 @@ impl Fold {
     }
 
     fn transcript(&mut self, within: &Within) -> Option<&mut Transcript> {
-        match within {
-            None => Some(&mut self.main),
-            Some(session) => self.subs.get_mut(session),
-        }
+        let now = self.seq;
+        let transcript = match within {
+            None => &mut self.main,
+            Some(session) => self.subs.get_mut(session)?,
+        };
+        transcript.now = now;
+        Some(transcript)
     }
 
     fn row_id(&mut self, index: u64, within: &Within) -> String {
@@ -905,7 +929,6 @@ impl Fold {
             });
         }
         read_sent(&mut row);
-        row.v = self.seq;
         let at = self.main.push(row);
         self.note_main_change(&None, at);
         self.suppress_user_echo = true;

@@ -12,7 +12,6 @@ struct Chat {
     fold: Fold,
     index: u64,
     at: u64,
-    seq: u64,
 }
 
 impl Chat {
@@ -21,7 +20,6 @@ impl Chat {
             fold: Fold::new("default"),
             index: 0,
             at: 1_000,
-            seq: 0,
         }
     }
 
@@ -84,8 +82,7 @@ impl Chat {
     }
 
     fn flush(&mut self) -> Vec<ChatChange> {
-        self.seq += 1;
-        self.fold.flush(self.seq)
+        self.fold.flush()
     }
 
     fn view(&mut self) -> ChatView {
