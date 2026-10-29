@@ -52,7 +52,6 @@ export type ChatSnapshot = {
   stoppingTurn: boolean;
   /** How the chat asks before acting, as this phone last set it or the host last said; null before either. */
   permissionMode: string | null;
-  changingMode: boolean;
   hasEarlier: boolean;
   earlier: 'idle' | 'loading' | 'failed';
   /** When the running turn began. */
@@ -205,7 +204,6 @@ export class ChatSession {
   private stopping: ReadonlySet<string> = new Set();
   /** The mode this phone set, until the host says another. */
   private mode: string | null = null;
-  private changingMode = false;
   private draft = '';
   /** The host's revision of this chat's draft that the composer last took in. */
   private draftRev: number | undefined;
@@ -558,10 +556,9 @@ export class ChatSession {
 
   /** `bypass` runs without asking; `workspace-write` asks first. */
   setPermissionMode = (mode: string) => {
-    if (this.changingMode) return;
+    if (this.chat.changingMode) return;
     const before = this.mode;
     this.mode = mode;
-    this.changingMode = true;
     this.notice = null;
     this.emit();
     this.ask(
@@ -571,10 +568,7 @@ export class ChatSession {
       () => {
         if (this.mode === mode) this.mode = before;
       },
-    ).finally(() => {
-      this.changingMode = false;
-      this.emit();
-    });
+    );
   };
 
   /** Ends the chat's agent on the host and closes it in every app. Answers whether it did. */
@@ -758,7 +752,6 @@ export class ChatSession {
       stopping: this.stopping,
       stoppingTurn: this.stoppingTurn,
       permissionMode: this.mode ?? (this.chat.permissionMode || null),
-      changingMode: this.changingMode,
       hasEarlier: this.chat.olderBefore !== null,
       earlier: this.earlier,
       turnSince: this.since(),

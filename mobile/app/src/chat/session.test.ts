@@ -321,10 +321,10 @@ describe('a chat session', () => {
     expect(session.snapshot().permissionMode).toBe('workspace-write');
 
     session.setPermissionMode('bypass');
-    expect(session.snapshot().changingMode).toBe(true);
+    expect(session.snapshot().permissionMode).toBe('bypass');
     await settle();
     expect(connection.setPermissionMode).toHaveBeenCalledWith('agent', 'bypass');
-    expect(session.snapshot()).toMatchObject({ permissionMode: 'bypass', changingMode: false });
+    expect(session.snapshot().permissionMode).toBe('bypass');
 
     startAt(0);
     deliver(headSet({ running: true }));
