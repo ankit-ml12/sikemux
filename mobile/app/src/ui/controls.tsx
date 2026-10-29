@@ -123,20 +123,32 @@ export function PasswordField(props: Omit<TextInputProps, 'secureTextEntry'>) {
 }
 
 /** A small rounded control that sits in a row of others, a little apart. */
-export function Chip({ title, primary, busy, onPress }: { title: string; primary?: boolean; busy?: boolean; onPress: () => void }) {
+export function Chip({
+  title,
+  primary,
+  busy,
+  disabled,
+  onPress,
+}: {
+  title: string;
+  primary?: boolean;
+  busy?: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
   const styles = useStyles(makeStyles);
   return (
     <Pressable
-      disabled={busy}
+      disabled={busy || disabled}
       onPress={() => {
         haptics.select();
         onPress();
       }}
       hitSlop={4}
       accessibilityRole="button"
-      accessibilityState={{ disabled: busy, busy }}
+      accessibilityState={{ disabled: busy || disabled, busy }}
       style={({ pressed }) => [styles.chip, primary && styles.chipPrimary, (pressed || busy) && { opacity: 0.6 }]}>
-      <Text style={[styles.chipText, primary && styles.chipTextPrimary]} numberOfLines={1}>
+      <Text style={[styles.chipText, primary && styles.chipTextPrimary, disabled && styles.chipTextDisabled]} numberOfLines={1}>
         {title}
       </Text>
     </Pressable>
@@ -211,6 +223,7 @@ const makeStyles = (colors: Palette) => {
     chipPrimary: { backgroundColor: colors.ink, borderColor: colors.ink },
     chipText: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink },
     chipTextPrimary: { color: colors.ground },
+    chipTextDisabled: { color: colors.inkFaint },
     iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
     button: {
       minHeight: 50,

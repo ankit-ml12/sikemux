@@ -20,7 +20,7 @@ import { FoldsContext, rowFold, shownRows } from '@/chat/folds';
 import { useTranscriptScroll } from '@/chat/transcriptScroll';
 import { HostContext } from '@/chat/hostFiles';
 import { LiveSheet, LiveStrip } from '@/chat/Live';
-import { AnsweredQuestion, AssumedQuestion, OpenQuestion } from '@/chat/Question';
+import { AnsweredQuestion, AssumedQuestion, QuestionDock } from '@/chat/Question';
 import { useQuestions } from '@/chat/questions';
 import { hasLiveWork, liveKey, liveWork } from '@/chat/liveWork';
 import { stripOf, stripOwner } from '@/chat/messageMeta';
@@ -353,20 +353,14 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                                     secret={question.secret}
                                   />
                                 ))}
-                                {questions.open.map((question) => (
-                                  <OpenQuestion
-                                    key={question.id}
-                                    question={question}
-                                    canAnswer={!watchOnly}
-                                    writing={questions.writing && composing?.id === question.id}
-                                    onChoose={(choice) => void questions.answer(question, { choice })}
-                                    onWrite={() => {
-                                      questions.write(question);
-                                      input.current?.focus();
-                                    }}
-                                    onSecret={(text) => questions.answer(question, { answer: text })}
-                                  />
-                                ))}
+                                <QuestionDock
+                                  questions={questions}
+                                  canAnswer={!watchOnly}
+                                  onWrite={(question) => {
+                                    questions.write(question);
+                                    input.current?.focus();
+                                  }}
+                                />
                                 {questions.assumed.map((question) => (
                                   <AssumedQuestion
                                     key={question.id}
@@ -448,7 +442,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                     cli: composing.cli,
                     text: composing.text,
                     onRemove: questions.stopComposing,
-                    onAnswer: (text) => questions.answer(composing, { answer: text }, () => session.setDraft(text)),
+                    onAnswer: (text) => questions.hold(composing, text, () => session.setDraft(text)),
                   }
                 }
               />

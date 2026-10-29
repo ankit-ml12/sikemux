@@ -198,12 +198,34 @@
   .ask-who { display: flex; align-items: center; gap: 7px; margin: 14px 0 2px; color: var(--ink-dim); font-size: 11.5px; line-height: 1.4; }
   .ask-who b { color: var(--ink); font-weight: 600; }
   .ask-who svg { flex: none; }
-  .ask-options { display: flex; flex-direction: column; margin: 6px -10px 4px; }
+  .ask-options { display: flex; flex-direction: column; gap: 2px; margin: 6px -10px 4px; }
   .ask-option { display: flex; align-items: baseline; gap: 12px; min-height: 40px; padding: 10px; border-radius: 10px; color: var(--ink); font-size: 14.5px; line-height: 1.4; }
   .ask-option.pressed { background: color-mix(in oklab, var(--ink) 7%, transparent); }
-  .ask-option .n { width: 10px; flex: none; color: var(--ink-faint); font-family: var(--mono); font-size: 12px; }
+  .ask-option.chosen { background: color-mix(in oklab, var(--ink) 10%, transparent); }
+  .ask-option .key { width: 14px; height: 14px; flex: none; align-self: flex-start; margin-top: 3px; display: grid; place-items: center; color: var(--ink-faint); }
+  .ask-option .radio { border-radius: 999px; border: 1.5px solid color-mix(in oklab, var(--ink) 30%, transparent); }
+  .ask-option .radio.on { border-color: var(--ink); }
+  .ask-option .radio.on::after { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--ink); }
+  .ask-option .tick { border-radius: 4px; border: 1.5px solid color-mix(in oklab, var(--ink) 30%, transparent); }
+  .ask-option .tick.on { border-color: var(--ink); background: var(--ink); color: var(--bg); }
   .ask-option .why { color: var(--ink-dim); font-size: 13px; }
+  .ask-option .rec { color: var(--ink-faint); font-size: 12px; margin-left: 6px; }
   .ask-option.other { color: var(--ink-dim); }
+  .ask-pick { color: var(--ink-faint); }
+  .ask-who .fold { flex: none; display: grid; place-items: center; width: 24px; height: 20px; margin-left: auto; color: var(--ink-faint); transform: rotate(90deg); }
+  .ask-who .ticket + .fold { margin-left: 0; }
+  .ask-tabs { display: flex; gap: 6px; margin: 8px 0 6px; overflow: hidden; }
+  .ask-tab { flex: none; height: 30px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--border); display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
+  .ask-tab.on { background: color-mix(in oklab, var(--ink) 10%, transparent); border-color: transparent; color: var(--ink); }
+  .ask-tab .n { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+  .ask-tab svg { color: var(--ink-faint); }
+  .ask-send { display: flex; justify-content: flex-end; margin: 2px 0 8px; }
+  .ask-send .chip { height: 32px; padding: 0 14px; border-radius: 10px; display: inline-flex; align-items: center; font-size: 13.5px; font-weight: 500; background: var(--ink); color: var(--bg); }
+  .ask-send .chip.off { background: transparent; border: 1px solid var(--border); color: var(--ink-faint); }
+  .ask-folded { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; padding: 10px 0; color: var(--ink-faint); font-size: 11px; letter-spacing: .06em; }
+  .ask-folded .count { font-family: var(--mono); color: var(--ink-dim); letter-spacing: 0; }
+  .ask-folded .peek { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-dim); font-size: 12.5px; letter-spacing: 0; }
+  .ask-folded svg { flex: none; }
   .ask-who .ticket { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
   .ask-assumed { display: flex; align-items: center; gap: 6px; margin: 10px 0; color: var(--ink-dim); font-size: 12.5px; line-height: 1.4; }
   .ask-assumed b { color: var(--ink); font-weight: 600; }
@@ -2431,12 +2453,12 @@
           <div class="letter-from"><span class="claude">{{IconClaude:13}}</span><span>Message from <b>Otter</b></span></div>
           <div class="prose">Take PROJ-12: move the ledger import onto the new amounts table. Ask me if anything about the data is unclear.</div>
           <div class="work"><span class="work-sum"><span class="codex">{{IconCodex:17}}</span>Worked for 41s <span class="calls">· 6 tool calls</span>{{IconChevron:10}}</span></div>
-          <div class="ask-who"><span class="codex">{{IconCodex:14}}</span><span><b>Maple</b> asks you · Otter didn't know</span><span class="ticket">PROJ-12</span></div>
+          <div class="ask-who"><span class="codex">{{IconCodex:14}}</span><span><b>Maple</b> asks you · Otter didn't know</span><span class="ticket">PROJ-12</span><span class="fold">{{IconChevron:10}}</span></div>
           <div class="prose" style="margin-top:0">Should amounts be stored in cents or as decimals? The API sends decimals but the ledger table uses integers.</div>
           <div class="ask-options">
-            <div class="ask-option pressed"><span class="n">1</span><span>Cents</span><span class="why">integers, no rounding errors</span></div>
-            <div class="ask-option"><span class="n">2</span><span>Decimals</span><span class="why">same as the API</span></div>
-            <div class="ask-option other"><span class="n">3</span><span>Something else…</span></div>
+            <div class="ask-option pressed"><span class="key radio"></span><span>Cents<span class="rec">recommended</span> <span class="why">integers, no rounding errors</span></span></div>
+            <div class="ask-option"><span class="key radio"></span><span>Decimals <span class="why">same as the API</span></span></div>
+            <div class="ask-option other"><span class="key">{{IconPencil:12}}</span><span>Something else…</span></div>
           </div>
         </div>
         <div class="composer-wrap">
@@ -2454,7 +2476,71 @@
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>An agent asks you</b><div class="note">An agent asked the person something with ask, or its lead passed the question on. It reads as the agent's prose under one small line naming who asks, and why it reached the person rather than its lead, with the ticket of the board card the agent works at the end, then its answers as numbered rows that light up under a finger, as the Mac's tool rows do. No card and no warning colour: it is part of the conversation. Tapping an answer sends it; the first answer anywhere wins and the rows go from every screen. While a question is open the composer carries an Answering Maple chip, so whatever is typed answers it. A watching phone shows the question without the rows.</div></figcaption>
+      <figcaption><b>An agent asks you</b><div class="note">An agent asked the person something with ask, or its lead passed the question on. It reads as the agent's prose under one small line naming who asks, and why it reached the person rather than its lead, with the ticket of the board card the agent works at the end, then its answers as rows with the Mac's ring before each, lit under a finger as the Mac's tool rows are. An answer the agent marked as the one it would pick carries a faint recommended after its words. No card and no warning colour: it is part of the conversation. Tapping an answer sends it; the first answer anywhere wins and the rows go from every screen. The chevron at the end of the asking line folds the question into one line, as below. While a question is open the composer carries an Answering Maple chip, so whatever is typed answers it. A watching phone shows the question without the rows.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Maple</b><i>·</i><em>Move the ledger import</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="justify-content:flex-start">
+          <div class="prose">The import reads cleanly now. Three things decide how the old rows move over.</div>
+          <div class="ask-who"><span class="codex">{{IconCodex:14}}</span><span><b>Maple</b> asks you</span><span class="ticket">PROJ-12</span><span class="fold">{{IconChevron:10}}</span></div>
+          <div class="ask-tabs">
+            <span class="ask-tab">{{IconCheck:11}}Amounts</span>
+            <span class="ask-tab on"><span class="n">2</span>Old rows</span>
+            <span class="ask-tab"><span class="n">3</span>Rounding</span>
+          </div>
+          <div class="prose" style="margin-top:0">Which of the old rows should move over? <span class="ask-pick">Pick any.</span></div>
+          <div class="ask-options">
+            <div class="ask-option chosen"><span class="key tick on">{{IconCheck:10}}</span><span>Paid invoices<span class="rec">recommended</span></span></div>
+            <div class="ask-option chosen"><span class="key tick on">{{IconCheck:10}}</span><span>Refunds <span class="why">kept as negative amounts</span></span></div>
+            <div class="ask-option"><span class="key tick"></span><span>Drafts <span class="why">never sent to anyone</span></span></div>
+            <div class="ask-option other"><span class="key">{{IconPencil:12}}</span><span>Something else…</span></div>
+          </div>
+          <div class="ask-send"><span class="chip off">Send</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="answering"><span class="codex">{{IconCodex:13}}</span><span>Answering Maple · Which of the old rows should move over?</span><i class="x">{{IconClose:10}}</i></div>
+            <div class="ta ph">Answer Maple</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Several questions at once</b><div class="note">An agent asked several things together, as Claude's question tool and ask both can. A row of tabs sits under the asking line, one for each question, named by the two or three words the agent gave it, else Question 1, 2 and so on, with its number until it has an answer and a check after. Tapping a tab shows that question. Picking an answer holds it and moves on to the next question still without one; nothing is sent until each has an answer, and then Send under the rows sends them all together, so the agent reads every answer in one message. A question that takes several answers says Pick any. after its words, and its rows carry ticks instead of rings: a tap ticks or unticks, and Send sends what is ticked, even when it is the only question. A lone question that takes one answer still sends on the tap. Something else… writes the question's answer in the composer, and once sent there it shows as its own lit row under a pencil, held with the rest. A secret is typed into its own field as before and held too, saying Answer kept, sent with the rest. While the answers go, the rows leave; if the host does not take them, the questions come back with every answer still picked, to send again.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Maple</b><i>·</i><em>Move the ledger import</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="justify-content:flex-start">
+          <div class="prose">The import reads cleanly now. Three things decide how the old rows move over.</div>
+          <div class="ask-folded"><span>QUESTIONS</span><span class="count">3</span><span class="peek">Amounts · Old rows · Rounding</span>{{IconChevron:10}}</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Questions folded away</b><div class="note">The chevron at the end of the asking line folds the questions into one dim line at the end of the chat: QUESTIONS, how many, and their names. While they are folded the composer has no Answering chip and sends normal messages. A tap on the line opens them again, with the answers already picked still held, and a new question arriving first opens them by itself.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -2467,12 +2553,12 @@
           <div class="ask-answered">You answered: <b>UTC, and show local time only in the app</b></div>
           <div class="prose">Dates go into the ledger in UTC now. Next, the amounts.</div>
           <div class="ask-assumed">{{IconCheck:13}}<span><b>Maple</b> assumed old invoices keep their decimals</span><span>·</span><span class="act">Fine</span><span class="act">Change</span></div>
-          <div class="ask-who"><span class="codex">{{IconCodex:14}}</span><span><b>Maple</b> asks you</span></div>
+          <div class="ask-who"><span class="codex">{{IconCodex:14}}</span><span><b>Maple</b> asks you</span><span class="fold">{{IconChevron:10}}</span></div>
           <div class="prose" style="margin-top:0">Should amounts be stored in cents or as decimals?</div>
           <div class="ask-options">
-            <div class="ask-option"><span class="n">1</span><span>Cents</span><span class="why">integers, no rounding errors</span></div>
-            <div class="ask-option"><span class="n">2</span><span>Decimals</span><span class="why">same as the API</span></div>
-            <div class="ask-option other"><span class="n">3</span><span>Something else…</span><span class="why">answering below</span></div>
+            <div class="ask-option"><span class="key radio"></span><span>Cents<span class="rec">recommended</span> <span class="why">integers, no rounding errors</span></span></div>
+            <div class="ask-option"><span class="key radio"></span><span>Decimals <span class="why">same as the API</span></span></div>
+            <div class="ask-option other pressed"><span class="key">{{IconPencil:12}}</span><span>Something else… <span class="why">answering below</span></span></div>
           </div>
         </div>
         <div class="composer-wrap">
