@@ -745,6 +745,9 @@ pub struct StashItem {
     /// Only on prompts: the files attached to the prompt, oldest first. They are not listed on their own, get no events of their own, and are taken and deleted with their prompt.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<StashItem>>,
+    /// Only on text and prompts: the links written in its words, in the order they first appear, without repeats.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub links: Option<Vec<StashLink>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<StashNote>,
     /// The file's name. Only on items with a file.
@@ -756,7 +759,7 @@ pub struct StashItem {
     /// The file's size in bytes. Only on items with a file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<i64>,
-    /// Only links get one, and only once the server has read the page; null until then, or when it could not.
+    /// Only links get one, and only once the server has read the page; null until then, or when it could not. The links in a text's or prompt's words have theirs in links.
     pub preview: Option<StashPreview>,
     pub target: Option<StashTarget>,
     pub created_at: String,
@@ -787,6 +790,15 @@ pub enum StashKind {
     /// A value added after this build, which it cannot act on.
     #[serde(other)]
     Unknown,
+}
+
+/// A link written in a text's or prompt's words, exactly as it is written there, with what its page says about itself.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashLink {
+    pub url: String,
+    /// Null until the server has read the page, or when it could not.
+    pub preview: Option<StashPreview>,
 }
 
 /// A page of the stash, newest first.
@@ -930,6 +942,7 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "StashItem" => through::<StashItem>(json),
         "StashItemId" => through::<StashItemId>(json),
         "StashKind" => through::<StashKind>(json),
+        "StashLink" => through::<StashLink>(json),
         "StashList" => through::<StashList>(json),
         "StashListCursor" => through::<StashListCursor>(json),
         "StashNote" => through::<StashNote>(json),

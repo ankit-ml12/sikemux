@@ -3,6 +3,7 @@ import {
   validator,
   stashTakenValues,
   type StashItem,
+  type StashLink,
   type StashList,
   type StashSeen,
   type StashTaken,
@@ -41,7 +42,7 @@ import {
   withAttachments,
   type ItemRow,
 } from "./items.ts";
-import { fetchPreview, isFetchable } from "./preview.ts";
+import { fetchPreview, isFetchable, linksIn } from "./preview.ts";
 
 const PAGE = 50;
 const NAME_MAX = 255;
@@ -52,6 +53,9 @@ const CURSOR_TIME =
   /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?[+-]\d{2}(:\d{2})?$/;
 /** Links whose pages are read at once; past this a link is stashed without a preview. */
 const PREVIEWS_AT_ONCE = 8;
+/** How many links in a text's or prompt's words are kept, and how many of their pages are read. */
+const LINKS_KEPT = 6;
+const LINKS_READ = 3;
 
 const protocol = validator();
 
@@ -232,16 +236,28 @@ export function stashRoutes(
       throw badRequest("That prompt is not waiting for any more attachments.");
   };
 
-  const preview = (userId: string, id: string, url: string) => {
-    if (previewing >= PREVIEWS_AT_ONCE) return;
-    previewing += 1;
-    fetchPreview(url)
+  /**
+   * Reads up to `wanted` pages in the background, as many as there is room for, and saves what
+   * `read` makes of that many.
+   */
+  const readPages = (
+    userId: string,
+    id: string,
+    wanted: number,
+    read: (
+      room: number,
+    ) => Promise<{ preview: string } | { links: string } | null>,
+  ) => {
+    const room = Math.min(wanted, PREVIEWS_AT_ONCE - previewing);
+    if (room <= 0) return;
+    previewing += room;
+    read(room)
       .then(async (found) => {
         if (!found) return;
         await db.transaction().execute(async (trx) => {
           const updated = await trx
             .updateTable("stash_items")
-            .set({ preview: JSON.stringify(found) })
+            .set(found)
             .where("id", "=", id)
             .executeTakeFirst();
           if (updated.numUpdatedRows > 0n)
@@ -252,9 +268,29 @@ export function stashRoutes(
         log.warn({ err: error, id }, "could not save a link's preview"),
       )
       .finally(() => {
-        previewing -= 1;
+        previewing -= room;
       });
   };
+
+  const previewLink = (userId: string, id: string, url: string) =>
+    readPages(userId, id, 1, async () => {
+      const found = await fetchPreview(url);
+      return found && { preview: JSON.stringify(found) };
+    });
+
+  /** Reads the pages of the first links in an item's words. */
+  const previewLinks = (userId: string, id: string, urls: string[]) =>
+    readPages(userId, id, Math.min(urls.length, LINKS_READ), async (room) => {
+      const found = await Promise.all(
+        urls.map((url, at) => (at < room ? fetchPreview(url) : null)),
+      );
+      if (found.every((preview) => preview === null)) return null;
+      const links: StashLink[] = urls.map((url, at) => ({
+        url,
+        preview: found[at] ?? null,
+      }));
+      return { links: JSON.stringify(links) };
+    });
 
   const add = async (c: Context<AuthEnv>): Promise<StashItem> => {
     const identity = c.get("identity");
@@ -277,6 +313,7 @@ export function stashRoutes(
     if (request.attachmentCount !== undefined && request.kind !== "prompt")
       throw badRequest("Only a prompt has attachments.");
     const missing = request.attachmentCount ?? 0;
+    const links = linksIn(request.text ?? "").slice(0, LINKS_KEPT);
     if (request.target) await checkTarget(db, userId, request.target);
     const id = newId();
     const row = await db.transaction().execute(async (trx) => {
@@ -294,6 +331,9 @@ export function stashRoutes(
           mime: null,
           size: null,
           preview: null,
+          links: links.length
+            ? JSON.stringify(links.map((url) => ({ url, preview: null })))
+            : null,
           target: request.target ? JSON.stringify(request.target) : null,
           from_device: await fromDevice(trx, identity),
           attachments_missing: missing,
@@ -305,8 +345,9 @@ export function stashRoutes(
     });
     if (row.url) {
       const url = URL.parse(row.url);
-      if (url && isFetchable(url)) preview(userId, id, row.url);
+      if (url && isFetchable(url)) previewLink(userId, id, row.url);
     }
+    if (links.length) previewLinks(userId, id, links);
     return toItem(row);
   };
 

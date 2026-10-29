@@ -208,6 +208,7 @@ Table stash_items {
   taken_at timestamptz
   prompt_id text
   attachments_missing integer [not null, default: 0, note: '(attachments_missing >= 0) AND (attachments_missing <= 20)']
+  links jsonb
 
   indexes {
     prompt_id [name: 'stash_items_by_prompt', note: 'where (prompt_id IS NOT NULL)']
@@ -215,7 +216,7 @@ Table stash_items {
     taken_at [name: 'stash_items_taken', note: 'where (taken_at IS NOT NULL)']
   }
 
-  Note: '(kind = \'link\') = (url IS NOT NULL); (kind = ANY (ARRAY[\'text\', \'prompt\'])) = (text IS NOT NULL); (kind = ANY (ARRAY[\'image\', \'video\', \'file\'])) = ((size IS NOT NULL) AND (name IS NOT NULL) AND (mime IS NOT NULL)); (prompt_id IS NULL) OR (kind = ANY (ARRAY[\'image\', \'video\', \'file\'])); (attachments_missing = 0) OR (kind = \'prompt\')'
+  Note: '(kind = \'link\') = (url IS NOT NULL); (kind = ANY (ARRAY[\'text\', \'prompt\'])) = (text IS NOT NULL); (kind = ANY (ARRAY[\'image\', \'video\', \'file\'])) = ((size IS NOT NULL) AND (name IS NOT NULL) AND (mime IS NOT NULL)); (prompt_id IS NULL) OR (kind = ANY (ARRAY[\'image\', \'video\', \'file\'])); (attachments_missing = 0) OR (kind = \'prompt\'); (links IS NULL) OR (kind = ANY (ARRAY[\'text\', \'prompt\']))'
 }
 
 Table hooks {

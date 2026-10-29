@@ -1,7 +1,8 @@
 {
   "id": "Pq7rT2vWx9yZa1bC3dE5fG",
   "kind": "prompt",
-  "text": "Make the header match this screenshot.",
+  "text": "Make the header match this screenshot and https://sikemux.com.",
+  "links": [{ "url": "https://sikemux.com", "preview": null }],
   "attachments": [
     {
       "id": "Kd2mX8qLr0VbNw4pYt6sHA",

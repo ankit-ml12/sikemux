@@ -1687,6 +1687,13 @@ export const schema = {
           items: { $ref: "#/$defs/StashItem" },
           maxItems: 20,
         },
+        links: {
+          description:
+            "Only on text and prompts: the links written in its words, in the order they first appear, without repeats.",
+          type: "array",
+          items: { $ref: "#/$defs/StashLink" },
+          maxItems: 6,
+        },
         note: { $ref: "#/$defs/StashNote" },
         name: {
           description: "The file's name. Only on items with a file.",
@@ -1705,7 +1712,7 @@ export const schema = {
         },
         preview: {
           description:
-            "Only links get one, and only once the server has read the page; null until then, or when it could not.",
+            "Only links get one, and only once the server has read the page; null until then, or when it could not. The links in a text's or prompt's words have theirs in links.",
           anyOf: [{ $ref: "#/$defs/StashPreview" }, { type: "null" }],
         },
         target: { anyOf: [{ $ref: "#/$defs/StashTarget" }, { type: "null" }] },
@@ -1744,6 +1751,21 @@ export const schema = {
         "What was shared. A link, text or prompt arrives as JSON; an image, video or file as its bytes. A prompt is a composer's whole prompt: its text and the files attached to it.",
       type: "string",
       enum: ["link", "text", "image", "video", "file", "prompt"],
+    },
+    StashLink: {
+      description:
+        "A link written in a text's or prompt's words, exactly as it is written there, with what its page says about itself.",
+      type: "object",
+      properties: {
+        url: { type: "string", minLength: 1, maxLength: 8192 },
+        preview: {
+          description:
+            "Null until the server has read the page, or when it could not.",
+          anyOf: [{ $ref: "#/$defs/StashPreview" }, { type: "null" }],
+        },
+      },
+      required: ["url", "preview"],
+      additionalProperties: false,
     },
     StashList: {
       description: "A page of the stash, newest first.",

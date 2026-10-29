@@ -2,6 +2,7 @@ import type {
   AccountEventType,
   StashItem,
   StashKind,
+  StashLink,
   StashPreview,
   StashTarget,
 } from "@sikemux/protocol";
@@ -34,6 +35,7 @@ export function toItem(
   };
   if (row.url !== null) item.url = row.url;
   if (row.text !== null) item.text = row.text;
+  if (row.links !== null) item.links = row.links as StashLink[];
   if (row.note !== null) item.note = row.note;
   if (row.name !== null) item.name = row.name;
   if (row.mime !== null) item.mime = row.mime;

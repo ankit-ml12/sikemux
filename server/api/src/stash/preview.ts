@@ -134,6 +134,27 @@ export function isFetchable(url: URL): boolean {
   );
 }
 
+/** Characters that end a sentence or close a quote around a link rather than belong to it. */
+const TRAILING = /[.,;:!?'"*_>\]}]+$/;
+
+/** A link with what follows it in its sentence cut off, keeping a bracket the link opened. */
+function trimmed(written: string): string {
+  const link = written.replace(TRAILING, "");
+  const unopened =
+    link.endsWith(")") && link.split(")").length > link.split("(").length;
+  return unopened ? trimmed(link.slice(0, -1)) : link;
+}
+
+/** The http and https links written in `text`, in the order they first appear, without repeats. */
+export function linksIn(text: string): string[] {
+  const found: string[] = [];
+  for (const [written] of text.matchAll(/https?:\/\/[^\s<>"'`]+/gi)) {
+    const link = trimmed(written);
+    if (URL.parse(link)?.hostname && !found.includes(link)) found.push(link);
+  }
+  return found;
+}
+
 const ENTITIES: Record<string, string> = {
   amp: "&",
   lt: "<",

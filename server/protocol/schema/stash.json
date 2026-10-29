@@ -44,6 +44,19 @@
       "required": ["title", "site", "description"],
       "additionalProperties": false
     },
+    "StashLink": {
+      "description": "A link written in a text's or prompt's words, exactly as it is written there, with what its page says about itself.",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "preview": {
+          "description": "Null until the server has read the page, or when it could not.",
+          "anyOf": [{ "$ref": "#/$defs/StashPreview" }, { "type": "null" }]
+        }
+      },
+      "required": ["url", "preview"],
+      "additionalProperties": false
+    },
     "StashTarget": {
       "description": "Where the person sent the item from the share sheet: a chat on a host (chatId), or a new chat in a project on it (projectPath with newChat true). That host puts it in the chat's draft and marks it taken.",
       "type": "object",
@@ -78,6 +91,12 @@
           "items": { "$ref": "#/$defs/StashItem" },
           "maxItems": 20
         },
+        "links": {
+          "description": "Only on text and prompts: the links written in its words, in the order they first appear, without repeats.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/StashLink" },
+          "maxItems": 6
+        },
         "note": { "$ref": "#/$defs/StashNote" },
         "name": {
           "description": "The file's name. Only on items with a file.",
@@ -95,7 +114,7 @@
           "minimum": 0
         },
         "preview": {
-          "description": "Only links get one, and only once the server has read the page; null until then, or when it could not.",
+          "description": "Only links get one, and only once the server has read the page; null until then, or when it could not. The links in a text's or prompt's words have theirs in links.",
           "anyOf": [{ "$ref": "#/$defs/StashPreview" }, { "type": "null" }]
         },
         "target": {

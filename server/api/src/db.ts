@@ -147,6 +147,8 @@ export interface Tables {
     mime: string | null;
     size: ColumnType<string | null, number | null, never>;
     preview: ColumnType<unknown, string | null, string | null>;
+    /** On text and prompts, the links written in its words, each with its page's preview. */
+    links: ColumnType<unknown, string | null | undefined, string | null>;
     target: ColumnType<unknown, string | null, never>;
     from_device: string | null;
     created_at: CreatedAt;

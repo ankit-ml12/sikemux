@@ -941,6 +941,8 @@ export interface StashItem {
   text?: string;
   /** Only on prompts: the files attached to the prompt, oldest first. They are not listed on their own, get no events of their own, and are taken and deleted with their prompt. */
   attachments?: StashItem[];
+  /** Only on text and prompts: the links written in its words, in the order they first appear, without repeats. */
+  links?: StashLink[];
   note?: StashNote;
   /** The file's name. Only on items with a file. */
   name?: string;
@@ -948,7 +950,7 @@ export interface StashItem {
   mime?: string;
   /** The file's size in bytes. Only on items with a file. */
   size?: number;
-  /** Only links get one, and only once the server has read the page; null until then, or when it could not. */
+  /** Only links get one, and only once the server has read the page; null until then, or when it could not. The links in a text's or prompt's words have theirs in links. */
   preview: StashPreview | null;
   target: StashTarget | null;
   createdAt: string;
@@ -971,6 +973,13 @@ export const stashKindValues: readonly StashKind[] = [
   "file",
   "prompt",
 ];
+
+/** A link written in a text's or prompt's words, exactly as it is written there, with what its page says about itself. */
+export interface StashLink {
+  url: string;
+  /** Null until the server has read the page, or when it could not. */
+  preview: StashPreview | null;
+}
 
 /** A page of the stash, newest first. */
 export interface StashList {
@@ -1148,6 +1157,7 @@ export interface Definitions {
   StashItem: StashItem;
   StashItemId: StashItemId;
   StashKind: StashKind;
+  StashLink: StashLink;
   StashList: StashList;
   StashListCursor: StashListCursor;
   StashNote: StashNote;
