@@ -130,6 +130,18 @@ pub enum ApnsEnvironment {
     Unknown,
 }
 
+/// An APNs token, which says which of Apple's environments issued it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApnsTokenRegistration {
+    /// The native APNs token the app was given, never an Expo push token.
+    pub token: String,
+    pub app: PushApp,
+    pub apns_environment: ApnsEnvironment,
+    pub nonce: String,
+    pub signature: String,
+}
+
 /// A semantic version, such as 0.5.0 or 0.6.0-nightly.3.
 pub type AppVersion = String;
 
@@ -260,6 +272,17 @@ pub struct ErrorDetail {
 
 /// An account event's place in the log. Later events have larger ids.
 pub type EventId = i64;
+
+/// An FCM token.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FcmTokenRegistration {
+    /// The native FCM token the app was given, never an Expo push token.
+    pub token: String,
+    pub app: PushApp,
+    pub nonce: String,
+    pub signature: String,
+}
 
 /// Whether the API can serve requests, and which build is answering.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -664,17 +687,15 @@ pub enum PushResult {
 
 /// Where the phone wants its notifications delivered. The signature is the phone's device key's Ed25519 signature over the UTF-8 text `sikemux-push|<nonce>|<key>|<sha256 of the token, lowercase hex>`, so no other sign-in on the account can redirect the phone's notifications.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PushTokenRegistration {
-    pub platform: PushPlatform,
-    /// The token the platform gave the app: the native APNs or FCM token, never an Expo push token.
-    pub token: String,
-    pub app: PushApp,
-    /// Required when platform is apns, and absent otherwise.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub apns_environment: Option<ApnsEnvironment>,
-    pub nonce: String,
-    pub signature: String,
+#[serde(tag = "platform")]
+pub enum PushTokenRegistration {
+    #[serde(rename = "apns")]
+    Apns(ApnsTokenRegistration),
+    #[serde(rename = "fcm")]
+    Fcm(FcmTokenRegistration),
+    /// A message added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -712,18 +733,50 @@ pub enum RevokeReason {
 
 /// A link, text or prompt to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget), or X-Stash-Prompt with a prompt's id to attach it to that prompt. A file signed with SikemuxHost or SikemuxDevice also sends X-Body-Sha256, the body's SHA-256 in lowercase hex, which the signature covers in place of hashing the body.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum StashAdd {
+    #[serde(rename = "link")]
+    Link(StashAddLink),
+    #[serde(rename = "text")]
+    Text(StashAddText),
+    #[serde(rename = "prompt")]
+    Prompt(StashAddPrompt),
+    /// A message added after this build, which it cannot act on.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A link to stash.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StashAdd {
-    pub kind: StashKind,
-    /// An http or https link, with kind link.
+pub struct StashAddLink {
+    /// An http or https link.
+    pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    /// With kind text or prompt.
+    pub note: Option<StashNote>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-    /// With kind prompt: how many files will follow, each uploaded with X-Stash-Prompt set to the prompt's id. Until the last arrives the prompt is in no list and announced to no device; one left unfinished for a day is deleted.
+    pub target: Option<StashTarget>,
+}
+
+/// A composer's whole prompt to stash: its text, with its files uploaded after it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashAddPrompt {
+    pub text: String,
+    /// How many files will follow, each uploaded with X-Stash-Prompt set to the prompt's id. Until the last arrives the prompt is in no list and announced to no device; one left unfinished for a day is deleted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachment_count: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<StashNote>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<StashTarget>,
+}
+
+/// Text to stash.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashAddText {
+    pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<StashNote>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -893,6 +946,7 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "AccountStatus" => through::<AccountStatus>(json),
         "ApiError" => through::<ApiError>(json),
         "ApnsEnvironment" => through::<ApnsEnvironment>(json),
+        "ApnsTokenRegistration" => through::<PushTokenRegistration>(json),
         "AppVersion" => through::<AppVersion>(json),
         "Challenge" => through::<Challenge>(json),
         "Channel" => through::<Channel>(json),
@@ -906,6 +960,7 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "ErrorCode" => through::<ErrorCode>(json),
         "ErrorDetail" => through::<ErrorDetail>(json),
         "EventId" => through::<EventId>(json),
+        "FcmTokenRegistration" => through::<PushTokenRegistration>(json),
         "Health" => through::<Health>(json),
         "HealthStatus" => through::<HealthStatus>(json),
         "JoinRequest" => through::<JoinRequest>(json),
@@ -942,6 +997,9 @@ pub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {
         "Relay" => through::<Relay>(json),
         "RevokeReason" => through::<RevokeReason>(json),
         "StashAdd" => through::<StashAdd>(json),
+        "StashAddLink" => through::<StashAdd>(json),
+        "StashAddPrompt" => through::<StashAdd>(json),
+        "StashAddText" => through::<StashAdd>(json),
         "StashItem" => through::<StashItem>(json),
         "StashItemId" => through::<StashItemId>(json),
         "StashKind" => through::<StashKind>(json),

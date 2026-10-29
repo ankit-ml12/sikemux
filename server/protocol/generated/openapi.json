@@ -1651,6 +1651,32 @@
         "type": "string",
         "enum": ["sandbox", "production"]
       },
+      "ApnsTokenRegistration": {
+        "description": "An APNs token, which says which of Apple's environments issued it.",
+        "type": "object",
+        "properties": {
+          "platform": { "const": "apns" },
+          "token": {
+            "description": "The native APNs token the app was given, never an Expo push token.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "app": { "$ref": "#/components/schemas/PushApp" },
+          "apnsEnvironment": { "$ref": "#/components/schemas/ApnsEnvironment" },
+          "nonce": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
+        },
+        "required": [
+          "platform",
+          "token",
+          "app",
+          "apnsEnvironment",
+          "nonce",
+          "signature"
+        ],
+        "additionalProperties": false
+      },
       "ApprovedHost": {
         "description": "The host a sign-in code belonged to, once approved.",
         "type": "object",
@@ -1797,6 +1823,24 @@
         "description": "An account event's place in the log. Later events have larger ids.",
         "type": "integer",
         "minimum": 1
+      },
+      "FcmTokenRegistration": {
+        "description": "An FCM token.",
+        "type": "object",
+        "properties": {
+          "platform": { "const": "fcm" },
+          "token": {
+            "description": "The native FCM token the app was given, never an Expo push token.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "app": { "$ref": "#/components/schemas/PushApp" },
+          "nonce": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
+        },
+        "required": ["platform", "token", "app", "nonce", "signature"],
+        "additionalProperties": false
       },
       "Health": {
         "description": "Whether the API can serve requests, and which build is answering.",
@@ -2609,24 +2653,11 @@
       "PushTokenRegistration": {
         "description": "Where the phone wants its notifications delivered. The signature is the phone's device key's Ed25519 signature over the UTF-8 text `sikemux-push|<nonce>|<key>|<sha256 of the token, lowercase hex>`, so no other sign-in on the account can redirect the phone's notifications.",
         "type": "object",
-        "properties": {
-          "platform": { "$ref": "#/components/schemas/PushPlatform" },
-          "token": {
-            "description": "The token the platform gave the app: the native APNs or FCM token, never an Expo push token.",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4096
-          },
-          "app": { "$ref": "#/components/schemas/PushApp" },
-          "apnsEnvironment": {
-            "description": "Required when platform is apns, and absent otherwise.",
-            "$ref": "#/components/schemas/ApnsEnvironment"
-          },
-          "nonce": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-          "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
-        },
-        "required": ["platform", "token", "app", "nonce", "signature"],
-        "additionalProperties": false
+        "oneOf": [
+          { "$ref": "#/components/schemas/ApnsTokenRegistration" },
+          { "$ref": "#/components/schemas/FcmTokenRegistration" }
+        ],
+        "discriminator": { "propertyName": "platform" }
       },
       "PushTokenState": {
         "type": "object",
@@ -3056,22 +3087,38 @@
       "StashAdd": {
         "description": "A link, text or prompt to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget), or X-Stash-Prompt with a prompt's id to attach it to that prompt. A file signed with SikemuxHost or SikemuxDevice also sends X-Body-Sha256, the body's SHA-256 in lowercase hex, which the signature covers in place of hashing the body.",
         "type": "object",
+        "oneOf": [
+          { "$ref": "#/components/schemas/StashAddLink" },
+          { "$ref": "#/components/schemas/StashAddText" },
+          { "$ref": "#/components/schemas/StashAddPrompt" }
+        ],
+        "discriminator": { "propertyName": "kind" }
+      },
+      "StashAddLink": {
+        "description": "A link to stash.",
+        "type": "object",
         "properties": {
-          "kind": { "$ref": "#/components/schemas/StashKind" },
+          "kind": { "const": "link" },
           "url": {
-            "description": "An http or https link, with kind link.",
+            "description": "An http or https link.",
             "type": "string",
             "minLength": 1,
             "maxLength": 8192
           },
-          "text": {
-            "description": "With kind text or prompt.",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 16000
-          },
+          "note": { "$ref": "#/components/schemas/StashNote" },
+          "target": { "$ref": "#/components/schemas/StashTarget" }
+        },
+        "required": ["kind", "url"],
+        "additionalProperties": false
+      },
+      "StashAddPrompt": {
+        "description": "A composer's whole prompt to stash: its text, with its files uploaded after it.",
+        "type": "object",
+        "properties": {
+          "kind": { "const": "prompt" },
+          "text": { "type": "string", "minLength": 1, "maxLength": 16000 },
           "attachmentCount": {
-            "description": "With kind prompt: how many files will follow, each uploaded with X-Stash-Prompt set to the prompt's id. Until the last arrives the prompt is in no list and announced to no device; one left unfinished for a day is deleted.",
+            "description": "How many files will follow, each uploaded with X-Stash-Prompt set to the prompt's id. Until the last arrives the prompt is in no list and announced to no device; one left unfinished for a day is deleted.",
             "type": "integer",
             "minimum": 0,
             "maximum": 20
@@ -3079,7 +3126,19 @@
           "note": { "$ref": "#/components/schemas/StashNote" },
           "target": { "$ref": "#/components/schemas/StashTarget" }
         },
-        "required": ["kind"],
+        "required": ["kind", "text"],
+        "additionalProperties": false
+      },
+      "StashAddText": {
+        "description": "Text to stash.",
+        "type": "object",
+        "properties": {
+          "kind": { "const": "text" },
+          "text": { "type": "string", "minLength": 1, "maxLength": 16000 },
+          "note": { "$ref": "#/components/schemas/StashNote" },
+          "target": { "$ref": "#/components/schemas/StashTarget" }
+        },
+        "required": ["kind", "text"],
         "additionalProperties": false
       },
       "StashItem": {

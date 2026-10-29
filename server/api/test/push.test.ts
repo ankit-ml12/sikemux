@@ -3,11 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
-import {
-  LiveCloseCode,
-  type LivePush,
-  type PushTokenRegistration,
-} from "@sikemux/protocol";
+import { LiveCloseCode, type LivePush } from "@sikemux/protocol";
 import { pino } from "pino";
 import {
   afterAll,
@@ -89,8 +85,8 @@ async function tokenRegistration(
   device: TestDevice,
   token: string,
   sessionToken: string,
-  fields: Partial<PushTokenRegistration> = {},
-): Promise<PushTokenRegistration> {
+  fields: Record<string, unknown> = {},
+): Promise<Record<string, unknown> & { nonce: string }> {
   const nonce = await challenge(app, sessionToken);
   return {
     platform: "fcm",
@@ -106,7 +102,7 @@ async function putToken(
   userId: string,
   device: TestDevice,
   token: string,
-  fields: Partial<PushTokenRegistration> = {},
+  fields: Record<string, unknown> = {},
 ) {
   const session = await phoneToken(userId);
   return call(`/v1/devices/${device.key}/push`, session, {

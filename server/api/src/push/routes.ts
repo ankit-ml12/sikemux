@@ -27,18 +27,13 @@ export function pushTokenRoutes(
       const { userId } = c.get("identity");
       const key = c.req.param("key");
       const registration = await readBody(c, "PushTokenRegistration");
-      if (
-        (registration.platform === "apns") !==
-        (registration.apnsEnvironment !== undefined)
-      )
-        throw badRequest(
-          "APNs tokens say which environment issued them; FCM tokens do not.",
-        );
+      const apnsEnvironment =
+        registration.platform === "apns" ? registration.apnsEnvironment : null;
       if (registration.app !== settings.app)
         throw badRequest(
           `This server delivers only to the ${settings.app} app.`,
         );
-      if (registration.apnsEnvironment === "sandbox" && !settings.allowSandbox)
+      if (apnsEnvironment === "sandbox" && !settings.allowSandbox)
         throw badRequest(
           "This server does not deliver through Apple's sandbox.",
         );
@@ -61,7 +56,7 @@ export function pushTokenRoutes(
         const fields = {
           platform: registration.platform,
           app: registration.app,
-          apns_environment: registration.apnsEnvironment ?? null,
+          apns_environment: apnsEnvironment,
           token: registration.token,
         };
         const row = await trx

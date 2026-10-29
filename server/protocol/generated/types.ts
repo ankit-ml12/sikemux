@@ -92,6 +92,17 @@ export const apnsEnvironmentValues: readonly ApnsEnvironment[] = [
   "production",
 ];
 
+/** An APNs token, which says which of Apple's environments issued it. */
+export interface ApnsTokenRegistration {
+  platform: "apns";
+  /** The native APNs token the app was given, never an Expo push token. */
+  token: string;
+  app: PushApp;
+  apnsEnvironment: ApnsEnvironment;
+  nonce: string;
+  signature: string;
+}
+
 /** The host a sign-in code belonged to, once approved. */
 export interface ApprovedHost {
   key: DeviceKey;
@@ -190,6 +201,16 @@ export interface ErrorDetail {
 
 /** An account event's place in the log. Later events have larger ids. */
 export type EventId = number;
+
+/** An FCM token. */
+export interface FcmTokenRegistration {
+  platform: "fcm";
+  /** The native FCM token the app was given, never an Expo push token. */
+  token: string;
+  app: PushApp;
+  nonce: string;
+  signature: string;
+}
 
 /** Whether the API can serve requests, and which build is answering. */
 export interface Health {
@@ -640,16 +661,8 @@ export const pushResultValues: readonly PushResult[] = [
 ];
 
 /** Where the phone wants its notifications delivered. The signature is the phone's device key's Ed25519 signature over the UTF-8 text `sikemux-push|<nonce>|<key>|<sha256 of the token, lowercase hex>`, so no other sign-in on the account can redirect the phone's notifications. */
-export interface PushTokenRegistration {
-  platform: PushPlatform;
-  /** The token the platform gave the app: the native APNs or FCM token, never an Expo push token. */
-  token: string;
-  app: PushApp;
-  /** Required when platform is apns, and absent otherwise. */
-  apnsEnvironment?: ApnsEnvironment;
-  nonce: string;
-  signature: string;
-}
+export type PushTokenRegistration =
+  ApnsTokenRegistration | FcmTokenRegistration;
 
 export interface PushTokenState {
   /** Whether the server has a token for this phone. */
@@ -919,14 +932,31 @@ export interface ShareWantsSnapshot {
 }
 
 /** A link, text or prompt to stash. A file is sent as its bytes instead, with Content-Type, X-Stash-Name (URI-encoded), and optionally X-Stash-Note and X-Stash-Target (URI-encoded JSON of a StashTarget), or X-Stash-Prompt with a prompt's id to attach it to that prompt. A file signed with SikemuxHost or SikemuxDevice also sends X-Body-Sha256, the body's SHA-256 in lowercase hex, which the signature covers in place of hashing the body. */
-export interface StashAdd {
-  kind: StashKind;
-  /** An http or https link, with kind link. */
-  url?: string;
-  /** With kind text or prompt. */
-  text?: string;
-  /** With kind prompt: how many files will follow, each uploaded with X-Stash-Prompt set to the prompt's id. Until the last arrives the prompt is in no list and announced to no device; one left unfinished for a day is deleted. */
+export type StashAdd = StashAddLink | StashAddText | StashAddPrompt;
+
+/** A link to stash. */
+export interface StashAddLink {
+  kind: "link";
+  /** An http or https link. */
+  url: string;
+  note?: StashNote;
+  target?: StashTarget;
+}
+
+/** A composer's whole prompt to stash: its text, with its files uploaded after it. */
+export interface StashAddPrompt {
+  kind: "prompt";
+  text: string;
+  /** How many files will follow, each uploaded with X-Stash-Prompt set to the prompt's id. Until the last arrives the prompt is in no list and announced to no device; one left unfinished for a day is deleted. */
   attachmentCount?: number;
+  note?: StashNote;
+  target?: StashTarget;
+}
+
+/** Text to stash. */
+export interface StashAddText {
+  kind: "text";
+  text: string;
   note?: StashNote;
   target?: StashTarget;
 }
@@ -1042,6 +1072,7 @@ export interface Definitions {
   AccountStatus: AccountStatus;
   ApiError: ApiError;
   ApnsEnvironment: ApnsEnvironment;
+  ApnsTokenRegistration: ApnsTokenRegistration;
   ApprovedHost: ApprovedHost;
   AppVersion: AppVersion;
   Challenge: Challenge;
@@ -1056,6 +1087,7 @@ export interface Definitions {
   ErrorCode: ErrorCode;
   ErrorDetail: ErrorDetail;
   EventId: EventId;
+  FcmTokenRegistration: FcmTokenRegistration;
   Health: Health;
   HealthStatus: HealthStatus;
   Hook: Hook;
@@ -1156,6 +1188,9 @@ export interface Definitions {
   ShareViewers: ShareViewers;
   ShareWantsSnapshot: ShareWantsSnapshot;
   StashAdd: StashAdd;
+  StashAddLink: StashAddLink;
+  StashAddPrompt: StashAddPrompt;
+  StashAddText: StashAddText;
   StashItem: StashItem;
   StashItemId: StashItemId;
   StashKind: StashKind;

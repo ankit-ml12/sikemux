@@ -20,19 +20,50 @@
     "PushTokenRegistration": {
       "description": "Where the phone wants its notifications delivered. The signature is the phone's device key's Ed25519 signature over the UTF-8 text `sikemux-push|<nonce>|<key>|<sha256 of the token, lowercase hex>`, so no other sign-in on the account can redirect the phone's notifications.",
       "type": "object",
+      "oneOf": [
+        { "$ref": "#/$defs/ApnsTokenRegistration" },
+        { "$ref": "#/$defs/FcmTokenRegistration" }
+      ],
+      "discriminator": { "propertyName": "platform" }
+    },
+    "ApnsTokenRegistration": {
+      "description": "An APNs token, which says which of Apple's environments issued it.",
+      "type": "object",
       "properties": {
-        "platform": { "$ref": "#/$defs/PushPlatform" },
+        "platform": { "const": "apns" },
         "token": {
-          "description": "The token the platform gave the app: the native APNs or FCM token, never an Expo push token.",
+          "description": "The native APNs token the app was given, never an Expo push token.",
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
         },
         "app": { "$ref": "#/$defs/PushApp" },
-        "apnsEnvironment": {
-          "description": "Required when platform is apns, and absent otherwise.",
-          "$ref": "#/$defs/ApnsEnvironment"
+        "apnsEnvironment": { "$ref": "#/$defs/ApnsEnvironment" },
+        "nonce": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
+      },
+      "required": [
+        "platform",
+        "token",
+        "app",
+        "apnsEnvironment",
+        "nonce",
+        "signature"
+      ],
+      "additionalProperties": false
+    },
+    "FcmTokenRegistration": {
+      "description": "An FCM token.",
+      "type": "object",
+      "properties": {
+        "platform": { "const": "fcm" },
+        "token": {
+          "description": "The native FCM token the app was given, never an Expo push token.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
         },
+        "app": { "$ref": "#/$defs/PushApp" },
         "nonce": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
       },

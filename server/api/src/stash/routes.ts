@@ -257,24 +257,16 @@ export function stashRoutes(
     const identity = c.get("identity");
     const { userId } = identity;
     const request = await readBody(c, "StashAdd");
-    if (request.kind === "link") {
-      const url = URL.parse(request.url ?? "");
-      if (!url || !(url.protocol === "http:" || url.protocol === "https:"))
+    const url = request.kind === "link" ? request.url : null;
+    if (url !== null) {
+      const parsed = URL.parse(url);
+      if (!parsed || !["http:", "https:"].includes(parsed.protocol))
         throw badRequest("A link is an http or https url.");
-      if (request.text !== undefined)
-        throw badRequest("A link has a url and no text.");
-    } else if (request.kind === "text" || request.kind === "prompt") {
-      if (request.text === undefined || request.url !== undefined)
-        throw badRequest("Text and prompts have text and no url.");
-    } else {
-      throw badRequest(
-        "Images, videos and files are sent as their bytes, not as JSON.",
-      );
     }
-    if (request.attachmentCount !== undefined && request.kind !== "prompt")
-      throw badRequest("Only a prompt has attachments.");
-    const missing = request.attachmentCount ?? 0;
-    const links = linksIn(request.text ?? "");
+    const text = request.kind === "link" ? null : request.text;
+    const missing =
+      request.kind === "prompt" ? (request.attachmentCount ?? 0) : 0;
+    const links = linksIn(text ?? "");
     if (request.target) await checkTarget(db, userId, request.target);
     const id = newId();
     const row = await db.transaction().execute(async (trx) => {
@@ -285,8 +277,8 @@ export function stashRoutes(
           id,
           user_id: userId,
           kind: request.kind,
-          url: request.url ?? null,
-          text: request.text ?? null,
+          url,
+          text,
           note: request.note || null,
           name: null,
           mime: null,
