@@ -18,7 +18,10 @@ use serde_json::{json, Value};
 use crate::core::{self, Ask};
 use crate::experience::{self, Experience};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_5, SPACE_6,
+    TEXT_2XS, TEXT_3XS, TEXT_SM, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -267,8 +270,8 @@ pub fn rail_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEl
     Some(
         div()
             .flex_none()
-            .mx(px(10.))
-            .mb(px(8.))
+            .mx(SPACE_2H)
+            .mb(SPACE_2)
             .flex()
             .flex_col()
             .child(chip)
@@ -300,7 +303,7 @@ pub fn required(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEle
         .unwrap_or("stable");
     let note = |text: String| {
         div()
-            .text_size(theme::ui_text(13.))
+            .text_size(theme::ui_text(TEXT_SM))
             .line_height(theme::ui_text(13. * 1.5))
             .text_color(t.text_secondary)
             .child(text)
@@ -353,7 +356,7 @@ pub fn required(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEle
                     .w(px(420.))
                     .flex()
                     .flex_col()
-                    .gap(px(12.))
+                    .gap(SPACE_3)
                     .child(
                         div()
                             .text_size(theme::ui_text(18.))
@@ -373,7 +376,7 @@ pub fn required(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEle
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(8.))
+                                .gap(SPACE_2)
                                 .child(note(format!("No newer version on the {channel} channel yet.")))
                                 .child(releases("required-releases", "See every release", ui::Variant::Outline)),
                         )
@@ -382,7 +385,7 @@ pub fn required(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEle
                         div()
                             .flex()
                             .justify_end()
-                            .gap(px(8.))
+                            .gap(SPACE_2)
                             .child(
                                 ui::Button::new("required-quit", "Quit Sikemux", ui::Variant::Outline)
                                     .on_click(|_, _, cx| cx.quit()),
@@ -490,7 +493,7 @@ pub fn render(
         })
         .absolute()
         .inset_0()
-        .p(px(24.))
+        .p(SPACE_6)
         .flex()
         .items_center()
         .justify_center()
@@ -541,7 +544,7 @@ fn side(
             .flex_col()
             .child(
                 ui::text(value.to_string(), 15., FontWeight::SEMIBOLD)
-                    .mb(px(2.))
+                    .mb(SPACE_0)
                     .text_color(t.text_primary),
             )
             .child(ui::text(name, 12., FontWeight::NORMAL).text_color(t.text_tertiary))
@@ -555,7 +558,7 @@ fn side(
         .flex_col()
         .pt(px(132.))
         .px(px(22.))
-        .pb(px(20.))
+        .pb(SPACE_5)
         .overflow_y_scroll()
         .border_r_1()
         .border_color(t.border)
@@ -573,10 +576,10 @@ fn side(
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .self_start()
                 .px(px(7.))
-                .py(px(4.))
+                .py(SPACE_1)
                 .rounded(theme::RADIUS_1)
                 .bg(Hsla { a: 0.12, ..t.live })
                 .text_color(t.live)
@@ -588,7 +591,7 @@ fn side(
         )
         .child(
             div()
-                .mt(px(20.))
+                .mt(SPACE_5)
                 .flex()
                 .text_size(crate::theme::ui_text(48.))
                 .font_weight(FontWeight::BOLD)
@@ -604,7 +607,7 @@ fn side(
         )
         .children(build.map(|build| {
             ui::text(build, 20., FontWeight::SEMIBOLD)
-                .mt(px(8.))
+                .mt(SPACE_2)
                 .letter_spacing(-0.02)
                 .text_color(t.text_secondary)
         }))
@@ -614,7 +617,7 @@ fn side(
                 .and_then(release_date)
                 .map(|date| {
                     ui::text(date, 12., FontWeight::NORMAL)
-                        .mt(px(10.))
+                        .mt(SPACE_2H)
                         .text_color(t.text_tertiary)
                 }),
         )
@@ -694,10 +697,10 @@ fn contributors(
         .pt(px(22.))
         .flex()
         .flex_col()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(
             ui::text("CONTRIBUTORS", 10., FontWeight::SEMIBOLD)
-                .mb(px(6.))
+                .mb(SPACE_1H)
                 .letter_spacing(0.14)
                 .text_color(t.text_tertiary),
         )
@@ -707,9 +710,9 @@ fn contributors(
                 .group("contributor")
                 .flex()
                 .items_center()
-                .gap(px(10.))
+                .gap(SPACE_2H)
                 .min_w_0()
-                .px(px(10.))
+                .px(SPACE_2H)
                 .py(px(9.))
                 .border_1()
                 .border_color(gpui_kit::transparent_black())
@@ -744,7 +747,7 @@ fn contributors(
         .when(!rest.is_empty(), |list| {
             list.child(
                 ui::text(format!("and {} more", rest.len()), 12., FontWeight::NORMAL)
-                    .mt(px(10.))
+                    .mt(SPACE_2H)
                     .text_color(t.text_tertiary),
             )
             .child(
@@ -752,7 +755,7 @@ fn contributors(
                     .flex()
                     .flex_wrap()
                     .gap(px(5.))
-                    .mt(px(4.))
+                    .mt(SPACE_1)
                     .children(shown.iter().map(|person| {
                         div()
                             .id(SharedString::from(format!("face-{}", person.login)))
@@ -773,13 +776,13 @@ fn contributors(
                                 .id("contributors-rest")
                                 .h(px(28.))
                                 .min_w(px(28.))
-                                .px(px(8.))
+                                .px(SPACE_2)
                                 .flex()
                                 .items_center()
                                 .justify_center()
                                 .rounded(theme::RADIUS_2)
                                 .bg(t.border)
-                                .text_size(crate::theme::ui_text(11.))
+                                .text_size(crate::theme::ui_text(TEXT_2XS))
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(t.text_secondary)
                                 .cursor_pointer()
@@ -839,9 +842,9 @@ fn main(
             .border_1()
             .border_color(t.border)
             .font_family(theme::MONO)
-            .text_size(crate::theme::ui_text(10.))
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .font_weight(FontWeight::MEDIUM)
-            .line_height(crate::theme::ui_text(10.))
+            .line_height(crate::theme::ui_text(TEXT_3XS))
             .text_color(t.text_tertiary)
             .cursor_pointer()
             .hover(|esc| esc.text_color(t.text_primary).border_color(t.border_strong))
@@ -859,7 +862,7 @@ fn main(
                 .items_center()
                 .justify_between()
                 .pl(px(32.))
-                .pr(px(24.))
+                .pr(SPACE_6)
                 .py(px(18.))
                 .border_b_1()
                 .border_color(t.border)
@@ -874,7 +877,7 @@ fn main(
                 .overflow_y_scroll()
                 .pl(px(32.))
                 .pr(px(40.))
-                .pt(px(24.))
+                .pt(SPACE_6)
                 .pb(px(32.))
                 .child(body),
         )
@@ -889,8 +892,8 @@ fn main(
                 .items_center()
                 .justify_between()
                 .pl(px(32.))
-                .pr(px(20.))
-                .py(px(12.))
+                .pr(SPACE_5)
+                .py(SPACE_3)
                 .border_t_1()
                 .border_color(t.border)
                 .child(match compare {
@@ -902,7 +905,7 @@ fn main(
                             .unwrap_or_else(|| "Compare".to_owned());
                         div()
                             .id("whats-new-compare")
-                            .text_size(crate::theme::ui_text(12.))
+                            .text_size(crate::theme::ui_text(TEXT_XS))
                             .text_color(t.text_tertiary)
                             .cursor_pointer()
                             .hover(|link| link.text_color(t.live))
@@ -981,7 +984,7 @@ fn waiting(
     let action = |id: &'static str, label: String, danger: bool| {
         div()
             .id(id)
-            .px(px(12.))
+            .px(SPACE_3)
             .py(px(7.))
             .border_1()
             .border_color(if danger {
@@ -1023,13 +1026,13 @@ fn waiting(
     div()
         .flex()
         .flex_col()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .pl(px(32.))
-        .pr(px(20.))
-        .py(px(12.))
+        .pr(SPACE_5)
+        .py(SPACE_3)
         .border_t_1()
         .border_color(t.border)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .text_color(t.text_secondary)
         .child(
             div()
@@ -1048,7 +1051,7 @@ fn waiting(
         )
         .when(news.confirming, |section| {
             section
-                .child(div().flex().flex_col().gap(px(6.)).children(blockers.iter().map(|blocker| {
+                .child(div().flex().flex_col().gap(SPACE_1H).children(blockers.iter().map(|blocker| {
                     let title = blocker["title"]
                         .as_str()
                         .or(blocker["agentId"].as_str())
@@ -1062,9 +1065,9 @@ fn waiting(
                         .flex()
                         .items_baseline()
                         .justify_between()
-                        .gap(px(12.))
+                        .gap(SPACE_3)
                         .min_w_0()
-                        .px(px(10.))
+                        .px(SPACE_2H)
                         .py(px(7.))
                         .border_1()
                         .border_color(t.border)
@@ -1083,7 +1086,7 @@ fn waiting(
                     if one { "it was" } else { "they were" },
                 )).text_color(t.text_tertiary))
         })
-        .child(div().flex().justify_end().gap(px(8.)).child(keep).child(go))
+        .child(div().flex().justify_end().gap(SPACE_2).child(keep).child(go))
 }
 
 fn notes_markdown(

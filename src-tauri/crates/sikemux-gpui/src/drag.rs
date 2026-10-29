@@ -13,7 +13,7 @@ use gpui_kit::{
 use serde_json::json;
 
 use crate::core::Ask;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_1, SPACE_2H, TEXT_XS};
 use crate::workbench::{Strip, Workbench};
 
 /// A tab being dragged along its strip.
@@ -90,13 +90,13 @@ impl Render for Ghost {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Tokens::get(cx);
         div()
-            .px(px(10.))
-            .py(px(4.))
+            .px(SPACE_2H)
+            .py(SPACE_1)
             .rounded(crate::theme::RADIUS_2)
             .border_1()
             .border_color(t.border)
             .bg(t.surface_overlay)
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .text_color(t.text_primary)
             .child(self.label.clone())
     }

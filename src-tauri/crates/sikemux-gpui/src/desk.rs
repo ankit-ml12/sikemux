@@ -32,7 +32,7 @@ use tokio::sync::mpsc;
 use crate::codehost::HostArea;
 use crate::core::Ask;
 use crate::icons::Icon;
-use crate::theme::{Tokens, RADIUS_2, RADIUS_3};
+use crate::theme::{Tokens, RADIUS_2, RADIUS_3, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_6};
 use crate::toast;
 use crate::ui::{self, IconButton};
 use crate::workbench::{shows, Strip, Workbench};
@@ -1717,7 +1717,7 @@ pub fn pane(
         .flex()
         .items_center()
         .pl(px(SWITCH_W + GAP - 1.))
-        .pr(px(6.));
+        .pr(SPACE_1H);
     let scroll = bench
         .desks
         .tab_scrolls
@@ -1733,7 +1733,7 @@ pub fn pane(
         .h_full()
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .overflow_x_scroll()
         .track_scroll(&scroll);
     let root = bench.agent_by_id(agent).and_then(|row| {
@@ -1901,7 +1901,7 @@ pub fn pane(
                 .min_w_0()
                 .h_full()
                 .flex()
-                .pl(px(6.))
+                .pl(SPACE_1H)
                 .child(pills)
                 .child(crate::track::sideways_scroller())
                 .children(ui::spot(|| format!("desk-tabs-{agent}")).map(|spot| {
@@ -1916,7 +1916,7 @@ pub fn pane(
         )
         .when(kind == DeskKind::Pages, |head| {
             head.child(
-                div().flex_none().pl(px(4.)).child(
+                div().flex_none().pl(SPACE_1).child(
                     IconButton::new("desk-new-page", Icon::Plus, "New browser tab")
                         .glyph(13.)
                         .width(24.)
@@ -1936,9 +1936,9 @@ pub fn pane(
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(2.))
-        .px(px(6.))
-        .py(px(4.))
+        .gap(SPACE_0)
+        .px(SPACE_1H)
+        .py(SPACE_1)
         .border_b_1()
         .border_color(t.border)
         .child(
@@ -1973,7 +1973,7 @@ pub fn pane(
                 .flex_1()
                 .min_w_0()
                 .h(px(26.))
-                .ml(px(4.))
+                .ml(SPACE_1)
                 .flex()
                 .items_center()
                 .rounded(RADIUS_2)
@@ -2129,7 +2129,7 @@ fn frame(
                 .left_0()
                 .w(px(SWITCH_W))
                 .h(px(SWITCH_H))
-                .p(px(4.))
+                .p(SPACE_1)
                 .rounded(RADIUS_3)
                 .border_1()
                 .border_color(t.border)
@@ -2203,12 +2203,12 @@ fn pill(
         .min_w(px(PILL_MIN))
         .relative()
         .h(px(24.))
-        .pl(px(8.))
-        .pr(px(8.))
-        .group_hover(DESK_PILL, |pill| pill.pr(px(24.)))
+        .pl(SPACE_2)
+        .pr(SPACE_2)
+        .group_hover(DESK_PILL, |pill| pill.pr(SPACE_6))
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .rounded(RADIUS_2)
         .bg(match (shown, tinted) {
             (true, _) => t.surface_chosen,
@@ -2355,7 +2355,7 @@ fn kinds(
         .map_or(&[][..], |strip| strip.tabs.as_slice());
     let items = bench.desks.items.get(agent).map_or(&[][..], Vec::as_slice);
     let held = |kind: DeskKind| items.iter().filter(|item| item.kind() == kind).count();
-    let mut row = div().flex().items_center().gap(px(2.));
+    let mut row = div().flex().items_center().gap(SPACE_0);
     for (id, icon, label, kind, count, busy) in [
         (
             "desk-pages",
@@ -2428,9 +2428,9 @@ fn simulator_desk(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .pl(px(SWITCH_W + GAP - 1. + 6.))
-        .pr(px(6.))
+        .pr(SPACE_1H)
         .children(crate::sim::pane::picker(bench, agent, cx))
         .when(bench.sims.acting(agent), |head| {
             head.child(ui::icon(Icon::Pointer, 11.).text_color(t.accent))

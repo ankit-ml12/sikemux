@@ -10,7 +10,7 @@ use gpui_kit::{
 
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{self, Tokens, RADIUS_2, SPACE_2, TEXT_SM};
 
 const FILE_HEAD_HEIGHT: Pixels = px(32.);
 
@@ -37,7 +37,7 @@ pub fn file_head(
         .min_w_0()
         .flex()
         .truncate()
-        .text_size(theme::ui_text(13.))
+        .text_size(theme::ui_text(TEXT_SM))
         .when_some(dir, |name, dir| {
             name.child(
                 div()
@@ -58,7 +58,7 @@ pub fn file_head(
     div()
         .id(id.clone())
         .h(FILE_HEAD_HEIGHT)
-        .px(px(8.))
+        .px(SPACE_2)
         .flex()
         .items_center()
         .gap(px(7.))

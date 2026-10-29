@@ -4,13 +4,13 @@
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    Styled, Window,
+    div, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled,
+    Window,
 };
 use serde_json::{json, Value};
 
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_0, SPACE_1H, SPACE_2};
 use crate::toast;
 use crate::ui::{self, Variant};
 use crate::workbench::Workbench;
@@ -219,20 +219,20 @@ pub fn card(bench: &Workbench, project: &str, cx: &mut Context<Workbench>) -> Op
         div()
             .flex()
             .items_start()
-            .gap(px(8.))
-            .pt(px(8.))
+            .gap(SPACE_2)
+            .pt(SPACE_2)
             .border_t_1()
             .border_color(t.border)
             .child(
                 ui::icon(if ok { Icon::Check } else { Icon::Close }, 11.)
-                    .mt(px(2.))
+                    .mt(SPACE_0)
                     .text_color(if ok { t.live } else { t.danger }),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .min_w_0()
                     .child(
                         ui::text(
@@ -263,7 +263,7 @@ pub fn card(bench: &Workbench, project: &str, cx: &mut Context<Workbench>) -> Op
     let actions = div()
         .flex()
         .justify_end()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(
             ui::Button::new("run-check-anyway", "Run anyway", Variant::Outline)
                 .disabled(check.fixing)

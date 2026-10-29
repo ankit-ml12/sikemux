@@ -19,6 +19,7 @@ use sikemux_core::agent_accounts::{Book, Profile};
 
 use crate::core;
 use crate::theme;
+use crate::theme::{SPACE_2, TEXT_3XS_H};
 use crate::workbench::Workbench;
 
 /// Who one account is signed in as, in its agent's own words.
@@ -128,7 +129,7 @@ pub fn popup_item(
             .w_full()
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(avatar(&profile, &name, 16.))
             .child(
                 div()
@@ -153,7 +154,7 @@ pub fn popup_item(
                         div()
                             .min_w_0()
                             .truncate()
-                            .text_size(theme::ui_text(10.5))
+                            .text_size(theme::ui_text(TEXT_3XS_H))
                             .text_color(t.text_tertiary)
                             .child(detail)
                     })),
@@ -162,7 +163,7 @@ pub fn popup_item(
                 div()
                     .flex_none()
                     .font_family(theme::MONO)
-                    .text_size(theme::ui_text(10.5))
+                    .text_size(theme::ui_text(TEXT_3XS_H))
                     .text_color(t.text_tertiary)
                     .child(format!("{}%", used.round()))
             }))

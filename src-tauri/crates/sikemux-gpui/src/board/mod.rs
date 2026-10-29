@@ -19,7 +19,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::core::{self, Ask};
 use crate::drag::{ghost, DraggedCard};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, TEXT_3XS,
+};
 use crate::toast;
 use crate::ui::{self, Button, Field, IconButton, Segmented, Variant};
 use crate::workbench::Workbench;
@@ -674,11 +676,11 @@ fn head(pane: &BoardPane, cx: &mut Context<BoardPane>) -> impl IntoElement {
         .flex()
         .flex_wrap()
         .items_center()
-        .gap_x(px(8.))
-        .gap_y(px(6.))
-        .px(px(12.))
-        .pt(px(10.))
-        .pb(px(8.))
+        .gap_x(SPACE_2)
+        .gap_y(SPACE_1H)
+        .px(SPACE_3)
+        .pt(SPACE_2H)
+        .pb(SPACE_2)
         .bg(crate::see_through::ground(t.surface, cx))
         .border_b_1()
         .border_color(t.border)
@@ -764,18 +766,18 @@ fn triggers(pane: &BoardPane, cx: &mut Context<BoardPane>) -> Option<AnyElement>
     Some(
         div()
             .flex_none()
-            .pt(px(6.))
-            .pb(px(4.))
-            .px(px(4.))
+            .pt(SPACE_1H)
+            .pb(SPACE_1)
+            .px(SPACE_1)
             .border_b_1()
             .border_color(t.border)
             .child(
                 div()
                     .pl(px(11.))
-                    .pb(px(2.))
+                    .pb(SPACE_0)
                     .flex()
-                    .gap(px(6.))
-                    .text_size(crate::theme::ui_text(10.))
+                    .gap(SPACE_1H)
+                    .text_size(crate::theme::ui_text(TEXT_3XS))
                     .text_color(t.text_disabled)
                     .child("TRIGGERS")
                     .child(
@@ -799,7 +801,7 @@ fn body(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
             .flex_col()
             .items_center()
             .justify_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .text_color(t.text_tertiary)
             .when_some(title, |empty, title| {
                 empty.child(ui::text(title, 13., FontWeight::MEDIUM).text_color(t.text_secondary))
@@ -825,12 +827,12 @@ fn body(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
         .flex_1()
         .min_h_0()
         .overflow_y_scroll()
-        .px(px(12.))
-        .pt(px(10.))
-        .pb(px(12.))
+        .px(SPACE_3)
+        .pt(SPACE_2H)
+        .pb(SPACE_3)
         .flex()
         .flex_col()
-        .gap(px(14.))
+        .gap(SPACE_3H)
         .children(lanes.into_iter().map(|lane| lane_view(pane, lane, cx)))
         .into_any_element()
 }
@@ -886,12 +888,12 @@ fn lane_view(pane: &BoardPane, lane: Lane, cx: &mut Context<BoardPane>) -> AnyEl
     div()
         .flex()
         .flex_col()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(
                     IconButton::new(
                         SharedString::from(format!("fold-{key}")),
@@ -920,7 +922,7 @@ fn lane_view(pane: &BoardPane, lane: Lane, cx: &mut Context<BoardPane>) -> AnyEl
                         .id(SharedString::from(format!("lane-{}", lane.key)))
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .when_some(select, |head, id| {
                             head.cursor_pointer().on_click(cx.listener(
                                 move |pane, _, window, cx| {
@@ -945,7 +947,7 @@ fn columns(pane: &BoardPane, ids: &[u64], cx: &mut Context<BoardPane>) -> impl I
     let t = Tokens::get(cx).clone();
     div()
         .flex()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .children(COLUMNS.iter().map(|&(key, name)| {
             let cards: Vec<&Card> = ids
                 .iter()
@@ -961,9 +963,9 @@ fn columns(pane: &BoardPane, ids: &[u64], cx: &mut Context<BoardPane>) -> impl I
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(6.))
-                .px(px(6.))
-                .when(!cards.is_empty(), |column| column.pb(px(6.)))
+                .gap(SPACE_1H)
+                .px(SPACE_1H)
+                .when(!cards.is_empty(), |column| column.pb(SPACE_1H))
                 .rounded(theme::RADIUS_3)
                 .bg(t.surface_sunken)
                 .when(key != "needs", |column| {
@@ -980,7 +982,7 @@ fn columns(pane: &BoardPane, ids: &[u64], cx: &mut Context<BoardPane>) -> impl I
                         .flex()
                         .items_center()
                         .justify_between()
-                        .px(px(6.))
+                        .px(SPACE_1H)
                         .child(ui::caps(name, cx))
                         .child(ui::meta(cards.len().to_string(), cx)),
                 )
@@ -1033,7 +1035,7 @@ fn card_view(pane: &BoardPane, card: &Card, cx: &mut Context<BoardPane>) -> AnyE
         .flex()
         .flex_col()
         .gap(px(5.))
-        .p(px(8.))
+        .p(SPACE_2)
         .rounded(theme::RADIUS_2)
         .border_1()
         .border_color(if chosen { t.border_strong } else { t.border })
@@ -1063,7 +1065,7 @@ fn card_view(pane: &BoardPane, card: &Card, cx: &mut Context<BoardPane>) -> AnyE
             view.child(
                 div()
                     .flex()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .when(!under.is_empty(), |row| {
                         row.child(ui::meta(format!("{done}/{}", under.len()), cx))
                     })
@@ -1087,7 +1089,7 @@ fn card_view(pane: &BoardPane, card: &Card, cx: &mut Context<BoardPane>) -> AnyE
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .when_some(card.ticket.as_ref(), |foot, ticket| {
                         foot.child(ui::mono(ticket.key.clone(), 11., cx))
                             .when_some(ticket.source.clone(), |foot, source| {

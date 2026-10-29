@@ -16,7 +16,10 @@ use sikemux_wire::protocol::{LauncherInfo, PaneKind, RecentInfo};
 use crate::agents::menu::AgentMenu;
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_6, TEXT_3XS,
+    TEXT_MD, TEXT_XS,
+};
 use crate::ui::{self, Field, Group, IconButton, Row, Segmented};
 use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, TeamLink, Workbench};
 use sikemux_wire::inbox::RemoteAgent;
@@ -165,19 +168,19 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
         .children(bench.filter.as_ref().map(|filter| {
             div()
                 .flex_none()
-                .mt(px(10.))
-                .mx(px(12.))
-                .mb(px(2.))
+                .mt(SPACE_2H)
+                .mx(SPACE_3)
+                .mb(SPACE_0)
                 .child(Field::new(filter).icon(Icon::Search))
         }))
         .child(
             div()
                 .flex_none()
-                .pt(px(4.))
-                .px(px(10.))
+                .pt(SPACE_1)
+                .px(SPACE_2H)
                 .children(
                     other_host(bench)
-                        .map(|host| ui::meta(format!("on {host}"), cx).px(px(8.)).pt(px(4.))),
+                        .map(|host| ui::meta(format!("on {host}"), cx).px(SPACE_2).pt(SPACE_1)),
                 )
                 .child(
                     new_row("new-chat", Icon::Plus, "New chat", "agent.new", cx)
@@ -205,7 +208,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                         crate::keymap::dispatch("browser.tabNew", window, cx)
                     }),
                 )
-                .child(div().mt(px(8.)).child(scope_switch(bench, cx))),
+                .child(div().mt(SPACE_2).child(scope_switch(bench, cx))),
         )
         .child(faded(
             div()
@@ -214,7 +217,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 .on_scroll(cx.listener(|bench, _, _, cx| bench.hold_card(cx)))
                 .size_full()
                 .pt(px(EDGE_FADE))
-                .px(px(10.))
+                .px(SPACE_2H)
                 .pb(px(EDGE_FADE))
                 .overflow_y_scroll()
                 .children(empty)
@@ -226,7 +229,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                             .relative()
                             .flex()
                             .flex_col()
-                            .gap(px(2.))
+                            .gap(SPACE_0)
                             .children(copy)
                             .children(rows)
                             .on_children_prepainted(glide.keep_items(skip)),
@@ -274,10 +277,10 @@ fn header_frame(
     let t = Tokens::get(cx).clone();
     div()
         .flex_none()
-        .pt(px(6.))
-        .pr(px(6.))
-        .pb(px(6.))
-        .pl(px(10.))
+        .pt(SPACE_1H)
+        .pr(SPACE_1H)
+        .pb(SPACE_1H)
+        .pl(SPACE_2H)
         .border_b_1()
         .border_color(t.line_soft)
         .child(
@@ -286,10 +289,10 @@ fn header_frame(
                 .flex()
                 .items_center()
                 .justify_between()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(title)
                 .child(
-                    div().flex().gap(px(2.)).children(buttons).child(
+                    div().flex().gap(SPACE_0).children(buttons).child(
                         IconButton::new(
                             "hide-tab-rail",
                             Icon::PanelRight,
@@ -372,7 +375,7 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             .accessibility_label("Agent provider")
             .h(px(28.))
             .ml(px(-6.))
-            .px(px(6.))
+            .px(SPACE_1H)
             .flex()
             .items_center()
             .gap(px(7.))
@@ -898,7 +901,7 @@ fn agent_row(
                 .flex()
                 .items_center()
                 .gap(px(5.))
-                .line_height(crate::theme::ui_text(14.))
+                .line_height(crate::theme::ui_text(TEXT_MD))
                 .child(ui::icon(Icon::Folder, 11.).text_color(t.live))
                 .child(ui::meta(project, cx)),
         )
@@ -922,7 +925,7 @@ fn agent_row(
         }
     }))
     .children(agent.name.clone().map(|name| {
-        let name = ui::meta(format!("@{name}"), cx).pl(px(8.)).pr(px(4.));
+        let name = ui::meta(format!("@{name}"), cx).pl(SPACE_2).pr(SPACE_1);
         match fades {
             true => ui::gives_way(AGENT_ROW, name).into_any_element(),
             false => name.into_any_element(),
@@ -935,7 +938,7 @@ fn agent_row(
             .rounded_full()
             .bg(t.surface_hover)
             .text_color(t.text_tertiary)
-            .text_size(crate::theme::ui_text(10.))
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .line_height(crate::theme::ui_text(15.))
             .font_features(crate::theme::tabular())
             .child(format!("+{}", fold.count))
@@ -1077,7 +1080,7 @@ pub fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
         };
         div()
             .flex()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .text_color(t.text_secondary)
             .when(agent.subagents > 0, |row| {
                 row.child(count(Icon::Agent, 10., t.live, agent.subagents))
@@ -1203,7 +1206,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
             reveal,
             div()
                 .h(px(14.))
-                .mt(px(2.))
+                .mt(SPACE_0)
                 .flex()
                 .justify_center()
                 .items_center()
@@ -1220,10 +1223,10 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
     let header = div()
         .h(px(18.))
         .mb(px(if compact { 8. } else { 9. }))
-        .px(px(8.))
+        .px(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(
             ui::text("LIMITS", 11., FontWeight::MEDIUM)
                 .letter_spacing(0.08)
@@ -1256,7 +1259,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
         div()
             .flex_none()
             .mt(px(if compact { 10. } else { 12. }))
-            .mx(px(10.))
+            .mx(SPACE_2H)
             .mb(px(bottom))
             .child(header)
             .child(
@@ -1342,7 +1345,7 @@ fn limit_rows(shown: &Shown, compact: bool, cx: &App) -> AnyElement {
     let quiet = |text: String| {
         ui::text(text, 10.5, FontWeight::NORMAL)
             .h(px(LIMIT_ROW))
-            .px(px(8.))
+            .px(SPACE_2)
             .truncate()
             .italic()
             .text_color(t.text_tertiary)
@@ -1384,7 +1387,7 @@ fn account_block(
         return div()
             .id(id)
             .h(px(SIGNED_OUT_LINE))
-            .px(px(8.))
+            .px(SPACE_2)
             .flex()
             .items_center()
             .child(
@@ -1415,10 +1418,10 @@ fn account_block(
     let line = div()
         .h(px(NAME_LINE))
         .mb(px(NAME_GAP))
-        .px(px(8.))
+        .px(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(
             ui::text(shown.name.clone(), 11., FontWeight::MEDIUM)
                 .flex_1()
@@ -1485,10 +1488,10 @@ fn limit_row(window: &Value, key: &str, cx: &App) -> impl IntoElement {
     div()
         .id(SharedString::from(format!("limit-{key}-{label}")))
         .h(px(LIMIT_ROW))
-        .px(px(8.))
+        .px(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .tooltip(ui::tooltip(format!(
             "{label}: {}% used. {note}",
             percent.round()
@@ -1572,8 +1575,8 @@ fn sign_in_card(
     let tint = |a: f32| Hsla { a, ..brand };
     div()
         .id("limits-sign-in")
-        .mx(px(2.))
-        .py(px(10.))
+        .mx(SPACE_0)
+        .py(SPACE_2H)
         .px(px(11.))
         .flex()
         .items_center()
@@ -1610,7 +1613,7 @@ fn sign_in_card(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     ui::text(title, 12., FontWeight::SEMIBOLD)
                         .truncate()
@@ -1686,11 +1689,11 @@ fn pages(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     div()
         .flex_none()
         .h(px(35.))
-        .px(px(8.))
-        .py(px(4.))
+        .px(SPACE_2)
+        .py(SPACE_1)
         .flex()
         .justify_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .border_t_1()
         .border_color(border)
         .child(page(
@@ -1743,8 +1746,8 @@ fn rail_empty(
             div()
                 .flex()
                 .items_center()
-                .gap(px(4.))
-                .text_size(crate::theme::ui_text(12.))
+                .gap(SPACE_1)
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_tertiary)
                 .child("Press")
                 .child(ui::kbd(keys, cx))
@@ -1755,9 +1758,9 @@ fn rail_empty(
         .flex()
         .flex_col()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .pt(px(40.))
-        .pb(px(24.))
+        .pb(SPACE_6)
         .child(ui::icon(glyph, 20.).text_color(t.text_tertiary))
         .child(ui::text(title, 13., FontWeight::MEDIUM).text_color(t.text_secondary))
         .children(press)
@@ -1804,8 +1807,8 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
         .child(
             div()
                 .flex_none()
-                .pt(px(4.))
-                .px(px(10.))
+                .pt(SPACE_1)
+                .px(SPACE_2H)
                 .child(
                     new_row(
                         "new-terminal",
@@ -1816,18 +1819,18 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
                     )
                     .on_click(cx.listener(|bench, _, _, cx| bench.new_terminal(cx))),
                 )
-                .child(div().mt(px(8.)).child(scope_switch(bench, cx))),
+                .child(div().mt(SPACE_2).child(scope_switch(bench, cx))),
         )
         .child(faded(
             div()
                 .id("terminals-scroll")
                 .size_full()
                 .pt(px(EDGE_FADE))
-                .px(px(10.))
+                .px(SPACE_2H)
                 .pb(px(EDGE_FADE))
                 .overflow_y_scroll()
                 .children(empty)
-                .child(div().flex().flex_col().gap(px(2.)).children(rows)),
+                .child(div().flex().flex_col().gap(SPACE_0).children(rows)),
             cx,
         ))
         .into_any_element()
@@ -1898,8 +1901,8 @@ fn ssh_page(bench: &Workbench, alias: String, cx: &mut Context<Workbench>) -> An
         .child(
             div()
                 .flex_none()
-                .pt(px(4.))
-                .px(px(10.))
+                .pt(SPACE_1)
+                .px(SPACE_2H)
                 .child(
                     new_row(
                         "new-terminal",
@@ -1926,11 +1929,11 @@ fn ssh_page(bench: &Workbench, alias: String, cx: &mut Context<Workbench>) -> An
                 .id("ssh-terminals-scroll")
                 .size_full()
                 .pt(px(EDGE_FADE))
-                .px(px(10.))
+                .px(SPACE_2H)
                 .pb(px(EDGE_FADE))
                 .overflow_y_scroll()
                 .children(empty)
-                .child(div().flex().flex_col().gap(px(2.)).children(rows)),
+                .child(div().flex().flex_col().gap(SPACE_0).children(rows)),
             cx,
         ))
         .into_any_element()

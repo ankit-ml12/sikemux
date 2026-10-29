@@ -13,7 +13,10 @@ use sikemux_wire::protocol::{AgentFace, WorkspaceAgent};
 
 use crate::faces::{self, Pack};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_3H, SPACE_5, TEXT_2XS,
+    TEXT_XS,
+};
 use crate::ui::{self, dialog};
 use crate::workbench::Workbench;
 
@@ -140,7 +143,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         .flex()
         .flex_wrap()
         .justify_end()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .children((0..colors).map(|index| {
             let (agent_id, own_pack) = (agent_id.clone(), own_pack.map(str::to_owned));
             let shape = face.shape.clone();
@@ -162,7 +165,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     let head = div()
         .flex()
         .items_center()
-        .gap(px(12.))
+        .gap(SPACE_3)
         .child(drawn(
             packs
                 .iter()
@@ -176,7 +179,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             div()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .min_w_0()
                 .child(
                     ui::text(
@@ -188,7 +191,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 )
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(11.))
+                        .text_size(crate::theme::ui_text(TEXT_2XS))
                         .text_color(t.text_tertiary)
                         .child(named),
                 ),
@@ -201,7 +204,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .flex_none()
             .flex()
             .flex_col()
-            .gap(px(2.))
+            .gap(SPACE_0)
             .overflow_y_scroll()
             .children(packs.iter().map(|candidate| {
                 let on = candidate.id == pack.id;
@@ -209,14 +212,14 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 div()
                     .id(SharedString::from(format!("buddy-pack-{}", candidate.id)))
                     .h(px(28.))
-                    .px(px(8.))
+                    .px(SPACE_2)
                     .flex()
                     .flex_none()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .rounded(theme::RADIUS_2)
                     .cursor_pointer()
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(if on { t.text_primary } else { t.text_secondary })
                     .when(on, |row| row.bg(t.surface_chosen))
                     .when(!on, |row| row.hover(|style| style.bg(t.surface_hover)))
@@ -247,7 +250,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         .flex()
         .flex_wrap()
         .content_start()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .overflow_y_scroll()
         .children(pack.shapes.iter().map(|shape| {
             let on = face.pack == pack.id && face.shape == shape.id;
@@ -269,17 +272,17 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             }))
         }));
     let body = div()
-        .px(px(20.))
-        .py(px(14.))
+        .px(SPACE_5)
+        .py(SPACE_3H)
         .flex()
         .flex_col()
-        .gap(px(14.))
+        .gap(SPACE_3H)
         .child(head)
         .child(
             div()
                 .h(px(300.))
                 .flex()
-                .gap(px(12.))
+                .gap(SPACE_3)
                 .child(pack_list)
                 .child(grid),
         )

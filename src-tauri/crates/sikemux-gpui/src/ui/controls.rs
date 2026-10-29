@@ -13,7 +13,9 @@ use gpui_kit::{
 use super::{icon, kbd, text};
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{
+    Tokens, RADIUS_2, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, TEXT_2XS, TEXT_2XS_H, TEXT_SM, TEXT_XS,
+};
 
 pub type OnClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 type OnSelect = Rc<dyn Fn(&usize, &mut Window, &mut App)>;
@@ -337,16 +339,16 @@ impl RenderOnce for Button {
             .flex()
             .items_center()
             .justify_start()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .rounded(RADIUS_2)
             .whitespace_nowrap();
         let base = match self.variant {
             Variant::Outline => base
                 .h(px(28.))
-                .px(px(12.))
+                .px(SPACE_3)
                 .border_1()
                 .border_color(fade("edge", if lit { t.border_strong } else { t.border }))
-                .text_size(crate::theme::ui_text(11.5))
+                .text_size(crate::theme::ui_text(TEXT_2XS_H))
                 .text_color(fade(
                     "ink",
                     if lit {
@@ -365,21 +367,21 @@ impl RenderOnce for Button {
                 )),
             Variant::Primary => base
                 .h(px(28.))
-                .px(px(12.))
+                .px(SPACE_3)
                 .justify_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .bg(t.accent)
-                .text_size(crate::theme::ui_text(13.))
+                .text_size(crate::theme::ui_text(TEXT_SM))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(t.on_accent),
             Variant::Dashed => base
                 .h(px(22.))
-                .px(px(8.))
+                .px(SPACE_2)
                 .gap(px(5.))
                 .border_1()
                 .border_dashed()
                 .border_color(t.border)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(fade(
                     "ink",
                     if lit { t.text_primary } else { t.text_tertiary },
@@ -390,7 +392,7 @@ impl RenderOnce for Button {
                 .w_full()
                 .h(px(34.))
                 .justify_center()
-                .text_size(crate::theme::ui_text(13.))
+                .text_size(crate::theme::ui_text(TEXT_SM))
         });
         let (glyph, rest) = match self.variant {
             Variant::Primary => (13., t.on_accent),
@@ -626,7 +628,7 @@ impl RenderOnce for Segmented {
                             .when(fill, |segment| segment.flex_1().min_w_0())
                             .when(!fill && glyph.is_some(), |segment| segment.flex_1())
                             .h_full()
-                            .px(px(8.))
+                            .px(SPACE_2)
                             .flex()
                             .items_center()
                             .justify_center()
@@ -668,7 +670,7 @@ impl RenderOnce for Segmented {
                                     .flex_none()
                                     .min_w(px(15.))
                                     .h(px(15.))
-                                    .px(px(4.))
+                                    .px(SPACE_1)
                                     .flex()
                                     .items_center()
                                     .justify_center()
@@ -772,7 +774,7 @@ impl RenderOnce for Field {
                 .map(|text| match self.mono {
                     true => text
                         .font_family(crate::theme::MONO)
-                        .text_size(crate::theme::ui_text(12.)),
+                        .text_size(crate::theme::ui_text(TEXT_XS)),
                     false => {
                         text.text_size(crate::theme::ui_text(if self.small { 12. } else { 13. }))
                     }
@@ -821,7 +823,7 @@ impl RenderOnce for Toggle {
             .selected(self.pressed)
             .accessibility_label(self.label.clone())
             .h(px(22.))
-            .px(px(8.))
+            .px(SPACE_2)
             .flex()
             .items_center()
             .border_1()
@@ -831,7 +833,7 @@ impl RenderOnce for Toggle {
                 Hsla::transparent_black()
             })
             .when(self.pressed, |toggle| toggle.bg(t.surface_chosen))
-            .text_size(crate::theme::ui_text(11.))
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .font_weight(FontWeight::MEDIUM)
             .text_color(if self.pressed {
                 t.text_primary

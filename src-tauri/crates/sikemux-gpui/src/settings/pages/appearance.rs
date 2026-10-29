@@ -21,7 +21,10 @@ use crate::core::{Ask, Watch};
 use crate::icons::Icon;
 use crate::settings::rows;
 use crate::settings::Page;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, TEXT_2XS,
+    TEXT_2XS_H, TEXT_SM, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -319,7 +322,7 @@ fn picture_rows(
     let signed = |value: f64| format!("{:+.2}", value);
     div()
         .child(
-            div().px(px(16.)).py(px(12.)).child(
+            div().px(SPACE_4).py(SPACE_3).child(
                 div()
                     .relative()
                     .h(px(180.))
@@ -344,7 +347,7 @@ fn picture_rows(
                 Some("Dark, middle and light, in that order."),
                 div()
                     .flex()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .children(fields.inks.iter().map(ColorPicker::new)),
                 cx,
             ))
@@ -460,7 +463,7 @@ fn preview(summary: &ThemeSummary, height: f32, rail: bool) -> gpui_kit::Div {
     let line = |parts: Vec<(gpui_kit::Hsla, f32)>| {
         div()
             .flex()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .children(parts.into_iter().map(|(color, width)| bar(color, width)))
     };
     div()
@@ -500,7 +503,7 @@ fn preview(summary: &ThemeSummary, height: f32, rail: bool) -> gpui_kit::Div {
                         .flex()
                         .flex_col()
                         .justify_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .px(px(9.))
                         .child(line(vec![
                             (theme::color(&summary.acc), 0.22),
@@ -676,8 +679,8 @@ pub fn render(
                             .min_w_0()
                             .flex()
                             .flex_col()
-                            .gap(px(4.))
-                            .p(px(4.))
+                            .gap(SPACE_1)
+                            .p(SPACE_1)
                             .rounded(px(8.))
                             .cursor_pointer()
                             .when(chosen, |card| card.bg(t.surface_chosen))
@@ -696,14 +699,14 @@ pub fn render(
                                     .h(px(22.))
                                     .flex()
                                     .items_center()
-                                    .gap(px(4.))
-                                    .pl(px(2.))
+                                    .gap(SPACE_1)
+                                    .pl(SPACE_0)
                                     .child(
                                         div()
                                             .flex_1()
                                             .min_w_0()
                                             .truncate()
-                                            .text_size(crate::theme::ui_text(11.5))
+                                            .text_size(crate::theme::ui_text(TEXT_2XS_H))
                                             .text_color(if chosen {
                                                 t.text_primary
                                             } else {
@@ -730,7 +733,7 @@ pub fn render(
                         .w_full()
                         .h(px(CARD_ROW))
                         .flex()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .children(cards)
                         .children((0..gaps).map(|_| div().flex_1()))
                 })
@@ -776,7 +779,7 @@ pub fn render(
             .flex()
             .items_center()
             .gap(px(18.))
-            .p(px(16.))
+            .p(SPACE_4)
             .child(
                 div()
                     .w(px(200.))
@@ -798,7 +801,7 @@ pub fn render(
                     )
                     .child(
                         div()
-                            .text_size(crate::theme::ui_text(12.))
+                            .text_size(crate::theme::ui_text(TEXT_XS))
                             .text_color(t.text_tertiary)
                             .child(format!(
                                 "{} · {kind}",
@@ -807,10 +810,10 @@ pub fn render(
                     )
                     .child(
                         div()
-                            .pt(px(10.))
+                            .pt(SPACE_2H)
                             .flex()
                             .flex_wrap()
-                            .gap(px(6.))
+                            .gap(SPACE_1H)
                             .child(
                                 ui::Button::new(
                                     "theme-change",
@@ -846,10 +849,10 @@ pub fn render(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .px(px(12.))
-                .pt(px(12.))
-                .pb(px(8.))
+                .gap(SPACE_2)
+                .px(SPACE_3)
+                .pt(SPACE_3)
+                .pb(SPACE_2)
                 .child(
                     div()
                         .flex_1()
@@ -872,11 +875,11 @@ pub fn render(
                 )
                 .child(tone),
         )
-        .child(div().px(px(12.)).pb(px(10.)).flex().child(sources))
+        .child(div().px(SPACE_3).pb(SPACE_2H).flex().child(sources))
         .child(
             div()
-                .px(px(8.))
-                .pb(px(8.))
+                .px(SPACE_2)
+                .pb(SPACE_2)
                 .child(list)
                 .when(found == 0, |grid| {
                     grid.child(rows::note("No themes match.", cx))
@@ -910,7 +913,7 @@ pub fn render(
         let (choose, remove) = (this.clone(), this.clone());
         div()
             .flex()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .when(preferences.pane_image.is_some(), |buttons| {
                 buttons.child(
                     ui::Button::new("pane-image-remove", "Remove", ui::Variant::Outline).on_click(
@@ -959,14 +962,14 @@ pub fn render(
         div()
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .w(px(220.))
             .child(div().flex_1().child(Slider::new(state)))
             .child(
                 div()
                     .w(px(44.))
                     .text_right()
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(t.text_secondary)
                     .child(shown),
             )
@@ -1050,18 +1053,18 @@ pub fn render(
             .flex()
             .flex_col()
             .items_center()
-            .gap(px(6.))
-            .p(px(8.))
+            .gap(SPACE_1H)
+            .p(SPACE_2)
             .rounded(theme::RADIUS_3)
             .border_1()
             .cursor_pointer()
             .border_color(if on { t.border_strong } else { t.border })
             .when(on, |card| card.bg(t.surface_chosen))
             .when(!on, |card| card.hover(|style| style.bg(t.surface_hover)))
-            .child(div().flex().gap(px(2.)).children(faces))
+            .child(div().flex().gap(SPACE_0).children(faces))
             .child(
                 div()
-                    .text_size(crate::theme::ui_text(11.))
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(t.text_secondary)
                     .child(name),
             )
@@ -1070,7 +1073,7 @@ pub fn render(
     let pack_cards = div()
         .flex()
         .flex_wrap()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .children(packs.iter().map(|pack| {
             let step = (pack.shapes.len() / 3).max(1);
             let faces = (0..3)
@@ -1109,18 +1112,18 @@ pub fn render(
     let shape_chips = div()
         .flex()
         .flex_wrap()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(
             div()
                 .id("buddy-shape-mix")
                 .h(px(36.))
-                .px(px(12.))
+                .px(SPACE_3)
                 .flex()
                 .items_center()
                 .rounded(theme::RADIUS_2)
                 .border_1()
                 .cursor_pointer()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_secondary)
                 .border_color(if mixing { t.border_strong } else { t.border })
                 .when(mixing, |chip| chip.bg(t.surface_chosen))
@@ -1151,20 +1154,20 @@ pub fn render(
         div()
             .flex()
             .flex_col()
-            .gap(px(8.))
-            .px(px(16.))
-            .py(px(10.))
+            .gap(SPACE_2)
+            .px(SPACE_4)
+            .py(SPACE_2H)
             .border_b_1()
             .border_color(t.line_soft)
             .child(
                 div()
-                    .text_size(crate::theme::ui_text(13.))
+                    .text_size(crate::theme::ui_text(TEXT_SM))
                     .text_color(t.text_primary)
                     .child(label),
             )
             .child(
                 div()
-                    .text_size(crate::theme::ui_text(11.5))
+                    .text_size(crate::theme::ui_text(TEXT_2XS_H))
                     .text_color(t.text_tertiary)
                     .child(about),
             )

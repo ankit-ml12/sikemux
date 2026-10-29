@@ -12,7 +12,11 @@ use gpui_kit::{
 
 use super::{icon, text};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2, RADIUS_4};
+use crate::theme::{
+    self, Tokens, RADIUS_2, RADIUS_4, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3,
+    SPACE_3H, SPACE_4, SPACE_5, TEXT_2XS, TEXT_2XS_H, TEXT_3XS, TEXT_3XS_H, TEXT_SM, TEXT_XL,
+    TEXT_XS,
+};
 
 pub(crate) type Answer = Rc<dyn Fn(&mut Window, &mut App)>;
 type Typed = Rc<dyn Fn(String, &mut Window, &mut App)>;
@@ -113,8 +117,8 @@ pub(crate) fn hinted_foot(note: impl IntoElement, cx: &App) -> Div {
             .min_w_0()
             .flex()
             .items_center()
-            .gap(px(6.))
-            .text_size(crate::theme::ui_text(11.))
+            .gap(SPACE_1H)
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .text_color(Tokens::get(cx).text_disabled)
             .child(note),
     )
@@ -127,19 +131,19 @@ pub(crate) fn field(name: &'static str, input: &Entity<InputState>, mono: bool, 
     div()
         .flex()
         .flex_col()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(text(name, 12., FontWeight::MEDIUM).text_color(t.text_secondary))
         .child(
             div()
                 .h(px(32.))
-                .px(px(10.))
+                .px(SPACE_2H)
                 .flex()
                 .items_center()
                 .border_1()
                 .border_color(t.border_strong)
                 .rounded(RADIUS_2)
                 .bg(t.surface_sunken)
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .when(mono, |field| field.font_family(theme::MONO))
                 .child(Input::new(input).appearance(false)),
         )
@@ -150,7 +154,7 @@ pub(crate) fn escape(word: &'static str, cx: &App) -> Div {
     div()
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(super::kbd("esc", cx))
         .child(word)
 }
@@ -162,9 +166,9 @@ pub(crate) const GLYPH_INSET: f32 = 54.;
 pub(crate) fn marked_body() -> Div {
     div()
         .pl(px(GLYPH_INSET))
-        .pr(px(20.))
-        .pt(px(8.))
-        .pb(px(14.))
+        .pr(SPACE_5)
+        .pt(SPACE_2)
+        .pb(SPACE_3H)
         .flex()
         .flex_col()
 }
@@ -172,8 +176,8 @@ pub(crate) fn marked_body() -> Div {
 /// A paragraph of a marked sheet's body.
 pub(crate) fn prose(words: impl Into<SharedString>, t: &Tokens) -> Div {
     div()
-        .text_size(crate::theme::ui_text(13.))
-        .line_height(crate::theme::ui_text(20.))
+        .text_size(crate::theme::ui_text(TEXT_SM))
+        .line_height(crate::theme::ui_text(TEXT_XL))
         .text_color(t.text_tertiary)
         .child(words.into())
 }
@@ -183,9 +187,9 @@ fn head(tile: Option<Tile>, title: SharedString, cx: &App) -> Div {
     div()
         .flex()
         .items_center()
-        .gap(px(8.))
-        .px(px(20.))
-        .pt(px(16.))
+        .gap(SPACE_2)
+        .px(SPACE_5)
+        .pt(SPACE_4)
         .children(tile.map(|tile| {
             let (ink, ground) = match tile.danger {
                 true => (t.danger, t.danger.opacity(0.14)),
@@ -218,12 +222,12 @@ fn framed(
         foot.flex()
             .items_center()
             .justify_end()
-            .gap(px(8.))
-            .mt(px(6.))
-            .pt(px(12.))
-            .pr(px(12.))
-            .pb(px(12.))
-            .pl(px(16.))
+            .gap(SPACE_2)
+            .mt(SPACE_1H)
+            .pt(SPACE_3)
+            .pr(SPACE_3)
+            .pb(SPACE_3)
+            .pl(SPACE_4)
             .border_t_1()
             .border_color(t.border)
             .bg(t.surface_sunken),
@@ -286,10 +290,10 @@ pub(crate) fn button(
     BaseButton::new(id)
         .accessibility_label(label.clone())
         .h(px(30.))
-        .px(px(12.))
+        .px(SPACE_3)
         .rounded(RADIUS_2)
         .border_1()
-        .text_size(crate::theme::ui_text(13.))
+        .text_size(crate::theme::ui_text(TEXT_SM))
         .font_weight(FontWeight::MEDIUM)
         .on_click(move |_, window, cx| answer(window, cx))
         .map(|button| match fill {
@@ -390,7 +394,7 @@ impl RenderOnce for Confirm {
         if self.marked {
             let lines = self.body.split('\n').filter(|line| !line.trim().is_empty());
             let body = marked_body()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .children(lines.map(|line| prose(line.to_owned(), &t)))
                 .into_any_element();
             let foot = hinted_foot(escape("cancel", cx), cx)
@@ -439,9 +443,9 @@ impl RenderOnce for Confirm {
         sheet(
             self.title,
             div()
-                .px(px(16.))
-                .py(px(14.))
-                .text_size(crate::theme::ui_text(12.))
+                .px(SPACE_4)
+                .py(SPACE_3H)
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .line_height(crate::theme::ui_text(18.))
                 .text_color(t.text_secondary)
                 .child(self.body)
@@ -505,14 +509,14 @@ impl RenderOnce for Prompt {
         if self.marked {
             let field = div()
                 .h(px(32.))
-                .px(px(8.))
+                .px(SPACE_2)
                 .flex()
                 .items_center()
                 .border_1()
                 .border_color(t.border)
                 .rounded(RADIUS_2)
                 .bg(t.surface_sunken)
-                .text_size(crate::theme::ui_text(13.))
+                .text_size(crate::theme::ui_text(TEXT_SM))
                 .text_color(t.text_primary)
                 .child(Input::new(&self.field).appearance(false));
             let foot = hinted_foot(escape("cancel", cx), cx)
@@ -530,7 +534,7 @@ impl RenderOnce for Prompt {
                     yes.clone(),
                     cx,
                 ));
-            let body = marked_body().pt(px(12.)).child(field).into_any_element();
+            let body = marked_body().pt(SPACE_3).child(field).into_any_element();
             return marked_sheet(
                 Icon::InfoCircle,
                 self.title,
@@ -559,12 +563,12 @@ impl RenderOnce for Prompt {
         sheet(
             self.title,
             div()
-                .px(px(16.))
-                .py(px(14.))
+                .px(SPACE_4)
+                .py(SPACE_3H)
                 .child(
                     div()
                         .h(px(32.))
-                        .px(px(10.))
+                        .px(SPACE_2H)
                         .flex()
                         .items_center()
                         .border_1()
@@ -572,7 +576,7 @@ impl RenderOnce for Prompt {
                         .rounded(RADIUS_2)
                         .bg(t.surface_sunken)
                         .font_family(theme::MONO)
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .child(Input::new(&self.field).appearance(false)),
                 )
                 .into_any_element(),
@@ -678,14 +682,14 @@ impl RenderOnce for Choices {
                 .accessibility_label(choice.label.clone())
                 .disabled(choice.disabled)
                 .w_full()
-                .px(px(16.))
-                .py(px(6.))
+                .px(SPACE_4)
+                .py(SPACE_1H)
                 .flex()
                 .items_center()
                 .justify_start()
-                .gap(px(10.))
+                .gap(SPACE_2H)
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(ink)
                 .when(choice.disabled, |row| row.opacity(0.6))
                 .when(!choice.disabled, |row| {
@@ -705,7 +709,7 @@ impl RenderOnce for Choices {
                         })
                         .rounded(px(4.))
                         .bg(t.surface)
-                        .text_size(crate::theme::ui_text(10.5))
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(if choice.destructive {
                             t.danger
@@ -718,7 +722,7 @@ impl RenderOnce for Choices {
                 .children(choice.hint.map(|hint| {
                     div()
                         .flex_none()
-                        .text_size(crate::theme::ui_text(10.5))
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(t.text_tertiary)
                         .child(hint)
                 }))
@@ -730,7 +734,7 @@ impl RenderOnce for Choices {
                 .id("choices")
                 .test_support()
                 .role(Role::Menu)
-                .py(px(8.))
+                .py(SPACE_2)
                 .flex()
                 .flex_col()
                 .on_key_down(move |event: &KeyDownEvent, window, cx| {
@@ -746,7 +750,7 @@ impl RenderOnce for Choices {
                 .children(rows)
                 .into_any_element(),
             div()
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.text_tertiary)
                 .child("esc  cancel"),
             no.clone(),
@@ -794,25 +798,25 @@ impl RenderOnce for Cheatsheet {
             .enumerate()
             .map(|(index, (title, rows))| {
                 div()
-                    .px(px(16.))
-                    .pt(px(8.))
-                    .pb(px(12.))
+                    .px(SPACE_4)
+                    .pt(SPACE_2)
+                    .pb(SPACE_3)
                     .when(index + 1 < count, |section| {
                         section.border_b_1().border_color(t.border)
                     })
                     .child(
                         div()
-                            .mb(px(6.))
-                            .text_size(crate::theme::ui_text(10.))
+                            .mb(SPACE_1H)
+                            .text_size(crate::theme::ui_text(TEXT_3XS))
                             .text_color(t.text_tertiary)
                             .child(title.to_uppercase()),
                     )
                     .children(rows.iter().map(|(keys, label)| {
                         div()
                             .flex()
-                            .gap(px(12.))
-                            .py(px(2.))
-                            .text_size(crate::theme::ui_text(11.5))
+                            .gap(SPACE_3)
+                            .py(SPACE_0)
+                            .text_size(crate::theme::ui_text(TEXT_2XS_H))
                             .child(
                                 div()
                                     .w(px(180.))
@@ -830,14 +834,14 @@ impl RenderOnce for Cheatsheet {
             self.title,
             div()
                 .id("cheatsheet")
-                .py(px(4.))
+                .py(SPACE_1)
                 .max_h(px(560.))
                 .overflow_y_scroll()
                 .font_family(theme::MONO)
                 .children(sections)
                 .into_any_element(),
             div()
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.text_tertiary)
                 .child("esc  close"),
             close.clone(),

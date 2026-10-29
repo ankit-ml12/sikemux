@@ -17,7 +17,10 @@ use serde_json::Value;
 
 use crate::agents::menu::AgentMenu;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TEXT_2XS,
+    TEXT_3XS, TEXT_XL, TEXT_XS,
+};
 use crate::ui::{self, Button, IconButton, PaneHeader, Segmented, Toggle, Variant};
 use crate::workbench::{AgentRow, Workbench};
 use crate::{chat, terminal};
@@ -142,7 +145,7 @@ fn empty_stage(cx: &mut Context<Workbench>) -> impl IntoElement {
         .flex_col()
         .items_center()
         .justify_center()
-        .gap(px(12.))
+        .gap(SPACE_3)
         .text_color(t.text_tertiary)
         .child(
             ui::text("Nothing open in this project", 12.5, FontWeight::NORMAL)
@@ -151,7 +154,7 @@ fn empty_stage(cx: &mut Context<Workbench>) -> impl IntoElement {
         .child(
             div()
                 .flex()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(
                     Button::new("empty-new-agent", "New agent", Variant::Outline)
                         .keys(hint("agent.new"))
@@ -184,7 +187,7 @@ fn asleep_in_terminal(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Work
         .flex_col()
         .items_center()
         .justify_center()
-        .gap(px(12.))
+        .gap(SPACE_3)
         .child(
             ui::text(format!("{label} is asleep"), 12.5, FontWeight::NORMAL)
                 .text_color(t.text_secondary),
@@ -208,7 +211,7 @@ pub fn welcome(
         .mx(px(22.))
         .flex()
         .flex_col()
-        .gap(px(24.))
+        .gap(SPACE_6)
         .child(greeting(bench, agent, cx))
         .child(div().w_full().child(bench.parts.activity.clone()))
 }
@@ -228,7 +231,7 @@ fn greeting(
         .flex()
         .items_center()
         .justify_center()
-        .gap(px(12.))
+        .gap(SPACE_3)
         .child(div().flex().child(match agent {
             Some(agent) => agent.mark(32., cx),
             None => ui::mark("claude", 32.),
@@ -238,14 +241,14 @@ fn greeting(
                 .min_w_0()
                 .flex()
                 .items_center()
-                .text_size(theme::ui_text(20.))
+                .text_size(theme::ui_text(TEXT_XL))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(t.text_primary)
                 .child("What are we making in")
                 .child(
                     ui::icon(Icon::Folder, 17.)
-                        .ml(px(8.))
-                        .mr(px(6.))
+                        .ml(SPACE_2)
+                        .mr(SPACE_1H)
                         .text_color(t.live),
                 )
                 .child(
@@ -302,12 +305,12 @@ fn welcome_calendar(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElemen
     let more = div()
         .id("welcome-more")
         .group("welcome-more")
-        .py(px(2.))
+        .py(SPACE_0)
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .cursor_pointer()
-        .text_size(theme::ui_text(11.))
+        .text_size(theme::ui_text(TEXT_2XS))
         .text_color(t.ink_faint)
         .hover(|more| more.text_color(t.text_primary))
         .child("View activity")
@@ -366,13 +369,13 @@ fn pane_header(
                 .id("agent-share")
                 .h(px(24.))
                 .min_w(px(24.))
-                .px(px(6.))
+                .px(SPACE_1H)
                 .flex()
                 .items_center()
                 .justify_center()
                 .gap(px(3.))
                 .rounded(crate::theme::RADIUS_2)
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.live)
                 .tooltip(ui::tooltip(share.watching()))
                 .on_click(open_share)
@@ -527,16 +530,16 @@ pub(crate) fn overview(totals: &Value, cx: &App) -> impl IntoElement {
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(4.))
-                .py(px(4.))
-                .px(px(16.))
+                .gap(SPACE_1)
+                .py(SPACE_1)
+                .px(SPACE_4)
                 .when(index == 0, |stat| stat.pl_0())
                 .when(index > 0, |stat| stat.border_l_1().border_color(t.border))
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .text_color(t.text_tertiary)
                         .child(ui::text(label, 12., FontWeight::MEDIUM))
                         .children(badge.map(|badge| ui::text(badge, 10., FontWeight::MEDIUM))),
@@ -684,7 +687,7 @@ pub(crate) fn calendar(
     div()
         .flex()
         .flex_col()
-        .gap(px(12.))
+        .gap(SPACE_3)
         .when(!welcome, |calendar| {
             calendar.child(
                 div()
@@ -693,7 +696,7 @@ pub(crate) fn calendar(
                     .flex_wrap()
                     .items_center()
                     .justify_between()
-                    .gap(px(12.))
+                    .gap(SPACE_3)
                     .child(
                         ui::text(
                             match hovered {
@@ -712,13 +715,13 @@ pub(crate) fn calendar(
                         )
                         .text_color(t.text_secondary),
                     )
-                    .child(div().flex().gap(px(4.)).children(toggles)),
+                    .child(div().flex().gap(SPACE_1).children(toggles)),
             )
         })
         .child(
             div()
                 .flex()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(
                     div().relative().w(px(22.)).flex_none().child(
                         div()
@@ -756,9 +759,9 @@ pub(crate) fn calendar(
                 .justify_end()
                 .gap(px(CELL_GAP))
                 .children(footer.map(|footer| div().flex_1().flex().child(footer)))
-                .child(small("Less".into(), &t).mr(px(4.)))
+                .child(small("Less".into(), &t).mr(SPACE_1))
                 .children((0..5).map(|level| div().size(px(10.)).rounded(px(2.)).bg(colour(level))))
-                .child(small("More".into(), &t).ml(px(4.))),
+                .child(small("More".into(), &t).ml(SPACE_1)),
         )
 }
 
@@ -801,7 +804,7 @@ fn day_at(bounds: Bounds<Pixels>, position: Point<Pixels>) -> Option<i64> {
 
 fn small(label: String, t: &Tokens) -> Div {
     ui::text(label, 10., FontWeight::NORMAL)
-        .line_height(crate::theme::ui_text(10.))
+        .line_height(crate::theme::ui_text(TEXT_3XS))
         .text_color(t.text_tertiary)
 }
 

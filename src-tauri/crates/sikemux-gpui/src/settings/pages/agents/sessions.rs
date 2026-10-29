@@ -2,7 +2,7 @@
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, Context, Entity, InteractiveElement, ParentElement, SharedString,
+    div, AnyElement, Context, Entity, InteractiveElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::json;
@@ -10,7 +10,7 @@ use sikemux_wire::protocol::{MidTurnSend, RailDensity};
 
 use crate::core::Ask;
 use crate::settings::rows::{self, Choice};
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1, SPACE_2H, SPACE_3, SPACE_4, TEXT_2XS_H, TEXT_SM};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -125,8 +125,8 @@ pub fn boundary(
     };
     let cards = div()
         .flex()
-        .gap(px(10.))
-        .p(px(16.))
+        .gap(SPACE_2H)
+        .p(SPACE_4)
         .children(MODES.iter().map(|(mode, name, detail)| {
             let chosen = *mode == current;
             let danger = *mode == "bypass";
@@ -137,8 +137,8 @@ pub fn boundary(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(4.))
-                .p(px(12.))
+                .gap(SPACE_1)
+                .p(SPACE_3)
                 .rounded(theme::RADIUS_3)
                 .border_1()
                 .cursor_pointer()
@@ -153,7 +153,7 @@ pub fn boundary(
                 })
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(if chosen && danger {
                             t.danger
                         } else {
@@ -163,7 +163,7 @@ pub fn boundary(
                 )
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(11.5))
+                        .text_size(crate::theme::ui_text(TEXT_2XS_H))
                         .text_color(t.text_tertiary)
                         .child(*detail),
                 )

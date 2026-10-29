@@ -15,7 +15,10 @@ use sikemux_core::agent_accounts::Profile;
 use crate::accounts::{self, SignIn, Status};
 use crate::icons::Icon;
 use crate::settings::rows;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, TEXT_2XS_H,
+    TEXT_3XS_H, TEXT_SM,
+};
 use crate::ui::{self, dialog, sign_in};
 use crate::workbench::Workbench;
 
@@ -67,10 +70,10 @@ fn signing(bench: &Workbench, id: &str, this: &Entity<Workbench>, cx: &App) -> O
         SignIn::Waiting { url, code } => div()
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(
                 div()
-                    .text_size(crate::theme::ui_text(11.5))
+                    .text_size(crate::theme::ui_text(TEXT_2XS_H))
                     .text_color(t.text_tertiary)
                     .child("Finish signing in in your browser"),
             )
@@ -115,12 +118,12 @@ fn signing(bench: &Workbench, id: &str, this: &Entity<Workbench>, cx: &App) -> O
         SignIn::Failed(message) => div()
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(
                 div()
                     .max_w(px(240.))
                     .truncate()
-                    .text_size(crate::theme::ui_text(11.5))
+                    .text_size(crate::theme::ui_text(TEXT_2XS_H))
                     .text_color(t.danger)
                     .child(message.clone()),
             )
@@ -238,7 +241,7 @@ fn account_row(
     let label = div()
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(name.clone())
         .when(in_use, |label| {
             label.child(
@@ -246,7 +249,7 @@ fn account_row(
                     .px(px(5.))
                     .rounded(theme::RADIUS_1)
                     .bg(t.surface_chosen)
-                    .text_size(crate::theme::ui_text(10.5))
+                    .text_size(crate::theme::ui_text(TEXT_3XS_H))
                     .text_color(t.text_secondary)
                     .child("In use"),
             )
@@ -254,9 +257,9 @@ fn account_row(
     div()
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(16.))
-        .py(px(10.))
+        .gap(SPACE_3)
+        .px(SPACE_4)
+        .py(SPACE_2H)
         .border_b_1()
         .border_color(t.line_soft)
         .child(accounts::avatar(profile, &name, 24.))
@@ -266,16 +269,16 @@ fn account_row(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(t.text_primary)
                         .child(label),
                 )
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(11.5))
+                        .text_size(crate::theme::ui_text(TEXT_2XS_H))
                         .text_color(if known.is_some() && !signed_in {
                             t.warn
                         } else {
@@ -322,7 +325,7 @@ pub fn render(
     });
     let add = {
         let (this, provider) = (this.clone(), provider.to_owned());
-        div().p(px(10.)).child(
+        div().p(SPACE_2H).child(
             ui::Button::new(
                 SharedString::from(format!("account-add-{provider}")),
                 "Add account",
@@ -423,7 +426,7 @@ pub fn dialog(
                     };
                     div()
                         .flex()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .child(
                             sign_in::choice(
                                 SharedString::from(format!("sign-in-again-{id}")),
@@ -483,7 +486,7 @@ pub fn dialog(
                         .w_full()
                         .flex()
                         .flex_col()
-                        .gap(px(12.))
+                        .gap(SPACE_3)
                         .child(sign_in::Field::new("Code from the page", field).mono())
                         .child(
                             ui::Button::new("sign-in-send-code", "Send code", ui::Variant::Outline)
@@ -557,7 +560,7 @@ pub fn dialog(
             })
         })
     };
-    let body = div().px(px(4.)).pt(px(4.)).child(screen);
+    let body = div().px(SPACE_1).pt(SPACE_1).child(screen);
     Some(dialog::floating(px(440.), body, go, close, cx).into_any_element())
 }
 

@@ -14,6 +14,7 @@ use super::{link, Drawn};
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::picture::{self, Picture, Remote};
+use crate::theme::{SPACE_2, TEXT_XS_H};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -58,7 +59,7 @@ pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &mut App) -
         .clone();
     if let Some(picture) = picture {
         return div()
-            .py(px(8.))
+            .py(SPACE_2)
             .child(picture::thumb(
                 id,
                 picture,
@@ -93,7 +94,7 @@ pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &mut App) -
         .items_center()
         .gap(px(7.))
         .min_w_0()
-        .text_size(crate::theme::ui_text(12.5))
+        .text_size(crate::theme::ui_text(TEXT_XS_H))
         .text_color(if file { looks.accent } else { looks.quiet })
         .when_some(uri.clone().filter(|_| file), |row, uri| {
             let menu = (uri.clone(), pressed.clone());

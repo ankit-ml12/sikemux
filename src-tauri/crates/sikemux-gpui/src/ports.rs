@@ -8,7 +8,7 @@ use serde_json::Value;
 use sikemux_wire::protocol::PaneKind;
 
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_1H};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -125,7 +125,7 @@ impl PortRow {
                 .w_full()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(div().size(px(7.)).rounded_full().bg(t.live))
                 .child(div().flex_1().min_w_0().truncate().child(process.clone()))
                 .child(

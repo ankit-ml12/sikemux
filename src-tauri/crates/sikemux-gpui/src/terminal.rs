@@ -38,7 +38,7 @@ use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::send_to::{self, Recipient};
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_0, SPACE_1H, SPACE_2};
 use crate::ui;
 use crate::workbench::{TakesKeys, Workbench};
 
@@ -615,7 +615,7 @@ fn draw(
         .group(CHIP_GROUP)
         .key_context(CONTEXT)
         .size_full()
-        .p(px(8.))
+        .p(SPACE_2)
         .on_pinch(
             window.listener_for(&this, |bench, event: &gpui::PinchEvent, _, _| {
                 crate::pinch::resize(bench, crate::pinch::Surface::Terminal, event)
@@ -819,8 +819,8 @@ fn shell_chip(shell: &ShellMetadataSnapshot, cx: &App) -> impl IntoElement {
         .flex()
         .items_center()
         .gap(px(5.))
-        .px(px(6.))
-        .py(px(2.))
+        .px(SPACE_1H)
+        .py(SPACE_0)
         .rounded_full()
         .border_1()
         .border_color(t.line)

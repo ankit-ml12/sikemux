@@ -8,7 +8,7 @@ use sikemux_wire::protocol::SessionId;
 
 use crate::core::{Ask, TerminalAsk};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, TEXT_SM};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -82,10 +82,10 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
             div()
                 .flex()
                 .items_center()
-                .gap(px(12.))
-                .pl(px(16.))
-                .pr(px(8.))
-                .py(px(6.))
+                .gap(SPACE_3)
+                .pl(SPACE_4)
+                .pr(SPACE_2)
+                .py(SPACE_1H)
                 .border_b_1()
                 .border_color(t.border)
                 .child(
@@ -93,7 +93,7 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(t.text_primary)
                         .child(popup.title.clone()),
                 )

@@ -15,7 +15,10 @@ use tokio::sync::oneshot;
 
 use crate::core::{Ask, Detection};
 use crate::experience::{self, Experience};
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_2, SPACE_3H, SPACE_4, SPACE_5, SPACE_6, TEXT_2XS, TEXT_3XS, TEXT_3XS_H,
+    TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -149,10 +152,10 @@ pub fn render(
     let mono_block = |text: String, ink: Hsla| {
         div()
             .px(px(30.))
-            .py(px(20.))
+            .py(SPACE_5)
             .bg(t.surface_sunken)
             .font_family(theme::MONO)
-            .text_size(crate::theme::ui_text(10.5))
+            .text_size(crate::theme::ui_text(TEXT_3XS_H))
             .line_height(relative(1.55))
             .text_color(ink)
             .child(text)
@@ -167,9 +170,9 @@ pub fn render(
             .flex()
             .flex_col()
             .gap(px(3.))
-            .p(px(8.))
+            .p(SPACE_2)
             .bg(t.surface)
-            .text_size(crate::theme::ui_text(10.))
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .text_color(t.text_secondary)
             .child(
                 div()
@@ -194,7 +197,7 @@ pub fn render(
     });
     let signals = div()
         .px(px(30.))
-        .py(px(14.))
+        .py(SPACE_3H)
         .flex()
         .flex_wrap()
         .gap(px(1.))
@@ -202,7 +205,7 @@ pub fn render(
         .child(
             div()
                 .w_full()
-                .pb(px(8.))
+                .pb(SPACE_2)
                 .pt(px(3.))
                 .bg(t.surface)
                 .child(kicker("agent detection manifests")),
@@ -270,7 +273,7 @@ pub fn render(
                 .pl(px(30.))
                 .pr(px(26.))
                 .pt(px(22.))
-                .pb(px(16.))
+                .pb(SPACE_4)
                 .border_b_1()
                 .border_color(t.border)
                 .child(
@@ -290,7 +293,7 @@ pub fn render(
                     div()
                         .id("diagnostics-esc")
                         .font_family(theme::MONO)
-                        .text_size(crate::theme::ui_text(10.))
+                        .text_size(crate::theme::ui_text(TEXT_3XS))
                         .text_color(t.text_tertiary)
                         .cursor_pointer()
                         .on_click(move |_, _, cx| this.update(cx, experience::close))
@@ -303,7 +306,7 @@ pub fn render(
                 .py(px(18.))
                 .border_b_1()
                 .border_color(t.border)
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .line_height(relative(1.6))
                 .text_color(t.text_secondary)
                 .child("A redacted operational snapshot. Terminal text, environment values, credentials, and API secrets are never included."),
@@ -321,7 +324,7 @@ pub fn render(
                         .border_color(t.border)
                 }))
                 .child(match &diagnostics.error {
-                    Some(error) => div().px(px(30.)).py(px(20.)).text_color(t.danger).child(error.clone()),
+                    Some(error) => div().px(px(30.)).py(SPACE_5).text_color(t.danger).child(error.clone()),
                     None => mono_block(snapshot_text(bench), t.live).min_h(px(280.)),
                 }),
         )
@@ -330,13 +333,13 @@ pub fn render(
                 .flex()
                 .justify_end()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .px(px(26.))
-                .py(px(14.))
+                .py(SPACE_3H)
                 .border_t_1()
                 .border_color(t.border)
                 .children(diagnostics.saved.clone().map(|path| {
-                    div().flex_1().truncate().text_size(crate::theme::ui_text(11.)).text_color(t.text_tertiary).child(format!("Saved to {path}"))
+                    div().flex_1().truncate().text_size(crate::theme::ui_text(TEXT_2XS)).text_color(t.text_tertiary).child(format!("Saved to {path}"))
                 }))
                 .child(button("diagnostics-reload", "Reload manifests", |bench, cx| ask(bench, Detection::Reload, cx)))
                 .child(button("diagnostics-refresh", "Refresh", |bench, cx| {
@@ -358,7 +361,7 @@ pub fn render(
         })
         .absolute()
         .inset_0()
-        .p(px(24.))
+        .p(SPACE_6)
         .flex()
         .items_center()
         .justify_center()

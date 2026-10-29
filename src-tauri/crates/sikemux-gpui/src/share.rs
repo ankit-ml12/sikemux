@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1H, SPACE_2, SPACE_3, TEXT_SM, TEXT_XS};
 use crate::ui::{self, dialog, Button, Variant};
 use crate::workbench::Workbench;
 
@@ -193,19 +193,19 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             div()
                 .flex()
                 .flex_col()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(label("Link"))
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .child(
                             div()
                                 .flex_1()
                                 .min_w_0()
                                 .h(px(32.))
-                                .px(px(8.))
+                                .px(SPACE_2)
                                 .flex()
                                 .items_center()
                                 .border_1()
@@ -241,24 +241,24 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         None => div()
             .flex()
             .flex_col()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(label("Link works for"))
             .child(
                 div()
                     .flex()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .children(LIFETIMES.iter().enumerate().map(|(at, (words, _))| {
                         let on = at == sharing.lifetime;
                         div()
                             .id(("share-lifetime", at))
                             .h(px(28.))
-                            .px(px(12.))
+                            .px(SPACE_3)
                             .flex()
                             .items_center()
                             .rounded(theme::RADIUS_2)
                             .border_1()
                             .border_color(t.border)
-                            .text_size(crate::theme::ui_text(13.))
+                            .text_size(crate::theme::ui_text(TEXT_SM))
                             .cursor_pointer()
                             .map(|pill| match on {
                                 true => pill.bg(t.surface_chosen).text_color(t.text_primary),
@@ -285,15 +285,15 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             div()
                 .flex()
                 .flex_col()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(dialog::prose("Anyone signed in to Sikemux who has the link can read this chat as it happens, from its start. They cannot type in it or answer its requests.", &t))
                 .child(dialog::prose("It shows everything the agent read and ran, including the contents of files and any secrets in them.", &t)),
         )
-        .child(div().pt(px(12.)).child(field))
+        .child(div().pt(SPACE_3).child(field))
         .children(problem.map(|problem| {
             div()
-                .pt(px(12.))
-                .text_size(crate::theme::ui_text(12.))
+                .pt(SPACE_3)
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .line_height(crate::theme::ui_text(18.))
                 .text_color(t.danger)
                 .child(problem)

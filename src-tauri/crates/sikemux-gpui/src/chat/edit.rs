@@ -3,7 +3,7 @@
 
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::{
-    div, px, relative, AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement,
+    div, relative, AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement,
     ParentElement, Styled, Subscription, Window,
 };
 use gpui_transcript::Change;
@@ -12,6 +12,7 @@ use sikemux_wire::chat::ChatMessage;
 use super::{text_of, CancelEdit, Drawn};
 use crate::core::ChatAsk;
 use crate::theme;
+use crate::theme::{SPACE_1H, SPACE_2, SPACE_3};
 use crate::ui::{Button, Variant};
 use crate::workbench::Workbench;
 
@@ -142,7 +143,7 @@ pub fn editor(agent: &str, editing: &Editing, looks: &Drawn) -> gpui_kit::AnyEle
     let buttons = div()
         .flex()
         .justify_end()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(
             Button::new("edit-cancel", "Cancel", Variant::Outline).on_click({
                 let (bench, agent) = (bench.clone(), agent.to_owned());
@@ -166,9 +167,9 @@ pub fn editor(agent: &str, editing: &Editing, looks: &Drawn) -> gpui_kit::AnyEle
         .w(relative(0.8))
         .flex()
         .flex_col()
-        .gap(px(8.))
-        .px(px(12.))
-        .py(px(8.))
+        .gap(SPACE_2)
+        .px(SPACE_3)
+        .py(SPACE_2)
         .border_1()
         .border_color(looks.line)
         .rounded(theme::RADIUS_3)

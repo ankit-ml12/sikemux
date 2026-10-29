@@ -22,7 +22,7 @@ use crate::agents::menu::AgentMenu;
 use crate::icons::Icon;
 use crate::motion;
 use crate::ports::PortRow;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_4, TEXT_2XS, TEXT_XS};
 use crate::toast;
 use crate::ui::{self, IconButton, Tab};
 use crate::workbench::{Strip, Workbench};
@@ -82,8 +82,8 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .flex()
                 .flex_none()
                 .items_center()
-                .gap(px(8.))
-                .pr(px(16.))
+                .gap(SPACE_2)
+                .pr(SPACE_4)
                 .children(bench.plugin_bars.values().cloned())
                 .children(
                     git_chip(bench, cx)
@@ -126,9 +126,9 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
             .flex()
             .flex_none()
             .items_center()
-            .pt(px(10.))
-            .pb(px(6.))
-            .px(px(10.))
+            .pt(SPACE_2H)
+            .pb(SPACE_1H)
+            .px(SPACE_2H)
             .window_control_area(WindowControlArea::Drag)
             .child(
                 div()
@@ -146,7 +146,7 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                             .min_w_0()
                             .flex()
                             .items_center()
-                            .gap(px(4.))
+                            .gap(SPACE_1)
                             .overflow_x_scroll()
                             .track_scroll(&bench.strip_scroll)
                             .children(tabs),
@@ -203,13 +203,13 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             .id("git-chip")
             .h(px(24.))
             .max_w(px(200.))
-            .px(px(4.))
+            .px(SPACE_1)
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .rounded(crate::theme::RADIUS_1)
             .font_family(crate::theme::MONO)
-            .text_size(crate::theme::ui_text(11.))
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .text_color(t.text_tertiary)
             .hover(move |style| style.text_color(t.text_primary))
             .tooltip(ui::tooltip(about.join(" · ")))
@@ -228,7 +228,7 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
                 chip.child(
                     div()
                         .flex()
-                        .gap(px(4.))
+                        .gap(SPACE_1)
                         .children(count("↑", git.ahead, t.live))
                         .children(count("↓", git.behind, t.warn)),
                 )
@@ -262,10 +262,10 @@ fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
                 window.dispatch_action(Box::new(crate::codehost::OpenArea { area }), cx)
             })
             .h(px(24.))
-            .px(px(6.))
+            .px(SPACE_1H)
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .rounded(crate::theme::RADIUS_1)
             .hover(move |style| style.bg(t.surface_chosen))
             .child(ui::run_mark(
@@ -461,8 +461,8 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 .ghost()
                 .compact()
                 .h(px(24.))
-                .px(px(8.))
-                .text_size(crate::theme::ui_text(11.))
+                .px(SPACE_2)
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.danger)
                 .tooltip(tip)
                 .child("Why?")
@@ -499,10 +499,10 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         .compact()
         .h(px(24.))
         .max_w(px(320.))
-        .px(px(8.))
-        .gap(px(6.))
+        .px(SPACE_2)
+        .gap(SPACE_1H)
         .rounded(crate::theme::RADIUS_2)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .text_color(t.text_secondary)
         .child(match dot {
             Some(dot) => dot.into_any_element(),
@@ -518,7 +518,7 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .font_family(crate::theme::MONO)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .children(status),
         )
         .child(
@@ -535,7 +535,7 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .relative()
             .flex()
             .items_center()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .child(chip)
             .children(why)
             .children(card)
@@ -1338,7 +1338,7 @@ fn clock(cx: &App) -> impl IntoElement {
         .child(
             ui::text(now.format("%p").to_string(), 10., FontWeight::SEMIBOLD)
                 .letter_spacing(0.06)
-                .ml(px(4.))
+                .ml(SPACE_1)
                 .text_color(t.text_tertiary),
         )
 }

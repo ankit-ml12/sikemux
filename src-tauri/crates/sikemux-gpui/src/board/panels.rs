@@ -14,7 +14,10 @@ use serde_json::{json, Value};
 use crate::board::{owner, short_title, waits_on_person, BoardPane, Card, MessageRow, Open};
 use crate::chat::model_picker;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, TEXT_XS,
+    TEXT_XS_H,
+};
 use crate::ui::{self, select, Button, IconButton, Pick, Toggle, Variant};
 
 /// Keeps a choice made in a picker as the board's settings.
@@ -63,9 +66,9 @@ fn head(title: AnyElement, cx: &mut Context<BoardPane>) -> impl IntoElement {
         .min_h(px(45.))
         .flex()
         .items_center()
-        .gap(px(6.))
-        .pl(px(12.))
-        .pr(px(8.))
+        .gap(SPACE_1H)
+        .pl(SPACE_3)
+        .pr(SPACE_2)
         .bg(crate::see_through::ground(t.surface, cx))
         .border_b_1()
         .border_color(t.border)
@@ -82,9 +85,9 @@ fn section(name: &'static str, cx: &mut Context<BoardPane>) -> gpui_kit::Div {
     div()
         .flex()
         .flex_col()
-        .gap(px(6.))
-        .px(px(14.))
-        .py(px(10.))
+        .gap(SPACE_1H)
+        .px(SPACE_3H)
+        .py(SPACE_2H)
         .child(ui::caps(name, cx))
 }
 
@@ -92,7 +95,7 @@ fn fact(name: &'static str, value: AnyElement, cx: &mut Context<BoardPane>) -> A
     div()
         .flex()
         .items_center()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .child(ui::caps(name, cx).w(px(64.)).flex_none())
         .child(div().flex_1().min_w_0().child(value))
         .into_any_element()
@@ -104,11 +107,11 @@ fn settings_group(name: &'static str, cx: &mut Context<BoardPane>) -> gpui_kit::
     div()
         .flex()
         .flex_col()
-        .gap(px(8.))
-        .mt(px(4.))
-        .px(px(14.))
-        .pt(px(12.))
-        .pb(px(10.))
+        .gap(SPACE_2)
+        .mt(SPACE_1)
+        .px(SPACE_3H)
+        .pt(SPACE_3)
+        .pb(SPACE_2H)
         .border_t_1()
         .border_color(t.border)
         .child(ui::caps(name, cx))
@@ -222,7 +225,7 @@ fn placing(pane: &BoardPane, card: Option<&Card>, cx: &mut Context<BoardPane>) -
         div()
             .flex()
             .items_center()
-            .gap(px(2.))
+            .gap(SPACE_0)
             .child(ui::meta(short_title(&name_of(id)), cx))
             .child(
                 IconButton::new(
@@ -239,7 +242,7 @@ fn placing(pane: &BoardPane, card: Option<&Card>, cx: &mut Context<BoardPane>) -
         .flex()
         .flex_wrap()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .children(chips);
     if !waits_on.is_empty() {
         let adding = depends_on.clone();
@@ -274,8 +277,8 @@ fn text_fields(pane: &BoardPane, cx: &mut Context<BoardPane>) -> Vec<AnyElement>
     };
     let boxed = |element: AnyElement| {
         div()
-            .px(px(8.))
-            .py(px(6.))
+            .px(SPACE_2)
+            .py(SPACE_1H)
             .rounded(theme::RADIUS_2)
             .border_1()
             .border_color(t.border)
@@ -284,8 +287,8 @@ fn text_fields(pane: &BoardPane, cx: &mut Context<BoardPane>) -> Vec<AnyElement>
     };
     vec![
         div()
-            .px(px(14.))
-            .pt(px(10.))
+            .px(SPACE_3H)
+            .pt(SPACE_2H)
             .child(
                 Input::new(&fields.title)
                     .appearance(false)
@@ -294,11 +297,11 @@ fn text_fields(pane: &BoardPane, cx: &mut Context<BoardPane>) -> Vec<AnyElement>
             )
             .into_any_element(),
         div()
-            .px(px(14.))
+            .px(SPACE_3H)
             .child(boxed(
                 Textarea::new(&fields.details)
                     .appearance(false)
-                    .text_size(crate::theme::ui_text(12.5))
+                    .text_size(crate::theme::ui_text(TEXT_XS_H))
                     .into_any_element(),
             ))
             .into_any_element(),
@@ -306,7 +309,7 @@ fn text_fields(pane: &BoardPane, cx: &mut Context<BoardPane>) -> Vec<AnyElement>
             .child(boxed(
                 Textarea::new(&fields.acceptance)
                     .appearance(false)
-                    .text_size(crate::theme::ui_text(12.5))
+                    .text_size(crate::theme::ui_text(TEXT_XS_H))
                     .into_any_element(),
             ))
             .into_any_element(),
@@ -322,7 +325,7 @@ fn card_panel(pane: &BoardPane, card: Card, cx: &mut Context<BoardPane>) -> AnyE
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(ui::mono(ticket.key.clone(), 11.5, cx))
                 .when_some(ticket.source.clone(), |head, source| {
                     head.child(ui::meta(source, cx))
@@ -398,9 +401,9 @@ fn card_panel(pane: &BoardPane, card: Card, cx: &mut Context<BoardPane>) -> AnyE
             div()
                 .flex()
                 .flex_col()
-                .gap(px(8.))
-                .px(px(14.))
-                .py(px(10.))
+                .gap(SPACE_2)
+                .px(SPACE_3H)
+                .py(SPACE_2H)
                 .child(fact("Status", status, cx))
                 .child(fact("Owner", owner_view, cx))
                 .children(placing(pane, Some(&card), cx)),
@@ -429,7 +432,7 @@ fn card_panel(pane: &BoardPane, card: Card, cx: &mut Context<BoardPane>) -> AnyE
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(4.))
+                    .gap(SPACE_1)
                     .child(ui::meta(format!("Pull request #{}", pull.number), cx))
                     .child(
                         IconButton::new(
@@ -465,7 +468,7 @@ fn card_panel(pane: &BoardPane, card: Card, cx: &mut Context<BoardPane>) -> AnyE
     {
         view = view.child(
             div()
-                .px(px(14.))
+                .px(SPACE_3H)
                 .child(ui::meta(note, cx).whitespace_normal()),
         );
     }
@@ -477,7 +480,7 @@ fn card_panel(pane: &BoardPane, card: Card, cx: &mut Context<BoardPane>) -> AnyE
                     .id(SharedString::from(format!("under-{other}")))
                     .flex()
                     .justify_between()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .py(px(3.))
                     .cursor_pointer()
                     .on_click(cx.listener(move |pane, _, window, cx| {
@@ -486,7 +489,7 @@ fn card_panel(pane: &BoardPane, card: Card, cx: &mut Context<BoardPane>) -> AnyE
                     .child(
                         div()
                             .truncate()
-                            .text_size(crate::theme::ui_text(12.5))
+                            .text_size(crate::theme::ui_text(TEXT_XS_H))
                             .child(each.title.clone()),
                     )
                     .child(ui::meta(status_label(&each.status), cx))
@@ -502,7 +505,7 @@ fn card_panel(pane: &BoardPane, card: Card, cx: &mut Context<BoardPane>) -> AnyE
                 .unwrap_or_else(|| "The agent working it".into())
         )
     });
-    view.child(div().px(px(14.)).py(px(12.)).child(
+    view.child(div().px(SPACE_3H).py(SPACE_3).child(
         Button::new("board-remove", "Remove from board", Variant::Outline).on_click(cx.listener(
             move |pane, _, _, cx| {
                 let pane_entity = cx.entity();
@@ -553,14 +556,14 @@ fn new_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
             div()
                 .flex()
                 .flex_col()
-                .gap(px(8.))
-                .px(px(14.))
-                .py(px(10.))
+                .gap(SPACE_2)
+                .px(SPACE_3H)
+                .py(SPACE_2H)
                 .children(placing(pane, None, cx)),
         )
         .children(fields)
         .child(
-            div().px(px(14.)).py(px(12.)).child(
+            div().px(SPACE_3H).py(SPACE_3).child(
                 Button::new("board-add-card", "Add card", Variant::Primary)
                     .on_click(cx.listener(|pane, _, _, cx| pane.add(cx))),
             ),
@@ -717,9 +720,9 @@ fn auto_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
             div()
                 .flex()
                 .flex_col()
-                .gap(px(8.))
-                .px(px(14.))
-                .py(px(10.))
+                .gap(SPACE_2)
+                .px(SPACE_3H)
+                .py(SPACE_2H)
                 .child(
                     Toggle::new("board-auto-on", "Start agents on cards by itself", auto_on).on_click(
                         cx.listener(move |pane, _, _, cx| {
@@ -738,7 +741,7 @@ fn auto_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
     if let Some(note) = board.auto_note.clone() {
         view = view.child(
             div()
-                .px(px(14.))
+                .px(SPACE_3H)
                 .child(ui::meta(note, cx).whitespace_normal()),
         );
     }
@@ -878,12 +881,12 @@ fn messages_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
     let title = div()
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(ui::text("Messages", 13., FontWeight::SEMIBOLD))
         .child(ui::meta(summary, cx))
         .into_any_element();
     let mut view = div().flex().flex_col().child(head(title, cx)).child(
-        div().px(px(14.)).py(px(8.)).child(
+        div().px(SPACE_3H).py(SPACE_2).child(
             ui::meta(
                 "Newest first. Sikemux keeps who sent what kind and how it went, never the text.",
                 cx,
@@ -892,11 +895,11 @@ fn messages_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
         ),
     );
     match rows {
-        None => view = view.child(div().px(px(14.)).child(ui::meta("reading…", cx))),
+        None => view = view.child(div().px(SPACE_3H).child(ui::meta("reading…", cx))),
         Some(rows) if rows.is_empty() => {
             view = view.child(
                 div()
-                    .px(px(14.))
+                    .px(SPACE_3H)
                     .child(ui::meta("No agent has messaged another here yet.", cx)),
             )
         }
@@ -910,9 +913,9 @@ fn messages_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
-                    .px(px(14.))
-                    .py(px(6.))
+                    .gap(SPACE_0)
+                    .px(SPACE_3H)
+                    .py(SPACE_1H)
                     .border_b_1()
                     .border_color(t.border)
                     .child(
@@ -920,7 +923,7 @@ fn messages_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
                             .flex()
                             .items_center()
                             .gap(px(5.))
-                            .text_size(crate::theme::ui_text(12.))
+                            .text_size(crate::theme::ui_text(TEXT_XS))
                             .child(ui::text(
                                 sender(row.from.as_deref(), row.from_name.as_ref()),
                                 12.,
@@ -938,7 +941,7 @@ fn messages_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
                     .child(
                         div()
                             .flex()
-                            .gap(px(4.))
+                            .gap(SPACE_1)
                             .child(ui::meta(
                                 format!("{} ·", kind_label(row.kind.as_deref())),
                                 cx,

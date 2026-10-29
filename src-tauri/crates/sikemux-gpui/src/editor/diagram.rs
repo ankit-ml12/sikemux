@@ -22,7 +22,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::dbml::{self, Ref, Schema};
 use crate::core::{self, Ask};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_0, SPACE_2, TEXT_2XS, TEXT_SM};
 use crate::ui::IconButton;
 
 const HEADER: f32 = 36.;
@@ -674,7 +674,7 @@ impl Render for Diagram {
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(theme::ui_text(13.))
+                .text_size(theme::ui_text(TEXT_SM))
                 .text_color(t.text_tertiary)
                 .child("No tables in this file yet")
                 .into_any_element();
@@ -760,7 +760,7 @@ impl Render for Diagram {
                     .absolute()
                     .top(px(10.))
                     .left(px(12.))
-                    .text_size(theme::ui_text(11.))
+                    .text_size(theme::ui_text(TEXT_2XS))
                     .text_color(t.text_tertiary)
                     .child(summary),
             )
@@ -773,14 +773,14 @@ impl Render for Diagram {
                     .right(px(MAP_MARGIN))
                     .flex()
                     .items_center()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .p(px(3.))
                     .rounded(theme::RADIUS_3)
                     .bg(t.surface_overlay)
                     .border_1()
                     .border_color(t.border)
                     .shadow(t.shadow_float())
-                    .text_size(theme::ui_text(11.))
+                    .text_size(theme::ui_text(TEXT_2XS))
                     .text_color(t.text_secondary)
                     .child(
                         IconButton::new("diagram-zoom-out", Icon::Minus, "Zoom out")
@@ -836,7 +836,7 @@ fn text_button(
 ) -> gpui_kit::Stateful<gpui_kit::Div> {
     div()
         .id(id)
-        .px(px(8.))
+        .px(SPACE_2)
         .h(px(24.))
         .flex()
         .items_center()

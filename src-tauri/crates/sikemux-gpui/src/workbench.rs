@@ -43,7 +43,7 @@ use crate::overlays::{Layer, Overlays};
 use crate::reads::Reads;
 use crate::search::{FocusSearch, FocusSearchWindow, SearchPane};
 use crate::terminal::NewTerminal;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1, SPACE_2H, TEXT_SM};
 use crate::toast;
 use crate::{agents, home, rail, tabs, terminal};
 use sikemux_wire::questions::AgentQuestion;
@@ -4878,7 +4878,7 @@ impl Workbench {
             .top(px(tabs::top_height(self) + 4.))
             .bottom(px(10.))
             .w(px(if shown > 0. { width + 20. } else { PEEK_REACH }))
-            .px(px(10.))
+            .px(SPACE_2H)
             .on_hover(cx.listener(move |bench, inside: &bool, _, cx| bench.peek(edge, *inside, cx)))
             .when(shown > 0., |zone| {
                 zone.child(
@@ -5146,7 +5146,7 @@ impl Render for Workbench {
             .flex()
             .flex_col()
             .font_family(theme::UI)
-            .text_size(crate::theme::ui_text(13.))
+            .text_size(crate::theme::ui_text(TEXT_SM))
             .line_height(crate::theme::ui_text(13. * 1.45))
             .text_color(t.text_secondary)
             .child(
@@ -5163,9 +5163,9 @@ impl Render for Workbench {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .pt(px(4.))
-                    .px(px(10.))
-                    .pb(px(10.))
+                    .pt(SPACE_1)
+                    .px(SPACE_2H)
+                    .pb(SPACE_2H)
                     .on_drag_move(cx.listener(
                         |bench, event: &DragMoveEvent<DraggedRail>, window, cx| {
                             let edge = event.drag(cx).0;

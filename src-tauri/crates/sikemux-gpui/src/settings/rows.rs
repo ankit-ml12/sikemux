@@ -10,7 +10,10 @@ use gpui_kit::{
     IntoElement, ParentElement, SharedString, Styled, Subscription, Window,
 };
 
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4, TEXT_2XS_H, TEXT_LG,
+    TEXT_SM, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -60,15 +63,15 @@ pub fn section_with(
         .flex()
         .flex_col()
         .gap(px(3.))
-        .px(px(16.))
-        .pt(px(14.))
-        .pb(px(10.))
+        .px(SPACE_4)
+        .pt(SPACE_3H)
+        .pb(SPACE_2H)
         .when(named || meta.is_some() || action.is_some(), |heading| {
             heading.child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(12.))
+                    .gap(SPACE_3)
                     .min_h(px(22.))
                     .child(
                         div()
@@ -76,7 +79,7 @@ pub fn section_with(
                             .min_w_0()
                             .flex()
                             .items_baseline()
-                            .gap(px(8.))
+                            .gap(SPACE_2)
                             .when(named, |line| {
                                 line.child(
                                     ui::text(title, 13., FontWeight::SEMIBOLD)
@@ -85,7 +88,7 @@ pub fn section_with(
                             })
                             .children(meta.map(|meta| {
                                 div()
-                                    .text_size(crate::theme::ui_text(11.5))
+                                    .text_size(crate::theme::ui_text(TEXT_2XS_H))
                                     .text_color(t.text_tertiary)
                                     .child(meta)
                             })),
@@ -96,7 +99,7 @@ pub fn section_with(
         .children(sub.map(|sub| {
             div()
                 .max_w(px(560.))
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .line_height(crate::theme::ui_text(17.))
                 .text_color(t.text_secondary)
                 .child(sub)
@@ -161,8 +164,8 @@ pub fn row_with(
     div()
         .flex()
         .items_center()
-        .gap(px(16.))
-        .px(px(16.))
+        .gap(SPACE_4)
+        .px(SPACE_4)
         .py(px(11.))
         .border_b_1()
         .border_color(t.line_soft)
@@ -173,17 +176,17 @@ pub fn row_with(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(t.text_primary)
                         .child(label.into()),
                 )
                 .children(about.map(|about| {
                     div()
-                        .text_size(crate::theme::ui_text(11.5))
-                        .line_height(crate::theme::ui_text(16.))
+                        .text_size(crate::theme::ui_text(TEXT_2XS_H))
+                        .line_height(crate::theme::ui_text(TEXT_LG))
                         .text_color(t.text_tertiary)
                         .child(about)
                 })),
@@ -206,9 +209,9 @@ pub fn switch(id: &'static str, key: &'static str, on: bool, this: &Entity<Workb
 pub fn note(text: impl Into<SharedString>, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     div()
-        .px(px(16.))
-        .py(px(12.))
-        .text_size(crate::theme::ui_text(12.))
+        .px(SPACE_4)
+        .py(SPACE_3)
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .text_color(t.text_tertiary)
         .child(text.into())
         .into_any_element()

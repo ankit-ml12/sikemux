@@ -10,7 +10,7 @@ use serde_json::json;
 
 use crate::core::Ask;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_XS_H};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -44,7 +44,7 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             .flex_col()
             .items_center()
             .justify_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .child(ui::text("Not a repository", 12.5, FontWeight::MEDIUM).text_color(t.danger))
             .child(ui::meta(
                 format!("No repository at {folder}, and none in the folders directly inside it."),
@@ -71,10 +71,10 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         div()
             .id(("git-repo", index))
             .h(px(32.))
-            .px(px(10.))
+            .px(SPACE_2H)
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .rounded(theme::RADIUS_2)
             .cursor_pointer()
             .hover(move |row| row.bg(t.surface_hover))
@@ -89,7 +89,7 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(crate::theme::ui_text(12.5))
+                    .text_size(crate::theme::ui_text(TEXT_XS_H))
                     .text_color(t.text_primary)
                     .child(repo["name"].as_str().unwrap_or_default().to_owned()),
             )
@@ -108,7 +108,7 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                     .w(px(24.))
                     .text_right()
                     .font_family(theme::MONO)
-                    .text_size(crate::theme::ui_text(11.))
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(if changes > 0 {
                         t.git_modified
                     } else {
@@ -144,11 +144,11 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .flex_col()
         .child(
             div()
-                .px(px(12.))
-                .py(px(10.))
+                .px(SPACE_3)
+                .py(SPACE_2H)
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .border_b_1()
                 .border_color(t.border)
                 .child(ui::icon(Icon::Git, 13.).text_color(t.text_tertiary))
@@ -161,7 +161,7 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .p(px(6.))
+                .p(SPACE_1H)
                 .children(rows),
         )
         .into_any_element()

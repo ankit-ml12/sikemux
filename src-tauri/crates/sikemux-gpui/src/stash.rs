@@ -16,7 +16,10 @@ use serde_json::{json, Value};
 
 use crate::icons::Icon;
 use crate::picture::{Picture, Remote};
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4,
+    SPACE_5, SPACE_6, TEXT_2XS_H, TEXT_XS, TEXT_XS_H,
+};
 use crate::ui::{self, IconButton};
 use crate::workbench::Workbench;
 use sikemux_wire::chat::SentContext;
@@ -473,7 +476,7 @@ pub fn tray(
         div()
             .id(id)
             .cursor_pointer()
-            .text_size(theme::ui_text(12.))
+            .text_size(theme::ui_text(TEXT_XS))
             .font_weight(FontWeight::MEDIUM)
             .text_color(t.text_secondary)
             .hover(move |link| link.text_color(t.text_primary))
@@ -498,11 +501,11 @@ pub fn tray(
         ))
     };
     let head = div()
-        .px(px(6.))
-        .pb(px(8.))
+        .px(SPACE_1H)
+        .pb(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(ui::icon(Icon::Stack, 13.).text_color(t.text_tertiary))
         .child(
             ui::text("STASH", 10.5, FontWeight::SEMIBOLD)
@@ -535,8 +538,8 @@ pub fn tray(
             (true, false) => "Nothing in your Stash matches.",
         };
         div()
-            .py(px(14.))
-            .text_size(theme::ui_text(12.))
+            .py(SPACE_3H)
+            .text_size(theme::ui_text(TEXT_XS))
             .text_color(t.text_tertiary)
             .text_center()
             .child(words)
@@ -557,7 +560,7 @@ pub fn tray(
             .overflow_y_scroll()
             .flex()
             .flex_col()
-            .gap(px(2.))
+            .gap(SPACE_0)
             .children(rows)
             .into_any_element()
     };
@@ -565,16 +568,16 @@ pub fn tray(
         let agent = agent.to_owned();
         div()
             .id("stash-tray-prompt")
-            .mt(px(8.))
-            .mx(px(6.))
+            .mt(SPACE_2)
+            .mx(SPACE_1H)
             .pt(px(9.))
             .border_t_1()
             .border_color(t.line)
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .cursor_pointer()
-            .text_size(theme::ui_text(12.))
+            .text_size(theme::ui_text(TEXT_XS))
             .text_color(t.text_secondary)
             .hover(move |row| row.text_color(t.text_primary))
             .on_click(cx.listener(move |bench, _, _, cx| {
@@ -587,8 +590,8 @@ pub fn tray(
             .child(ui::kbd("⌘S", cx))
     };
     div()
-        .px(px(8.))
-        .py(px(12.))
+        .px(SPACE_2)
+        .py(SPACE_3)
         .flex()
         .flex_col()
         .child(head)
@@ -827,7 +830,7 @@ fn tray_row(
     let pages = (!said.pages.is_empty()).then(|| pages_chip(bench, &said, &t));
     let chips = (!said.files.is_empty() || pages.is_some()).then(|| {
         div()
-            .pt(px(4.))
+            .pt(SPACE_1)
             .flex()
             .flex_wrap()
             .gap(px(5.))
@@ -840,8 +843,8 @@ fn tray_row(
         .id(("stash-tray-row", index))
         .flex()
         .items_start()
-        .gap(px(12.))
-        .p(px(8.))
+        .gap(SPACE_3)
+        .p(SPACE_2)
         .rounded(theme::RADIUS_2)
         .cursor_pointer()
         .when(selected, |row| row.bg(t.surface_chosen))
@@ -856,7 +859,7 @@ fn tray_row(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(words)
                 .children(under)
                 .children(chips),
@@ -864,10 +867,10 @@ fn tray_row(
         .child(
             div()
                 .flex_none()
-                .pt(px(2.))
+                .pt(SPACE_0)
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .when(new, |aside| {
                     aside.child(
                         div()
@@ -932,7 +935,7 @@ fn sentence(
     let pill_line = |pill: Div| {
         pill.h(theme::ui_text(LINE - 3.))
             .max_w(px(PILL_WIDEST))
-            .text_size(theme::ui_text(12.))
+            .text_size(theme::ui_text(TEXT_XS))
     };
     let laid = shown.iter().enumerate().map(|(at, piece)| {
         let held = matches!(
@@ -1098,7 +1101,7 @@ fn square(bench: &Workbench, item: &Value, said: &Said, t: &Tokens, cx: &App) ->
                 .absolute()
                 .right(px(2.))
                 .bottom(px(2.))
-                .px(px(4.))
+                .px(SPACE_1)
                 .rounded(theme::RADIUS_1)
                 .bg(gpui_kit::black().opacity(0.6))
                 .text_size(theme::ui_text(9.5))
@@ -1113,13 +1116,13 @@ fn square(bench: &Workbench, item: &Value, said: &Said, t: &Tokens, cx: &App) ->
 fn chip(t: &Tokens) -> Div {
     div()
         .h(px(22.))
-        .px(px(6.))
+        .px(SPACE_1H)
         .flex()
         .items_center()
         .gap(px(5.))
         .rounded(theme::RADIUS_1)
         .bg(t.surface_chosen)
-        .text_size(theme::ui_text(11.5))
+        .text_size(theme::ui_text(TEXT_2XS_H))
         .text_color(t.text_secondary)
         .whitespace_nowrap()
 }
@@ -1138,7 +1141,7 @@ fn file_chip(file: &Value, t: &Tokens) -> Div {
         .children(kind.map(|kind| {
             div()
                 .h(px(16.))
-                .px(px(4.))
+                .px(SPACE_1)
                 .flex()
                 .items_center()
                 .rounded(px(3.))
@@ -1216,7 +1219,7 @@ fn prompt_preview(
         .p(px(inset))
         .flex()
         .flex_col()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(
             div()
                 .flex_1()
@@ -1229,7 +1232,7 @@ fn prompt_preview(
         )
         .when(!files.is_empty(), |preview| {
             preview.child(
-                div().flex_none().flex().gap(px(4.)).children(
+                div().flex_none().flex().gap(SPACE_1).children(
                     files
                         .iter()
                         .take(6)
@@ -1248,17 +1251,17 @@ pub fn pane(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let count = stash.items.len();
     let head = div()
         .flex_none()
-        .px(px(24.))
-        .pt(px(20.))
-        .pb(px(14.))
+        .px(SPACE_6)
+        .pt(SPACE_5)
+        .pb(SPACE_3H)
         .flex()
         .flex_col()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(ui::icon(Icon::Stack, 15.).text_color(t.text_secondary))
                 .child(ui::text("Stash", 15., FontWeight::SEMIBOLD).text_color(t.text_primary))
                 .when(stash.signed_in && count > 0, |head| {
@@ -1291,8 +1294,8 @@ pub fn pane(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .px(px(24.))
-            .pb(px(24.))
+            .px(SPACE_6)
+            .pb(SPACE_6)
             .child(grid(cards, columns))
             .into_any_element()
     };
@@ -1303,7 +1306,7 @@ pub fn pane(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 .flex()
                 .flex_col()
                 .child(head)
-                .child(div().h(px(1.)).mx(px(24.)).mb(px(16.)).bg(t.line))
+                .child(div().h(px(1.)).mx(SPACE_6).mb(SPACE_4).bg(t.line))
                 .child(body),
         )
         .into_any_element()
@@ -1388,12 +1391,12 @@ fn empty(signed_in: bool, t: &Tokens) -> Div {
         .flex_col()
         .items_center()
         .justify_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .pb(px(64.))
         .child(
             div()
                 .size(px(40.))
-                .mb(px(6.))
+                .mb(SPACE_1H)
                 .flex()
                 .items_center()
                 .justify_center()
@@ -1407,7 +1410,7 @@ fn empty(signed_in: bool, t: &Tokens) -> Div {
         .child(
             div()
                 .max_w(px(340.))
-                .text_size(theme::ui_text(12.5))
+                .text_size(theme::ui_text(TEXT_XS_H))
                 .line_height(theme::ui_text(18.))
                 .text_color(t.text_tertiary)
                 .text_center()
@@ -1433,7 +1436,7 @@ fn card(bench: &Workbench, at: usize, item: &Value, cx: &mut Context<Workbench>)
         .min_w_0()
         .flex()
         .flex_col()
-        .gap(px(2.))
+        .gap(SPACE_0)
         .when(
             !matches!(item["kind"].as_str(), Some("text" | "prompt")),
             |words| {
@@ -1451,11 +1454,11 @@ fn card(bench: &Workbench, at: usize, item: &Value, cx: &mut Context<Workbench>)
         );
     let body = match compact {
         true => div()
-            .px(px(12.))
-            .pt(px(12.))
+            .px(SPACE_3)
+            .pt(SPACE_3)
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(favicon(bench, item, &t, cx))
             .child(words.children(note.map(|note| {
                 ui::text(note, 11.5, FontWeight::NORMAL)
@@ -1463,7 +1466,7 @@ fn card(bench: &Workbench, at: usize, item: &Value, cx: &mut Context<Workbench>)
                     .text_color(t.text_secondary)
                     .truncate()
             }))),
-        false => div().px(px(12.)).pt(px(10.)).child(
+        false => div().px(SPACE_3).pt(SPACE_2H).child(
             words.child(
                 ui::text(note.unwrap_or_default(), 11.5, FontWeight::NORMAL)
                     .h(px(19.))
@@ -1562,7 +1565,7 @@ fn preview(bench: &Workbench, item: &Value, t: &Tokens, cx: &App) -> AnyElement 
             .flex()
             .flex_col()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(glyph(item, 26., cx))
             .children(site.map(|site| {
                 ui::text(site, 10.5, FontWeight::MEDIUM)
@@ -1581,12 +1584,12 @@ fn preview(bench: &Workbench, item: &Value, t: &Tokens, cx: &App) -> AnyElement 
         return frame
             .items_start()
             .justify_start()
-            .p(px(12.))
+            .p(SPACE_3)
             .child(
                 div()
                     .h_full()
                     .overflow_hidden()
-                    .text_size(theme::ui_text(12.))
+                    .text_size(theme::ui_text(TEXT_XS))
                     .line_height(theme::ui_text(17.))
                     .text_color(t.text_secondary)
                     .child(text),
@@ -1686,7 +1689,7 @@ fn actions(
             div()
                 .flex()
                 .items_center()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     button()
                         .tooltip(format!("Add to {name}"))
@@ -1721,12 +1724,12 @@ fn actions(
         _ => Icon::Eye,
     };
     div()
-        .px(px(8.))
-        .pt(px(10.))
-        .pb(px(8.))
+        .px(SPACE_2)
+        .pt(SPACE_2H)
+        .pb(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(2.))
+        .gap(SPACE_0)
         .child(add)
         .child(div().flex_1())
         .child(

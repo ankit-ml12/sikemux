@@ -11,7 +11,7 @@ use gpui_kit::{
 use serde_json::json;
 
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_2, SPACE_2H, SPACE_3, TEXT_SM};
 use crate::ui;
 use crate::workbench::{Strip, Workbench};
 
@@ -200,9 +200,9 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
             .id(("switcher-place", place))
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .h(px(40.))
-            .px(px(8.))
+            .px(SPACE_2)
             .rounded(theme::RADIUS_2)
             .when(chosen, |row| row.bg(t.surface_chosen))
             .on_click(cx.listener(move |bench, _, _, cx| {
@@ -224,7 +224,7 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                     .child(
                         div()
                             .truncate()
-                            .text_size(crate::theme::ui_text(13.))
+                            .text_size(crate::theme::ui_text(TEXT_SM))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(if chosen {
                                 t.text_primary
@@ -261,7 +261,7 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                             .flex()
                             .justify_between()
                             .px(px(2. * ui::FLOAT_INSET))
-                            .py(px(10.))
+                            .py(SPACE_2H)
                             .border_b_1()
                             .border_color(t.border)
                             .child(ui::meta("Switch project", cx))
@@ -279,9 +279,9 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                     .child(
                         div()
                             .flex()
-                            .gap(px(12.))
+                            .gap(SPACE_3)
                             .px(px(2. * ui::FLOAT_INSET))
-                            .py(px(8.))
+                            .py(SPACE_2)
                             .border_t_1()
                             .border_color(t.border)
                             .child(ui::kbd(format!("{held}`"), cx))

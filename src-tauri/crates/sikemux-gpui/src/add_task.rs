@@ -6,13 +6,13 @@ use std::rc::Rc;
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::WindowExt;
 use gpui_kit::{
-    div, px, AnyElement, AppContext, Context, Entity, FontWeight, IntoElement, ParentElement,
+    div, AnyElement, AppContext, Context, Entity, FontWeight, IntoElement, ParentElement,
     SharedString, Styled, Window,
 };
 use serde_json::{json, Value};
 
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_1H, SPACE_3, TEXT_2XS};
 use crate::toast;
 use crate::ui::{self, dialog, Segmented};
 use crate::workbench::Workbench;
@@ -95,8 +95,8 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         (Icon::User, SharedString::from("Only me")),
     ];
     let body = dialog::marked_body()
-        .pt(px(12.))
-        .gap(px(12.))
+        .pt(SPACE_3)
+        .gap(SPACE_3)
         .child(dialog::field("Name", &adding.label, false, cx))
         .child(dialog::field("Command", &adding.command, true, cx))
         .child(dialog::field("Folder", &adding.folder, false, cx))
@@ -104,7 +104,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             div()
                 .flex()
                 .flex_col()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(ui::text("Save it", 12., FontWeight::MEDIUM).text_color(t.text_secondary))
                 .child(
                     Segmented::new("task-scope", scope, usize::from(!adding.team)).on_select(
@@ -118,7 +118,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 )
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(11.))
+                        .text_size(crate::theme::ui_text(TEXT_2XS))
                         .text_color(t.text_tertiary)
                         .child(note),
                 ),

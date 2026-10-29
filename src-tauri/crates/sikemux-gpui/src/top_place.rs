@@ -12,7 +12,7 @@ use gpui_kit::{
 
 use crate::hosts::HostChoice;
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_0, SPACE_1H, SPACE_2, SPACE_2H, TEXT_XS};
 use crate::ui;
 use crate::workbench::{Strip, Workbench};
 
@@ -128,14 +128,14 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .gap(px(2.))
+        .gap(SPACE_0)
         .child(host)
         .children(
             project
                 .map(|project| {
                     [
                         div()
-                            .px(px(2.))
+                            .px(SPACE_0)
                             .child(ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary))
                             .into_any_element(),
                         project,
@@ -163,12 +163,12 @@ fn set_up_offer(bench: &Workbench, alias: &str, cx: &mut Context<Workbench>) -> 
             .disabled(running.is_some())
             .h(px(26.))
             .max_w(px(260.))
-            .px(px(10.))
+            .px(SPACE_2H)
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .rounded_full()
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .font_weight(FontWeight::MEDIUM)
             .text_color(if running.is_some() {
                 t.text_tertiary
@@ -192,12 +192,12 @@ fn pill(id: &'static str, shown: Choice, cx: &App) -> BaseButton {
         .accessibility_label(shown.label.clone())
         .h(px(26.))
         .max_w(px(220.))
-        .px(px(10.))
+        .px(SPACE_2H)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .rounded_full()
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .font_weight(FontWeight::MEDIUM)
         .text_color(t.text_primary)
         .hover(move |style| style.bg(t.surface_hover))

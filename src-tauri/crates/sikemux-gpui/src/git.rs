@@ -22,7 +22,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::core::{request, Ask};
 use crate::editor::OpenAt;
 use crate::syntax::{self, LineRuns};
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_2, SPACE_3, TEXT_2XS};
 use crate::ui;
 
 /// What the Git tab shows and holds: the local workbench pane or one of the code host's areas.
@@ -434,7 +434,7 @@ pub fn row(
                                 div()
                                     .ml(look.advance * 4.)
                                     .font_family(theme::UI)
-                                    .text_size(crate::theme::ui_text(11.))
+                                    .text_size(crate::theme::ui_text(TEXT_2XS))
                                     .text_color(look.number)
                                     .child(note),
                             )
@@ -606,8 +606,8 @@ impl Render for DiffView {
         let t = Tokens::get(cx).clone();
         let message = |text: String, color| {
             div()
-                .p(px(12.))
-                .text_size(crate::theme::ui_text(11.))
+                .p(SPACE_3)
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(color)
                 .child(text)
                 .into_any_element()
@@ -651,7 +651,7 @@ impl Render for DiffView {
         div()
             .id("diff")
             .size_full()
-            .py(px(8.))
+            .py(SPACE_2)
             .font_family(theme::MONO)
             .text_size(CODE_SIZE)
             .line_height(ROW_HEIGHT)

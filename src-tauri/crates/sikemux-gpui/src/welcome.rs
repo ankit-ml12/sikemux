@@ -17,7 +17,10 @@ use crate::core;
 use crate::experience::{self, Experience};
 use crate::icons::Icon;
 use crate::keymap;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_3H, SPACE_4, SPACE_6,
+    TEXT_2XS, TEXT_LG, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -195,9 +198,9 @@ pub fn render(
                 .track_focus(focus)
                 .flex()
                 .items_center()
-                .gap(px(14.))
-                .px(px(16.))
-                .py(px(14.))
+                .gap(SPACE_3H)
+                .px(SPACE_4)
+                .py(SPACE_3H)
                 .border_1()
                 .border_color(if focused {
                     mix(t.accent, t.border, 0.55)
@@ -254,7 +257,7 @@ pub fn render(
                         .bg(t.surface_sunken)
                         .child(
                             ui::kbd(keys, cx)
-                                .text_size(crate::theme::ui_text(12.))
+                                .text_size(crate::theme::ui_text(TEXT_XS))
                                 .when(focused, |keys| keys.text_color(t.text_primary)),
                         )
                 }))
@@ -273,7 +276,7 @@ pub fn render(
                 .max_w(relative(0.9))
                 .mx_auto()
                 .pt(px(48.))
-                .pb(px(24.))
+                .pb(SPACE_6)
                 .flex()
                 .flex_col()
                 .child(ui::icon(Icon::Logo, 64.).ml(px(-15.)).text_color(t.accent))
@@ -292,16 +295,16 @@ pub fn render(
                 )
                 .child(
                     div()
-                        .mt(px(12.))
+                        .mt(SPACE_3)
                         .mb(px(32.))
-                        .text_size(crate::theme::ui_text(16.))
+                        .text_size(crate::theme::ui_text(TEXT_LG))
                         .line_height(relative(1.5))
                         .text_color(t.text_secondary)
                         .child(
                             "Projects, terminals and coding agents in one keyboard-first window.",
                         ),
                 )
-                .child(div().flex().flex_col().gap(px(4.)).children(moves))
+                .child(div().flex().flex_col().gap(SPACE_1).children(moves))
                 .child(found(bench, this, cx)),
         );
     let skip = {
@@ -311,7 +314,7 @@ pub fn render(
             .ml_auto()
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .cursor_pointer()
             .hover(|skip| skip.text_color(t.text_primary))
             .on_mouse_down(MouseButton::Left, keep_press)
@@ -319,7 +322,7 @@ pub fn render(
             .child(
                 div()
                     .px(px(5.))
-                    .py(px(2.))
+                    .py(SPACE_0)
                     .border_1()
                     .border_color(t.border)
                     .rounded(theme::RADIUS_1)
@@ -373,9 +376,9 @@ pub fn render(
                 .items_center()
                 .justify_between()
                 .px(px(22.))
-                .py(px(14.))
+                .py(SPACE_3H)
                 .font_family(theme::KBD)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.text_tertiary)
                 .when(welcome.git_missing, |foot| {
                     foot.child(
@@ -413,8 +416,8 @@ fn found(bench: &Workbench, this: &Entity<Workbench>, cx: &App) -> impl IntoElem
     let t = Tokens::get(cx).clone();
     let muted = |text: &'static str| {
         div()
-            .mt(px(12.))
-            .text_size(crate::theme::ui_text(12.))
+            .mt(SPACE_3)
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .text_color(t.text_tertiary)
             .child(text)
     };
@@ -425,10 +428,10 @@ fn found(bench: &Workbench, this: &Entity<Workbench>, cx: &App) -> impl IntoElem
                 .into_any_element()
         }
         Some(found) => div()
-            .mt(px(12.))
+            .mt(SPACE_3)
             .flex()
             .flex_wrap()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .children(found.iter().map(|agent| chip(bench, agent, this, cx)))
             .into_any_element(),
     };
@@ -463,14 +466,14 @@ fn chip(bench: &Workbench, agent: &Found, this: &Entity<Workbench>, cx: &App) ->
     div()
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .pl(px(9.))
         .pr(px(11.))
         .py(px(7.))
         .border_1()
         .border_color(t.border)
         .rounded(theme::RADIUS_2)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .map(|chip| match missing {
             true => chip.border_dashed().text_color(t.text_tertiary),
             false => chip
@@ -493,7 +496,7 @@ fn chip(bench: &Workbench, agent: &Found, this: &Entity<Workbench>, cx: &App) ->
                 .child(agent.label.clone())
                 .children(status.map(|status| {
                     div()
-                        .text_size(crate::theme::ui_text(11.))
+                        .text_size(crate::theme::ui_text(TEXT_2XS))
                         .text_color(if signed_out { t.warn } else { t.text_tertiary })
                         .child(status)
                 })),
@@ -503,14 +506,14 @@ fn chip(bench: &Workbench, agent: &Found, this: &Entity<Workbench>, cx: &App) ->
             div()
                 .id(SharedString::from(format!("welcome-agent-{}", agent.kind)))
                 .h(px(22.))
-                .ml(px(4.))
-                .px(px(8.))
+                .ml(SPACE_1)
+                .px(SPACE_2)
                 .flex()
                 .items_center()
                 .border_1()
                 .border_color(t.border)
                 .rounded(theme::RADIUS_2)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.text_primary)
                 .cursor_pointer()
                 .hover(|button| button.bg(t.surface_hover))

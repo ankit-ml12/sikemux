@@ -17,7 +17,7 @@ use super::Chat;
 use crate::core::ChatAsk;
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_1H, SPACE_2, SPACE_3, TEXT_2XS, TEXT_SM};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
 
@@ -92,7 +92,7 @@ impl Render for Activity {
         let words = div()
             .relative()
             .min_w_0()
-            .text_size(crate::theme::ui_text(13.))
+            .text_size(crate::theme::ui_text(TEXT_SM))
             .child(div().opacity(shown).child(crate::ui::shimmer::shimmer(
                 format!("activity:{}", cx.entity_id()),
                 label,
@@ -114,7 +114,7 @@ impl Render for Activity {
                 .pb(px(30.))
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(match &self.agent {
                     Some(agent) => agent.mark(21., cx),
                     None => ui::mark(&self.provider, 21.),
@@ -127,7 +127,7 @@ impl Render for Activity {
                     )
                 }),
         )
-        .pt(px(12.))
+        .pt(SPACE_3)
         .into_any_element()
     }
 }
@@ -295,16 +295,16 @@ pub(super) fn trouble(
     let line = |icon: Icon, said: String| {
         div()
             .px(px(22.))
-            .py(px(6.))
+            .py(SPACE_1H)
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(ui::icon(icon, 14.).text_color(t.danger))
             .child(
                 div()
                     .min_w_0()
-                    .text_size(crate::theme::ui_text(13.))
+                    .text_size(crate::theme::ui_text(TEXT_SM))
                     .text_color(t.text_secondary)
                     .child(said),
             )
@@ -376,7 +376,7 @@ pub(super) fn trouble(
         .and_then(|failure| failure.details.clone())
         .filter(|_| network);
     let details = details.map(|details| {
-        div().px(px(44.)).pb(px(6.)).child(
+        div().px(px(44.)).pb(SPACE_1H).child(
             ui::mono(details, 10.5, cx)
                 .whitespace_normal()
                 .text_color(t.text_tertiary),
@@ -420,11 +420,11 @@ pub(super) fn connection_note(
         .flex_wrap()
         .items_center()
         .justify_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(ui::icon(icon, 14.).text_color(t.text_tertiary))
         .child(
             div()
-                .text_size(crate::theme::ui_text(13.))
+                .text_size(crate::theme::ui_text(TEXT_SM))
                 .text_color(t.text_secondary)
                 .child(said),
         )
@@ -643,7 +643,7 @@ pub(super) fn plan(
         .flex()
         .items_center()
         .gap(px(5.))
-        .text_size(crate::theme::ui_text(11.))
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .text_color(t.text_disabled)
         .cursor_pointer()
         .child(motion::turn(
@@ -671,10 +671,10 @@ pub(super) fn plan(
         }
         div()
             .id("chat-plan-text")
-            .mt(px(8.))
+            .mt(SPACE_2)
             .max_h(px(420.))
             .overflow_y_scroll()
-            .px(px(12.))
+            .px(SPACE_3)
             .py(px(11.))
             .border_1()
             .border_color(t.line_soft)
@@ -689,7 +689,7 @@ pub(super) fn plan(
         centred(
             div()
                 .px(px(22.))
-                .py(px(6.))
+                .py(SPACE_1H)
                 .flex()
                 .flex_col()
                 .child(summary)

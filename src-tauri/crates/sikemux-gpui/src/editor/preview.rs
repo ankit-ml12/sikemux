@@ -20,7 +20,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::{Document, FileKey, OpenAt};
 use crate::core::Ask;
 use crate::picture::{Picture, Remote};
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_0, SPACE_2, TEXT_XS};
 use crate::ui::{self, FindBar};
 use crate::workbench::Workbench;
 
@@ -114,7 +114,7 @@ pub(super) fn toolbar(
         let chosen = mode == shows;
         div()
             .id(id)
-            .px(px(8.))
+            .px(SPACE_2)
             .h(px(20.))
             .flex()
             .items_center()
@@ -137,12 +137,12 @@ pub(super) fn toolbar(
         .flex()
         .justify_end()
         .items_center()
-        .gap(px(2.))
+        .gap(SPACE_0)
         .h(px(28.))
-        .px(px(8.))
+        .px(SPACE_2)
         .border_b_1()
         .border_color(t.border)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .child(choice("markdown-source", "Source", Mode::Source))
         .child(choice(
             "markdown-preview",

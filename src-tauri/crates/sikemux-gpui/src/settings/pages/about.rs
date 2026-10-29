@@ -9,6 +9,7 @@ use sikemux_wire::protocol::UpdateChannel;
 
 use crate::icons::Icon;
 use crate::settings::rows;
+use crate::theme::{SPACE_2, SPACE_3H, SPACE_4};
 use crate::toast;
 use crate::ui;
 use crate::whats_new::RELEASES;
@@ -126,8 +127,8 @@ pub fn render(
         let (news, welcome, diagnostics) = (this.clone(), this.clone(), this.clone());
         div()
             .flex()
-            .gap(px(8.))
-            .p(px(16.))
+            .gap(SPACE_2)
+            .p(SPACE_4)
             .child(
                 ui::Button::new("help-whats-new", "What’s New", ui::Variant::Outline).on_click(
                     move |_, window, cx| {
@@ -170,8 +171,8 @@ pub fn render(
     let app = div()
         .flex()
         .items_center()
-        .gap(px(14.))
-        .p(px(16.))
+        .gap(SPACE_3H)
+        .p(SPACE_4)
         .child(
             div()
                 .size(px(44.))

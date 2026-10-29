@@ -8,7 +8,7 @@ use gpui_kit::{
 use smallvec::SmallVec;
 
 use super::{mark_box, meta, text};
-use crate::theme::{Tokens, RADIUS_3};
+use crate::theme::{Tokens, RADIUS_3, SPACE_0, SPACE_2, SPACE_3H, TEXT_XS};
 
 /// How far an agent pane's contents sit inside its frame, as on the Mac.
 pub const AGENT_INSET: f32 = 6.;
@@ -104,7 +104,14 @@ impl RenderOnce for PaneHeader {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx);
         let (primary, border) = (t.text_primary, t.border);
-        let rule = || div().flex_none().w(px(1.)).h(px(14.)).mx(px(2.)).bg(border);
+        let rule = || {
+            div()
+                .flex_none()
+                .w(px(1.))
+                .h(px(14.))
+                .mx(SPACE_0)
+                .bg(border)
+        };
         let has_actions = !self.actions.is_empty();
         div()
             .flex_none()
@@ -112,9 +119,9 @@ impl RenderOnce for PaneHeader {
             .h(px(44.))
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .pl(px(18.))
-            .pr(px(14.))
+            .pr(SPACE_3H)
             .children(self.mark.map(|mark| mark_box(18., mark).flex_none()))
             .children(self.title_view.or_else(|| {
                 let double_click = self.on_title_double_click;
@@ -137,7 +144,7 @@ impl RenderOnce for PaneHeader {
             }))
             .children(self.name.map(|name| {
                 meta(name, cx)
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .min_w_0()
                     .truncate()
             }))

@@ -11,7 +11,9 @@ use sikemux_wire::protocol::{CustomCommand, CustomCommandPlacement};
 
 use crate::icons::Icon;
 use crate::settings::rows;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_2, SPACE_2H, SPACE_3H, SPACE_4, TEXT_2XS_H, TEXT_SM, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -190,8 +192,8 @@ pub fn render(
                     .id(SharedString::from(format!("action-{}", command.id)))
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
-                    .px(px(16.))
+                    .gap(SPACE_0)
+                    .px(SPACE_4)
                     .py(px(9.))
                     .border_b_1()
                     .border_color(t.line_soft)
@@ -203,13 +205,13 @@ pub fn render(
                     )
                     .child(
                         div()
-                            .text_size(crate::theme::ui_text(13.))
+                            .text_size(crate::theme::ui_text(TEXT_SM))
                             .text_color(t.text_primary)
                             .child(command.title.clone()),
                     )
                     .child(
                         div()
-                            .text_size(crate::theme::ui_text(11.5))
+                            .text_size(crate::theme::ui_text(TEXT_2XS_H))
                             .text_color(t.text_tertiary)
                             .child(format!(
                                 "{} · {contexts}",
@@ -252,7 +254,7 @@ pub fn render(
     let contexts = div()
         .flex()
         .flex_wrap()
-        .gap(px(14.))
+        .gap(SPACE_3H)
         .children(CONTEXTS.iter().map(|context| {
             let this = this.clone();
             Checkbox::new(SharedString::from(format!("action-context-{context}")))
@@ -275,25 +277,25 @@ pub fn render(
         div()
             .flex()
             .flex_col()
-            .gap(px(8.))
-            .px(px(16.))
-            .py(px(10.))
+            .gap(SPACE_2)
+            .px(SPACE_4)
+            .py(SPACE_2H)
             .border_b_1()
             .border_color(t.line_soft)
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .child(
                         div()
-                            .text_size(crate::theme::ui_text(13.))
+                            .text_size(crate::theme::ui_text(TEXT_SM))
                             .text_color(t.text_primary)
                             .child(label),
                     )
                     .child(
                         div()
-                            .text_size(crate::theme::ui_text(11.5))
+                            .text_size(crate::theme::ui_text(TEXT_2XS_H))
                             .text_color(t.text_tertiary)
                             .child(about),
                     ),
@@ -307,8 +309,8 @@ pub fn render(
     let buttons = div()
         .flex()
         .justify_end()
-        .gap(px(8.))
-        .p(px(16.))
+        .gap(SPACE_2)
+        .p(SPACE_4)
         .child(
             ui::Button::new("action-new", "New", ui::Variant::Outline).on_click(
                 move |_, window, cx| fresh.update(cx, |bench, cx| load(bench, None, window, cx)),
@@ -356,7 +358,7 @@ pub fn render(
                 .border_color(t.line)
                 .rounded(theme::RADIUS_2)
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .child(Textarea::new(&fields.command).h(px(96.)).bordered(false))
                 .into_any_element(),
         ))

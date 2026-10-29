@@ -14,7 +14,9 @@ use gpui_kit::{
 use crate::icons::Icon;
 use crate::keymap::{self, Shortcut};
 use crate::settings::rows;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, TEXT_2XS, TEXT_3XS_H, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -208,14 +210,14 @@ fn keycap(
         .id(SharedString::from(format!("keycap-{id}")))
         .min_w(px(104.))
         .h(px(26.))
-        .px(px(8.))
+        .px(SPACE_2)
         .flex()
         .items_center()
         .justify_center()
         .border_1()
         .rounded(theme::RADIUS_2)
         .font_family(theme::MONO)
-        .text_size(crate::theme::ui_text(11.))
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .cursor_pointer()
         .map(|cap| match (listening, keys.is_some()) {
             (true, _) => cap
@@ -308,7 +310,7 @@ pub fn render(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(4.))
+                    .gap(SPACE_1)
                     .children(reset)
                     .child(keycap(
                         shortcut,
@@ -328,19 +330,19 @@ pub fn render(
                     div()
                         .flex()
                         .items_baseline()
-                        .gap(px(6.))
-                        .px(px(16.))
-                        .pt(px(12.))
-                        .pb(px(4.))
+                        .gap(SPACE_1H)
+                        .px(SPACE_4)
+                        .pt(SPACE_3)
+                        .pb(SPACE_1)
                         .child(
                             div()
-                                .text_size(crate::theme::ui_text(11.))
+                                .text_size(crate::theme::ui_text(TEXT_2XS))
                                 .text_color(t.text_secondary)
                                 .child(*category),
                         )
                         .child(
                             div()
-                                .text_size(crate::theme::ui_text(10.5))
+                                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                                 .text_color(t.text_tertiary)
                                 .child(count.to_string()),
                         ),
@@ -371,8 +373,8 @@ pub fn render(
     let toolbar = div()
         .flex()
         .items_center()
-        .gap(px(8.))
-        .p(px(16.))
+        .gap(SPACE_2)
+        .p(SPACE_4)
         .border_b_1()
         .border_color(t.line_soft)
         .child(
@@ -388,12 +390,12 @@ pub fn render(
     let status = div()
         .flex()
         .items_center()
-        .gap(px(8.))
-        .px(px(16.))
-        .py(px(8.))
+        .gap(SPACE_2)
+        .px(SPACE_4)
+        .py(SPACE_2)
         .border_b_1()
         .border_color(t.line_soft)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .text_color(t.text_secondary)
         .child(
             div()

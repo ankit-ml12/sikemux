@@ -3,6 +3,10 @@
 
 use super::*;
 
+use crate::theme::{
+    SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_3XS, TEXT_SM, TEXT_XS, TEXT_XS_H,
+};
+
 /// A question an agent put to the person, as the core's `questions` call lists it.
 #[derive(Clone)]
 pub struct Question {
@@ -113,11 +117,11 @@ pub(super) fn waiting_answers(
         div()
             .px(px(11.))
             .pt(px(3.))
-            .pb(px(6.))
+            .pb(SPACE_1H)
             .flex()
             .items_center()
-            .gap(px(8.))
-            .text_size(crate::theme::ui_text(12.))
+            .gap(SPACE_2)
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .child(
                 div()
                     .flex_1()
@@ -167,11 +171,11 @@ pub(super) fn questions(
         BaseButton::new("questions-unfold")
             .w_full()
             .px(px(11.))
-            .py(px(6.))
+            .py(SPACE_1H)
             .flex()
             .items_center()
-            .gap(px(6.))
-            .text_size(crate::theme::ui_text(10.))
+            .gap(SPACE_1H)
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .text_color(t.text_disabled)
             .on_click(cx.listener(move |bench, _, _, cx| {
                 bench.answer(
@@ -205,7 +209,7 @@ pub(super) fn questions(
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(crate::theme::ui_text(11.))
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .child(peek),
             )
             .child(ui::icon(Icon::Chevron, 10.).text_color(t.text_disabled))
@@ -242,7 +246,7 @@ pub(super) fn asking(
             } else {
                 div()
                     .font_family(theme::MONO)
-                    .text_size(crate::theme::ui_text(10.))
+                    .text_size(crate::theme::ui_text(TEXT_3XS))
                     .text_color(t.text_disabled)
                     .child((ix + 1).to_string())
                     .into_any_element()
@@ -254,9 +258,9 @@ pub(super) fn asking(
                 .min_w_0()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .rounded(theme::RADIUS_2)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .map(|tab| {
                     if on {
                         tab.bg(t.surface_chosen).text_color(t.text_primary)
@@ -291,12 +295,12 @@ pub(super) fn asking(
         BaseButton::new("questions-send")
             .disabled(!ready || sending)
             .h(px(22.))
-            .px(px(8.))
+            .px(SPACE_2)
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .rounded(theme::RADIUS_2)
-            .text_size(crate::theme::ui_text(11.))
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .map(|send| {
                 if ready {
                     send.bg(t.surface_chosen).text_color(t.text_primary)
@@ -313,7 +317,7 @@ pub(super) fn asking(
             .child("Send")
             .child(
                 div()
-                    .pl(px(6.))
+                    .pl(SPACE_1H)
                     .border_l_1()
                     .border_color(t.line)
                     .text_size(crate::theme::ui_text(9.5))
@@ -326,11 +330,11 @@ pub(super) fn asking(
         BaseButton::new("question-fine")
             .disabled(sending)
             .h(px(22.))
-            .px(px(8.))
+            .px(SPACE_2)
             .flex()
             .items_center()
             .rounded(theme::RADIUS_2)
-            .text_size(crate::theme::ui_text(11.))
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .bg(t.surface_chosen)
             .text_color(t.text_primary)
             .on_click(cx.listener(move |bench, _, _, cx| {
@@ -373,15 +377,15 @@ pub(super) fn asking(
     let head = div()
         .flex()
         .items_center()
-        .gap(px(4.))
-        .px(px(6.))
-        .pt(px(6.))
+        .gap(SPACE_1)
+        .px(SPACE_1H)
+        .pt(SPACE_1H)
         .child(
             div()
                 .flex_1()
                 .min_w_0()
                 .flex()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .overflow_hidden()
                 .children(tabs),
         )
@@ -401,9 +405,9 @@ pub(super) fn asking(
         ..Default::default()
     };
     let text = div()
-        .px(px(12.))
-        .pt(px(10.))
-        .pb(px(4.))
+        .px(SPACE_3)
+        .pt(SPACE_2H)
+        .pb(SPACE_1)
         .text_size(crate::theme::ui_text(13.5))
         .line_height(relative(1.5))
         .text_color(t.text_primary)
@@ -416,9 +420,9 @@ pub(super) fn asking(
         let lead = format!("{} went on assuming ", current.name);
         let said = format!("{lead}{assumption}");
         div()
-            .px(px(12.))
-            .pb(px(4.))
-            .text_size(crate::theme::ui_text(12.5))
+            .px(SPACE_3)
+            .pb(SPACE_1)
+            .text_size(crate::theme::ui_text(TEXT_XS_H))
             .line_height(relative(1.5))
             .text_color(t.text_secondary)
             .child(crate::ui::selectable::selectable(
@@ -455,7 +459,7 @@ pub(super) fn asking(
                 .flex()
                 .flex_wrap()
                 .items_center()
-                .gap_x(px(8.))
+                .gap_x(SPACE_2)
                 .child(
                     ui::text(choice.label.clone(), 13., FontWeight::MEDIUM)
                         .line_height(crate::theme::ui_text(19.)),
@@ -468,7 +472,7 @@ pub(super) fn asking(
                 });
             let detail = choice.detail.clone().map(|detail| {
                 div()
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .line_height(relative(1.45))
                     .text_color(t.text_tertiary)
                     .child(detail)
@@ -495,7 +499,7 @@ pub(super) fn asking(
         shown,
     }) = picked.filter(|_| !current.secret)
     {
-        let key = ui::icon(Icon::Pencil, 11.).mt(px(4.)).into_any_element();
+        let key = ui::icon(Icon::Pencil, 11.).mt(SPACE_1).into_any_element();
         let typed = ui::text(shown.clone(), 13., FontWeight::MEDIUM)
             .line_height(crate::theme::ui_text(19.));
         choices.push(
@@ -525,12 +529,12 @@ pub(super) fn asking(
         .when(!choices.is_empty(), |body| {
             body.child(
                 div()
-                    .px(px(12.))
-                    .pt(px(6.))
-                    .pb(px(12.))
+                    .px(SPACE_3)
+                    .pt(SPACE_1H)
+                    .pb(SPACE_3)
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
+                    .gap(SPACE_1)
                     .children(choices),
             )
         })
@@ -550,9 +554,9 @@ pub(super) fn answer_row(
     BaseButton::new(id)
         .w_full()
         .pt(px(7.))
-        .pb(px(8.))
-        .pl(px(4.))
-        .pr(px(8.))
+        .pb(SPACE_2)
+        .pl(SPACE_1)
+        .pr(SPACE_2)
         .flex()
         .items_start()
         .rounded(theme::RADIUS_2)
@@ -577,7 +581,7 @@ pub(super) fn answer_row(
                 .child(key),
         )
         .child(div().flex_1().min_w_0().flex().flex_col().child(body))
-        .children(number.map(|number| div().flex_none().pl(px(8.)).child(number)))
+        .children(number.map(|number| div().flex_none().pl(SPACE_2).child(number)))
 }
 
 /// The ring of a choice on a question that takes one.
@@ -660,7 +664,7 @@ pub(super) fn answered_question(
             .flex()
             .items_center()
             .gap(px(7.))
-            .text_size(crate::theme::ui_text(11.))
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .text_color(t.text_tertiary)
             .child(ui::mark(cli, 14.))
             .child(
@@ -668,7 +672,7 @@ pub(super) fn answered_question(
                     .with_highlights([(0..name.len(), bold)]),
             ),
         None => div()
-            .text_size(crate::theme::ui_text(10.))
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .text_color(t.text_disabled)
             .child("QUESTION"),
     };
@@ -691,12 +695,12 @@ pub(super) fn answered_question(
         .border_color(t.border)
         .rounded(theme::RADIUS_3)
         .bg(t.surface_composer)
-        .child(div().px(px(12.)).pt(px(9.)).child(asked))
+        .child(div().px(SPACE_3).pt(px(9.)).child(asked))
         .child(
             div()
-                .px(px(12.))
-                .pt(px(4.))
-                .pb(px(10.))
+                .px(SPACE_3)
+                .pt(SPACE_1)
+                .pb(SPACE_2H)
                 .text_size(crate::theme::ui_text(13.5))
                 .line_height(relative(1.5))
                 .text_color(t.text_primary)
@@ -704,14 +708,14 @@ pub(super) fn answered_question(
         )
         .child(
             div()
-                .px(px(12.))
-                .py(px(8.))
+                .px(SPACE_3)
+                .py(SPACE_2)
                 .flex()
                 .items_start()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .border_t_1()
                 .border_color(t.border)
-                .text_size(crate::theme::ui_text(13.))
+                .text_size(crate::theme::ui_text(TEXT_SM))
                 .line_height(relative(1.45))
                 .child(
                     ui::icon(icon, 12.)

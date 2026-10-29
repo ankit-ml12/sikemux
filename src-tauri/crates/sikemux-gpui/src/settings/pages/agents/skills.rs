@@ -14,7 +14,9 @@ use serde_json::{json, Value};
 
 use crate::core;
 use crate::settings::rows;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, TEXT_2XS_H, TEXT_SM, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -249,7 +251,7 @@ fn button(
 fn about(text: impl Into<SharedString>, failed: bool, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     div()
-        .text_size(crate::theme::ui_text(11.5))
+        .text_size(crate::theme::ui_text(TEXT_2XS_H))
         .text_color(if failed { t.danger } else { t.text_tertiary })
         .child(text.into())
         .into_any_element()
@@ -260,9 +262,9 @@ fn row(label: String, line: AnyElement, controls: impl IntoElement, t: &Tokens) 
     div()
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(16.))
-        .py(px(10.))
+        .gap(SPACE_3)
+        .px(SPACE_4)
+        .py(SPACE_2H)
         .border_b_1()
         .border_color(t.line_soft)
         .child(
@@ -271,16 +273,16 @@ fn row(label: String, line: AnyElement, controls: impl IntoElement, t: &Tokens) 
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(t.text_primary)
                         .child(label),
                 )
                 .child(line),
         )
-        .child(div().flex().gap(px(8.)).child(controls))
+        .child(div().flex().gap(SPACE_2).child(controls))
 }
 
 pub fn render(
@@ -335,7 +337,7 @@ pub fn render(
         let removing = name.clone();
         let controls = div()
             .flex()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(button(
                 format!("skill-reveal-{name}"),
                 ui::SHOW_IN_FILES,
@@ -372,11 +374,11 @@ pub fn render(
             div()
                 .flex()
                 .flex_col()
-                .gap(px(8.))
-                .p(px(16.))
+                .gap(SPACE_2)
+                .p(SPACE_4)
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(t.text_primary)
                         .child("New skill"),
                 )
@@ -388,14 +390,14 @@ pub fn render(
                         .border_1()
                         .border_color(t.line)
                         .rounded(theme::RADIUS_2)
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .child(Textarea::new(&fields.body).h(px(140.)).bordered(false)),
                 )
                 .child(
                     div()
                         .flex()
                         .justify_end()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .child(button(
                             "skill-cancel".into(),
                             "Cancel",
@@ -421,11 +423,11 @@ pub fn render(
             div()
                 .flex()
                 .flex_col()
-                .gap(px(8.))
-                .p(px(16.))
+                .gap(SPACE_2)
+                .p(SPACE_4)
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(t.text_primary)
                         .child("Install a skill"),
                 )
@@ -433,7 +435,7 @@ pub fn render(
                 .child(
                     div()
                         .flex()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .child(div().flex_1().child(ui::Field::new(&fields.source).mono()))
                         .child(button(
                             "skill-choose".into(),
@@ -451,7 +453,7 @@ pub fn render(
                     div()
                         .flex()
                         .justify_end()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .child(button(
                             "skill-cancel".into(),
                             "Cancel",
@@ -482,7 +484,7 @@ pub fn render(
                 about(line, false, cx),
                 div()
                     .flex()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(button(
                         "skill-install-open".into(),
                         "Install…",
@@ -546,7 +548,7 @@ pub fn render(
                     let moved = path.clone();
                     div()
                         .flex()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .child(button(format!("skill-move-cancel-{path}"), "Cancel", ui::Variant::Outline, false, this, Rc::new(|bench, _, cx| {
                             if let Some(fields) = fields_of(bench) {
                                 fields.moving = None;

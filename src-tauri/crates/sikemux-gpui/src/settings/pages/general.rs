@@ -13,7 +13,7 @@ use sikemux_wire::protocol::{ProjectRoot, MAX_PROJECT_DEPTH};
 use crate::core;
 use crate::icons::Icon;
 use crate::settings::rows;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, TEXT_XS};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -147,7 +147,7 @@ fn stepper(
     div()
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .child(
             ui::IconButton::new(
                 SharedString::from(format!("{id}-less-{key}")),
@@ -161,7 +161,7 @@ fn stepper(
             div()
                 .w(px(18.))
                 .text_center()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_primary)
                 .child(depth.to_string()),
         )
@@ -198,9 +198,9 @@ pub fn render(
         div()
             .flex()
             .items_center()
-            .gap(px(12.))
-            .px(px(16.))
-            .py(px(8.))
+            .gap(SPACE_3)
+            .px(SPACE_4)
+            .py(SPACE_2)
             .border_b_1()
             .border_color(t.line_soft)
             .child(
@@ -209,7 +209,7 @@ pub fn render(
                     .min_w_0()
                     .truncate()
                     .font_family(theme::MONO)
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(t.text_primary)
                     .child(crate::ui::path::tilde(
                         &root.path,
@@ -280,13 +280,13 @@ pub fn render(
         div()
             .flex()
             .flex_col()
-            .gap(px(8.))
-            .p(px(16.))
+            .gap(SPACE_2)
+            .p(SPACE_4)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(div().flex_1().child(ui::Field::new(&fields.path).mono()))
                     .child(stepper(
                         "add-depth",
@@ -356,10 +356,10 @@ pub fn render(
         div()
             .flex()
             .items_center()
-            .gap(px(12.))
-            .px(px(16.))
-            .pt(px(10.))
-            .pb(px(4.))
+            .gap(SPACE_3)
+            .px(SPACE_4)
+            .pt(SPACE_2H)
+            .pb(SPACE_1)
             .border_b_1()
             .border_color(t.line_soft)
             .child(div().flex_1().child(ui::caps("Folder", cx)))
@@ -463,13 +463,13 @@ fn transfer(
     let body = div()
         .flex()
         .flex_col()
-        .gap(px(10.))
-        .p(px(16.))
+        .gap(SPACE_2H)
+        .p(SPACE_4)
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .flex_wrap()
                 .child(
                     ui::Segmented::words(

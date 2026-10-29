@@ -12,7 +12,9 @@ use serde_json::{json, Value};
 
 use crate::editor::OpenAt;
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{
+    Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_XS,
+};
 use crate::toast;
 use crate::ui::{self, IconButton, Variant};
 use crate::workbench::Workbench;
@@ -133,10 +135,10 @@ pub(crate) fn frame(cx: &mut Context<Workbench>) -> gpui_kit::Stateful<gpui_kit:
     ui::float(cx)
         .id("run-card")
         .w(px(380.))
-        .p(px(12.))
+        .p(SPACE_3)
         .flex()
         .flex_col()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .occlude()
 }
 
@@ -153,7 +155,7 @@ pub(crate) fn head_closing(
     div()
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(div().flex_1().min_w_0().child(title))
         .child(
             IconButton::new("run-card-close", Icon::Close, "Close")
@@ -180,7 +182,7 @@ fn tests_card(
     }
     let title = div()
         .flex()
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .child(
             div()
                 .text_color(t.danger)
@@ -196,7 +198,7 @@ fn tests_card(
         .overflow_y_scroll()
         .flex()
         .flex_col()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .children(failures.iter().enumerate().map(|(ix, failure)| {
             let class = failure["className"].as_str().unwrap_or_default();
             let name = failure["name"].as_str().unwrap_or_default();
@@ -205,7 +207,7 @@ fn tests_card(
             let line = failure["line"].as_u64().map(|line| line as u32);
             div()
                 .flex()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(ui::icon(Icon::Close, 11.).text_color(t.danger).mt(px(3.)))
                 .child(
                     div()
@@ -213,7 +215,7 @@ fn tests_card(
                         .min_w_0()
                         .flex()
                         .flex_col()
-                        .gap(px(2.))
+                        .gap(SPACE_0)
                         .child(
                             ui::text(
                                 format!("{} › {name}", short_class(class)),
@@ -237,7 +239,7 @@ fn tests_card(
                             div()
                                 .id(("run-card-file", ix))
                                 .cursor_pointer()
-                                .text_size(crate::theme::ui_text(11.))
+                                .text_size(crate::theme::ui_text(TEXT_2XS))
                                 .text_color(t.text_secondary)
                                 .underline()
                                 .child(shown)
@@ -291,8 +293,8 @@ fn failure_card(
     let stopped = finished.stopped().unwrap_or_default();
     let title = div()
         .flex()
-        .gap(px(6.))
-        .text_size(crate::theme::ui_text(12.))
+        .gap(SPACE_1H)
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .child(div().text_color(t.text_primary).child(label))
         .child(div().text_color(t.danger).child(stopped))
         .into_any_element();
@@ -303,7 +305,7 @@ fn failure_card(
             div()
                 .flex()
                 .flex_col()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .child(ui::mono(command, 11., cx).text_color(t.text_secondary))
                 .child(
                     ui::text(
@@ -323,7 +325,7 @@ fn actions(output: Option<(u64, String)>, cx: &mut Context<Workbench>) -> gpui_k
     div()
         .flex()
         .justify_end()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .children(output.map(|(session, label)| {
             ui::Button::new("run-card-output", "Show output", Variant::Outline)
                 .icon(Icon::Terminal)

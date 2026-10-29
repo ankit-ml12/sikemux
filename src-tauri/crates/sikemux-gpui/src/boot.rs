@@ -11,7 +11,7 @@ use gpui_kit::{
 };
 
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_1H, SPACE_3H, TEXT_SM};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -52,12 +52,12 @@ fn mark_with(
         .flex()
         .flex_col()
         .items_center()
-        .gap(px(14.))
+        .gap(SPACE_3H)
         .child(ui::icon(Icon::Logo, 44.).text_color(t.accent))
         .when_some(words, |column, words| {
             column.child(
                 div()
-                    .text_size(crate::theme::ui_text(13.))
+                    .text_size(crate::theme::ui_text(TEXT_SM))
                     .text_color(t.text_secondary)
                     .child(words),
             )
@@ -97,12 +97,12 @@ pub fn opening(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                     .flex()
                     .flex_col()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(
                         div()
                             .flex_none()
                             .whitespace_nowrap()
-                            .text_size(crate::theme::ui_text(13.))
+                            .text_size(crate::theme::ui_text(TEXT_SM))
                             .text_color(t.text_secondary)
                             .child(words),
                     )

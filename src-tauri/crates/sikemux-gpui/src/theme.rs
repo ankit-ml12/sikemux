@@ -56,6 +56,31 @@ pub const KBD: &str = if cfg!(target_os = "macos") {
     UI
 };
 
+/// The spacing scale, as DESIGN.md names it; an `H` step is the half-way size between two.
+pub const SPACE_0: Pixels = px(2.);
+pub const SPACE_1: Pixels = px(4.);
+pub const SPACE_1H: Pixels = px(6.);
+pub const SPACE_2: Pixels = px(8.);
+pub const SPACE_2H: Pixels = px(10.);
+pub const SPACE_3: Pixels = px(12.);
+pub const SPACE_3H: Pixels = px(14.);
+pub const SPACE_4: Pixels = px(16.);
+pub const SPACE_5: Pixels = px(20.);
+pub const SPACE_6: Pixels = px(24.);
+
+/// The type scale for `ui_text`, as DESIGN.md names it, with the half-way sizes the app uses.
+/// The sizes under 11 are deliberate: dense, never rounded up.
+pub const TEXT_3XS: f32 = 10.;
+pub const TEXT_3XS_H: f32 = 10.5;
+pub const TEXT_2XS: f32 = 11.;
+pub const TEXT_2XS_H: f32 = 11.5;
+pub const TEXT_XS: f32 = 12.;
+pub const TEXT_XS_H: f32 = 12.5;
+pub const TEXT_SM: f32 = 13.;
+pub const TEXT_MD: f32 = 14.;
+pub const TEXT_LG: f32 = 16.;
+pub const TEXT_XL: f32 = 20.;
+
 pub const RADIUS_1: Pixels = px(4.);
 pub const RADIUS_2: Pixels = px(5.);
 pub const RADIUS_3: Pixels = px(10.);

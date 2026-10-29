@@ -48,7 +48,7 @@ use gpui_kit::{
 use sikemux_wire::protocol::{AgentFace, AgentGroup};
 
 use crate::icons::{self, Icon};
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, TEXT_2XS, TEXT_LG};
 
 /// What a menu calls showing a file in the system's file manager.
 pub const REVEAL: &str = if cfg!(target_os = "macos") {
@@ -264,7 +264,7 @@ pub fn rainbow(word: &str, size: f32, cx: &App) -> Div {
 pub fn caps(value: &str, cx: &App) -> Div {
     text(value.to_uppercase(), 11., FontWeight::MEDIUM)
         .letter_spacing(0.2)
-        .line_height(crate::theme::ui_text(16.))
+        .line_height(crate::theme::ui_text(TEXT_LG))
         .text_color(Tokens::get(cx).text_tertiary)
 }
 
@@ -297,7 +297,7 @@ pub fn found_with(value: impl Into<SharedString>, query: &str, mark: HighlightSt
 pub fn kbd(keys: impl Into<SharedString>, cx: &App) -> Div {
     text(keys, 11., FontWeight::MEDIUM)
         .font_family(theme::KBD)
-        .line_height(crate::theme::ui_text(11.))
+        .line_height(crate::theme::ui_text(TEXT_2XS))
         .text_color(Tokens::get(cx).text_tertiary)
 }
 

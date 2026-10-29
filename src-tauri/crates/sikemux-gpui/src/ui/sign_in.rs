@@ -13,7 +13,10 @@ use gpui_kit::{
 };
 
 use super::text;
-use crate::theme::{self, Tokens, RADIUS_2, RADIUS_3};
+use crate::theme::{
+    self, Tokens, RADIUS_2, RADIUS_3, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, SPACE_6,
+    TEXT_2XS, TEXT_LG, TEXT_SM, TEXT_XS,
+};
 
 /// Where a service's sign-in says the token it takes is kept.
 #[cfg(target_os = "macos")]
@@ -83,7 +86,7 @@ impl RenderOnce for Screen {
         let tile = div()
             .size(px(TILE))
             .flex_none()
-            .mb(px(4.))
+            .mb(SPACE_1)
             .flex()
             .items_center()
             .justify_center()
@@ -105,12 +108,12 @@ impl RenderOnce for Screen {
             .flex()
             .flex_col()
             .items_center()
-            .gap(px(12.))
+            .gap(SPACE_3)
             .text_center()
             .child(tile)
             .child(
                 div()
-                    .text_size(theme::ui_text(16.))
+                    .text_size(theme::ui_text(TEXT_LG))
                     .font_weight(FontWeight::SEMIBOLD)
                     .letter_spacing(-0.015)
                     .text_color(t.text_primary)
@@ -118,8 +121,8 @@ impl RenderOnce for Screen {
             )
             .children(self.lede.map(|lede| {
                 div()
-                    .mb(px(8.))
-                    .text_size(theme::ui_text(13.))
+                    .mb(SPACE_2)
+                    .text_size(theme::ui_text(TEXT_SM))
                     .line_height(theme::ui_text(19.5))
                     .text_color(t.text_secondary)
                     .child(lede)
@@ -127,8 +130,8 @@ impl RenderOnce for Screen {
             .children(self.children)
             .children(self.foot.map(|foot| {
                 div()
-                    .mt(px(8.))
-                    .text_size(theme::ui_text(11.))
+                    .mt(SPACE_2)
+                    .text_size(theme::ui_text(TEXT_2XS))
                     .line_height(theme::ui_text(16.5))
                     .text_color(t.text_disabled)
                     .child(foot)
@@ -140,8 +143,8 @@ impl RenderOnce for Screen {
             .flex()
             .flex_col()
             .items_center()
-            .px(px(16.))
-            .py(px(24.))
+            .px(SPACE_4)
+            .py(SPACE_6)
             .child(column)
     }
 }
@@ -186,7 +189,7 @@ impl RenderOnce for Field {
             .w_full()
             .flex()
             .flex_col()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .text_left()
             .child(label(self.label, cx))
             .child(
@@ -205,8 +208,8 @@ impl RenderOnce for Field {
                     .map(|field| match self.mono {
                         true => field
                             .font_family(theme::MONO)
-                            .text_size(theme::ui_text(12.)),
-                        false => field.text_size(theme::ui_text(13.)),
+                            .text_size(theme::ui_text(TEXT_XS)),
+                        false => field.text_size(theme::ui_text(TEXT_SM)),
                     })
                     .child(
                         div()
@@ -217,7 +220,7 @@ impl RenderOnce for Field {
             )
             .children(self.hint.map(|hint| {
                 div()
-                    .text_size(theme::ui_text(11.))
+                    .text_size(theme::ui_text(TEXT_2XS))
                     .line_height(theme::ui_text(16.5))
                     .text_color(t.text_tertiary)
                     .child(hint)
@@ -236,7 +239,7 @@ pub fn labelled(words: impl Into<SharedString>, control: impl IntoElement, cx: &
         .w_full()
         .flex()
         .flex_col()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .text_left()
         .child(label(words, cx))
         .child(control)
@@ -253,10 +256,10 @@ pub fn address(
     div()
         .w_full()
         .h(px(30.))
-        .px(px(8.))
+        .px(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .rounded(RADIUS_2)
         .border_1()
         .border_color(t.border)
@@ -286,7 +289,7 @@ pub fn link(id: impl Into<ElementId>, label: impl Into<SharedString>, cx: &App) 
         .id(id)
         .flex_none()
         .cursor_pointer()
-        .text_size(theme::ui_text(12.))
+        .text_size(theme::ui_text(TEXT_XS))
         .text_color(t.text_secondary)
         .hover(move |link| link.text_color(t.text_primary).underline())
         .child(label.into())
@@ -298,8 +301,8 @@ pub fn links() -> Div {
         .flex()
         .flex_wrap()
         .justify_center()
-        .gap_x(px(16.))
-        .gap_y(px(8.))
+        .gap_x(SPACE_4)
+        .gap_y(SPACE_2)
 }
 
 /// Stands in for the main button while the person finishes signing in somewhere else.
@@ -316,17 +319,17 @@ pub fn waiting(
         .flex()
         .items_center()
         .justify_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .rounded(RADIUS_2)
         .border_1()
         .border_color(t.border)
-        .text_size(theme::ui_text(13.))
+        .text_size(theme::ui_text(TEXT_SM))
         .text_color(t.text_secondary)
         .child(spinner(id, cx))
         .child(words.into())
         .child(
             link(SharedString::from(format!("{id}-cancel")), "Cancel", cx)
-                .ml(px(4.))
+                .ml(SPACE_1)
                 .on_click(cancel),
         )
 }
@@ -373,14 +376,14 @@ pub fn warning(words: impl Into<SharedString>, cx: &App) -> Div {
 fn callout(tone: Hsla) -> Div {
     div()
         .w_full()
-        .px(px(12.))
-        .py(px(8.))
+        .px(SPACE_3)
+        .py(SPACE_2)
         .rounded(RADIUS_2)
         .border_1()
         .border_color(tone.opacity(0.34))
         .bg(tone.opacity(0.08))
         .text_left()
-        .text_size(theme::ui_text(12.))
+        .text_size(theme::ui_text(TEXT_XS))
         .line_height(theme::ui_text(18.))
         .text_color(tone)
 }
@@ -391,11 +394,11 @@ pub fn or(words: impl Into<SharedString>, cx: &App) -> Div {
     let line = || div().flex_1().h(px(1.)).bg(t.border);
     div()
         .w_full()
-        .my(px(4.))
+        .my(SPACE_1)
         .flex()
         .items_center()
-        .gap(px(8.))
-        .text_size(theme::ui_text(11.))
+        .gap(SPACE_2)
+        .text_size(theme::ui_text(TEXT_2XS))
         .text_color(t.text_tertiary)
         .child(line())
         .child(words.into())
@@ -405,7 +408,7 @@ pub fn or(words: impl Into<SharedString>, cx: &App) -> Div {
 /// A line of small print in the column, such as what a button above it does.
 pub fn note(words: impl Into<SharedString>, cx: &App) -> Div {
     div()
-        .text_size(theme::ui_text(11.))
+        .text_size(theme::ui_text(TEXT_2XS))
         .line_height(theme::ui_text(16.5))
         .text_color(Tokens::get(cx).text_tertiary)
         .child(words.into())
@@ -423,10 +426,10 @@ pub fn choice(
     choice_box(id, t.text_primary, t)
         .flex_1()
         .min_w_0()
-        .px(px(12.))
-        .gap(px(8.))
+        .px(SPACE_3)
+        .gap(SPACE_2)
         .text_left()
-        .text_size(theme::ui_text(13.))
+        .text_size(theme::ui_text(TEXT_SM))
         .child(mark)
         .child(div().flex_1().min_w_0().truncate().child(name.into()))
         .child(text(meta, 11., FontWeight::NORMAL).text_color(t.text_tertiary))
@@ -468,5 +471,5 @@ fn choice_box(id: impl Into<ElementId>, ink: Hsla, t: &Tokens) -> Stateful<Div> 
 
 /// Choices one under another, across the column.
 pub fn choices() -> Div {
-    div().w_full().flex().flex_col().gap(px(6.))
+    div().w_full().flex().flex_col().gap(SPACE_1H)
 }

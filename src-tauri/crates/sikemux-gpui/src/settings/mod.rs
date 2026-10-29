@@ -15,7 +15,10 @@ use serde_json::{json, Value};
 
 use crate::core::Ask;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TEXT_2XS_H,
+    TEXT_XS_H,
+};
 use crate::ui;
 use crate::workbench::{Strip, Workbench};
 
@@ -306,10 +309,10 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
             .items_center()
             .gap(px(9.))
             .h(px(24.))
-            .px(px(8.))
+            .px(SPACE_2)
             .rounded(theme::RADIUS_2)
             .cursor_pointer()
-            .text_size(crate::theme::ui_text(12.5))
+            .text_size(crate::theme::ui_text(TEXT_XS_H))
             .text_color(if chosen {
                 t.text_primary
             } else {
@@ -340,8 +343,8 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(8.))
-                        .px(px(8.))
+                        .gap(SPACE_2)
+                        .px(SPACE_2)
                         .pt(px(if at == 0 { 10. } else { 20. }))
                         .pb(px(5.))
                         .child(ui::caps(group, cx))
@@ -387,10 +390,10 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
             .items_center()
             .gap(px(9.))
             .h(px(24.))
-            .px(px(8.))
+            .px(SPACE_2)
             .rounded(theme::RADIUS_2)
             .cursor_pointer()
-            .text_size(crate::theme::ui_text(12.5))
+            .text_size(crate::theme::ui_text(TEXT_XS_H))
             .text_color(if chosen {
                 t.text_primary
             } else {
@@ -414,8 +417,8 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
         .flex()
         .flex_col()
         .gap(px(1.))
-        .pt(px(6.))
-        .mt(px(6.))
+        .pt(SPACE_1H)
+        .mt(SPACE_1H)
         .border_t_1()
         .border_color(t.border)
         .child(me)
@@ -481,8 +484,8 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                 .min_h_0()
                 .flex()
                 .flex_col()
-                .px(px(8.))
-                .pb(px(8.))
+                .px(SPACE_2)
+                .pb(SPACE_2)
                 .child(
                     div()
                         .id("settings-nav")
@@ -505,17 +508,17 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
         ),
         false => (settings.page.name().into(), settings.page.about().into()),
     };
-    let header = div().flex().items_start().gap(px(12.)).pb(px(2.)).child(
+    let header = div().flex().items_start().gap(SPACE_3).pb(SPACE_0).child(
         div()
             .flex_1()
             .min_w_0()
             .flex()
             .flex_col()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .child(ui::text(title, 20., FontWeight::SEMIBOLD).text_color(t.text_primary))
             .child(
                 div()
-                    .text_size(crate::theme::ui_text(12.5))
+                    .text_size(crate::theme::ui_text(TEXT_XS_H))
                     .text_color(t.text_secondary)
                     .child(about),
             ),
@@ -532,14 +535,14 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
 
     let body: Vec<AnyElement> = match searching {
         true if found.is_empty() => vec![div()
-            .py(px(24.))
+            .py(SPACE_6)
             .text_color(t.text_secondary)
             .child(format!("No settings match “{}”", settings.query.trim()))
             .into_any_element()],
         true => vec![div()
             .flex()
             .flex_col()
-            .p(px(4.))
+            .p(SPACE_1)
             .bg(rows::card_fill(cx))
             .border_1()
             .border_color(t.border)
@@ -551,7 +554,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                     .id(("settings-result", at))
                     .flex()
                     .flex_col()
-                    .px(px(12.))
+                    .px(SPACE_3)
                     .py(px(7.))
                     .rounded(theme::RADIUS_2)
                     .cursor_pointer()
@@ -563,7 +566,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                     .child(div().text_color(t.text_primary).child(entry.label))
                     .child(
                         div()
-                            .text_size(crate::theme::ui_text(11.5))
+                            .text_size(crate::theme::ui_text(TEXT_2XS_H))
                             .text_color(t.text_tertiary)
                             .child(format!("{} › {}", entry.page.name(), entry.section)),
                     )
@@ -629,7 +632,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                                 .pb(px(40.))
                                 .flex()
                                 .flex_col()
-                                .gap(px(16.))
+                                .gap(SPACE_4)
                                 .child(div().w_full().max_w(px(760.)).mx_auto().child(header))
                                 .children(body.into_iter().map(|part| {
                                     div().w_full().max_w(px(760.)).mx_auto().child(part)

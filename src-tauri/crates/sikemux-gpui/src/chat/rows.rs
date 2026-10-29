@@ -3,6 +3,11 @@
 
 use super::*;
 
+use crate::theme::{
+    SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, TEXT_2XS, TEXT_2XS_H,
+    TEXT_3XS_H, TEXT_XS_H,
+};
+
 /// The chat's looks with what the reader has open, for drawing its rows once.
 pub(super) struct Drawn<'a> {
     pub(super) looks: &'a Looks,
@@ -132,8 +137,8 @@ pub(super) fn row(
     let lost = (ix == 0 && looks.reading.earlier_lost).then(|| {
         div()
             .w_full()
-            .pt(px(12.))
-            .pb(px(8.))
+            .pt(SPACE_3)
+            .pb(SPACE_2)
             .flex()
             .justify_center()
             .child(
@@ -154,7 +159,7 @@ pub(super) fn row(
                 .w_full()
                 .flex()
                 .justify_center()
-                .when(!looks.reading.earlier_lost, |row| row.pt(px(12.)))
+                .when(!looks.reading.earlier_lost, |row| row.pt(SPACE_3))
                 .child(note)
         });
     let noted = worktree.is_some();
@@ -202,8 +207,8 @@ pub(super) fn row(
                         column.child(
                             div()
                                 .max_w_full()
-                                .px(px(12.))
-                                .py(px(8.))
+                                .px(SPACE_3)
+                                .py(SPACE_2)
                                 .border_1()
                                 .border_color(looks.line)
                                 .rounded(theme::RADIUS_3)
@@ -248,13 +253,13 @@ pub(super) fn row(
                 .px(px(22.))
                 .map(|row| {
                     if user {
-                        row.pt(px(17.)).pb(px(10.)).flex().justify_end()
+                        row.pt(px(17.)).pb(SPACE_2H).flex().justify_end()
                     } else {
                         row.py(px(5.))
                     }
                 })
                 .when(ix == 0 && !looks.reading.earlier_lost && !noted, |row| {
-                    row.pt(px(12.))
+                    row.pt(SPACE_3)
                 })
                 .child(content),
         );
@@ -330,7 +335,7 @@ pub(super) fn fired(
                 .flex()
                 .items_center()
                 .gap(px(5.))
-                .text_size(crate::theme::ui_text(11.5))
+                .text_size(crate::theme::ui_text(TEXT_2XS_H))
                 .text_color(looks.quiet)
                 .child(ui::icon(Icon::Timer, 11.).text_color(t.cmd))
                 .child("Trigger")
@@ -345,8 +350,8 @@ pub(super) fn fired(
                 );
             let bubble = div()
                 .max_w_full()
-                .px(px(12.))
-                .py(px(8.))
+                .px(SPACE_3)
+                .py(SPACE_2)
                 .border_1()
                 .border_color(looks.line)
                 .rounded(theme::RADIUS_3)
@@ -376,7 +381,7 @@ pub(super) fn fired(
         .flex()
         .flex_col()
         .items_end()
-        .gap(px(14.))
+        .gap(SPACE_3H)
         .children(drawn)
 }
 
@@ -419,7 +424,7 @@ pub(super) fn fired_request(
         .px(px(9.))
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .rounded(theme::RADIUS_2)
         .cursor_pointer()
         .hover(move |line| line.bg(hover))
@@ -440,7 +445,7 @@ pub(super) fn fired_request(
                 .min_w_0()
                 .truncate()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(10.5))
+                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                 .text_color(looks.faint)
                 .child(summary),
         );
@@ -448,7 +453,7 @@ pub(super) fn fired_request(
         let headers = request.headers.iter().map(|header| {
             div()
                 .flex()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(
                     div()
                         .flex_none()
@@ -464,10 +469,10 @@ pub(super) fn fired_request(
         });
         div()
             .w_full()
-            .p(px(10.))
+            .p(SPACE_2H)
             .flex()
             .flex_col()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .border_1()
             .border_color(looks.line)
             .rounded(theme::RADIUS_2)
@@ -476,9 +481,9 @@ pub(super) fn fired_request(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .font_family(theme::MONO)
-                    .text_size(crate::theme::ui_text(10.5))
+                    .text_size(crate::theme::ui_text(TEXT_3XS_H))
                     .children(headers),
             )
             .children(body)
@@ -488,7 +493,7 @@ pub(super) fn fired_request(
         .flex()
         .flex_col()
         .items_end()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .child(line)
         .children(details)
         .into_any_element()
@@ -535,21 +540,21 @@ pub(super) fn letters(
                         bench.update(cx, |bench, _| bench.open_agent(&agent)).ok();
                     });
                 let from = div()
-                    .mb(px(8.))
+                    .mb(SPACE_2)
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
+                    .gap(SPACE_1)
                     .child(
                         div()
                             .h(px(22.))
                             .flex()
                             .items_center()
-                            .gap(px(8.))
-                            .text_size(crate::theme::ui_text(12.5))
+                            .gap(SPACE_2)
+                            .text_size(crate::theme::ui_text(TEXT_XS_H))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(looks.quiet)
                             .child(looks.mark_of(&letter.agent_id, &letter.cli, 17., cx))
-                            .child(div().flex().gap(px(4.)).child("Message from").child(name)),
+                            .child(div().flex().gap(SPACE_1).child("Message from").child(name)),
                     )
                     .child(div().h(px(1.)).bg(looks.rule));
                 let id = SharedString::from(format!("{}:{}", row.message.id, letter_doc(ix)));
@@ -569,7 +574,7 @@ pub(super) fn letters(
         .w_full()
         .flex()
         .flex_col()
-        .gap(px(14.))
+        .gap(SPACE_3H)
         .min_w_0()
         .children(drawn)
         .children(gestures::reactions(&row.message, looks))
@@ -637,12 +642,12 @@ pub(super) fn work(fold: &WorkFold, open: bool, looks: &Drawn, cx: &App) -> AnyE
         .id(SharedString::from(format!("work:{}", fold.id)))
         .h(px(22.))
         .ml(px(-6.))
-        .px(px(6.))
+        .px(SPACE_1H)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .rounded(theme::RADIUS_2)
-        .text_size(crate::theme::ui_text(12.5))
+        .text_size(crate::theme::ui_text(TEXT_XS_H))
         .font_weight(FontWeight::MEDIUM)
         .text_color(looks.quiet)
         .cursor_pointer()
@@ -666,7 +671,7 @@ pub(super) fn work(fold: &WorkFold, open: bool, looks: &Drawn, cx: &App) -> AnyE
         .mt(px(3.))
         .flex()
         .flex_col()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .child(div().flex().child(toggle))
         .child(div().h(px(1.)).bg(looks.rule))
         .into_any_element()
@@ -687,9 +692,9 @@ pub(super) fn card_of<'a>(rows: &'a [ChatRow], session: &str) -> Option<&'a Suba
 /// from the agent, or a move to another account.
 pub(super) fn notice_box(looks: &Drawn) -> Div {
     div()
-        .my(px(4.))
-        .px(px(10.))
-        .py(px(4.))
+        .my(SPACE_1)
+        .px(SPACE_2H)
+        .py(SPACE_1)
         .flex()
         .items_center()
         .gap(px(7.))
@@ -698,7 +703,7 @@ pub(super) fn notice_box(looks: &Drawn) -> Div {
         .border_color(looks.tints.line_soft)
         .rounded(theme::RADIUS_2)
         .bg(looks.tints.composer)
-        .text_size(crate::theme::ui_text(10.5))
+        .text_size(crate::theme::ui_text(TEXT_3XS_H))
         .text_color(looks.quiet)
 }
 
@@ -773,9 +778,9 @@ pub(super) fn subagent(
     let summary = div()
         .id(SharedString::from(key.clone()))
         .min_h(px(24.))
-        .py(px(4.))
+        .py(SPACE_1)
         .pl(px(11.))
-        .pr(px(12.))
+        .pr(SPACE_3)
         .flex()
         .items_center()
         .gap(px(7.))
@@ -784,7 +789,7 @@ pub(super) fn subagent(
         .rounded(theme::RADIUS_2)
         .when(open, |summary| summary.rounded_b_none())
         .bg(t.surface_raised)
-        .text_size(crate::theme::ui_text(11.))
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .cursor_pointer()
         .hover(move |summary| summary.bg(hover))
         .on_click(move |_, _, cx| {
@@ -809,7 +814,7 @@ pub(super) fn subagent(
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(10.5))
+                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                 .text_color(looks.ink)
                 .child(card.name.clone()),
         )
@@ -818,7 +823,7 @@ pub(super) fn subagent(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(crate::theme::ui_text(10.5))
+                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                 .text_color(looks.faint)
                 .map(|line| match card.state {
                     SubagentState::Running => line.child(shimmer(format!("{key}:task"), task)),
@@ -872,7 +877,7 @@ pub(super) fn subagent(
         if drawn.is_empty() {
             drawn.push(
                 div()
-                    .text_size(crate::theme::ui_text(10.5))
+                    .text_size(crate::theme::ui_text(TEXT_3XS_H))
                     .text_color(looks.faint)
                     .child("No output yet.")
                     .into_any_element(),
@@ -880,16 +885,16 @@ pub(super) fn subagent(
         }
         div()
             .id(SharedString::from(format!("{key}:body")))
-            .mx(px(12.))
+            .mx(SPACE_3)
             .max_h(px(420.))
             .overflow_y_scroll()
-            .pt(px(4.))
-            .pb(px(8.))
+            .pt(SPACE_1)
+            .pb(SPACE_2)
             .pl(px(13.))
-            .pr(px(10.))
+            .pr(SPACE_2H)
             .flex()
             .flex_col()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .border_1()
             .border_t_0()
             .border_color(t.border)
@@ -901,7 +906,7 @@ pub(super) fn subagent(
             .children(drawn)
     });
     div()
-        .my(px(6.))
+        .my(SPACE_1H)
         .flex()
         .flex_col()
         .child(summary)
@@ -925,7 +930,7 @@ pub(super) fn part(
             .items_center()
             .gap(px(7.))
             .min_w_0()
-            .text_size(crate::theme::ui_text(12.5))
+            .text_size(crate::theme::ui_text(TEXT_XS_H))
             .text_color(tint)
             .child(ui::icon(icon, 12.).text_color(tint))
             .child(div().min_w_0().truncate().child(text))
@@ -973,7 +978,7 @@ pub(super) fn part(
             div()
                 .flex()
                 .flex_col()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .min_w_0()
                 .child(pen.blocks_with(&look, id, &doc.markdown, blocks, window, cx))
                 .child(div().flex().child(more))

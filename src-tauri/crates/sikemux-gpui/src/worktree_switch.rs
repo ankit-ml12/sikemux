@@ -12,7 +12,7 @@ use gpui_kit::{
 use sikemux_wire::protocol::AgentWorktree;
 
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_0, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS};
 use crate::ui;
 
 /// Where the chat stands with a worktree.
@@ -83,12 +83,12 @@ pub fn toggle(id: impl Into<SharedString>, switch: &Switch, flip: Flip, cx: &App
         .disabled(!settable)
         .h(px(26.))
         .max_w(px(220.))
-        .px(px(8.))
+        .px(SPACE_2)
         .flex()
         .items_center()
         .gap(px(5.))
         .rounded_full()
-        .text_size(crate::theme::ui_text(11.))
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .text_color(if on { t.text_primary } else { t.text_tertiary })
         .when(settable, |toggle| {
             toggle.hover(move |style| {
@@ -120,8 +120,8 @@ pub fn note(switch: &Switch, cx: &App) -> Option<AnyElement> {
         .w_full()
         .max_w(px(800.))
         .px(px(22.))
-        .pt(px(12.))
-        .text_size(crate::theme::ui_text(11.))
+        .pt(SPACE_3)
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .text_color(t.text_tertiary);
     match switch {
         Switch::Choosing { .. } => None,
@@ -143,7 +143,7 @@ pub fn note(switch: &Switch, cx: &App) -> Option<AnyElement> {
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     div()
                         .id("worktree-note-branch")
@@ -174,7 +174,7 @@ pub fn note(switch: &Switch, cx: &App) -> Option<AnyElement> {
             Some(
                 note.flex()
                     .items_center()
-                    .gap(px(10.))
+                    .gap(SPACE_2H)
                     .child(tile)
                     .child(lines)
                     .into_any_element(),

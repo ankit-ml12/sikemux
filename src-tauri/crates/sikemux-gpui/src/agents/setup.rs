@@ -13,7 +13,9 @@ use sikemux_wire::protocol::{SessionId, TerminalSpawn};
 use tokio::sync::oneshot;
 
 use crate::core::{self, Ask, TerminalAsk};
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, TEXT_2XS_H, TEXT_SM, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -488,14 +490,14 @@ pub fn sheet(
             div()
                 .flex()
                 .items_center()
-                .gap(px(12.))
-                .px(px(16.))
-                .py(px(10.))
+                .gap(SPACE_3)
+                .px(SPACE_4)
+                .py(SPACE_2H)
                 .border_b_1()
                 .border_color(t.border)
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(t.text_primary)
                         .child(title),
                 )
@@ -505,7 +507,7 @@ pub fn sheet(
                         .min_w_0()
                         .truncate()
                         .font_family(theme::MONO)
-                        .text_size(crate::theme::ui_text(11.5))
+                        .text_size(crate::theme::ui_text(TEXT_2XS_H))
                         .text_color(t.text_tertiary)
                         .child(sheet.shown.clone()),
                 ),
@@ -521,16 +523,16 @@ pub fn sheet(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .px(px(16.))
-                .py(px(10.))
+                .gap(SPACE_2)
+                .px(SPACE_4)
+                .py(SPACE_2H)
                 .border_t_1()
                 .border_color(t.border)
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .text_color(t.text_secondary)
                         .child(state(sheet)),
                 )

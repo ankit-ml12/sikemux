@@ -19,7 +19,9 @@ use super::Chat;
 use crate::core::ChatAsk;
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, TEXT_2XS, TEXT_3XS, TEXT_3XS_H, TEXT_XS,
+};
 use crate::ui;
 use crate::ui::shimmer::shimmer;
 use crate::workbench::{AgentRow, Workbench};
@@ -93,14 +95,14 @@ impl Label {
         div()
             .id(SharedString::from(format!("group:{}", self.key)))
             .w_full()
-            .pt(px(6.))
-            .pb(px(2.))
+            .pt(SPACE_1H)
+            .pb(SPACE_0)
             .pl(px(11.))
-            .pr(px(8.))
+            .pr(SPACE_2)
             .flex()
             .items_center()
-            .gap(px(6.))
-            .text_size(crate::theme::ui_text(10.))
+            .gap(SPACE_1H)
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .text_color(t.text_disabled)
             .when(self.folds, |label| {
                 label
@@ -125,10 +127,10 @@ impl Label {
                     div()
                         .flex_1()
                         .min_w_0()
-                        .ml(px(2.))
+                        .ml(SPACE_0)
                         .truncate()
                         .font_family(theme::MONO)
-                        .text_size(crate::theme::ui_text(10.5))
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(t.text_tertiary)
                         .child(self.peek.join(" · ")),
                 )
@@ -199,14 +201,14 @@ fn task_row(
 ) -> Div {
     div()
         .min_w_0()
-        .pt(px(4.))
-        .pb(px(4.))
+        .pt(SPACE_1)
+        .pb(SPACE_1)
         .pl(px(11.))
-        .pr(px(8.))
+        .pr(SPACE_2)
         .flex()
         .items_center()
         .gap(px(7.))
-        .text_size(crate::theme::ui_text(11.))
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .text_color(tint)
         .child(div().flex_none().child(mark))
         .child(
@@ -214,7 +216,7 @@ fn task_row(
                 .min_w_0()
                 .truncate()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(10.5))
+                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                 .text_color(t.text_primary)
                 .child(name),
         )
@@ -223,7 +225,7 @@ fn task_row(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(crate::theme::ui_text(10.5))
+                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                 .text_color(t.text_disabled)
                 .children(detail),
         )
@@ -231,7 +233,7 @@ fn task_row(
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(10.))
+                .text_size(crate::theme::ui_text(TEXT_3XS))
                 .text_color(t.text_disabled)
                 .child(cost)
         }))
@@ -581,13 +583,13 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
             .px(px(7.))
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .border_1()
             .border_color(t.line)
             .rounded(theme::RADIUS_1)
             .bg(Hsla { a: 0.08, ..live })
             .hover(move |button| button.bg(Hsla { a: 0.18, ..live }))
-            .text_size(crate::theme::ui_text(10.5))
+            .text_size(crate::theme::ui_text(TEXT_3XS_H))
             .text_color(t.text_primary)
             .on_click(cx.listener(move |bench, _, _, _| {
                 bench.chat_target(&agent).call(
@@ -647,9 +649,9 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
                 .child(ui::icon(Icon::Close, 10.).text_color(t.text_disabled));
             div()
                 .min_w_0()
-                .py(px(4.))
+                .py(SPACE_1)
                 .pl(px(11.))
-                .pr(px(8.))
+                .pr(SPACE_2)
                 .flex()
                 .items_center()
                 .gap(px(7.))
@@ -664,7 +666,7 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .text_color(t.text_secondary)
                         .child(queued_label(message)),
                 )
@@ -817,9 +819,9 @@ pub fn trigger_row(
     };
     div()
         .min_w_0()
-        .py(px(4.))
+        .py(SPACE_1)
         .pl(px(11.))
-        .pr(px(8.))
+        .pr(SPACE_2)
         .flex()
         .items_center()
         .gap(px(7.))
@@ -829,7 +831,7 @@ pub fn trigger_row(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_secondary)
                 .child(trigger.title.clone()),
         )
@@ -837,7 +839,7 @@ pub fn trigger_row(
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(10.))
+                .text_size(crate::theme::ui_text(TEXT_3XS))
                 .text_color(t.text_disabled)
                 .child(fires(trigger)),
         )

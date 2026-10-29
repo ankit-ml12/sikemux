@@ -11,7 +11,7 @@ use gpui_kit::{
     ParentElement, Pixels, SharedString, StyleRefinement, Styled, TextRun, Window,
 };
 
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1H};
 
 const TEXT: f32 = 12.5;
 const MARK: Pixels = px(14.);
@@ -118,7 +118,7 @@ fn toast(kind: Kind, text: SharedString) -> Notification {
 fn island(t: &Tokens) -> StyleRefinement {
     StyleRefinement::default()
         .min_h(px(34.))
-        .py(px(6.))
+        .py(SPACE_1H)
         .pl(LEFT)
         .pr(RIGHT)
         .gap(GAP)

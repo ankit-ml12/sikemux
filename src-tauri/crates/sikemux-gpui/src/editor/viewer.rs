@@ -23,7 +23,9 @@ use super::{copies, FileKey};
 use crate::core::Target;
 use crate::hosts::Place as Host;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, TEXT_SM, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -467,21 +469,21 @@ fn card(viewer: &Viewer, key: &FileKey, t: &Tokens) -> AnyElement {
         .flex_col()
         .items_center()
         .justify_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(ui::icon(Icon::File, 28.).text_color(t.text_tertiary))
         .child(
             ui::text(name_of(&key.path), 13., FontWeight::MEDIUM)
-                .mt(px(4.))
+                .mt(SPACE_1)
                 .text_color(t.text_primary),
         )
         .children(about.map(|about| {
             div()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_tertiary)
                 .child(about)
         }))
         .children(openable(viewer, key).map(|open| {
-            div().mt(px(8.)).child(
+            div().mt(SPACE_2).child(
                 ui::Button::new(
                     "viewer-open-default",
                     "Open in default app",
@@ -515,7 +517,7 @@ fn message(text: SharedString, t: &Tokens) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(crate::theme::ui_text(13.))
+        .text_size(crate::theme::ui_text(TEXT_SM))
         .text_color(t.text_tertiary)
         .child(text)
         .into_any_element()
@@ -544,8 +546,8 @@ fn bytes(bytes: Vec<u8>, t: &Tokens) -> AnyElement {
                     .collect();
                 div()
                     .flex()
-                    .gap(px(16.))
-                    .px(px(16.))
+                    .gap(SPACE_4)
+                    .px(SPACE_4)
                     .h(px(20.))
                     .items_center()
                     .child(
@@ -561,7 +563,7 @@ fn bytes(bytes: Vec<u8>, t: &Tokens) -> AnyElement {
     })
     .size_full()
     .font_family(theme::MONO)
-    .text_size(crate::theme::ui_text(12.))
+    .text_size(crate::theme::ui_text(TEXT_XS))
     .into_any_element()
 }
 
@@ -582,7 +584,7 @@ fn bar(
         let (this, key) = (this.clone(), key.clone());
         div()
             .id(id)
-            .px(px(6.))
+            .px(SPACE_1H)
             .cursor_pointer()
             .text_color(t.text_secondary)
             .hover(move |style| style.text_color(t.text_primary))
@@ -604,12 +606,12 @@ fn bar(
     div()
         .flex()
         .items_center()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .h(px(32.))
-        .px(px(12.))
+        .px(SPACE_3)
         .border_b_1()
         .border_color(t.border)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .child(ui::icon(Icon::File, 14.).text_color(t.text_tertiary))
         .child(div().text_color(t.text_primary).child(name))
         .children(about.map(|about| div().text_color(t.text_tertiary).child(size(about.size))))

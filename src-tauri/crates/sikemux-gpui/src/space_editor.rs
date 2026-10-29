@@ -15,7 +15,7 @@ use gpui_kit::{
 };
 
 use crate::icons::Icon;
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_2, TEXT_3XS_H, TEXT_XS};
 use crate::ui::{self, IconButton};
 use crate::workbench::Workbench;
 
@@ -114,13 +114,13 @@ impl Render for DraggedSpace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Tokens::get(cx);
         div()
-            .px(px(8.))
-            .py(px(4.))
+            .px(SPACE_2)
+            .py(SPACE_1)
             .rounded(RADIUS_2)
             .bg(t.surface_raised)
             .border_1()
             .border_color(t.border)
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .text_color(t.text_primary)
             .child(self.name.clone())
     }
@@ -159,8 +159,8 @@ impl Render for SpaceEditor {
                     .h(px(30.))
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .px(px(2.))
+                    .gap(SPACE_1)
+                    .px(SPACE_0)
                     .rounded(RADIUS_2)
                     .hover(move |row| row.bg(t.surface_hover))
                     .drag_over::<DraggedSpace>(move |row, _, _, _| row.bg(t.surface_hover))
@@ -229,13 +229,13 @@ impl Render for SpaceEditor {
             div()
                 .id(id)
                 .h(px(24.))
-                .px(px(8.))
+                .px(SPACE_2)
                 .flex()
                 .items_center()
                 .gap(px(5.))
                 .rounded(RADIUS_2)
                 .border_1()
-                .text_size(crate::theme::ui_text(10.5))
+                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                 .map(|button| match done {
                     true => button
                         .border_color(t.accent)
@@ -251,15 +251,15 @@ impl Render for SpaceEditor {
                 .child(label)
         };
         div()
-            .p(px(4.))
+            .p(SPACE_1)
             .flex()
             .flex_col()
             .child(div().flex().flex_col().children(rows))
             .child(
                 div()
-                    .mt(px(4.))
-                    .pt(px(4.))
-                    .px(px(2.))
+                    .mt(SPACE_1)
+                    .pt(SPACE_1)
+                    .px(SPACE_0)
                     .border_t_1()
                     .border_color(t.border)
                     .flex()
@@ -340,7 +340,7 @@ pub fn anchor(bench: &Workbench, width: f32, cx: &mut Context<Workbench>) -> imp
             let t = Tokens::get(cx);
             div()
                 .w(px(width))
-                .mt(px(4.))
+                .mt(SPACE_1)
                 .rounded(RADIUS_2 + px(3.))
                 .bg(t.surface_overlay)
                 .border_1()

@@ -23,7 +23,7 @@ use crate::core::Target;
 use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, TEXT_XS};
 use crate::toast;
 use crate::ui::{self, IconButton};
 use crate::workbench::{Strip, Workbench};
@@ -509,14 +509,14 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
             div()
                 .flex_none()
                 .min_h(px(34.))
-                .pt(px(6.))
-                .pr(px(6.))
-                .pb(px(6.))
-                .pl(px(10.))
+                .pt(SPACE_1H)
+                .pr(SPACE_1H)
+                .pb(SPACE_1H)
+                .pl(SPACE_2H)
                 .flex()
                 .items_center()
                 .justify_between()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(
                     ui::text(name.to_uppercase(), 10., FontWeight::SEMIBOLD)
                         .letter_spacing(0.08)
@@ -525,7 +525,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 .child(
                     div()
                         .flex()
-                        .gap(px(2.))
+                        .gap(SPACE_0)
                         .opacity(0.6)
                         .child(action("files-find", Icon::Search, "Find a file").on_click(
                             cx.listener(|bench, _, window, cx| {
@@ -581,8 +581,8 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
             .track_scroll(&bench.files.scroll)
             .flex_1()
             .min_h_0()
-            .px(px(6.))
-            .pb(px(4.));
+            .px(SPACE_1H)
+            .pb(SPACE_1);
             macro_rules! key {
                 ($action:ident) => {
                     cx.listener(|bench, _: &$action, window, cx| {
@@ -679,14 +679,14 @@ fn open_files(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEleme
             .accessibility_label(SharedString::from(name.clone()))
             .w_full()
             .h(px(ROW_HEIGHT))
-            .pl(px(4.))
-            .pr(px(8.))
+            .pl(SPACE_1)
+            .pr(SPACE_2)
             .flex()
             .items_center()
             .justify_start()
             .gap(px(5.))
             .rounded(theme::RADIUS_2)
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .font_weight(FontWeight::MEDIUM)
             .text_color(if active {
                 t.text_primary
@@ -717,9 +717,9 @@ fn open_files(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEleme
     Some(
         div()
             .flex_none()
-            .mx(px(6.))
-            .mb(px(4.))
-            .pb(px(4.))
+            .mx(SPACE_1H)
+            .mb(SPACE_1)
+            .pb(SPACE_1)
             .flex()
             .flex_col()
             .border_b_1()
@@ -772,11 +772,11 @@ fn row_view(
     let tail = match mark {
         Some((Some(_), _)) if !row.entry.dir => tree
             .letter(&row.path, cx)
-            .map(|letter| letter.ml_auto().pl(px(8.)).into_any_element()),
+            .map(|letter| letter.ml_auto().pl(SPACE_2).into_any_element()),
         Some((_, mark)) if row.entry.dir => Some(
             ui::text("●", 7., FontWeight::NORMAL)
                 .ml_auto()
-                .pl(px(8.))
+                .pl(SPACE_2)
                 .text_color(colour(mark))
                 .into_any_element(),
         ),
@@ -787,13 +787,13 @@ fn row_view(
         .w_full()
         .h(px(ROW_HEIGHT))
         .pl(px(if row.entry.dir { pad } else { pad + 13. }))
-        .pr(px(8.))
+        .pr(SPACE_2)
         .flex()
         .items_center()
         .justify_start()
         .gap(px(5.))
         .rounded(theme::RADIUS_2)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .font_weight(FontWeight::MEDIUM)
         .text_color(ink)
         .when(active, |row| row.bg(t.surface_chosen))
@@ -961,7 +961,7 @@ fn naming_row(naming: &Naming, depth: usize, cx: &mut Context<Workbench>) -> Any
         .pl(px(4.
             + depth as f32 * 13.
             + if naming.dir { 0. } else { 13. }))
-        .pr(px(8.))
+        .pr(SPACE_2)
         .flex()
         .items_center()
         .gap(px(5.))
@@ -980,7 +980,7 @@ fn naming_row(naming: &Naming, depth: usize, cx: &mut Context<Workbench>) -> Any
             Input::new(&naming.input)
                 .appearance(false)
                 .p_0()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_primary),
         )
         .into_any_element()

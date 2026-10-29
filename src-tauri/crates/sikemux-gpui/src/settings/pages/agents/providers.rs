@@ -14,7 +14,7 @@ use crate::core;
 use crate::home::compact;
 use crate::settings::rows::{self, Choice};
 use crate::settings::Page;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_0, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, TEXT_2XS_H, TEXT_SM};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -292,8 +292,8 @@ fn lines(about: Vec<String>, failed: bool, cx: &App) -> AnyElement {
     div()
         .flex()
         .flex_col()
-        .gap(px(2.))
-        .text_size(crate::theme::ui_text(11.5))
+        .gap(SPACE_0)
+        .text_size(crate::theme::ui_text(TEXT_2XS_H))
         .text_color(if failed { t.danger } else { t.text_tertiary })
         .children(about)
         .into_any_element()
@@ -355,7 +355,7 @@ fn keyed_row(
     let controls = div()
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .when(connected, |controls| {
             let disconnect = id.clone();
             controls
@@ -431,9 +431,9 @@ fn row(
     div()
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(16.))
-        .py(px(10.))
+        .gap(SPACE_3)
+        .px(SPACE_4)
+        .py(SPACE_2H)
         .border_b_1()
         .border_color(t.line_soft)
         .child(
@@ -442,10 +442,10 @@ fn row(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(t.text_primary)
                         .child(label),
                 )
@@ -513,7 +513,7 @@ fn local_row(
     let controls = div()
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .when(!connected && !custom, |controls| {
             controls.child(button(
                 format!("runner-download-{id}"),
@@ -775,7 +775,7 @@ pub fn render(
             let count = connected(&providers);
             let adds = (kind == "api").then(|| {
                 let this = this.clone();
-                div().flex().px(px(16.)).py(px(10.)).child(
+                div().flex().px(SPACE_4).py(SPACE_2H).child(
                     ui::Button::new("provider-add-own", "Add provider", ui::Variant::Outline)
                         .icon(crate::icons::Icon::Plus)
                         .on_click(move |_, window, cx| {

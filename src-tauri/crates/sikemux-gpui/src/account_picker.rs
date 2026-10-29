@@ -13,7 +13,7 @@ use sikemux_core::agent_accounts::{chat_account, Profile};
 use crate::accounts;
 use crate::core::Ask;
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_1H, SPACE_2, TEXT_2XS};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -88,10 +88,10 @@ pub fn picker(
         .disabled(disabled)
         .h(px(26.))
         .max_w(px(200.))
-        .px(px(8.))
-        .gap(px(6.))
+        .px(SPACE_2)
+        .gap(SPACE_1H)
         .rounded_full()
-        .text_size(crate::theme::ui_text(11.))
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .text_color(t.text_secondary)
         .tooltip(about)
         .child(ui::mark(provider, 13.))

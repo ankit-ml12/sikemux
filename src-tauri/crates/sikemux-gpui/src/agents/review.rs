@@ -16,7 +16,9 @@ use serde_json::json;
 use crate::core::Target;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_XS,
+};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::Workbench;
 
@@ -116,8 +118,8 @@ impl Render for AgentReview {
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .text_size(crate::theme::ui_text(12.))
+                .gap(SPACE_2)
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .child(
                     div()
                         .w(px(64.))
@@ -138,8 +140,8 @@ impl Render for AgentReview {
             .as_ref()
             .map(|agent| agent.name.clone().unwrap_or_else(|| agent.title.clone()))
             .unwrap_or_else(|| "Agent".into());
-        let mut body = div().flex().flex_col().gap(px(8.));
-        let mut actions = div().flex().flex_wrap().gap(px(6.)).child(
+        let mut body = div().flex().flex_col().gap(SPACE_2);
+        let mut actions = div().flex().flex_wrap().gap(SPACE_1H).child(
             Button::new("review-show", "Show agent", Variant::Outline).on_click(cx.listener(
                 |review, _, window, cx| {
                     let agent = review.agent.clone();
@@ -160,7 +162,7 @@ impl Render for AgentReview {
                     .child(ui::mono(found.branch.clone(), 11.5, cx).text_color(t.text_secondary))
                     .children(found.summary.clone().map(|summary| {
                         div()
-                            .text_size(crate::theme::ui_text(12.))
+                            .text_size(crate::theme::ui_text(TEXT_XS))
                             .text_color(t.text_primary)
                             .child(summary)
                     }));
@@ -184,7 +186,7 @@ impl Render for AgentReview {
                             .truncate()
                             .cursor_pointer()
                             .font_family(theme::MONO)
-                            .text_size(crate::theme::ui_text(11.))
+                            .text_size(crate::theme::ui_text(TEXT_2XS))
                             .text_color(t.accent)
                             .hover(|style| style.underline())
                             .on_click(cx.listener(move |review, _, window, cx| {
@@ -209,7 +211,7 @@ impl Render for AgentReview {
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(4.))
+                        .gap(SPACE_1)
                         .text_color(t.danger)
                         .child(ui::icon(Icon::Close, 11.).text_color(t.danger))
                         .child(format!("{} failed · {} passed", found.failed, found.passed))
@@ -217,7 +219,7 @@ impl Render for AgentReview {
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(4.))
+                        .gap(SPACE_1)
                         .text_color(t.live)
                         .child(ui::icon(Icon::Check, 11.).text_color(t.live))
                         .child(format!("{} passed", found.passed))
@@ -272,15 +274,15 @@ impl Render for AgentReview {
                 }
             }))
             .w(px(360.))
-            .p(px(12.))
+            .p(SPACE_3)
             .flex()
             .flex_col()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(
                         ui::text(title, 13., FontWeight::SEMIBOLD)
                             .flex_1()

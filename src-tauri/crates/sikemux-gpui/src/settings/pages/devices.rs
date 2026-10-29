@@ -23,7 +23,10 @@ use crate::core::{self, Ask, RemoteAsk};
 use crate::icons::Icon;
 use crate::settings::rows;
 use crate::settings::Page;
-use crate::theme::Tokens;
+use crate::theme::{
+    Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, SPACE_5, TEXT_2XS_H,
+    TEXT_MD, TEXT_SM, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -214,21 +217,21 @@ fn sign_in_panel(
     div()
         .flex()
         .flex_col()
-        .gap(px(8.))
-        .p(px(16.))
+        .gap(SPACE_2)
+        .p(SPACE_4)
         .child(
             div()
-                .text_size(crate::theme::ui_text(14.))
+                .text_size(crate::theme::ui_text(TEXT_MD))
                 .text_color(t.text_primary)
                 .child(title),
         )
         .child(
             div()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_secondary)
                 .child(lede),
         )
-        .child(div().pt(px(4.)).flex().child(action))
+        .child(div().pt(SPACE_1).flex().child(action))
         .into_any_element()
 }
 
@@ -242,26 +245,26 @@ fn phone_panel(cx: &App) -> AnyElement {
     div()
         .flex()
         .items_center()
-        .gap(px(20.))
-        .p(px(16.))
+        .gap(SPACE_5)
+        .p(SPACE_4)
         .child(
             div()
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(14.))
+                        .text_size(crate::theme::ui_text(TEXT_MD))
                         .text_color(t.text_primary)
                         .child("Your agents, on your phone"),
                 )
-                .child(div().text_size(crate::theme::ui_text(12.)).text_color(t.text_secondary).child(
+                .child(div().text_size(crate::theme::ui_text(TEXT_XS)).text_color(t.text_secondary).child(
                     "Watch them work, answer what they ask and start new chats from anywhere.",
                 ))
                 .children(steps.iter().enumerate().map(|(at, step)| {
                     div()
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .text_color(t.text_secondary)
                         .child(format!("{}. {step}", at + 1))
                 })),
@@ -269,7 +272,7 @@ fn phone_panel(cx: &App) -> AnyElement {
         .child(
             div()
                 .flex_none()
-                .p(px(10.))
+                .p(SPACE_2H)
                 .rounded(px(8.))
                 .bg(gpui_kit::white())
                 .child(ui::icon(Icon::PhoneQr, 150.).text_color(gpui_kit::black())),
@@ -298,7 +301,7 @@ fn phone_row(
     };
     let line = div()
         .flex()
-        .text_size(crate::theme::ui_text(11.5))
+        .text_size(crate::theme::ui_text(TEXT_2XS_H))
         .text_color(t.text_tertiary)
         .child(format!("{} · {seen}", platform_name(&device.platform)))
         .children(note.map(|(note, warn)| {
@@ -347,9 +350,9 @@ fn phone_row(
     div()
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(16.))
-        .py(px(10.))
+        .gap(SPACE_3)
+        .px(SPACE_4)
+        .py(SPACE_2H)
         .border_b_1()
         .border_color(t.line_soft)
         .child(
@@ -358,10 +361,10 @@ fn phone_row(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(t.text_primary)
                         .child(name),
                 )
@@ -500,7 +503,7 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
             let (this, id, named) = (this.clone(), id.clone(), name.clone());
             div()
                 .id(SharedString::from(format!("host-name-{id}")))
-                .text_size(crate::theme::ui_text(13.))
+                .text_size(crate::theme::ui_text(TEXT_SM))
                 .text_color(t.text_primary)
                 .child(if name.is_empty() {
                     "Unnamed host".to_owned()
@@ -575,9 +578,9 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
     div()
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(16.))
-        .py(px(10.))
+        .gap(SPACE_3)
+        .px(SPACE_4)
+        .py(SPACE_2H)
         .border_b_1()
         .border_color(t.line_soft)
         .child(
@@ -586,11 +589,11 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(title)
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(11.5))
+                        .text_size(crate::theme::ui_text(TEXT_2XS_H))
                         .text_color(t.text_tertiary)
                         .child(line),
                 ),
@@ -649,7 +652,7 @@ pub fn render(
                 account_line(link),
                 div()
                     .flex()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(
                         ui::Button::new("account-delete", "Delete account…", ui::Variant::Outline)
                             .on_click(move |_, _, cx| {

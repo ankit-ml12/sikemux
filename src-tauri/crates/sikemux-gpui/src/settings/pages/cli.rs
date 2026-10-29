@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use crate::core;
 use crate::icons::Icon;
 use crate::settings::rows;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_4, TEXT_XS};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -83,22 +83,22 @@ pub fn render(
         !busy && !matches!(state, "installed" | "unavailable" | "conflict" | "checking");
     let code = |text: String| {
         div()
-            .px(px(6.))
+            .px(SPACE_1H)
             .rounded(theme::RADIUS_2)
             .bg(t.surface_sunken)
             .font_family(theme::MONO)
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .child(text)
     };
     let path_line = |name: &'static str, value: String| {
         div()
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(
                 div()
                     .w(px(120.))
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(t.text_tertiary)
                     .child(name),
             )
@@ -108,15 +108,15 @@ pub fn render(
     let integration = div()
         .flex()
         .flex_col()
-        .gap(px(10.))
-        .p(px(16.))
+        .gap(SPACE_2H)
+        .p(SPACE_4)
         .child(path_line("Command", "sikemux".into()))
         .child(path_line("Install directory", install_dir.clone()))
         .child(
             div()
                 .flex()
                 .justify_end()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(
                     ui::Button::new("cli-refresh", "Refresh", ui::Variant::Outline)
                         .icon(Icon::Refresh)
@@ -136,7 +136,7 @@ pub fn render(
         .when(state == "conflict", |section| {
             section.child(
                 div()
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(t.danger)
                     .child(format!(
                     "Sikemux will not overwrite {}. Move the existing file yourself, then refresh.",
@@ -149,7 +149,7 @@ pub fn render(
             |section| {
                 section.child(
                     div()
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .text_color(t.text_tertiary)
                         .child(format!(
                 "Add {install_dir} to your shell’s PATH. Sikemux never edits shell startup files."
@@ -158,13 +158,13 @@ pub fn render(
             },
         );
     let usage = div()
-        .p(px(16.))
+        .p(SPACE_4)
         .font_family(theme::MONO)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .text_color(t.text_secondary)
         .flex()
         .flex_col()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .child("sikemux .")
         .child("sikemux src/App.tsx:42:5")
         .child("sikemux open --wait README.md");

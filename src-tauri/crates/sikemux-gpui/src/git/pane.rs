@@ -39,7 +39,10 @@ use crate::editor::OpenAt;
 use crate::files::Mark;
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{
+    self, Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H,
+    SPACE_4, SPACE_5, TEXT_2XS, TEXT_2XS_H, TEXT_3XS, TEXT_3XS_H, TEXT_SM, TEXT_XS,
+};
 use crate::toast;
 use crate::track::{self, Scrolled, Slide};
 use crate::ui::{self, Cheatsheet, Choice, Choices, Confirm, Prompt};
@@ -202,7 +205,7 @@ pub fn status_mark(code: &str, cx: &App) -> Option<Div> {
     Some(
         div()
             .font_family(theme::MONO)
-            .text_size(crate::theme::ui_text(10.))
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .font_weight(FontWeight::BOLD)
             .text_color(colour)
             .child(letter),
@@ -2264,7 +2267,7 @@ impl Render for GitPane {
             .track_focus(&self.focus)
             .size_full()
             .flex()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .font_family(theme::UI)
             .on_key_down(cx.listener(Self::key))
             .child(side(self, window, cx))
@@ -2275,7 +2278,7 @@ impl Render for GitPane {
                     .h_full()
                     .flex()
                     .flex_col()
-                    .children(card.map(|card| card.mb(px(8.))))
+                    .children(card.map(|card| card.mb(SPACE_2)))
                     .child(div().flex_1().min_h_0().child(reviewed)),
             )
             .children(asking)
@@ -2316,7 +2319,7 @@ fn side(pane: &mut GitPane, window: &mut Window, cx: &mut Context<GitPane>) -> i
         .flex_none()
         .flex()
         .flex_col()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(
             ui::panel(cx)
                 .flex_1()
@@ -2325,7 +2328,7 @@ fn side(pane: &mut GitPane, window: &mut Window, cx: &mut Context<GitPane>) -> i
                 .children(
                     pane.out_of_reach
                         .clone()
-                        .map(|host| crate::codehost::away_note(&host, cx).mx(px(8.))),
+                        .map(|host| crate::codehost::away_note(&host, cx).mx(SPACE_2)),
                 )
                 .child(pages_row)
                 .child(pages(pane, cx)),
@@ -2362,11 +2365,11 @@ fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             .accessibility_label(tip)
             .tooltip(ui::tooltip(tip))
             .disabled(disabled)
-            .px(px(8.))
-            .py(px(2.))
+            .px(SPACE_2)
+            .py(SPACE_0)
             .border_1()
             .border_color(t.border)
-            .text_size(crate::theme::ui_text(10.5))
+            .text_size(crate::theme::ui_text(TEXT_3XS_H))
             .text_color(t.text_secondary)
             .when(disabled, |button| button.opacity(0.5))
             .hover(move |style| {
@@ -2385,15 +2388,15 @@ fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
         div()
             .flex()
             .items_center()
-            .gap(px(10.))
-            .px(px(12.))
+            .gap(SPACE_2H)
+            .px(SPACE_3)
             .py(px(3.))
-            .text_size(crate::theme::ui_text(11.5))
+            .text_size(crate::theme::ui_text(TEXT_2XS_H))
             .child(
                 div()
                     .w(px(60.))
                     .flex_none()
-                    .text_size(crate::theme::ui_text(10.))
+                    .text_size(crate::theme::ui_text(TEXT_3XS))
                     .text_color(t.text_tertiary)
                     .child(entry.time.clone()),
             )
@@ -2428,12 +2431,12 @@ fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             div()
                 .flex()
                 .items_center()
-                .gap(px(10.))
-                .px(px(12.))
-                .py(px(6.))
+                .gap(SPACE_2H)
+                .px(SPACE_3)
+                .py(SPACE_1H)
                 .border_b_1()
                 .border_color(t.border)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .child(ui::kbd("@", cx))
                 .child(
                     div()
@@ -2443,7 +2446,7 @@ fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                 )
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(10.5))
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(t.text_tertiary)
                         .child(pane.commands.len().to_string()),
                 )
@@ -2471,13 +2474,13 @@ fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .py(px(4.))
+                .py(SPACE_1)
                 .when(empty, |rows| {
                     rows.child(
                         div()
-                            .px(px(16.))
-                            .py(px(14.))
-                            .text_size(crate::theme::ui_text(11.5))
+                            .px(SPACE_4)
+                            .py(SPACE_3H)
+                            .text_size(crate::theme::ui_text(TEXT_2XS_H))
                             .italic()
                             .text_color(t.text_tertiary)
                             .child("log empty — every git command will appear here"),
@@ -2501,9 +2504,9 @@ fn pages(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
         .flex_none()
         .flex()
         .justify_center()
-        .gap(px(4.))
-        .px(px(8.))
-        .py(px(4.))
+        .gap(SPACE_1)
+        .px(SPACE_2)
+        .py(SPACE_1)
         .border_t_1()
         .border_color(t.border)
         .child(page(
@@ -2548,8 +2551,8 @@ fn history_list(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoEleme
         .when(empty, |page| {
             page.child(
                 div()
-                    .p(px(20.))
-                    .text_size(crate::theme::ui_text(12.))
+                    .p(SPACE_5)
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(t.text_tertiary)
                     .child("No commits on this branch yet."),
             )
@@ -2561,8 +2564,8 @@ fn history_list(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoEleme
                 commit_row(&view, pane, index, &inks, cx)
             })
             .flex_1()
-            .px(px(6.))
-            .py(px(4.)),
+            .px(SPACE_1H)
+            .py(SPACE_1),
         )
 }
 
@@ -2612,7 +2615,7 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(colour)
                 .child(format!("{arrow}{value}"))
         })
@@ -2635,8 +2638,8 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             .flex()
             .items_center()
             .justify_center()
-            .gap(px(6.))
-            .text_size(crate::theme::ui_text(12.))
+            .gap(SPACE_1H)
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .font_weight(FontWeight::MEDIUM)
             .map(|button| {
                 if held.is_some() {
@@ -2672,17 +2675,17 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .flex_none()
-        .pt(px(8.))
+        .pt(SPACE_2)
         .border_b_1()
         .border_color(t.border)
         .child(
             div()
-                .px(px(8.))
+                .px(SPACE_2)
                 .flex()
                 .items_center()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .min_w_0()
                 .children(other_repos(pane, cx))
                 .child(branch_switch(pane, branch, cx))
@@ -2693,14 +2696,14 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                     title.child(
                         div()
                             .h(px(18.))
-                            .px(px(6.))
+                            .px(SPACE_1H)
                             .flex()
                             .items_center()
                             .border_1()
                             .border_color(t.danger.opacity(0.32))
                             .rounded(px(4.))
                             .font_family(theme::MONO)
-                            .text_size(crate::theme::ui_text(11.))
+                            .text_size(crate::theme::ui_text(TEXT_2XS))
                             .text_color(t.danger)
                             .child("git error"),
                     )
@@ -2709,7 +2712,7 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                     div()
                         .min_w_0()
                         .truncate()
-                        .text_size(crate::theme::ui_text(11.))
+                        .text_size(crate::theme::ui_text(TEXT_2XS))
                         .text_color(t.warn)
                         .child(busy)
                 }))
@@ -2808,11 +2811,11 @@ fn branch_switch(pane: &GitPane, branch: String, cx: &mut Context<GitPane>) -> i
             .accessibility_label("Switch branch")
             .tooltip(ui::tooltip("Switch branch"))
             .h(px(26.))
-            .px(px(6.))
+            .px(SPACE_1H)
             .min_w_0()
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .rounded(RADIUS_2)
             .text_color(t.text_primary)
             .hover(move |style| style.bg(t.surface_hover))
@@ -2821,7 +2824,7 @@ fn branch_switch(pane: &GitPane, branch: String, cx: &mut Context<GitPane>) -> i
                 div()
                     .min_w_0()
                     .truncate()
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .font_weight(FontWeight::MEDIUM)
                     .child(branch),
             )
@@ -3014,14 +3017,14 @@ fn filter_row(field: &Entity<InputState>, count: Option<usize>, cx: &App) -> Div
     div()
         .flex_none()
         .h(px(34.))
-        .mb(px(4.))
-        .px(px(12.))
+        .mb(SPACE_1)
+        .px(SPACE_3)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .border_b_1()
         .border_color(t.border)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .child(ui::icon(Icon::Search, 12.).text_color(t.text_tertiary))
         .child(
             div()
@@ -3033,7 +3036,7 @@ fn filter_row(field: &Entity<InputState>, count: Option<usize>, cx: &App) -> Div
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.text_tertiary)
                 .child(count.to_string())
         }))
@@ -3068,17 +3071,17 @@ fn changes(pane: &mut GitPane, filter: Option<Div>, cx: &mut Context<GitPane>) -
         .flex_col()
         .flex_1()
         .min_h_0()
-        .pb(px(6.))
+        .pb(SPACE_1H)
         .child(composer(pane, cx))
         .children(filter)
         .children(note.map(|(title, message, colour)| {
             div()
-                .p(px(20.))
+                .p(SPACE_5)
                 .flex()
                 .flex_col()
                 .items_center()
-                .gap(px(4.))
-                .text_size(crate::theme::ui_text(12.))
+                .gap(SPACE_1)
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .child(div().text_color(colour).child(title))
                 .child(div().text_color(t.text_tertiary).child(message))
         }))
@@ -3092,7 +3095,7 @@ fn changes(pane: &mut GitPane, filter: Option<Div>, cx: &mut Context<GitPane>) -
                 }
             })
             .flex_1()
-            .px(px(6.)),
+            .px(SPACE_1H),
         )
 }
 
@@ -3176,7 +3179,7 @@ fn composer(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
     };
     div()
         .flex_none()
-        .mb(px(6.))
+        .mb(SPACE_1H)
         .border_b_1()
         .border_color(t.border)
         .capture_key_down(cx.listener(|pane, event: &KeyDownEvent, window, cx| {
@@ -3191,36 +3194,36 @@ fn composer(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
         }))
         .child(
             div()
-                .px(px(10.))
+                .px(SPACE_2H)
                 .py(px(9.))
-                .text_size(crate::theme::ui_text(13.))
+                .text_size(crate::theme::ui_text(TEXT_SM))
                 .line_height(crate::theme::ui_text(19.5))
                 .child(
                     Textarea::new(&pane.draft)
                         .appearance(false)
-                        .text_size(crate::theme::ui_text(13.)),
+                        .text_size(crate::theme::ui_text(TEXT_SM)),
                 ),
         )
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(4.))
-                .px(px(10.))
-                .pb(px(8.))
+                .gap(SPACE_1)
+                .px(SPACE_2H)
+                .pb(SPACE_2)
                 .child(
                     BaseButton::new("git-generate")
                         .accessibility_label("Write the message from the staged changes")
                         .tooltip(ui::tooltip("Write the message from the staged changes (g)"))
                         .h(px(28.))
-                        .px(px(8.))
+                        .px(SPACE_2)
                         .min_w_0()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .border_1()
                         .border_color(t.border)
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .text_color(t.text_secondary)
                         .hover(move |style| {
                             style
@@ -3244,14 +3247,14 @@ fn composer(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                         .disabled(!can_commit)
                         .ml_auto()
                         .h(px(28.))
-                        .px(px(12.))
+                        .px(SPACE_3)
                         .flex()
                         .items_center()
                         .border_1()
                         .border_color(t.accent)
                         .bg(t.accent)
                         .text_color(t.on_accent)
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .font_weight(FontWeight::MEDIUM)
                         .when(!can_commit, |button| button.opacity(0.45))
                         .on_click(cx.listener(|pane, _, _, cx| pane.commit(cx)))
@@ -3292,7 +3295,7 @@ fn faces(pane: &GitPane, path: &str, cx: &App) -> Option<AnyElement> {
             .flex_none()
             .flex()
             .items_center()
-            .gap(px(2.))
+            .gap(SPACE_0)
             .tooltip(ui::tooltip(format!("Written by {}", names.join(", "))))
             .children(marks)
             .into_any_element(),
@@ -3443,7 +3446,7 @@ fn entry_row(
                     .w(px(14.))
                     .text_center()
                     .font_family(theme::MONO)
-                    .text_size(crate::theme::ui_text(11.))
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(colour)
                     .tooltip(ui::tooltip(label))
@@ -3467,12 +3470,12 @@ fn entry_row(
                 .w_full()
                 .h(px(ROW_HEIGHT))
                 .pl(px(18.))
-                .pr(px(6.))
+                .pr(SPACE_1H)
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .rounded(RADIUS_2)
-                .text_size(crate::theme::ui_text(13.))
+                .text_size(crate::theme::ui_text(TEXT_SM))
                 .text_color(if chosen {
                     t.text_primary
                 } else {
@@ -3502,10 +3505,10 @@ fn entry_row(
                         .child(div().flex_none().child(base))
                         .children(dir.map(|dir| {
                             div()
-                                .ml(px(6.))
+                                .ml(SPACE_1H)
                                 .min_w_0()
                                 .truncate()
-                                .text_size(crate::theme::ui_text(12.))
+                                .text_size(crate::theme::ui_text(TEXT_XS))
                                 .text_color(t.text_tertiary)
                                 .child(dir)
                         })),
@@ -3514,7 +3517,7 @@ fn entry_row(
                     row.children(faces(pane, &file.path, cx))
                 })
                 .when(pane.hovered.as_ref() == Some(&key), |row| {
-                    row.child(div().flex().gap(px(2.)).children(file_actions(
+                    row.child(div().flex().gap(SPACE_0).children(file_actions(
                         view,
                         &file,
                         Some(side),
@@ -3585,17 +3588,17 @@ fn group_row(
         };
     let folding = view.clone();
     div()
-        .when(index > 0, |row| row.pt(px(6.)))
+        .when(index > 0, |row| row.pt(SPACE_1H))
         .child(
             div()
                 .id(SharedString::from(format!("git-group:{side:?}")))
                 .on_hover(hover(view, key.clone()))
                 .h(px(ROW_HEIGHT))
-                .pl(px(2.))
-                .pr(px(4.))
+                .pl(SPACE_0)
+                .pr(SPACE_1)
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .rounded(RADIUS_2)
                 .hover(move |row| row.bg(t.surface_hover))
                 .child(
@@ -3605,9 +3608,9 @@ fn group_row(
                         .flex_1()
                         .min_w_0()
                         .h_full()
-                        .px(px(4.))
+                        .px(SPACE_1)
                         .items_center()
-                        .gap(px(4.))
+                        .gap(SPACE_1)
                         .cursor_pointer()
                         .on_click(move |_, _, cx| {
                             folding.update(cx, |pane, cx| {
@@ -3640,7 +3643,7 @@ fn group_row(
                     row.child(
                         div()
                             .flex()
-                            .gap(px(2.))
+                            .gap(SPACE_0)
                             .when(index == 0, |actions| {
                                 actions.child(button(
                                     "git-fold-review",
@@ -3707,7 +3710,7 @@ fn group_row(
                         .justify_center()
                         .rounded_full()
                         .bg(t.surface_chosen)
-                        .text_size(crate::theme::ui_text(11.))
+                        .text_size(crate::theme::ui_text(TEXT_2XS))
                         .text_color(t.text_secondary)
                         .child(count.to_string()),
                 ),

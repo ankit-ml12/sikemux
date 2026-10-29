@@ -14,7 +14,9 @@ use sikemux_wire::changed::Topic;
 use crate::core::{self, Ask, Watch};
 use crate::icons::Icon;
 use crate::settings::rows;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, TEXT_2XS, TEXT_2XS_H, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -566,13 +568,13 @@ fn sample(draft: &Value) -> AnyElement {
     div()
         .flex()
         .flex_col()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
-                .p(px(12.))
+                .gap(SPACE_0)
+                .p(SPACE_3)
                 .rounded(theme::RADIUS_2)
                 .bg(theme::color(
                     draft["editor"]["bg"].as_str().unwrap_or_default(),
@@ -581,7 +583,7 @@ fn sample(draft: &Value) -> AnyElement {
                     draft["editor"]["fg"].as_str().unwrap_or_default(),
                 ))
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .child(
                     div()
                         .italic()
@@ -605,8 +607,8 @@ fn sample(draft: &Value) -> AnyElement {
         .child(
             div()
                 .flex()
-                .gap(px(2.))
-                .p(px(6.))
+                .gap(SPACE_0)
+                .p(SPACE_1H)
                 .rounded(theme::RADIUS_2)
                 .bg(theme::color(
                     draft["terminal"]["background"].as_str().unwrap_or_default(),
@@ -660,11 +662,11 @@ pub fn view(editor: &Editor, this: &Entity<Workbench>, cx: &App) -> AnyElement {
     let named = div()
         .flex()
         .flex_col()
-        .gap(px(2.))
+        .gap(SPACE_0)
         .child(ui::Field::new(&editor.name))
         .child(
             div()
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.text_tertiary)
                 .child(format!("based on {}", editor.base)),
         );
@@ -672,7 +674,7 @@ pub fn view(editor: &Editor, this: &Entity<Workbench>, cx: &App) -> AnyElement {
         .flex()
         .items_center()
         .justify_end()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(button(
             "theme-dark",
             if dark { "Dark" } else { "Light" },
@@ -710,13 +712,13 @@ pub fn view(editor: &Editor, this: &Entity<Workbench>, cx: &App) -> AnyElement {
     let grid = div()
         .flex()
         .flex_wrap()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .children(editor.fields.iter().map(|field| {
             div()
                 .w(px(204.))
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(ColorPicker::new(&field.picker))
                 .child(
                     div()
@@ -724,10 +726,10 @@ pub fn view(editor: &Editor, this: &Entity<Workbench>, cx: &App) -> AnyElement {
                         .min_w_0()
                         .flex()
                         .flex_col()
-                        .gap(px(2.))
+                        .gap(SPACE_0)
                         .child(
                             div()
-                                .text_size(crate::theme::ui_text(11.))
+                                .text_size(crate::theme::ui_text(TEXT_2XS))
                                 .text_color(t.text_tertiary)
                                 .child(field.label),
                         )
@@ -737,15 +739,15 @@ pub fn view(editor: &Editor, this: &Entity<Workbench>, cx: &App) -> AnyElement {
     div()
         .flex()
         .flex_col()
-        .gap(px(12.))
-        .p(px(16.))
+        .gap(SPACE_3)
+        .p(SPACE_4)
         .border_t_1()
         .border_color(t.line_soft)
         .child(named)
         .child(head)
         .child(sample(&editor.draft))
         .child(tabs)
-        .child(div().text_size(crate::theme::ui_text(11.5)).text_color(t.text_tertiary).child(hint))
+        .child(div().text_size(crate::theme::ui_text(TEXT_2XS_H)).text_color(t.text_tertiary).child(hint))
         .child(grid)
         .child(rows::note(
             "Any CSS colour works in the text box: use rgba(…) for a translucent wash. The picker sets hex.",

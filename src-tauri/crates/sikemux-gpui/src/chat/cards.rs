@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_3XS_H, TEXT_XS};
+
 /// What stands where the composer would, in a chat that can only be read here.
 pub(super) fn permission(
     agent: &str,
@@ -34,7 +36,7 @@ pub(super) fn permission(
             ));
             BaseButton::new(id)
                 .h(px(28.))
-                .px(px(10.))
+                .px(SPACE_2H)
                 .flex()
                 .items_center()
                 .border_1()
@@ -48,7 +50,7 @@ pub(super) fn permission(
                 .when(!busy, |button| {
                     button.hover(move |style| style.bg(t.surface_chosen))
                 })
-                .text_size(crate::theme::ui_text(10.5))
+                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                 .text_color(if allow {
                     t.text_primary
                 } else {
@@ -72,7 +74,7 @@ pub(super) fn permission(
     let copy = div()
         .flex()
         .flex_col()
-        .gap(px(2.))
+        .gap(SPACE_0)
         .child(
             ui::text(ask.tool_call.title.clone(), 12., FontWeight::SEMIBOLD)
                 .text_color(t.text_primary),
@@ -89,9 +91,9 @@ pub(super) fn permission(
         div()
             .w_full()
             .max_w(px(756.))
-            .mt(px(12.))
-            .mb(px(12.))
-            .p(px(12.))
+            .mt(SPACE_3)
+            .mb(SPACE_3)
+            .p(SPACE_3)
             .border_1()
             .border_color(Hsla { a: 0.44, ..t.warn })
             .rounded(theme::RADIUS_3)
@@ -112,7 +114,7 @@ pub(super) fn permission(
                     .mt(px(11.))
                     .flex()
                     .justify_end()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .children(buttons),
             ),
     )
@@ -120,13 +122,13 @@ pub(super) fn permission(
 
 pub(super) fn kept(t: &Tokens) -> impl IntoElement {
     div()
-        .px(px(12.))
-        .pt(px(4.))
-        .pb(px(10.))
+        .px(SPACE_3)
+        .pt(SPACE_1)
+        .pb(SPACE_2H)
         .flex()
         .items_center()
-        .gap(px(6.))
-        .text_size(crate::theme::ui_text(11.))
+        .gap(SPACE_1H)
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .text_color(t.text_tertiary)
         .child(ui::icon(Icon::Shield, 12.).text_color(t.text_tertiary))
         .child("Answer kept, sent with the rest")
@@ -147,29 +149,29 @@ pub(super) fn secret(
         .on_click(cx.listener(move |bench, _, window, cx| bench.keep_secret(&agent, window, cx)));
     Some(
         div()
-            .px(px(12.))
-            .pt(px(4.))
-            .pb(px(10.))
+            .px(SPACE_3)
+            .pt(SPACE_1)
+            .pb(SPACE_2H)
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(
                         div()
                             .flex_1()
                             .h(px(30.))
-                            .px(px(10.))
+                            .px(SPACE_2H)
                             .flex()
                             .items_center()
                             .border_1()
                             .border_color(t.line)
                             .rounded(theme::RADIUS_2)
                             .bg(t.surface_sunken)
-                            .text_size(crate::theme::ui_text(12.))
+                            .text_size(crate::theme::ui_text(TEXT_XS))
                             .child(Input::new(&field).appearance(false).bordered(false)),
                     )
                     .child(done),
@@ -178,8 +180,8 @@ pub(super) fn secret(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .text_size(crate::theme::ui_text(11.))
+                    .gap(SPACE_1H)
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(t.text_tertiary)
                     .child(ui::icon(Icon::Shield, 12.).text_color(t.text_tertiary))
                     .child(note)

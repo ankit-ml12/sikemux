@@ -9,7 +9,7 @@ use sikemux_wire::chat::{ChatMessage, GifRef};
 
 use super::Drawn;
 use crate::picture::{Picture, Remote};
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1, SPACE_2H};
 use crate::ui;
 
 /// The longest side a GIF is drawn at, in points.
@@ -27,9 +27,9 @@ pub fn reactions(message: &ChatMessage, looks: &Drawn) -> Option<AnyElement> {
     Some(
         div()
             .mt(px(-OVERHANG))
-            .mr(px(10.))
+            .mr(SPACE_2H)
             .flex()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .children(message.reactions.iter().map(|emoji| {
                 div()
                     .h(px(CHIP_HEIGHT))
@@ -69,7 +69,7 @@ pub fn gif(id: &str, gif: &GifRef, looks: &Drawn, cx: &App) -> AnyElement {
         .flex()
         .flex_col()
         .items_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .child(
             div()
                 .w(px(width))

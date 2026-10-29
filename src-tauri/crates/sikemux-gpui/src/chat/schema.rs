@@ -18,7 +18,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::core::Ask;
 use crate::editor::diagram::{Diagram, Kept, KeptKey};
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2H};
 use crate::workbench::Workbench;
 
 /// Draws the ```dbml blocks of `agent`'s chat.
@@ -122,10 +122,10 @@ fn block(
     };
     let title = div()
         .h(px(23.))
-        .px(px(10.))
+        .px(SPACE_2H)
         .flex()
         .items_center()
-        .gap(px(2.))
+        .gap(SPACE_0)
         .border_b_1()
         .border_color(t.line_soft)
         .text_size(px(10.))
@@ -135,7 +135,7 @@ fn block(
             title
                 .child(choice("dbml-diagram", "Diagram", false))
                 .child(choice("dbml-source", "Source", true))
-                .child(div().w(px(1.)).h(px(10.)).mx(px(4.)).bg(t.line_soft))
+                .child(div().w(px(1.)).h(px(10.)).mx(SPACE_1).bg(t.line_soft))
                 .child(open)
                 .child(div().w(px(6.)))
         })
@@ -197,7 +197,7 @@ fn finished_lines(code: &SharedString) -> SharedString {
 fn chip(id: &'static str) -> Stateful<Div> {
     div()
         .id(id)
-        .px(px(6.))
+        .px(SPACE_1H)
         .h(px(17.))
         .flex()
         .items_center()

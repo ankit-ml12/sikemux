@@ -12,7 +12,7 @@ use gpui_kit::{
 
 use super::{icon, menu_button, MenuRow};
 use crate::icons::Icon;
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{Tokens, RADIUS_2, SPACE_1H, SPACE_2, TEXT_XS};
 
 /// One choice: what picking it hands back, and its words.
 pub struct Pick {
@@ -69,14 +69,14 @@ pub fn marked_select(
     let trigger = BaseButton::new(SharedString::from(format!("{id}-field")))
         .accessibility_label(shown.clone())
         .h(px(26.))
-        .px(px(8.))
+        .px(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .rounded(RADIUS_2)
         .border_1()
         .border_color(t.border)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .text_color(if disabled {
             t.text_tertiary
         } else {

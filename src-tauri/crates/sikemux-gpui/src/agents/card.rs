@@ -13,7 +13,7 @@ use serde_json::json;
 use sikemux_wire::protocol::WorkspaceAgent;
 
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_SM, TEXT_XS};
 use crate::ui;
 use crate::workbench::{AgentRow, Workbench};
 
@@ -225,7 +225,7 @@ pub fn view(
         div()
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .min_w_0()
             .child(
                 div()
@@ -277,7 +277,7 @@ pub fn view(
     if !bench.agent_card.pulls.is_empty() {
         let pulls = div()
             .flex()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .children(bench.agent_card.pulls.iter().map(|pull| {
                 let (agent, url) = (agent.id.clone(), pull.url.clone());
                 ui::mono(format!("#{}", pull.number), 11., cx)
@@ -298,18 +298,18 @@ pub fn view(
         .id("agent-card")
         .occlude()
         .w(px(300.))
-        .pt(px(10.))
-        .px(px(12.))
-        .pb(px(12.))
+        .pt(SPACE_2H)
+        .px(SPACE_3)
+        .pb(SPACE_3)
         .flex()
         .flex_col()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .bg(t.surface_overlay)
         .border_1()
         .border_color(t.border)
         .rounded(crate::theme::RADIUS_3)
         .shadow(t.shadow_float())
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .text_color(t.text_secondary)
         .on_hover(cx.listener(move |bench, inside: &bool, _, cx| {
             if *inside {
@@ -322,7 +322,7 @@ pub fn view(
             div()
                 .flex()
                 .items_center()
-                .gap(px(10.))
+                .gap(SPACE_2H)
                 .min_w_0()
                 .child(agent.mark(22., cx))
                 .child(
@@ -334,7 +334,7 @@ pub fn view(
                         .child(
                             div()
                                 .truncate()
-                                .text_size(crate::theme::ui_text(13.))
+                                .text_size(crate::theme::ui_text(TEXT_SM))
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(t.text_primary)
                                 .child(agent.title.clone()),
@@ -350,12 +350,12 @@ pub fn view(
         .when(!facts.is_empty(), |card| {
             card.child(
                 div()
-                    .pt(px(10.))
+                    .pt(SPACE_2H)
                     .border_t_1()
                     .border_color(t.border)
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .children(facts),
             )
         });

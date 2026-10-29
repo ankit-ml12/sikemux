@@ -6,7 +6,7 @@ use gpui_kit::{
 };
 
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_2H, TEXT_XS};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -143,7 +143,7 @@ pub fn pane(bench: &Workbench, alias: &str, cx: &mut Context<Workbench>) -> AnyE
                 .flex_col()
                 .items_center()
                 .justify_center()
-                .gap(px(10.))
+                .gap(SPACE_2H)
                 .px(px(40.))
                 .child(ui::icon(icon, 22.).text_color(t.text_tertiary))
                 .children(title.map(|title| {
@@ -153,7 +153,7 @@ pub fn pane(bench: &Workbench, alias: &str, cx: &mut Context<Workbench>) -> AnyE
                     div()
                         .max_w(px(460.))
                         .text_center()
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .text_color(t.text_secondary)
                         .child(message),
                 )

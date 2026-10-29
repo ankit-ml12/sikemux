@@ -25,7 +25,9 @@ use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::motion;
 use crate::picture::{self, Picture};
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, TEXT_2XS, TEXT_3XS, TEXT_XS,
+};
 use crate::ui;
 use crate::ui::clock::{self, Slot};
 use crate::ui::shimmer::shimmer;
@@ -367,7 +369,7 @@ pub fn run(
     let label = match (&said, current.is_some()) {
         (Some(said), _) => div()
             .min_w_0()
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .child(shimmer(format!("run:{key}:said"), said.clone())),
         (None, true) => div()
             .min_w_0()
@@ -392,10 +394,10 @@ pub fn run(
         .id(SharedString::from(format!("run:{key}")))
         .h(px(22.))
         .ml(px(-6.))
-        .px(px(6.))
+        .px(SPACE_1H)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .max_w_full()
         .font_family(theme::UI)
         .rounded(theme::RADIUS_2)
@@ -459,7 +461,12 @@ pub fn run(
             let key = SharedString::from(format!("call-arrive:{id}"));
             motion::arriving(key, motion::ROW_ARRIVAL, row).into_any_element()
         });
-        let rows = div().ml(px(6.)).py(px(2.)).flex().flex_col().children(rows);
+        let rows = div()
+            .ml(SPACE_1H)
+            .py(SPACE_0)
+            .flex()
+            .flex_col()
+            .children(rows);
         motion::folded(
             ElementId::Name(format!("run-body:{key}").into()),
             shown,
@@ -471,7 +478,7 @@ pub fn run(
     let run = div()
         .my(px(7.))
         .font_family(theme::MONO)
-        .text_size(crate::theme::ui_text(11.))
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .child(div().flex().child(sum))
         .children(body);
     if !run_arrives {
@@ -515,7 +522,7 @@ fn row(
         .flex()
         .items_center()
         .gap(px(7.))
-        .text_size(crate::theme::ui_text(10.))
+        .text_size(crate::theme::ui_text(TEXT_3XS))
         .text_color(looks.quiet)
         .children(call.diff.map(|diff| {
             div()
@@ -548,10 +555,10 @@ fn row(
     let line = div()
         .relative()
         .h(px(22.))
-        .pr(px(6.))
+        .pr(SPACE_1H)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .max_w_full()
         .child(div().w(px(9.)).flex_none())
         .child(
@@ -809,7 +816,7 @@ fn detail(call: &Call, looks: &Drawn, cx: &App) -> AnyElement {
     } else {
         call.failure.map(|failure| {
             div()
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .line_height(relative(1.55))
                 .text_color(looks.tints.failed)
                 .child(failure.to_owned())
@@ -819,7 +826,7 @@ fn detail(call: &Call, looks: &Drawn, cx: &App) -> AnyElement {
     div()
         .ml(px(33.))
         .mt(px(1.))
-        .mb(px(6.))
+        .mb(SPACE_1H)
         .children(body)
         .into_any_element()
 }
@@ -833,7 +840,7 @@ fn boxed(looks: &Drawn) -> Div {
         .border_color(looks.tints.line_soft)
         .rounded(theme::RADIUS_2)
         .bg(looks.tints.well)
-        .text_size(crate::theme::ui_text(11.))
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .line_height(crate::theme::ui_text(17.))
 }
 
@@ -882,7 +889,7 @@ fn terminal(
             ))
     });
     let shot = picture.map(|picture| {
-        div().p(px(4.)).child(picture::thumb(
+        div().p(SPACE_1).child(picture::thumb(
             SharedString::from(format!("shot:{id}")),
             picture,
             px(300.),
@@ -898,7 +905,7 @@ fn terminal(
                 return div()
                     .px(px(9.))
                     .py(px(5.))
-                    .text_size(crate::theme::ui_text(10.))
+                    .text_size(crate::theme::ui_text(TEXT_3XS))
                     .text_color(looks.faint)
                     .child("No output");
             }
@@ -906,7 +913,7 @@ fn terminal(
                 .relative()
                 .pl(px(9.))
                 .pr(px(30.))
-                .pt(px(6.))
+                .pt(SPACE_1H)
                 .pb(px(7.))
                 .text_color(looks.quiet)
                 .child(
@@ -937,7 +944,7 @@ fn terminal(
             .pl(px(9.))
             .flex()
             .items_center()
-            .text_size(crate::theme::ui_text(10.))
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .text_color(looks.faint)
             .cursor_pointer()
             .hover(move |more| more.bg(hover))
@@ -969,7 +976,7 @@ fn terminal(
             div()
                 .px(px(9.))
                 .py(px(5.))
-                .text_size(crate::theme::ui_text(10.))
+                .text_size(crate::theme::ui_text(TEXT_3XS))
                 .text_color(looks.faint)
                 .child("The rest of the output was not kept")
                 .into_any_element(),
@@ -983,8 +990,8 @@ fn terminal(
     boxed(looks).children(ruled).children(exit.map(|code| {
         div()
             .px(px(9.))
-            .pb(px(6.))
-            .text_size(crate::theme::ui_text(10.))
+            .pb(SPACE_1H)
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .text_color(looks.tints.failed)
             .child(format!("exit {code}"))
     }))
@@ -1030,7 +1037,7 @@ fn diff_body(
                 .flex()
                 .gap(px(5.))
                 .pr(px(1.))
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .child(
                     div()
                         .text_color(looks.tints.added)
@@ -1091,7 +1098,7 @@ fn diff_body(
             .border_color(t.border)
             .rounded_b(theme::RADIUS_2)
             .bg(t.surface)
-            .text_size(crate::theme::ui_text(11.))
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .line_height(crate::theme::ui_text(17.))
             .children(body),
     )
@@ -1119,7 +1126,7 @@ fn diff_gap(id: &str, gap: usize, looks: &Drawn) -> AnyElement {
         .pl(px(42.))
         .flex()
         .items_center()
-        .text_size(crate::theme::ui_text(10.))
+        .text_size(crate::theme::ui_text(TEXT_3XS))
         .text_color(looks.faint)
         .cursor_pointer()
         .hover(move |gap| gap.bg(hover))
@@ -1174,10 +1181,10 @@ fn diff_line(line: &DiffLine, looks: &Drawn) -> AnyElement {
             div()
                 .w(px(30.))
                 .flex_none()
-                .pr(px(8.))
+                .pr(SPACE_2)
                 .flex()
                 .justify_end()
-                .text_size(crate::theme::ui_text(10.))
+                .text_size(crate::theme::ui_text(TEXT_3XS))
                 .text_color(looks.faint)
                 .children(number.map(|n| n.to_string())),
         )

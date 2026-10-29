@@ -27,7 +27,7 @@ use crate::core::ChatAsk;
 use crate::drag::DraggedPath;
 use crate::hosts::Place;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2H};
 use crate::ui;
 use crate::workbench::{AgentRow, Workbench};
 
@@ -604,8 +604,8 @@ fn chip_face(
 ) -> Div {
     let t = Tokens::get(cx).clone();
     div()
-        .pl(px(4.))
-        .pr(px(6.))
+        .pl(SPACE_1)
+        .pr(SPACE_1H)
         .flex()
         .items_center()
         .gap(px(5.))
@@ -930,8 +930,8 @@ pub fn tiles(
             .flex_wrap()
             .items_center()
             .gap(px(7.))
-            .px(px(10.))
-            .pt(px(10.))
+            .px(SPACE_2H)
+            .pt(SPACE_2H)
             .children(tiles)
             .children(chips),
     )
@@ -986,8 +986,8 @@ fn badge(number: usize, t: &Tokens, cx: &App) -> Div {
             .absolute()
             .left(px(3.))
             .bottom(px(3.))
-            .px(px(4.))
-            .py(px(2.))
+            .px(SPACE_1)
+            .py(SPACE_0)
             .rounded(theme::RADIUS_1)
             .bg(Hsla {
                 a: 0.72,
@@ -1192,8 +1192,8 @@ pub fn sent(
             .flex_wrap()
             .justify_end()
             .items_end()
-            .gap(px(6.))
-            .pb(px(6.))
+            .gap(SPACE_1H)
+            .pb(SPACE_1H)
             .children(files)
             .children(context),
     )

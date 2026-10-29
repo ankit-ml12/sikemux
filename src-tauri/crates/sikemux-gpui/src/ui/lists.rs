@@ -13,7 +13,7 @@ use super::controls::OnClick;
 use super::{caps, icon, mark_box, meta, text};
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{Tokens, RADIUS_2, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, TEXT_SM};
 
 /// The hover group a row puts itself in, for a glyph in it that follows its text.
 pub const ROW: &str = "row";
@@ -236,10 +236,10 @@ impl RenderOnce for Row {
             })
             .flex()
             .justify_start()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .map(|row| {
                 if top_aligned {
-                    row.items_start().pt(px(4.))
+                    row.items_start().pt(SPACE_1)
                 } else {
                     row.items_center()
                 }
@@ -264,7 +264,7 @@ impl RenderOnce for Row {
                     .flex()
                     .flex_col()
                     .child(
-                        div().flex().items_center().gap(px(8.)).child(
+                        div().flex().items_center().gap(SPACE_2).child(
                             div()
                                 .min_w_0()
                                 .overflow_hidden()
@@ -370,16 +370,16 @@ impl RenderOnce for Group {
         div()
             .flex()
             .flex_col()
-            .when(!self.first, |group| group.mt(px(16.)))
+            .when(!self.first, |group| group.mt(SPACE_4))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .pt(px(4.))
-                    .pr(px(6.))
-                    .pb(px(6.))
-                    .pl(px(8.))
+                    .gap(SPACE_2)
+                    .pt(SPACE_1)
+                    .pr(SPACE_1H)
+                    .pb(SPACE_1H)
+                    .pl(SPACE_2)
                     .child(caps(self.label, cx).flex_none())
                     .child(div().flex_1().h(px(1.)).bg(border))
                     .children(self.actions),
@@ -387,7 +387,7 @@ impl RenderOnce for Group {
             .children(self.toolbar)
             .when(empty, |group| {
                 group.child(
-                    div().p(px(12.)).child(
+                    div().p(SPACE_3).child(
                         text(self.empty, 12., FontWeight::NORMAL)
                             .text_color(Tokens::get(cx).text_tertiary),
                     ),
@@ -537,7 +537,7 @@ impl RenderOnce for Tab {
             .min_w(px(120.))
             .flex()
             .items_center()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .rounded(RADIUS_2)
             .bg(tint)
             .text_color(ink)
@@ -549,7 +549,7 @@ impl RenderOnce for Tab {
                     .accessibility_label(self.label.clone())
                     .flex_1()
                     .h_full()
-                    .pl(px(8.))
+                    .pl(SPACE_2)
                     .pr(px(match (self.tail.is_some(), room) {
                         (true, _) => 3.,
                         (false, true) => 26.,
@@ -558,7 +558,7 @@ impl RenderOnce for Tab {
                     .flex()
                     .items_center()
                     .justify_start()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .when_some(on_click, |tab, handler| {
                         tab.on_click(move |event, window, cx| handler(event, window, cx))
                     })
@@ -572,7 +572,7 @@ impl RenderOnce for Tab {
                     )
                     .children(
                         self.note
-                            .map(|note| makes_way(meta(note, cx).pr(px(4.)).into_any_element())),
+                            .map(|note| makes_way(meta(note, cx).pr(SPACE_1).into_any_element())),
                     )
                     .children(self.counts.map(makes_way))
                     .children(
@@ -642,7 +642,7 @@ pub fn page_tabs(
 ) -> gpui_kit::Div {
     div()
         .flex_none()
-        .px(px(16.))
+        .px(SPACE_4)
         .flex()
         .items_center()
         .gap(px(18.))
@@ -665,14 +665,14 @@ pub fn page_tab(
         .h(px(34.))
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .border_b_2()
         .border_color(if on {
             t.text_primary
         } else {
             gpui_kit::transparent_black()
         })
-        .text_size(crate::theme::ui_text(13.))
+        .text_size(crate::theme::ui_text(TEXT_SM))
         .text_color(if on { t.text_primary } else { t.text_secondary })
         .cursor_pointer()
         .when(!on, |tab| {

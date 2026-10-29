@@ -20,7 +20,7 @@ use crate::chat::model_picker::{Move, Moving};
 use crate::core::Target;
 use crate::hosts::Place;
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_XS};
 use crate::toast;
 use crate::ui::{self, dialog};
 use crate::workbench::Workbench;
@@ -426,8 +426,8 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             div()
                 .flex()
                 .flex_col()
-                .gap(px(6.))
-                .pt(px(10.))
+                .gap(SPACE_1H)
+                .pt(SPACE_2H)
                 .border_t_1()
                 .border_color(t.border)
                 .child(
@@ -435,7 +435,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                         .flex()
                         .items_start()
                         .gap(px(9.))
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .child(div().pt(px(1.)).child(ui::mark(&agent, 14.)))
                         .child(
                             div()
@@ -443,7 +443,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                                 .min_w_0()
                                 .flex()
                                 .flex_col()
-                                .gap(px(2.))
+                                .gap(SPACE_0)
                                 .child(
                                     div()
                                         .text_color(t.text_primary)
@@ -451,7 +451,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                                 )
                                 .child(
                                     div()
-                                        .text_size(crate::theme::ui_text(11.))
+                                        .text_size(crate::theme::ui_text(TEXT_2XS))
                                         .line_height(crate::theme::ui_text(15.))
                                         .text_color(t.text_tertiary)
                                         .child(reason(&name, read)),
@@ -461,7 +461,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                             div()
                                 .id("provider-agent-state")
                                 .flex_none()
-                                .text_size(crate::theme::ui_text(11.))
+                                .text_size(crate::theme::ui_text(TEXT_2XS))
                                 .text_color(ink)
                                 .child(words)
                                 .when(failed, |state| state.cursor_pointer().on_click(open))
@@ -472,11 +472,11 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 })
         });
     let body = dialog::marked_body()
-        .pt(px(4.))
-        .gap(px(12.))
+        .pt(SPACE_1)
+        .gap(SPACE_3)
         .child(
             div()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .line_height(crate::theme::ui_text(17.))
                 .text_color(t.text_tertiary)
                 .child(

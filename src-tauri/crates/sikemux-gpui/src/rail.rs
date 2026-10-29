@@ -19,7 +19,10 @@ use crate::hosts::HostChoice;
 use crate::icons::Icon;
 use crate::keymap;
 use crate::tabs;
-use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
+use crate::theme::{
+    Tokens, RADIUS_1, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_4, TEXT_2XS,
+    TEXT_XS,
+};
 use crate::ui::{self, Button, Group, IconButton, Row, Tone, Variant};
 use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, Workbench};
 
@@ -102,9 +105,9 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                 .id("side-rail-scroll")
                 .flex_1()
                 .min_h_0()
-                .pt(px(10.))
-                .px(px(10.))
-                .pb(px(16.))
+                .pt(SPACE_2H)
+                .px(SPACE_2H)
+                .pb(SPACE_4)
                 .overflow_y_scroll()
                 .child(
                     Group::new("Projects", empty)
@@ -602,10 +605,10 @@ fn masthead(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
         .flex()
         .flex_none()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .h(px(40.))
         .pl(px(18.))
-        .pr(px(8.))
+        .pr(SPACE_2)
         .border_b_1()
         .border_color(t.border)
         .child(ui::icon(Icon::Logo, 14.).text_color(t.accent))
@@ -620,14 +623,14 @@ fn masthead(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 .overflow_hidden()
                 .flex()
                 .items_center()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .pt(px(1.))
                 .child(ui::mono(format!("v{release}"), 10., cx))
                 .children(channel.map(|channel| {
                     ui::text(channel, 10., FontWeight::MEDIUM)
-                        .px(px(4.))
+                        .px(SPACE_1)
                         .py(px(1.))
-                        .line_height(crate::theme::ui_text(12.))
+                        .line_height(crate::theme::ui_text(TEXT_XS))
                         .border_1()
                         .border_color(t.line)
                         .rounded(RADIUS_1)
@@ -666,7 +669,7 @@ fn actions<const N: usize>(
     div()
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .children(keys.map(|keys| ui::kbd(keys, cx)))
         .children(buttons.map(IconButton::small))
 }
@@ -726,7 +729,7 @@ fn project_tree(
         ))
         .children(close);
     div().flex().flex_col().child(row).when(active, |tree| {
-        tree.pb(px(4.))
+        tree.pb(SPACE_1)
             .child(surfaces(project, lit_surface(bench), bench.git.area, cx))
     })
 }
@@ -946,8 +949,8 @@ fn surfaces(
         .flex()
         .flex_col()
         .ml(px(13.5))
-        .py(px(2.))
-        .pr(px(6.))
+        .py(SPACE_0)
+        .pr(SPACE_1H)
         .children(rows.into_iter().enumerate().map(
             move |(index, (glyph, label, command, kind, opens))| {
                 let tail = index == last;
@@ -973,10 +976,10 @@ fn surfaces(
                             keymap::dispatch(command, window, cx);
                         }
                     })
-                    .pr(px(8.))
+                    .pr(SPACE_2)
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .rounded(RADIUS_2)
                     .text_color(if lit { t.accent } else { t.text_tertiary })
                     .when(!lit, |row| {
@@ -1032,7 +1035,7 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .map_or(&[][..], |view| view.workspace.spaces.as_slice());
     if spaces.is_empty() {
         return div()
-            .mb(px(6.))
+            .mb(SPACE_1H)
             .child(
                 Button::new("new-space", "New space", Variant::Dashed)
                     .icon(Icon::Plus)
@@ -1055,9 +1058,9 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             .items_center()
             .gap(px(5.))
             .h(px(22.))
-            .px(px(8.))
+            .px(SPACE_2)
             .rounded(RADIUS_2)
-            .text_size(crate::theme::ui_text(11.))
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .whitespace_nowrap()
             .text_color(if on { t.text_primary } else { t.text_tertiary })
             .when(on, |chip| chip.bg(t.surface_active))
@@ -1100,8 +1103,8 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let track = div()
         .id("space-track")
         .flex()
-        .gap(px(2.))
-        .p(px(2.))
+        .gap(SPACE_0)
+        .p(SPACE_0)
         .overflow_x_scroll()
         .border_1()
         .border_color(t.border)
@@ -1135,7 +1138,7 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         }));
     let width = bench.rail_width(Edge::Start) - 20.;
     div()
-        .mb(px(6.))
+        .mb(SPACE_1H)
         .child(track)
         .child(crate::space_editor::anchor(bench, width, cx))
         .into_any_element()
@@ -1213,8 +1216,8 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
             .flex_none()
             .flex()
             .justify_end()
-            .px(px(10.))
-            .py(px(6.))
+            .px(SPACE_2H)
+            .py(SPACE_1H)
             .border_t_1()
             .border_color(t.border)
             .child(settings_button())
@@ -1287,9 +1290,9 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(4.))
-        .px(px(10.))
-        .py(px(6.))
+        .gap(SPACE_1)
+        .px(SPACE_2H)
+        .py(SPACE_1H)
         .border_t_1()
         .border_color(t.border)
         .child(div().flex_1().min_w_0().child(menu))
@@ -1365,12 +1368,12 @@ fn sign_in(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     };
     div()
         .flex_none()
-        .mx(px(10.))
-        .mb(px(10.))
-        .p(px(8.))
+        .mx(SPACE_2H)
+        .mb(SPACE_2H)
+        .p(SPACE_2)
         .flex()
         .flex_col()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .rounded(RADIUS_2)
         .bg(gpui_kit::Hsla {
             a: 0.04,
@@ -1378,7 +1381,7 @@ fn sign_in(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         })
         .child(
             div()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .line_height(crate::theme::ui_text(12. * 1.4))
                 .text_color(t.text_secondary)
                 .child(copy),
@@ -1387,7 +1390,7 @@ fn sign_in(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
             div()
                 .flex()
                 .items_center()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .child(div().flex_1().min_w_0().flex().flex_col().child(button))
                 .child(settings_button()),
         )

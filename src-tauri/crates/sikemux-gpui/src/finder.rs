@@ -17,7 +17,7 @@ use sikemux_wire::protocol::{Pane, PaneKind};
 
 use crate::core::Target;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_MD, TEXT_SM};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -329,7 +329,7 @@ pub fn overlay(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(10.))
+                            .gap(SPACE_2H)
                             .h(px(crate::palette::HEAD_HEIGHT))
                             .px(px(2. * ui::FLOAT_INSET))
                             .border_b_1()
@@ -340,7 +340,7 @@ pub fn overlay(
                                     .appearance(false)
                                     .flex_1()
                                     .p_0()
-                                    .text_size(crate::theme::ui_text(14.))
+                                    .text_size(crate::theme::ui_text(TEXT_MD))
                                     .text_color(t.text_primary)
                                     .disabled(!project),
                             ),
@@ -398,11 +398,11 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
         .w_full()
         .flex()
         .items_center()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .h(px(30.))
-        .px(px(8.))
+        .px(SPACE_2)
         .rounded(theme::RADIUS_2)
-        .text_size(crate::theme::ui_text(13.))
+        .text_size(crate::theme::ui_text(TEXT_SM))
         .text_color(if selected {
             t.text_primary
         } else {
@@ -441,8 +441,8 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
         .child(
             div()
                 .flex_none()
-                .pl(px(12.))
-                .text_size(crate::theme::ui_text(11.))
+                .pl(SPACE_3)
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.text_tertiary)
                 .child(ui::found(
                     dir.to_owned(),

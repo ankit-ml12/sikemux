@@ -13,7 +13,9 @@ use gpui_kit::{
 use sikemux_browser::history::{AddressSuggestions, Suggestion};
 
 use crate::icons::Icon;
-use crate::theme::{ui_text, Tokens, RADIUS_2};
+use crate::theme::{
+    ui_text, Tokens, RADIUS_2, SPACE_0, SPACE_2, SPACE_2H, TEXT_SM, TEXT_XL, TEXT_XS,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -318,7 +320,7 @@ pub(super) fn overlay(
             .pt(px(5.))
             .flex()
             .flex_col()
-            .gap(px(2.))
+            .gap(SPACE_0)
             .children(rows.iter().enumerate().map(|(at, row)| {
                 let selected = floating.selected == Some(at);
                 let mark = match (row.search, row.icon.as_deref()) {
@@ -332,12 +334,12 @@ pub(super) fn overlay(
                 div()
                     .id(("address-row", at))
                     .h(px(32.))
-                    .px(px(8.))
+                    .px(SPACE_2)
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .rounded(RADIUS_2)
-                    .text_size(ui_text(12.))
+                    .text_size(ui_text(TEXT_XS))
                     .text_color(t.text_primary)
                     .map(|line| match selected {
                         true => line.bg(t.surface_chosen),
@@ -381,7 +383,7 @@ pub(super) fn overlay(
         .child(
             div()
                 .h(px(38.))
-                .pl(px(8.))
+                .pl(SPACE_2)
                 .flex()
                 .items_center()
                 .child(ui::icon(Icon::Search, 14.).text_color(t.text_tertiary))
@@ -389,8 +391,8 @@ pub(super) fn overlay(
                     div()
                         .flex_1()
                         .min_w_0()
-                        .px(px(10.))
-                        .h(ui_text(20.))
+                        .px(SPACE_2H)
+                        .h(ui_text(TEXT_XL))
                         .flex()
                         .items_center()
                         .child(
@@ -398,14 +400,14 @@ pub(super) fn overlay(
                                 .appearance(false)
                                 .flex_1()
                                 .p_0()
-                                .text_size(ui_text(13.))
+                                .text_size(ui_text(TEXT_SM))
                                 .text_color(t.text_primary),
                         ),
                 ),
         )
         .when(listed, |panel| {
             panel
-                .child(div().mx(px(8.)).h(px(1.)).bg(t.border))
+                .child(div().mx(SPACE_2).h(px(1.)).bg(t.border))
                 .child(list)
         });
     Some(

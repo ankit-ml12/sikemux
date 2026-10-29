@@ -16,7 +16,9 @@ use gpui_kit::{
 
 use crate::icons::Icon;
 use crate::plugin_pane::Failure;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_5, TEXT_MD, TEXT_SM, TEXT_XL,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -759,7 +761,7 @@ pub fn overlay(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(10.))
+                            .gap(SPACE_2H)
                             .h(px(HEAD_HEIGHT))
                             .px(px(2. * INSET))
                             .border_b_1()
@@ -768,7 +770,7 @@ pub fn overlay(
                             .child(
                                 div()
                                     .flex_1()
-                                    .h(crate::theme::ui_text(20.))
+                                    .h(crate::theme::ui_text(TEXT_XL))
                                     .flex()
                                     .items_center()
                                     .child(
@@ -776,7 +778,7 @@ pub fn overlay(
                                             .appearance(false)
                                             .flex_1()
                                             .p_0()
-                                            .text_size(crate::theme::ui_text(14.))
+                                            .text_size(crate::theme::ui_text(TEXT_MD))
                                             .text_color(t.text_primary),
                                     ),
                             )
@@ -808,7 +810,7 @@ pub fn overlay(
                                     .flex()
                                     .flex_col()
                                     .items_center()
-                                    .pb(px(20.))
+                                    .pb(SPACE_5)
                                     .child(crate::plugin_pane::failure(&failure, cx))
                                     .child(
                                         ui::Button::new(
@@ -862,10 +864,10 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
             let group = palette.spec.rows[*place].group.clone().unwrap_or_default();
             return div()
                 .h(px(ROW_HEIGHT))
-                .px(px(8.))
+                .px(SPACE_2)
                 .flex()
                 .items_end()
-                .pb(px(4.))
+                .pb(SPACE_1)
                 .child(ui::caps(&group, cx))
                 .into_any_element();
         }
@@ -900,11 +902,11 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
         .w_full()
         .flex()
         .items_center()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .h(px(ROW_HEIGHT))
-        .px(px(8.))
+        .px(SPACE_2)
         .rounded(theme::RADIUS_2)
-        .text_size(crate::theme::ui_text(13.))
+        .text_size(crate::theme::ui_text(TEXT_SM))
         .text_color(ink)
         .when(selected, |element| element.bg(t.surface_chosen))
         .when(!row.disabled, |element| {
@@ -972,7 +974,7 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
         .when_some(row.keys.clone(), |element, keys| {
             element.child(match palette.spec.deck {
                 true => keycap(keys, selected, cx),
-                false => ui::kbd(keys, cx).flex_none().pl(px(6.)),
+                false => ui::kbd(keys, cx).flex_none().pl(SPACE_1H),
             })
         })
         .into_any_element()
@@ -984,9 +986,9 @@ fn keycap(keys: SharedString, selected: bool, cx: &App) -> gpui_kit::Div {
     ui::kbd(keys, cx)
         .flex_none()
         .min_w(px(40.))
-        .px(px(6.))
+        .px(SPACE_1H)
         .py(px(1.))
-        .line_height(theme::ui_text(13.))
+        .line_height(theme::ui_text(TEXT_SM))
         .flex()
         .justify_center()
         .border_1()
@@ -1005,8 +1007,8 @@ fn mode_switch(choice: Choice, cx: &mut Context<Workbench>) -> impl IntoElement 
         .flex()
         .flex_none()
         .items_center()
-        .gap(px(2.))
-        .p(px(2.))
+        .gap(SPACE_0)
+        .p(SPACE_0)
         .border_1()
         .border_color(t.border)
         .rounded(theme::RADIUS_2)
@@ -1027,7 +1029,7 @@ fn mode_switch(choice: Choice, cx: &mut Context<Workbench>) -> impl IntoElement 
                     div()
                         .id(("palette-choice", at))
                         .h(px(23.))
-                        .px(px(10.))
+                        .px(SPACE_2H)
                         .flex()
                         .items_center()
                         .gap(px(5.))

@@ -15,7 +15,10 @@ use gpui_kit::{
 use super::{icon, text};
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{Tokens, RADIUS_2, RADIUS_3, RADIUS_4};
+use crate::theme::{
+    Tokens, RADIUS_2, RADIUS_3, RADIUS_4, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS_H,
+    TEXT_LG, TEXT_SM,
+};
 
 /// How far rows sit inside a float, so a chosen row's corners run parallel to the float's:
 /// the float's corner less its border and a row's corner.
@@ -168,7 +171,7 @@ impl MenuRow {
                     .min_w_0()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .children(mark.as_ref().map(|mark| mark()))
                     .child(
                         div()
@@ -210,8 +213,8 @@ impl Render for TooltipView {
                 a: 0.72,
                 ..t.border_strong
             })
-            .text_size(crate::theme::ui_text(11.5))
-            .line_height(crate::theme::ui_text(16.))
+            .text_size(crate::theme::ui_text(TEXT_2XS_H))
+            .line_height(crate::theme::ui_text(TEXT_LG))
             .text_color(t.text_primary)
             .child(self.text.clone())
             .with_animation(
@@ -239,8 +242,8 @@ impl Render for CardTooltipView {
         let t = Tokens::get(cx);
         div()
             .w(px(self.width))
-            .px(px(12.))
-            .pt(px(10.))
+            .px(SPACE_3)
+            .pt(SPACE_2H)
             .pb(px(11.))
             .rounded(RADIUS_3)
             .bg(t.surface_overlay)
@@ -290,13 +293,13 @@ pub fn split_button(
     let label: SharedString = label.into();
     let face = BaseButton::new(SharedString::from(id.to_owned()))
         .accessibility_label(label.clone())
-        .px(px(12.))
+        .px(SPACE_3)
         .h(px(28.))
         .flex()
         .items_center()
         .justify_center()
-        .gap(px(6.))
-        .text_size(crate::theme::ui_text(13.))
+        .gap(SPACE_1H)
+        .text_size(crate::theme::ui_text(TEXT_SM))
         .font_weight(FontWeight::MEDIUM)
         .text_color(t.on_accent)
         .when(!off, |button| button.on_click(on_click))

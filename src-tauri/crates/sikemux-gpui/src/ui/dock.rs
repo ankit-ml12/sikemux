@@ -13,7 +13,7 @@ use gpui_kit::{
     ParentElement, RenderOnce, SharedString, Styled, Window,
 };
 
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, TEXT_3XS_H};
 
 type Choose = Rc<dyn Fn(&mut Window, &mut App)>;
 
@@ -158,7 +158,7 @@ impl RenderOnce for DockMenu {
         let rows = self.rows.into_iter().enumerate().flat_map(|(index, row)| {
             let heading = row.group.map(|group| {
                 div()
-                    .px(px(10.))
+                    .px(SPACE_2H)
                     .pt(px(7.))
                     .pb(px(3.))
                     .border_t_1()
@@ -172,11 +172,11 @@ impl RenderOnce for DockMenu {
             let line = div()
                 .id(("dock-row", index))
                 .min_h(px(30.))
-                .px(px(10.))
+                .px(SPACE_2H)
                 .py(px(3.))
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .cursor_pointer()
                 .when(index == self.selected, |line| line.bg(t.surface_chosen))
                 .hover(move |line| line.bg(t.surface_hover))
@@ -196,7 +196,7 @@ impl RenderOnce for DockMenu {
                     div()
                         .flex_none()
                         .font_family(theme::MONO)
-                        .text_size(crate::theme::ui_text(10.5))
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(t.text_primary)
                         .child(super::found_with(row.name, &query, mark)),
                 )
@@ -207,7 +207,7 @@ impl RenderOnce for DockMenu {
                         .overflow_hidden()
                         .text_ellipsis()
                         .whitespace_nowrap()
-                        .text_size(crate::theme::ui_text(10.5))
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(t.text_tertiary)
                         .children(
                             row.detail
@@ -234,23 +234,23 @@ impl RenderOnce for DockMenu {
             };
             div()
                 .min_h(px(26.))
-                .px(px(6.))
+                .px(SPACE_1H)
                 .pb(px(3.))
                 .flex()
                 .items_center()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .children(scopes.into_iter().enumerate().map(|(index, scope)| {
                     let choose = scope.choose;
                     div()
                         .id(("dock-scope", index))
                         .h(px(22.))
-                        .px(px(6.))
+                        .px(SPACE_1H)
                         .flex()
                         .items_center()
                         .gap(px(5.))
                         .rounded(theme::RADIUS_2)
                         .cursor_pointer()
-                        .text_size(crate::theme::ui_text(10.5))
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(if scope.on {
                             t.text_primary
                         } else {
@@ -277,15 +277,15 @@ impl RenderOnce for DockMenu {
                 }))
                 .children(title.map(|title| {
                     div()
-                        .px(px(4.))
-                        .text_size(crate::theme::ui_text(10.5))
+                        .px(SPACE_1)
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(t.text_tertiary)
                         .child(title)
                 }))
                 .child(div().flex_1())
                 .child(
                     div()
-                        .pr(px(4.))
+                        .pr(SPACE_1)
                         .font_family(theme::MONO)
                         .text_size(crate::theme::ui_text(9.5))
                         .text_color(t.text_disabled)
@@ -296,11 +296,11 @@ impl RenderOnce for DockMenu {
         let placeholders = LOADING_ROWS.iter().filter(|_| loading).map(|&width| {
             div()
                 .min_h(px(30.))
-                .px(px(10.))
+                .px(SPACE_2H)
                 .py(px(3.))
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(
                     div()
                         .w(px(16.))
@@ -329,15 +329,15 @@ impl RenderOnce for DockMenu {
         let empty = self.empty.map(|text| {
             div()
                 .min_h(px(30.))
-                .px(px(10.))
+                .px(SPACE_2H)
                 .flex()
                 .items_center()
-                .text_size(crate::theme::ui_text(10.5))
+                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                 .text_color(t.text_tertiary)
                 .child(text)
         });
         shell(cx)
-            .py(px(4.))
+            .py(SPACE_1)
             .children(heading)
             .children(placeholders)
             .children(rows)

@@ -19,7 +19,9 @@ use sikemux_wire::protocol::ConfigPicker;
 use crate::agents::setup::Installing;
 use crate::core;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, TEXT_2XS_H, TEXT_3XS_H, TEXT_XS, TEXT_XS_H,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -500,11 +502,11 @@ fn chip(
         .items_center()
         .gap(px(5.))
         .h(px(24.))
-        .px(px(8.))
+        .px(SPACE_2)
         .rounded(theme::RADIUS_2)
         .border_1()
         .cursor_pointer()
-        .text_size(crate::theme::ui_text(11.5))
+        .text_size(crate::theme::ui_text(TEXT_2XS_H))
         .map(|chip| match pressed {
             true => chip
                 .border_color(gpui::transparent_black())
@@ -547,7 +549,7 @@ impl Menu {
             .items_center()
             .gap(px(9.))
             .py(px(7.))
-            .px(px(10.))
+            .px(SPACE_2H)
             .rounded(theme::RADIUS_2)
             .cursor_pointer()
             .text_color(if adds {
@@ -581,7 +583,7 @@ impl Menu {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(crate::theme::ui_text(12.5))
+                    .text_size(crate::theme::ui_text(TEXT_XS_H))
                     .child(ui::found_with(row.label.clone(), typed, found)),
             )
             .children(row.meta.map(|meta| {
@@ -589,7 +591,7 @@ impl Menu {
                     .min_w_0()
                     .max_w(px(170.))
                     .truncate()
-                    .text_size(crate::theme::ui_text(10.5))
+                    .text_size(crate::theme::ui_text(TEXT_3XS_H))
                     .text_color(t.text_tertiary)
                     .child(meta)
             }))
@@ -703,7 +705,7 @@ impl Render for Menu {
                 false => ui::text(heading.to_uppercase(), 10., FontWeight::MEDIUM)
                     .letter_spacing(0.08)
                     .text_color(t.text_tertiary)
-                    .px(px(10.))
+                    .px(SPACE_2H)
                     .pt(px(if list.is_empty() { 4. } else { 9. }))
                     .pb(px(3.))
                     .into_any_element(),
@@ -711,9 +713,9 @@ impl Render for Menu {
             if let Some(note) = note.filter(|_| noted) {
                 list.push(
                     div()
-                        .px(px(10.))
-                        .py(px(6.))
-                        .text_size(crate::theme::ui_text(12.))
+                        .px(SPACE_2H)
+                        .py(SPACE_1H)
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .text_color(t.text_tertiary)
                         .child(note)
                         .into_any_element(),
@@ -751,10 +753,10 @@ impl Render for Menu {
             .child(
                 div()
                     .px(px(ui::PANEL_INSET + 10.))
-                    .py(px(10.))
+                    .py(SPACE_2H)
                     .border_b_1()
                     .border_color(t.line)
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(t.text_primary)
                     .child(Input::new(&self.query).appearance(false).bordered(false)),
             )
@@ -763,7 +765,7 @@ impl Render for Menu {
                     div()
                         .flex()
                         .flex_wrap()
-                        .gap(px(4.))
+                        .gap(SPACE_1)
                         .p(px(ui::PANEL_INSET + 2.))
                         .border_b_1()
                         .border_color(t.line)

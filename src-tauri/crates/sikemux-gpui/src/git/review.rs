@@ -18,7 +18,9 @@ use super::pane::{has_unstaged, is_staged, status_mark, GitPane, Side};
 use super::{row, Colours, Compared, Diff, Notes, RowLook};
 use crate::core::Target;
 use crate::editor::OpenAt;
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{
+    Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_3XS, TEXT_XS,
+};
 use crate::ui;
 
 const TITLE_HEIGHT: Pixels = px(22.);
@@ -398,7 +400,7 @@ pub fn review(pane: &mut GitPane, window: &mut Window, cx: &mut Context<GitPane>
             .flex()
             .items_center()
             .justify_center()
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .text_color(t.text_secondary)
             .child("Nothing to review.")
             .into_any_element();
@@ -513,14 +515,14 @@ fn draw(
             body(
                 div()
                     .h(TITLE_HEIGHT)
-                    .px(px(10.))
+                    .px(SPACE_2H)
                     .flex()
                     .items_center()
                     .gap(px(7.))
                     .when(at > 0, |title| title.border_t_1())
                     .bg(t.surface.opacity(0.55))
                     .font_family(crate::theme::UI)
-                    .text_size(crate::theme::ui_text(10.))
+                    .text_size(crate::theme::ui_text(TEXT_3XS))
                     .text_color(t.text_tertiary)
                     .children(status_mark(code, cx))
                     .child(div().child(word)),
@@ -536,9 +538,9 @@ fn draw(
             };
             body(
                 div()
-                    .p(px(12.))
+                    .p(SPACE_3)
                     .font_family(crate::theme::UI)
-                    .text_size(crate::theme::ui_text(11.))
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(colour)
                     .child(text),
             )
@@ -558,10 +560,10 @@ fn draw(
             let (expanding, wheeling) = (view.clone(), view.clone());
             body(
                 div()
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .line_height(crate::theme::ui_text(19.))
-                    .when(index == 0, |rows| rows.pt(px(8.)))
-                    .when(index + 1 == diff.len(), |rows| rows.pb(px(8.)))
+                    .when(index == 0, |rows| rows.pt(SPACE_2))
+                    .when(index + 1 == diff.len(), |rows| rows.pb(SPACE_2))
                     .on_scroll(move |event: &ScrollEvent, window, cx| {
                         let delta = event.delta.pixel_delta(window.line_height());
                         if delta.x.abs() <= delta.y.abs() {
@@ -626,7 +628,7 @@ fn header(view: &Entity<GitPane>, pane: &GitPane, card: usize, cx: &App) -> AnyE
                 })
                 .when(pane.hovered.as_ref() == Some(&key), |head| {
                     head.child(
-                        div().flex().gap(px(2.)).pr(px(4.)).children(
+                        div().flex().gap(SPACE_0).pr(SPACE_1).children(
                             file.map(|file| super::pane::file_actions(view, file, None, cx))
                                 .into_iter()
                                 .flatten(),

@@ -16,6 +16,7 @@ use sikemux_wire::protocol::{Pane, PaneKind, SessionId, SplitDir, Tab};
 
 use crate::drag::DraggedTab;
 use crate::pane_kind::Separable;
+use crate::theme::{SPACE_1, TEXT_XS};
 use crate::workbench::{Strip, TakesKeys, Workbench};
 use crate::{desk, home, motion, terminal, ui};
 
@@ -474,9 +475,9 @@ fn stack(
                 .flex()
                 .flex_none()
                 .items_center()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .h(px(STACK_STRIP))
-                .px(px(4.))
+                .px(SPACE_1)
                 .overflow_hidden()
                 .children(pills),
         )
@@ -604,7 +605,7 @@ fn view(
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(crate::theme::Tokens::get(cx).text_tertiary)
                     .child("This tab needs a newer Sikemux."),
             )

@@ -9,6 +9,7 @@ use sikemux_core::agent_accounts::status::AgentStatus;
 
 use crate::agents::setup::{installing, run, signing_in, status_label, Setup, Sheet};
 use crate::settings::rows;
+use crate::theme::{SPACE_1H, SPACE_2, TEXT_2XS};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -38,8 +39,8 @@ pub fn render(
                 let status = div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .px(px(8.))
+                    .gap(SPACE_1H)
+                    .px(SPACE_2)
                     .h(px(22.))
                     .rounded_full()
                     .border_1()
@@ -47,7 +48,7 @@ pub fn render(
                     .child(ui::dot(tone, cx))
                     .child(
                         div()
-                            .text_size(crate::theme::ui_text(11.))
+                            .text_size(crate::theme::ui_text(TEXT_2XS))
                             .text_color(t.text_secondary)
                             .child(status_label(&agent.status)),
                     );
@@ -73,7 +74,7 @@ pub fn render(
                 let actions = div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(status)
                     .children(sign_in.map(|sheet| {
                         sheet_button(format!("agent-sign-in-{}", agent.kind), "Sign in", sheet)

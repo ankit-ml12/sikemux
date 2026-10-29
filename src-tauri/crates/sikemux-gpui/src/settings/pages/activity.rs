@@ -15,7 +15,10 @@ use crate::core::{utc_offset_minutes, Ask, Watch};
 use crate::home::{self, compact, money, number, plural, whole};
 use crate::icons::Icon;
 use crate::settings::{rows, ACTIVITY};
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, TEXT_2XS, TEXT_2XS_H,
+    TEXT_SM,
+};
 use crate::ui;
 use crate::ui::time::total;
 use crate::workbench::Workbench;
@@ -211,8 +214,8 @@ fn share_row(
     div()
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(16.))
+        .gap(SPACE_3)
+        .px(SPACE_4)
         .py(px(9.))
         .border_b_1()
         .border_color(t.line_soft)
@@ -226,7 +229,7 @@ fn share_row(
                 .child(
                     div()
                         .truncate()
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .text_color(t.text_primary)
                         .child(title),
                 )
@@ -234,7 +237,7 @@ fn share_row(
                     div()
                         .truncate()
                         .font_family(theme::MONO)
-                        .text_size(crate::theme::ui_text(11.))
+                        .text_size(crate::theme::ui_text(TEXT_2XS))
                         .text_color(t.text_tertiary)
                         .child(under)
                 })),
@@ -242,7 +245,7 @@ fn share_row(
         .child(
             div()
                 .flex_none()
-                .text_size(crate::theme::ui_text(11.5))
+                .text_size(crate::theme::ui_text(TEXT_2XS_H))
                 .text_color(t.text_tertiary)
                 .child(details),
         )
@@ -253,7 +256,7 @@ fn share_row(
                 .flex()
                 .justify_end()
                 .font_features(theme::tabular())
-                .text_size(crate::theme::ui_text(13.))
+                .text_size(crate::theme::ui_text(TEXT_SM))
                 .text_color(t.text_primary)
                 .child(value),
         )
@@ -324,22 +327,22 @@ fn price_form(
     div()
         .flex()
         .flex_col()
-        .gap(px(10.))
-        .px(px(16.))
-        .py(px(12.))
+        .gap(SPACE_2H)
+        .px(SPACE_4)
+        .py(SPACE_3)
         .border_b_1()
         .border_color(t.line_soft)
         .bg(t.surface_sunken)
         .child(
             div()
-                .text_size(crate::theme::ui_text(11.5))
+                .text_size(crate::theme::ui_text(TEXT_2XS_H))
                 .text_color(t.text_tertiary)
                 .child("USD per million tokens. Cache prices default to the input price."),
         )
         .child(
             div()
                 .flex()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .children(
                     PRICES
                         .iter()
@@ -350,10 +353,10 @@ fn price_form(
                                 .min_w_0()
                                 .flex()
                                 .flex_col()
-                                .gap(px(4.))
+                                .gap(SPACE_1)
                                 .child(
                                     div()
-                                        .text_size(crate::theme::ui_text(11.))
+                                        .text_size(crate::theme::ui_text(TEXT_2XS))
                                         .text_color(t.text_tertiary)
                                         .child(*label),
                                 )
@@ -365,7 +368,7 @@ fn price_form(
             div()
                 .flex()
                 .justify_end()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .when(own, |actions| {
                     actions.child(
                         ui::Button::new(
@@ -446,7 +449,7 @@ fn models(summary: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) 
                 div()
                     .id(SharedString::from(format!("{tag}-{id}")))
                     .cursor_pointer()
-                    .text_size(crate::theme::ui_text(11.5))
+                    .text_size(crate::theme::ui_text(TEXT_2XS_H))
                     .text_color(t.text_secondary)
                     .hover(|style| style.text_color(t.text_primary))
                     .child(label)
@@ -497,10 +500,10 @@ fn pricing_note(summary: &Value, cx: &App) -> AnyElement {
     div()
         .flex()
         .flex_col()
-        .gap(px(2.))
-        .px(px(16.))
-        .py(px(10.))
-        .text_size(crate::theme::ui_text(11.5))
+        .gap(SPACE_0)
+        .px(SPACE_4)
+        .py(SPACE_2H)
+        .text_size(crate::theme::ui_text(TEXT_2XS_H))
         .text_color(t.text_tertiary)
         .child("What these tokens would cost at API prices. Subscription plans bill separately.")
         .child(format!("{unpriced}{source}"))
@@ -535,14 +538,14 @@ pub fn render(
             cx,
         ),
         Some(totals) => div()
-            .p(px(16.))
+            .p(SPACE_4)
             .child(home::overview(totals, cx))
             .into_any_element(),
         None => rows::note("Reading activity…", cx),
     };
     let calendar = match summary {
         Some(summary) => div()
-            .p(px(16.))
+            .p(SPACE_4)
             .child(home::calendar(summary, bench, None, cx))
             .into_any_element(),
         None => div().into_any_element(),

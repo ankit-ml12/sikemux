@@ -17,7 +17,7 @@ use crate::core;
 use crate::hosts::Place as Host;
 use crate::icons::Icon;
 use crate::send_to;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1, SPACE_2, SPACE_2H, SPACE_3, TEXT_XS};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -262,7 +262,7 @@ pub(super) fn bar(
         let chosen = insights.open && insights.tab == shown;
         div()
             .id(id)
-            .px(px(8.))
+            .px(SPACE_2)
             .h(px(22.))
             .flex()
             .items_center()
@@ -290,9 +290,9 @@ pub(super) fn bar(
     let header = div()
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .h(px(29.))
-        .px(px(8.))
+        .px(SPACE_2)
         .border_t_1()
         .border_color(t.border)
         .child(tab(
@@ -421,8 +421,8 @@ pub(super) fn bar(
                         Outline::Unavailable => "Outline is unavailable for this file".to_owned(),
                     };
                     vec![div()
-                        .px(px(12.))
-                        .py(px(8.))
+                        .px(SPACE_3)
+                        .py(SPACE_2)
                         .text_color(t.text_tertiary)
                         .child(said)
                         .into_any_element()]
@@ -442,7 +442,7 @@ pub(super) fn bar(
         .flex()
         .flex_col()
         .font_family(theme::MONO)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .child(header)
         .children(body)
 }
@@ -538,9 +538,9 @@ fn row(
         .id(id)
         .flex()
         .items_center()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .h(px(24.))
-        .px(px(12.))
+        .px(SPACE_3)
         .cursor_pointer()
         .hover(move |style| style.bg(hover))
         .on_click(move |_, _, cx| {

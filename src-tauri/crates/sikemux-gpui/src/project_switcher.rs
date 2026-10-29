@@ -13,7 +13,9 @@ use serde_json::json;
 
 use crate::core;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_2, TEXT_2XS_H, TEXT_3XS_H, TEXT_XS, TEXT_XS_H,
+};
 use crate::ui;
 use crate::ui::path::tilde;
 use crate::workbench::Workbench;
@@ -229,10 +231,10 @@ impl Render for Switcher {
                 && (at == 0 || choices[at - 1].project.is_some() != choice.project.is_some()))
             .then(|| {
                 div()
-                    .px(px(8.))
-                    .pt(px(8.))
-                    .pb(px(2.))
-                    .text_size(crate::theme::ui_text(10.5))
+                    .px(SPACE_2)
+                    .pt(SPACE_2)
+                    .pb(SPACE_0)
+                    .text_size(crate::theme::ui_text(TEXT_3XS_H))
                     .text_color(t.text_tertiary)
                     .child(if choice.project.is_some() {
                         "Open"
@@ -247,9 +249,9 @@ impl Render for Switcher {
                     .id(("project-choice", at))
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .h(px(28.))
-                    .px(px(8.))
+                    .px(SPACE_2)
                     .rounded(theme::RADIUS_2)
                     .cursor_pointer()
                     .when(at == self.chosen, |row| row.bg(t.surface_hover))
@@ -272,7 +274,7 @@ impl Render for Switcher {
                     .child(
                         div()
                             .flex_none()
-                            .text_size(crate::theme::ui_text(12.5))
+                            .text_size(crate::theme::ui_text(TEXT_XS_H))
                             .text_color(if here {
                                 t.text_primary
                             } else {
@@ -285,7 +287,7 @@ impl Render for Switcher {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(crate::theme::ui_text(11.5))
+                            .text_size(crate::theme::ui_text(TEXT_2XS_H))
                             .text_color(t.text_tertiary)
                             .child(tilde(parent(&choice.path), choice.home.as_deref())),
                     )
@@ -308,7 +310,7 @@ impl Render for Switcher {
             .w(px(360.))
             .flex()
             .flex_col()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .p(px(ui::PANEL_INSET))
             .bg(t.surface_overlay)
             .border_1()
@@ -319,7 +321,7 @@ impl Render for Switcher {
                 div()
                     .mx(px(-ui::PANEL_INSET))
                     .mt(px(-ui::PANEL_INSET))
-                    .mb(px(2.))
+                    .mb(SPACE_0)
                     .child(ui::Field::new(&self.query).icon(Icon::Search).flush()),
             )
             .child(
@@ -331,9 +333,9 @@ impl Render for Switcher {
                     .when(empty, |list| {
                         list.child(
                             div()
-                                .px(px(8.))
-                                .py(px(8.))
-                                .text_size(crate::theme::ui_text(12.))
+                                .px(SPACE_2)
+                                .py(SPACE_2)
+                                .text_size(crate::theme::ui_text(TEXT_XS))
                                 .text_color(t.text_tertiary)
                                 .child("No matches"),
                         )

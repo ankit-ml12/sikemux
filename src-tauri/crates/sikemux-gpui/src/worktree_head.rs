@@ -11,7 +11,7 @@ use sikemux_wire::changed::Topic;
 
 use crate::core::Watch;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1H, SPACE_2, TEXT_XS};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -136,7 +136,7 @@ pub fn badges(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
         div()
             .id(id)
             .h(px(24.))
-            .px(px(8.))
+            .px(SPACE_2)
             .flex()
             .flex_none()
             .items_center()
@@ -144,7 +144,7 @@ pub fn badges(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
             .rounded(theme::RADIUS_2)
             .border_1()
             .cursor_pointer()
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .hover(|style| style.bg(t.surface_hover).border_color(t.border_strong))
     };
     let badge = pull.and_then(|pull| {
@@ -192,7 +192,7 @@ pub fn badges(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
         div()
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .children(badge)
             .when_some(remove, |row, remove| row.child(remove))
             .into_any_element(),

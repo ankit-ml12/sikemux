@@ -17,7 +17,10 @@ use sikemux_wire::protocol::{PaneKind, ProjectInfo};
 use crate::icons::Icon;
 use crate::motion;
 use crate::settings::{self, rows};
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_6, TEXT_2XS_H,
+    TEXT_SM, TEXT_XS, TEXT_XS_H,
+};
 use crate::toast;
 use crate::ui::{self, Button, Field, IconButton, Variant};
 use crate::workbench::Workbench;
@@ -367,11 +370,11 @@ pub fn pane(
             .id(SharedString::from(format!("project-page-{label}")))
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .h(px(28.))
-            .px(px(8.))
+            .px(SPACE_2)
             .rounded(theme::RADIUS_2)
-            .text_size(crate::theme::ui_text(13.))
+            .text_size(crate::theme::ui_text(TEXT_SM))
             .text_color(ink)
             .when(on, |row| row.bg(t.surface_chosen))
             .when(!on, |row| row.hover(|row| row.bg(t.surface_hover)))
@@ -395,17 +398,17 @@ pub fn pane(
         .flex_none()
         .flex()
         .flex_col()
-        .gap(px(2.))
-        .p(px(12.))
+        .gap(SPACE_0)
+        .p(SPACE_3)
         .border_r_1()
         .border_color(t.border)
         .child(
             div()
-                .px(px(8.))
-                .pb(px(10.))
+                .px(SPACE_2)
+                .pb(SPACE_2H)
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     div()
                         .text_size(crate::theme::ui_text(15.))
@@ -451,7 +454,7 @@ pub fn pane(
                         .flex_col()
                         .gap(px(22.))
                         .px(px(28.))
-                        .py(px(24.))
+                        .py(SPACE_6)
                         .children(body),
                 ),
         )
@@ -572,9 +575,9 @@ fn tasks(
         div()
             .flex()
             .items_center()
-            .gap(px(12.))
-            .px(px(14.))
-            .py(px(8.))
+            .gap(SPACE_3)
+            .px(SPACE_3H)
+            .py(SPACE_2)
             .border_b_1()
             .border_color(t.line_soft)
             .child(
@@ -583,10 +586,10 @@ fn tasks(
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .child(
                         div()
-                            .text_size(crate::theme::ui_text(13.))
+                            .text_size(crate::theme::ui_text(TEXT_SM))
                             .text_color(t.text_primary)
                             .child(text(&task["label"])),
                     )
@@ -594,7 +597,7 @@ fn tasks(
                         div()
                             .truncate()
                             .font_family(theme::MONO)
-                            .text_size(crate::theme::ui_text(11.5))
+                            .text_size(crate::theme::ui_text(TEXT_2XS_H))
                             .text_color(t.text_tertiary)
                             .child(text(&task["command"])),
                     ),
@@ -695,10 +698,10 @@ fn tasks(
                 .id(SharedString::from(format!("found-folder-{cwd}")))
                 .flex()
                 .items_center()
-                .gap(px(6.))
-                .px(px(14.))
+                .gap(SPACE_1H)
+                .px(SPACE_3H)
                 .py(px(7.))
-                .text_size(crate::theme::ui_text(12.5))
+                .text_size(crate::theme::ui_text(TEXT_XS_H))
                 .text_color(t.text_secondary)
                 .hover(|row| row.bg(t.surface_hover))
                 .child(motion::turn(
@@ -735,16 +738,16 @@ fn tasks(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(12.))
+                        .gap(SPACE_3)
                         .pl(px(31.))
-                        .pr(px(14.))
+                        .pr(SPACE_3H)
                         .py(px(5.))
                         .child(
                             div()
                                 .w(px(160.))
                                 .flex_none()
                                 .truncate()
-                                .text_size(crate::theme::ui_text(12.5))
+                                .text_size(crate::theme::ui_text(TEXT_XS_H))
                                 .text_color(t.text_primary)
                                 .child(label),
                         )
@@ -754,7 +757,7 @@ fn tasks(
                                 .min_w_0()
                                 .truncate()
                                 .font_family(theme::MONO)
-                                .text_size(crate::theme::ui_text(11.5))
+                                .text_size(crate::theme::ui_text(TEXT_2XS_H))
                                 .text_color(t.text_tertiary)
                                 .child(text(&task["command"])),
                         )
@@ -775,8 +778,8 @@ fn tasks(
         let body = div()
             .child(
                 div()
-                    .px(px(14.))
-                    .py(px(10.))
+                    .px(SPACE_3H)
+                    .py(SPACE_2H)
                     .border_b_1()
                     .border_color(t.line_soft)
                     .child(Field::new(&settings.filter)),
@@ -858,8 +861,8 @@ fn git(
                     .id(id)
                     .flex()
                     .items_center()
-                    .gap(px(10.))
-                    .px(px(14.))
+                    .gap(SPACE_2H)
+                    .px(SPACE_3H)
                     .py(px(9.))
                     .border_b_1()
                     .border_color(t.line_soft)
@@ -868,14 +871,14 @@ fn git(
                     .children(mark.map(|mark| ui::icon(mark, 12.).text_color(t.text_secondary)))
                     .child(
                         div()
-                            .text_size(crate::theme::ui_text(13.))
+                            .text_size(crate::theme::ui_text(TEXT_SM))
                             .text_color(t.text_primary)
                             .child(name),
                     )
                     .child(
                         div()
                             .flex_1()
-                            .text_size(crate::theme::ui_text(11.5))
+                            .text_size(crate::theme::ui_text(TEXT_2XS_H))
                             .text_color(t.text_tertiary)
                             .child(detail),
                     )
@@ -998,7 +1001,7 @@ fn config(
     let (trusting, opening, folder) = (this.clone(), this.clone(), folder.to_owned());
     let controls = div()
         .flex()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .when(status == "valid" && !trusted, |controls| {
             controls.child(
                 Button::new("config-trust", "Trust", Variant::Outline).on_click(move |_, _, cx| {
@@ -1016,10 +1019,10 @@ fn config(
     let mistakes = errors.iter().map(|error| {
         div()
             .flex()
-            .gap(px(8.))
-            .px(px(14.))
-            .py(px(6.))
-            .text_size(crate::theme::ui_text(12.))
+            .gap(SPACE_2)
+            .px(SPACE_3H)
+            .py(SPACE_1H)
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .child(
                 div()
                     .font_family(theme::MONO)

@@ -20,7 +20,7 @@ use sikemux_wire::protocol::{Pane, PaneKind, DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE,
 use crate::core::{Ask, Target};
 use crate::hosts::Place as Host;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_XS};
 use crate::ui;
 use crate::workbench::{Strip, TakesKeys, Workbench};
 
@@ -399,12 +399,12 @@ pub fn pane(
                     .key_context("GoToLine")
                     .flex()
                     .items_center()
-                    .gap(px(10.))
-                    .px(px(12.))
-                    .py(px(6.))
+                    .gap(SPACE_2H)
+                    .px(SPACE_3)
+                    .py(SPACE_1H)
                     .border_b_1()
                     .border_color(t.border)
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .child(div().text_color(t.text_tertiary).child("Go to line"))
                     .child(
                         Input::new(input)
@@ -741,9 +741,9 @@ fn peek_panel(
             rows.push(
                 div()
                     .flex()
-                    .gap(px(8.))
-                    .px(px(12.))
-                    .pt(px(6.))
+                    .gap(SPACE_2)
+                    .px(SPACE_3)
+                    .pt(SPACE_1H)
                     .child(div().text_color(t.text_primary).children(name))
                     .child(div().text_color(t.text_tertiary).children(folder))
                     .into_any_element(),
@@ -754,10 +754,10 @@ fn peek_panel(
             div()
                 .id(("peek", index))
                 .flex()
-                .gap(px(12.))
+                .gap(SPACE_3)
                 .h(px(24.))
                 .items_center()
-                .px(px(12.))
+                .px(SPACE_3)
                 .cursor_pointer()
                 .hover(move |style| style.bg(t.surface_hover))
                 .on_click(move |_, _, cx| {
@@ -793,14 +793,14 @@ fn peek_panel(
         .border_t_1()
         .border_color(t.border)
         .font_family(theme::MONO)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .child(
             div()
                 .flex()
                 .items_center()
                 .h(px(30.))
-                .px(px(12.))
-                .gap(px(8.))
+                .px(SPACE_3)
+                .gap(SPACE_2)
                 .border_b_1()
                 .border_color(t.border)
                 .child(
@@ -829,7 +829,7 @@ fn peek_panel(
                 .flex()
                 .flex_col()
                 .overflow_y_scroll()
-                .pb(px(6.))
+                .pb(SPACE_1H)
                 .children(rows),
         )
 }
@@ -994,13 +994,13 @@ fn notice_bar(
     div()
         .flex()
         .items_center()
-        .gap(px(10.))
-        .px(px(12.))
-        .py(px(6.))
+        .gap(SPACE_2H)
+        .px(SPACE_3)
+        .py(SPACE_1H)
         .border_b_1()
         .border_color(t.border)
         .bg(t.surface_sunken)
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .child(
             div()
                 .flex_1()

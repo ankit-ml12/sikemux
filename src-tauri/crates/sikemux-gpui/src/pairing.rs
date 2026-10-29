@@ -19,7 +19,9 @@ use sikemux_wire::protocol::{AllowedDevice, DeviceAccess, PendingDevice};
 
 use crate::core::{Ask, RemoteAsk};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4, TEXT_2XS_H, TEXT_XS,
+};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::Workbench;
 
@@ -367,9 +369,9 @@ pub fn overlay(
             .w(px(360.))
             .flex()
             .items_center()
-            .gap(px(12.))
-            .px(px(14.))
-            .py(px(10.))
+            .gap(SPACE_3)
+            .px(SPACE_3H)
+            .py(SPACE_2H)
             .rounded(theme::RADIUS_3)
             .border_1()
             .border_color(if on { t.text_secondary } else { t.border })
@@ -380,7 +382,7 @@ pub fn overlay(
                     .flex_1()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .child(ui::text(label, 13., FontWeight::MEDIUM).text_color(t.text_primary))
                     .child(ui::text(detail, 11.5, FontWeight::NORMAL).text_color(t.text_tertiary)),
             )
@@ -406,7 +408,7 @@ pub fn overlay(
             div()
                 .flex()
                 .items_center()
-                .gap(px(14.))
+                .gap(SPACE_3H)
                 .child(tile(if host { Icon::Laptop } else { Icon::Phone }))
                 .child(div().w(px(48.)).h(px(1.)).bg(t.border))
                 .child(tile(Icon::Laptop)),
@@ -421,32 +423,32 @@ pub fn overlay(
         )
         .children(names.map(|names| {
             div()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_secondary)
                 .child(names)
         }))
         .when(host, |column| {
             column.child(
                 div()
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(t.text_secondary)
                     .child("Its agents could start agents here, on this host's sign-ins."),
             )
         })
         .children(account.map(|account| {
             div()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_tertiary)
                 .child(format!("Signed in as {account}"))
         }))
         .when(!host, |column| {
-            column.child(div().flex().flex_col().gap(px(8.)).children(choices))
+            column.child(div().flex().flex_col().gap(SPACE_2).children(choices))
         })
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(10.))
+                .gap(SPACE_2H)
                 .children(waits_for.map(|left| ui::mono(format!("waits {left}"), 11., cx)))
                 .child(
                     Button::new("pairing-decline", decline, Variant::Outline)
@@ -460,7 +462,7 @@ pub fn overlay(
         .child(
             div()
                 .flex()
-                .gap(px(16.))
+                .gap(SPACE_4)
                 .child(hint("esc", decline))
                 .when(!host, |hints| hints.child(hint("↑↓", "Choose access")))
                 .child(hint("↵", "Allow")),
@@ -495,7 +497,7 @@ pub fn overlay(
                 div()
                     .absolute()
                     .bottom(px(24.))
-                    .text_size(crate::theme::ui_text(11.5))
+                    .text_size(crate::theme::ui_text(TEXT_2XS_H))
                     .text_color(t.text_tertiary)
                     .child("Only allow phones you own. Remove one any time in Settings › Devices."),
             )

@@ -19,7 +19,10 @@ use sikemux_core::git::log::GitCommit;
 use super::GitPane;
 use crate::core::Target;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{
+    self, Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H,
+    SPACE_4, TEXT_2XS, TEXT_3XS, TEXT_LG, TEXT_SM, TEXT_XS, TEXT_XS_H,
+};
 use crate::toast;
 use crate::ui;
 use crate::workbench::{AgentRow, Workbench};
@@ -336,16 +339,16 @@ fn ref_badge(label: &str, cx: &App) -> Div {
         .max_w(px(108.))
         .flex()
         .items_center()
-        .gap(px(4.))
-        .pl(px(6.))
+        .gap(SPACE_1)
+        .pl(SPACE_1H)
         .pr(px(7.))
-        .py(px(2.))
+        .py(SPACE_0)
         .border_1()
         .border_color(edge)
         .rounded(RADIUS_2)
         .when_some(ground, |badge, ground| badge.bg(ground))
-        .text_size(crate::theme::ui_text(10.))
-        .line_height(crate::theme::ui_text(10.))
+        .text_size(crate::theme::ui_text(TEXT_3XS))
+        .line_height(crate::theme::ui_text(TEXT_3XS))
         .text_color(ink)
         .child(div().size(px(5.)).flex_none().rounded_full().bg(ink))
         .child(div().min_w_0().truncate().child(text.to_owned()))
@@ -383,12 +386,12 @@ pub fn commit_row(
         .w_full()
         .h(px(ROW_HEIGHT))
         .pl(px(gutter))
-        .pr(px(10.))
+        .pr(SPACE_2H)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .rounded(RADIUS_2)
-        .text_size(crate::theme::ui_text(12.5))
+        .text_size(crate::theme::ui_text(TEXT_XS_H))
         .text_color(if chosen {
             t.text_primary
         } else {
@@ -425,7 +428,7 @@ pub fn commit_row(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(crate::theme::ui_text(13.))
+                .text_size(crate::theme::ui_text(TEXT_SM))
                 .font_weight(FontWeight::MEDIUM)
                 .child(without_scope(&commit.subject).to_owned()),
         )
@@ -438,7 +441,7 @@ pub fn commit_row(
                 div()
                     .flex_none()
                     .font_family(theme::MONO)
-                    .text_size(crate::theme::ui_text(11.))
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(t.text_tertiary)
                     .child(commit.hash.clone()),
             )
@@ -447,7 +450,7 @@ pub fn commit_row(
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.text_tertiary)
                 .child(commit.date.clone()),
         )
@@ -468,7 +471,7 @@ pub fn commit_card(
             .flex()
             .items_center()
             .min_h(px(22.))
-            .gap(px(12.))
+            .gap(SPACE_3)
             .child(
                 div()
                     .w(px(64.))
@@ -481,7 +484,7 @@ pub fn commit_card(
                     .flex()
                     .flex_wrap()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .min_w_0()
                     .text_color(t.text_secondary)
                     .child(value),
@@ -490,14 +493,14 @@ pub fn commit_card(
     let chip = |text: String, colour: Hsla, edge: Hsla| {
         div()
             .h(px(18.))
-            .px(px(6.))
+            .px(SPACE_1H)
             .flex()
             .items_center()
             .border_1()
             .border_color(edge)
             .rounded(px(4.))
             .font_family(theme::MONO)
-            .text_size(crate::theme::ui_text(10.))
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .text_color(colour)
             .child(text)
     };
@@ -505,7 +508,7 @@ pub fn commit_card(
     let mut hash = div()
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(
             div()
                 .font_family(theme::MONO)
@@ -533,12 +536,12 @@ pub fn commit_card(
         hash = hash.child(chip(shown.to_owned(), t.text_secondary, t.border));
     }
     let body = div()
-        .px(px(16.))
-        .pt(px(14.))
-        .pb(px(12.))
+        .px(SPACE_4)
+        .pt(SPACE_3H)
+        .pb(SPACE_3)
         .child(
             div()
-                .text_size(crate::theme::ui_text(16.))
+                .text_size(crate::theme::ui_text(TEXT_LG))
                 .line_height(crate::theme::ui_text(21.6))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(t.text_primary)
@@ -546,17 +549,17 @@ pub fn commit_card(
         )
         .child(
             div()
-                .mt(px(12.))
+                .mt(SPACE_3)
                 .flex()
                 .flex_col()
-                .gap(px(4.))
-                .text_size(crate::theme::ui_text(11.))
+                .gap(SPACE_1)
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .child(fact(
                     "Author",
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .child(pane.author_face(&commit.author, &commit.author_email, 20., cx))
                         .child(commit.author.clone())
                         .children(commit_agents(pane, &commit.full_hash, false, cx))
@@ -583,12 +586,12 @@ fn commit_foot(commit: &GitCommit, cx: &mut Context<GitPane>) -> Div {
         gpui_kit::base::Button::new(id)
             .accessibility_label(label)
             .h(px(26.))
-            .px(px(8.))
+            .px(SPACE_2)
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .rounded(RADIUS_2)
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .text_color(t.text_secondary)
             .hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
             .child(ui::icon(icon, 12.).text_color(t.text_tertiary))
@@ -599,9 +602,9 @@ fn commit_foot(commit: &GitCommit, cx: &mut Context<GitPane>) -> Div {
     div()
         .flex()
         .items_center()
-        .gap(px(2.))
-        .px(px(8.))
-        .py(px(6.))
+        .gap(SPACE_0)
+        .px(SPACE_2)
+        .py(SPACE_1H)
         .border_t_1()
         .border_color(t.border)
         .child(
@@ -759,7 +762,7 @@ fn commit_agents(pane: &GitPane, hash: &str, compact: bool, cx: &App) -> Option<
                 .child(
                     div()
                         .flex_none()
-                        .ml(px(6.))
+                        .ml(SPACE_1H)
                         .text_color(t.text_tertiary)
                         .child(format!("@{}", owner.name)),
                 ),
@@ -775,12 +778,12 @@ fn commit_agents(pane: &GitPane, hash: &str, compact: bool, cx: &App) -> Option<
             .px(px(if marks_only { 4. } else { 6. }))
             .flex()
             .items_center()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .overflow_hidden()
             .border_1()
             .border_color(t.border)
             .rounded(RADIUS_2)
-            .text_size(crate::theme::ui_text(11.))
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .font_weight(FontWeight::NORMAL)
             .text_color(t.text_secondary)
             .whitespace_nowrap()
@@ -800,7 +803,7 @@ fn commit_agents(pane: &GitPane, hash: &str, compact: bool, cx: &App) -> Option<
         div()
             .flex()
             .items_center()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .min_w_0()
             .children(chips),
     )

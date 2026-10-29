@@ -10,7 +10,9 @@ use sikemux_core::agent_accounts::Profile;
 
 use crate::icons::{self, Icon};
 use crate::settings::rows;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, TEXT_2XS, TEXT_XS_H,
+};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -178,9 +180,9 @@ pub fn render(
                 .id(SharedString::from(format!("profile-{}", profile.id)))
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .px(px(12.))
-                .py(px(8.))
+                .gap(SPACE_2)
+                .px(SPACE_3)
+                .py(SPACE_2)
                 .cursor_pointer()
                 .when(chosen, |row| row.bg(t.surface_chosen))
                 .when(!chosen, |row| row.hover(|style| style.bg(t.surface_hover)))
@@ -199,14 +201,14 @@ pub fn render(
                         .child(
                             div()
                                 .truncate()
-                                .text_size(crate::theme::ui_text(12.5))
+                                .text_size(crate::theme::ui_text(TEXT_XS_H))
                                 .text_color(t.text_primary)
                                 .child(profile.name.clone()),
                         )
                         .child(
                             div()
                                 .truncate()
-                                .text_size(crate::theme::ui_text(11.))
+                                .text_size(crate::theme::ui_text(TEXT_2XS))
                                 .text_color(t.text_tertiary)
                                 .child(format!(
                                     "{} · {}",
@@ -222,7 +224,7 @@ pub fn render(
         }))
         .child({
             let this = this.clone();
-            div().p(px(8.)).child(
+            div().p(SPACE_2).child(
                 ui::Button::new("profile-new", "New profile", ui::Variant::Dashed)
                     .icon(Icon::Plus)
                     .on_click(move |_, window, cx| {
@@ -266,20 +268,20 @@ pub fn render(
         div()
             .flex()
             .flex_col()
-            .gap(px(6.))
-            .px(px(16.))
-            .py(px(10.))
+            .gap(SPACE_1H)
+            .px(SPACE_4)
+            .py(SPACE_2H)
             .border_b_1()
             .border_color(t.line_soft)
             .child(
                 div()
-                    .text_size(crate::theme::ui_text(12.5))
+                    .text_size(crate::theme::ui_text(TEXT_XS_H))
                     .text_color(t.text_primary)
                     .child(label),
             )
             .children(about.map(|about| {
                 div()
-                    .text_size(crate::theme::ui_text(11.))
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(t.text_tertiary)
                     .child(about)
             }))
@@ -319,8 +321,8 @@ pub fn render(
             div()
                 .flex()
                 .justify_end()
-                .gap(px(8.))
-                .p(px(16.))
+                .gap(SPACE_2)
+                .p(SPACE_4)
                 .when(saved && !built_in, |actions| {
                     actions.child(
                         ui::Button::new("profile-delete", "Delete", ui::Variant::Outline)

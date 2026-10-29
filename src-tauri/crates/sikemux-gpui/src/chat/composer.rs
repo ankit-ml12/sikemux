@@ -19,7 +19,10 @@ use sikemux_wire::protocol::ConfigPicker;
 use crate::chat::model_picker::Picked;
 use crate::icons::Icon;
 use crate::motion::{Curve, Ease};
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_4, TEXT_2XS, TEXT_3XS_H,
+    TEXT_XS, TEXT_XS_H,
+};
 use crate::ui::{self, DockMenu, IconButton};
 use crate::workbench::Workbench;
 
@@ -272,7 +275,7 @@ impl RenderOnce for Composer {
             });
         let mut bar = div()
             .min_h(px(34.))
-            .pt(px(8.))
+            .pt(SPACE_2)
             .px(px(3.))
             .pb(px(1.))
             .flex()
@@ -361,8 +364,8 @@ impl RenderOnce for Composer {
         let has_strip = self.strip.is_some();
         div()
             .w_full()
-            .px(px(16.))
-            .pb(px(16.))
+            .px(SPACE_4)
+            .pb(SPACE_4)
             .flex()
             .flex_col()
             .items_center()
@@ -387,7 +390,7 @@ impl RenderOnce for Composer {
                     .relative()
                     .w_full()
                     .max_w(px(820.))
-                    .p(px(8.))
+                    .p(SPACE_2)
                     .flex()
                     .flex_col()
                     .border_1()
@@ -397,7 +400,7 @@ impl RenderOnce for Composer {
                     .children(tiles)
                     .child(
                         div()
-                            .py(px(2.))
+                            .py(SPACE_0)
                             .min_h(px(14.5 * self.text_scale * 1.75 * 2.5))
                             .child(
                                 Textarea::new(&self.draft)
@@ -418,8 +421,8 @@ impl RenderOnce for Composer {
                     )
                     .children(self.heard.map(|heard| {
                         div()
-                            .px(px(10.))
-                            .pb(px(4.))
+                            .px(SPACE_2H)
+                            .pb(SPACE_1)
                             .text_size(px(14.5 * self.text_scale))
                             .text_color(t.text_disabled)
                             .child(heard)
@@ -432,12 +435,12 @@ impl RenderOnce for Composer {
                 let line = div()
                     .w_full()
                     .max_w(px(820.))
-                    .pt(px(6.))
-                    .px(px(4.))
+                    .pt(SPACE_1H)
+                    .px(SPACE_1)
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .text_size(crate::theme::ui_text(12.));
+                    .gap(SPACE_2)
+                    .text_size(crate::theme::ui_text(TEXT_XS));
                 match notice {
                     Notice::Refused(words, action) => line
                         .text_color(t.danger)
@@ -468,13 +471,13 @@ fn project_strip(strip: Strip, covered: bool, fill: Hsla, cx: &App) -> impl Into
     let name = |chevron: bool| {
         div()
             .h(px(26.))
-            .px(px(8.))
+            .px(SPACE_2)
             .max_w(px(240.))
             .flex()
             .items_center()
             .gap(px(7.))
             .rounded_full()
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .font_weight(FontWeight::MEDIUM)
             .text_color(t.text_primary)
             .child(ui::icon(Icon::Folder, 12.).text_color(t.live))
@@ -522,9 +525,9 @@ fn project_strip(strip: Strip, covered: bool, fill: Hsla, cx: &App) -> impl Into
         .overflow_hidden()
         .flex()
         .items_center()
-        .gap(px(2.))
-        .py(px(4.))
-        .px(px(6.))
+        .gap(SPACE_0)
+        .py(SPACE_1)
+        .px(SPACE_1H)
         .border_t_1()
         .border_l_1()
         .border_r_1()
@@ -535,10 +538,10 @@ fn project_strip(strip: Strip, covered: bool, fill: Hsla, cx: &App) -> impl Into
             div()
                 .min_w_0()
                 .max_w(px(180.))
-                .px(px(8.))
+                .px(SPACE_2)
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(match strip.host {
                     Some(_) => ui::icon(Icon::Server, 12.).flex_none().text_color(t.host),
                     None => ui::icon(Icon::Laptop, 12.)
@@ -568,7 +571,7 @@ fn project_strip(strip: Strip, covered: bool, fill: Hsla, cx: &App) -> impl Into
                     .flex_none()
                     .w(px(1.))
                     .h(px(14.))
-                    .mx(px(6.))
+                    .mx(SPACE_1H)
                     .bg(t.border),
             )
         })
@@ -576,7 +579,7 @@ fn project_strip(strip: Strip, covered: bool, fill: Hsla, cx: &App) -> impl Into
             div()
                 .min_w_0()
                 .max_w(px(200.))
-                .px(px(8.))
+                .px(SPACE_2)
                 .flex()
                 .items_center()
                 .gap(px(5.))
@@ -635,12 +638,12 @@ fn stash_button(fresh: usize, open: bool, toggle: Act, room: Room, cx: &App) -> 
     BaseButton::new("composer-stash")
         .accessibility_label("Stash")
         .h(px(28.))
-        .px(px(8.))
+        .px(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .rounded(theme::RADIUS_2)
-        .text_size(crate::theme::ui_text(12.5))
+        .text_size(crate::theme::ui_text(TEXT_XS_H))
         .font_weight(FontWeight::MEDIUM)
         .text_color(if open {
             t.text_primary
@@ -668,7 +671,7 @@ fn stash_button(fresh: usize, open: bool, toggle: Act, room: Room, cx: &App) -> 
                     .justify_center()
                     .rounded_full()
                     .bg(t.accent)
-                    .text_size(crate::theme::ui_text(10.5))
+                    .text_size(crate::theme::ui_text(TEXT_3XS_H))
                     .font_weight(FontWeight::BOLD)
                     .font_features(theme::tabular())
                     .text_color(t.on_accent)
@@ -823,9 +826,9 @@ fn picker_face<E: Styled + ParentElement + IntoElement>(
         .when(!first, |trigger| trigger.flex_none())
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .rounded_full()
-        .text_size(crate::theme::ui_text(11.))
+        .text_size(crate::theme::ui_text(TEXT_2XS))
         .text_color(if first {
             t.text_secondary
         } else {
@@ -1003,20 +1006,15 @@ fn context_card(
                         .text_color(percent_ink),
                 ),
         )
-        .child(
-            div()
-                .mt(px(9.))
-                .mb(px(8.))
-                .flex()
-                .gap(px(2.))
-                .children((0..CONTEXT_SEGMENTS).map(|segment| {
-                    div()
-                        .flex_1()
-                        .h(px(10.))
-                        .rounded(px(1.5))
-                        .bg(if segment < lit { signal } else { unlit })
-                })),
-        )
+        .child(div().mt(px(9.)).mb(SPACE_2).flex().gap(SPACE_0).children(
+            (0..CONTEXT_SEGMENTS).map(|segment| {
+                div()
+                    .flex_1()
+                    .h(px(10.))
+                    .rounded(px(1.5))
+                    .bg(if segment < lit { signal } else { unlit })
+            }),
+        ))
         .child(
             div()
                 .flex()

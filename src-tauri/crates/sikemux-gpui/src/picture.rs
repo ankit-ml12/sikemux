@@ -19,6 +19,7 @@ use tokio::sync::mpsc;
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::theme;
+use crate::theme::{SPACE_2, SPACE_3, SPACE_4, SPACE_6};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::Workbench;
 
@@ -425,18 +426,18 @@ impl Workbench {
             let height = shown.height + VIEWER_CHROME;
             dialog
                 .w((shown.width + VIEWER_SIDES * 2.).max(px(360.)))
-                .pt(px(8.))
-                .pb(px(16.))
+                .pt(SPACE_2)
+                .pb(SPACE_4)
                 .margin_top(((room.height - height) / 2.).max(px(0.)))
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap(px(12.))
+                        .gap(SPACE_3)
                         .child(
                             div()
                                 .h(px(24.))
-                                .pr(px(24.))
+                                .pr(SPACE_6)
                                 .flex()
                                 .items_center()
                                 .child(ui::text(name.clone(), 13., FontWeight::SEMIBOLD)),
