@@ -435,7 +435,7 @@ impl Muse {
     /// Writes a steer to Muse now, so a stop sent after it reaches Muse after
     /// it too. None when no turn is running.
     fn send_steer(&self, prompt: &Prompt) -> Result<Option<Sent>, String> {
-        let Some(turn_id) = self.driver().session.locked().active_turn() else {
+        let Some(turn_id) = self.driver().session.locked().turns.active() else {
             return Ok(None);
         };
         let input = self.prompt_input(prompt)?;
@@ -478,9 +478,9 @@ impl Muse {
     /// Sends `input` as turn `turn`.
     async fn send_turn(&self, turn: u64, prompt: &Prompt, input: Vec<Value>) -> Result<(), String> {
         let id = command_id();
-        self.driver().session.locked().begin(
+        self.driver().session.locked().turns.begin(
             turn,
-            &id,
+            Some(&id),
             prompt.message_id.clone(),
             history::title(&prompt.text),
         );
@@ -497,13 +497,13 @@ impl Muse {
         match self.rpc().request("turn/start", params).await {
             Ok(started) => {
                 let turn_id = text(&started, "turnId").unwrap_or(&id).to_owned();
-                if self.driver().session.locked().started(turn, &turn_id) {
+                if self.driver().session.locked().turns.started(turn, &turn_id) == Some(true) {
                     self.driver().interrupt(turn_id);
                 }
                 Ok(())
             }
             Err(error) => {
-                self.driver().session.locked().abandon(turn);
+                self.driver().session.locked().turns.abandon(turn);
                 Err(error)
             }
         }
@@ -632,7 +632,7 @@ impl Muse {
                 &session_id,
                 json!({ "sessionUpdate": UpdateKind::SessionInfoUpdate, "title": title }),
             );
-            driver.session.locked().titled = true;
+            driver.session.locked().turns.titled = true;
         }
         let children = subagent_histories(&driver.rpc, items).await;
         let mut out = Vec::new();
@@ -640,7 +640,7 @@ impl Muse {
         for (session, update) in out {
             driver.sink.update(&session, update);
         }
-        driver.session.locked().turns = history::turns(items);
+        driver.session.locked().turns.restore(history::turns(items));
         driver.sink.update(
             &session_id,
             json!({ "sessionUpdate": UpdateKind::HistoryLoaded }),
@@ -815,7 +815,7 @@ impl Backend for Muse {
     }
 
     async fn cancel(&mut self) -> Result<(), String> {
-        let turn = self.driver().session.locked().cancel();
+        let turn = self.driver().session.locked().turns.cancel();
         if let Some(turn_id) = turn {
             self.driver().interrupt(turn_id);
         }
@@ -896,16 +896,15 @@ impl Backend for Muse {
         let (session_id, turn_id, before) = {
             let session = self.driver().session.locked();
             let turn_id = session
+                .turns
                 .message_turns
                 .get(message_id)
                 .cloned()
                 .unwrap_or_else(|| message_id.to_owned());
-            let at = session
+            let before = session
                 .turns
-                .iter()
-                .position(|turn| *turn == turn_id)
-                .ok_or("That message is no longer part of this chat")?;
-            let before = at.checked_sub(1).map(|at| session.turns[at].clone());
+                .before(&turn_id)
+                .map_err(|()| "That message is no longer part of this chat")?;
             (session.session_id.clone(), turn_id, before)
         };
         let config = self.host.session_config(&self.launch);

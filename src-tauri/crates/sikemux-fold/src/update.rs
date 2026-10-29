@@ -166,6 +166,17 @@ fn chunk(kind: UpdateKind, text: &str, message_id: Option<&str>) -> Value {
     update
 }
 
+/// A note in the chat from the agent or about it, at `severity` ("info",
+/// "warning" or "error"), with more on it below the title when there is any.
+pub fn notice(severity: &str, title: &str, description: Option<&str>) -> Value {
+    let mut update =
+        json!({ "sessionUpdate": UpdateKind::Notice, "severity": severity, "title": title });
+    if let Some(description) = description.filter(|description| !description.is_empty()) {
+        update["description"] = json!(description);
+    }
+    update
+}
+
 /// The tool call row that stands for the agent compacting what it remembers, opened
 /// when `opens`, else brought to `status`, with what went wrong when it failed.
 pub fn compaction(id: &str, opens: bool, status: &str, error: Option<&str>) -> Value {

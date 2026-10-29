@@ -1,7 +1,7 @@
 //! Reads what Claude Code writes on its output and tells the chat, as the
 //! ACP session updates the app reads from every agent.
 
-use sikemux_fold::update::compaction;
+use sikemux_fold::update::{compaction, notice};
 use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -1194,12 +1194,10 @@ impl Reader {
                 Some(cleaned.to_owned()),
             ),
         };
-        let mut update =
-            json!({ "sessionUpdate": UpdateKind::Notice, "severity": severity, "title": title });
-        if let Some(description) = description.filter(|description| !description.is_empty()) {
-            update["description"] = json!(description);
-        }
-        self.sink.update(&self.data.session_id, update);
+        self.sink.update(
+            &self.data.session_id,
+            notice(severity, &title, description.as_deref()),
+        );
     }
 
     /// A failure Claude gave no reason for reads as the network's when the turn
@@ -1564,7 +1562,7 @@ impl Reader {
             .update(&self.data.session_id, TaskState::Stopped.update(task_id));
         self.sink.update(
             &self.data.session_id,
-            json!({ "sessionUpdate": UpdateKind::Notice, "severity": "info", "title": "Task stopped by user", "description": format!("{name}.") }),
+            notice("info", "Task stopped by user", Some(&format!("{name}."))),
         );
     }
 
