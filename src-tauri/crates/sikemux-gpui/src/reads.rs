@@ -1,9 +1,11 @@
 //! What the core's watches last answered, each under a field of its own and decoded once
 //! where it arrives, so a screen reads a field rather than looking an answer up by its key.
 
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use sikemux_plugin_api::{Listed, TokenForm};
 use sikemux_wire::catalog::CatalogAgent;
+use sikemux_wire::theme::ThemeSummary;
 
 /// The agents the core can run, as its catalog lists them.
 #[derive(Default, PartialEq)]
@@ -71,7 +73,7 @@ pub struct Reads {
     pub usage: Option<Value>,
     pub shares: Option<Value>,
     pub stash: Option<Value>,
-    pub themes: Option<Value>,
+    pub themes: Vec<ThemeSummary>,
     /// This host's trust questions, and those of the account host in front.
     pub trust: Option<Value>,
     pub host_trust: Option<Value>,
@@ -124,7 +126,6 @@ slots! {
     "usage" => usage,
     "shares" => shares,
     "stash" => stash,
-    "themes" => themes,
     "trust" => trust,
     "host-trust" => host_trust,
     "drafts" => drafts,
@@ -146,32 +147,17 @@ slots! {
 impl Reads {
     /// Keeps the agent catalog the core sent, and says whether it differs from the one kept.
     pub fn keep_catalog(&mut self, value: Value) -> bool {
-        match serde_json::from_value::<Vec<CatalogAgent>>(value) {
-            Ok(agents) if agents == self.catalog.0 => false,
-            Ok(agents) => {
-                self.catalog = Catalog(agents);
-                true
-            }
-            Err(error) => {
-                eprintln!("sikemux: the core's agent catalog does not read: {error}");
-                false
-            }
-        }
+        keep_decoded(&mut self.catalog.0, value, "agent catalog")
     }
 
     /// Keeps the plugins the core listed, and says whether they differ from those kept.
     pub fn keep_plugins(&mut self, value: Value) -> bool {
-        match serde_json::from_value::<Vec<Listed>>(value) {
-            Ok(plugins) if plugins == self.plugins.0 => false,
-            Ok(plugins) => {
-                self.plugins = Plugins(plugins);
-                true
-            }
-            Err(error) => {
-                eprintln!("sikemux: the core's plugins do not read: {error}");
-                false
-            }
-        }
+        keep_decoded(&mut self.plugins.0, value, "plugins")
+    }
+
+    /// Keeps the themes the core listed, and says whether they differ from those kept.
+    pub fn keep_themes(&mut self, value: Value) -> bool {
+        keep_decoded(&mut self.themes, value, "themes")
     }
 
     /// Keeps what `key`'s watch answered. Gives the answer back when no field holds `key`.
@@ -195,6 +181,22 @@ impl Reads {
     pub fn forget(&mut self, key: &str) {
         if let Some(slot) = self.slot_mut(key) {
             *slot = None;
+        }
+    }
+}
+
+/// Keeps `value` decoded in `slot`, and says whether it differs from what was kept. An answer
+/// that does not read leaves the slot as it was.
+fn keep_decoded<T: DeserializeOwned + PartialEq>(slot: &mut T, value: Value, what: &str) -> bool {
+    match serde_json::from_value::<T>(value) {
+        Ok(read) if read == *slot => false,
+        Ok(read) => {
+            *slot = read;
+            true
+        }
+        Err(error) => {
+            eprintln!("sikemux: the core's {what} did not read: {error}");
+            false
         }
     }
 }

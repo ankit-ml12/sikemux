@@ -398,13 +398,8 @@ fn step(bench: &Workbench, by: isize) {
     else {
         return;
     };
-    let themes: Vec<ThemeSummary> = bench
-        .reads
-        .themes
-        .as_ref()
-        .and_then(|themes| serde_json::from_value(themes.clone()).ok())
-        .unwrap_or_default();
-    let listed: Vec<String> = shown(&themes, fields)
+    let themes = &bench.reads.themes;
+    let listed: Vec<String> = shown(themes, fields)
         .into_iter()
         .map(|summary| summary.id)
         .collect();
@@ -544,12 +539,7 @@ pub fn render(
     };
     let t = Tokens::get(cx).clone();
     let preferences = bench.preferences();
-    let themes: Vec<ThemeSummary> = bench
-        .reads
-        .themes
-        .as_ref()
-        .and_then(|themes| serde_json::from_value(themes.clone()).ok())
-        .unwrap_or_default();
+    let themes = &bench.reads.themes;
     let custom = themes
         .iter()
         .filter(|theme| theme.source == ThemeSource::Custom)
@@ -623,7 +613,7 @@ pub fn render(
             })
         })
     };
-    let listed = shown(&themes, fields);
+    let listed = shown(themes, fields);
     let found = listed.len();
     let rows_of: Rc<Vec<Vec<ThemeSummary>>> =
         Rc::new(listed.chunks(COLUMNS).map(<[_]>::to_vec).collect());

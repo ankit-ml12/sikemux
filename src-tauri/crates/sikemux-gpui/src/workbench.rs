@@ -1030,6 +1030,11 @@ impl Workbench {
                 self.drafts(&value, key == "host-drafts", cx);
                 self.keep_read(key, value);
             }
+            Update::Read("themes", value) => {
+                if !self.reads.keep_themes(value) {
+                    return;
+                }
+            }
             Update::Read("catalog", value) => {
                 if !self.reads.keep_catalog(value) {
                     return;
