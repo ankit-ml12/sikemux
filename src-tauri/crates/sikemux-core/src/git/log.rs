@@ -243,6 +243,27 @@ pub async fn git_log(repo: String) -> Result<Vec<GitCommit>, String> {
     run_blocking(move || read_log(&open_repo(&repo)?, 60)).await
 }
 
+/// The repository's recent commits whose subject names `key`, such as an issue's `ABC-12`.
+pub async fn git_commits_naming(repo: String, key: String) -> Result<Vec<GitCommit>, String> {
+    let log = git_log(repo).await?;
+    Ok(log
+        .into_iter()
+        .filter(|commit| names(&commit.subject, &key))
+        .collect())
+}
+
+/// Whether `text` names `key` as a whole word, in any case, so ABC-12 is not ABC-123.
+fn names(text: &str, key: &str) -> bool {
+    let (text, key) = (text.to_lowercase(), key.to_lowercase());
+    !key.is_empty()
+        && text.match_indices(&key).any(|(at, _)| {
+            let before = text[..at].chars().next_back();
+            let after = text[at + key.len()..].chars().next();
+            !before.is_some_and(|c| c.is_ascii_alphanumeric())
+                && !after.is_some_and(|c| c.is_ascii_digit())
+        })
+}
+
 /// The branches and recent commits, which only a change under `.git` moves.
 #[derive(Clone)]
 struct History {

@@ -469,6 +469,20 @@ impl Host {
         )
     }
 
+    /// The repository the Git views follow, in the project in front.
+    pub fn git_repo(&self, cx: &App) -> Option<String> {
+        self.bench.upgrade()?.read(cx).git_repo()
+    }
+
+    /// The recent commits of the repository at `repo` that name `key`, as the core finds them.
+    pub fn commits_naming(
+        &self,
+        repo: &str,
+        key: &str,
+    ) -> impl Future<Output = Result<Value, Failure>> + 'static {
+        self.ask_core("git.commitsNaming", json!({ "repo": repo, "key": key }))
+    }
+
     /// Pushes the branch checked out in the repository at `repo`.
     pub fn push(&self, repo: &str) -> impl Future<Output = Result<Value, Failure>> + 'static {
         self.ask_core("git.push", json!({ "repo": repo }))

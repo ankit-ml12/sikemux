@@ -23,6 +23,47 @@ fn people(found: Value) -> Vec<Person> {
 }
 
 impl Jira {
+    /// The commits in the project in front that name the issue, asked of the core again once
+    /// the Git views see a newer commit.
+    fn commits(
+        &mut self,
+        host: &Host,
+        key: &str,
+        cx: &mut Context<PluginPane>,
+    ) -> Option<AnyElement> {
+        let repo = host.git_repo(cx)?;
+        let head = host
+            .recent_commits(cx)
+            .and_then(|log| log.first().map(|commit| commit.hash.clone()));
+        let asked: Asked = (repo.clone(), head);
+        let open = self.issue.as_mut()?;
+        if open.commits.as_ref().is_none_or(|(at, _)| *at != asked) {
+            open.commits = Some((asked.clone(), None));
+            let call = host.commits_naming(&repo, key);
+            cx.spawn(async move |pane, cx| {
+                let found = call
+                    .await
+                    .ok()
+                    .and_then(|value| serde_json::from_value::<Vec<GitCommit>>(value).ok());
+                let _ = pane.update(cx, |pane, cx| {
+                    let Some((jira, _)) = pane.parts::<Jira>() else {
+                        return;
+                    };
+                    let kept = jira.issue.as_mut().and_then(|open| open.commits.as_mut());
+                    if let Some((at, commits)) = kept {
+                        if *at == asked {
+                            *commits = found;
+                            cx.notify();
+                        }
+                    }
+                });
+            })
+            .detach();
+        }
+        let named = open.commits.as_ref()?.1.as_ref()?;
+        (!named.is_empty()).then(|| commit_list(named, cx))
+    }
+
     pub(super) fn detail(
         &mut self,
         host: &mut Host,
@@ -135,7 +176,7 @@ impl Jira {
         let actions = self.actions(&view, site, window, cx);
         let fields = self.fields(host, &view, cx);
         let description = self.description(&pen, &view, window, cx);
-        let commits = commits(host, &issue.key, cx);
+        let commits = self.commits(host, key, cx);
         let activity = self.activity(host, &pen, &view, site, window, cx);
         div()
             .size_full()
@@ -782,54 +823,31 @@ fn send_to_board(host: &Host, view: &IssueView, cx: &mut App) {
     host.add_board_ticket(params, put, cx);
 }
 
-/// The front project's recent commits that name the issue.
-fn commits(host: &Host, key: &str, cx: &App) -> Option<AnyElement> {
-    let log = host.recent_commits(cx)?;
-    let named: Vec<&GitCommit> = log
-        .iter()
-        .filter(|commit| mentions(&commit.subject, key))
-        .collect();
-    if named.is_empty() {
-        return None;
-    }
+/// Commits that name the issue, a line each.
+fn commit_list(named: &[GitCommit], cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
-    Some(
-        div()
-            .flex()
-            .flex_col()
-            .gap(SPACE_1H)
-            .child(ui::caps("Commits in this project", cx))
-            .children(named.into_iter().map(|commit| {
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(SPACE_2)
-                    .min_w_0()
-                    .child(ui::mono(commit.hash.clone(), 11., cx))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(crate::theme::ui_text(TEXT_XS))
-                            .text_color(t.text_primary)
-                            .child(commit.subject.clone()),
-                    )
-                    .child(ui::meta(commit.author.clone(), cx))
-            }))
-            .into_any_element(),
-    )
-}
-
-/// Whether a commit message names the issue as a whole word, in any case, so ABC-12 is
-/// not ABC-123.
-fn mentions(text: &str, key: &str) -> bool {
-    let (text, key) = (text.to_lowercase(), key.to_lowercase());
-    !key.is_empty()
-        && text.match_indices(&key).any(|(at, _)| {
-            let before = text[..at].chars().next_back();
-            let after = text[at + key.len()..].chars().next();
-            !before.is_some_and(|c| c.is_ascii_alphanumeric())
-                && !after.is_some_and(|c| c.is_ascii_digit())
-        })
+    div()
+        .flex()
+        .flex_col()
+        .gap(SPACE_1H)
+        .child(ui::caps("Commits in this project", cx))
+        .children(named.iter().map(|commit| {
+            div()
+                .flex()
+                .items_center()
+                .gap(SPACE_2)
+                .min_w_0()
+                .child(ui::mono(commit.hash.clone(), 11., cx))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(crate::theme::ui_text(TEXT_XS))
+                        .text_color(t.text_primary)
+                        .child(commit.subject.clone()),
+                )
+                .child(ui::meta(commit.author.clone(), cx))
+        }))
+        .into_any_element()
 }

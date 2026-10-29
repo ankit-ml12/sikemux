@@ -227,7 +227,13 @@ struct OpenIssue {
     people: Vec<Person>,
     /// Each text drawn as markdown, by its words.
     docs: HashMap<String, Rc<Markdown>>,
+    /// The commits in the project in front that name the issue, by the repository and newest
+    /// commit they were asked at; none while the core is asked.
+    commits: Option<(Asked, Option<Vec<GitCommit>>)>,
 }
+
+/// The repository and its newest commit, which commits naming an issue were asked at.
+type Asked = (String, Option<String>);
 
 impl OpenIssue {
     fn new(key: String) -> Self {
@@ -238,6 +244,7 @@ impl OpenIssue {
             assign_find: None,
             people: Vec::new(),
             docs: HashMap::new(),
+            commits: None,
         }
     }
 }

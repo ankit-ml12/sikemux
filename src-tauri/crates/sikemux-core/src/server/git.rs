@@ -147,6 +147,7 @@ methods!(
     "git.projectRepo" read, core => project_repo { project: String },
     "git.overview" read => log::git_overview { repo: String },
     "git.log" read => log::git_log { repo: String },
+    "git.commitsNaming" read => log::git_commits_naming { repo: String, key: String },
     "git.diff" read => changes::git_diff { repo: String, path: String, staged: bool },
     "git.stage" => changes::git_stage { repo: String, path: String },
     "git.unstage" => changes::git_unstage { repo: String, path: String },
