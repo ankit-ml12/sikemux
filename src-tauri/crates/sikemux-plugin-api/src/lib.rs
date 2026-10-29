@@ -24,7 +24,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 pub use error::{Category, PluginError, PluginResult};
-pub use manifest::{is_valid_id, AgentTool, Manifest};
+pub use manifest::{is_valid_id, AgentTool, CodeHostSpec, Compare, Manifest};
 pub use network::{unreachable, Unreachable};
 pub use service::{Service, ServiceError, ServiceResult};
 pub use signin::SignInStatus;

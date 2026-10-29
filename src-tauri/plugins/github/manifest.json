@@ -6,5 +6,40 @@
   "callTimeoutSecs": 120,
   "environment": ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST"],
   "writes": ["addComment", "cancel", "createIssue", "createPull", "deleteRun", "deleteRunLogs", "dispatch", "mergePull", "rerun", "rerunJob", "reviewDeployment", "reviewPull", "setIssueState", "setPullState"],
-  "accountMethods": ["setDefaultAccount", "signIn", "signOut"]
+  "accountMethods": ["setDefaultAccount", "signIn", "signOut"],
+  "codeHost": {
+    "label": "GitHub",
+    "ciName": "Actions",
+    "runPath": "/actions/runs/",
+    "jobPath": "/job/",
+    "pullHeads": "pull",
+    "merges": ["squash", "merge", "rebase"],
+    "compare": {
+      "path": "compare/{branch}",
+      "query": {
+        "expand": "1"
+      }
+    },
+    "pulls": {
+      "mergeMethods": ["squash", "merge", "rebase"],
+      "requestChanges": true,
+      "reopen": true,
+      "mergeability": true
+    },
+    "ci": {
+      "attempts": true,
+      "approvals": true,
+      "dispatch": true,
+      "annotations": true,
+      "summaries": true,
+      "artifacts": true,
+      "billing": true,
+      "workflowFile": true,
+      "rerunFailed": true,
+      "rerunJob": true,
+      "debugLogs": true,
+      "deleteRuns": true,
+      "deleteLogs": true
+    }
+  }
 }

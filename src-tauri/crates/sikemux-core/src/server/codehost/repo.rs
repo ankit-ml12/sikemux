@@ -8,141 +8,69 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::protocol::{
-    CiAbilities, CodeHostChoice, ProjectCodeHost, ProjectPull, PullAbilities, PullChecks,
-};
+use crate::protocol::{CodeHostChoice, ProjectCodeHost, ProjectPull, PullChecks};
 use crate::server::board::Pull;
-use crate::server::plugins::{self, Category, Failure};
+use crate::server::plugins::{self, Category, CodeHostSpec, Failure};
 use crate::server::workspace::project_of;
 use crate::server::Core;
 
-/// A code host the core reaches through its plugin, `sikemux.<id>`.
-struct Host {
-    id: &'static str,
-    label: &'static str,
-    /// What the host calls its CI.
-    ci_name: &'static str,
-    /// The ways to merge, tried in order while the repository refuses one;
-    /// none is the repository's own default.
-    merges: &'static [Option<&'static str>],
-    /// What comes before a run's number in an address on the host.
-    run_path: &'static str,
-    /// What comes before a job's number, where an address names one.
-    job_path: Option<&'static str>,
-    /// Where the host keeps a pull request's head for fetching, before its
-    /// number, when it keeps one; a fork's branch is fetched from there.
-    pull_heads: Option<&'static str>,
-    /// The ways a person can merge a pull request there, in the order offered.
-    merge_methods: &'static [&'static str],
-    request_changes: bool,
-    reopen: bool,
-    mergeability: bool,
-    ci: CiAbilities,
+/// A code host the core reaches through its plugin, as the plugin's manifest
+/// describes it.
+#[derive(Clone, Copy)]
+pub(crate) struct Host {
+    /// Its plugin, such as `sikemux.github`.
+    plugin: &'static str,
+    spec: &'static CodeHostSpec,
 }
 
-const HOSTS: [Host; 3] = [
-    Host {
-        id: "github",
-        ci_name: "Actions",
-        label: "GitHub",
-        merges: &[Some("squash"), Some("merge"), Some("rebase")],
-        run_path: "/actions/runs/",
-        job_path: Some("/job/"),
-        pull_heads: Some("pull"),
-        merge_methods: &["squash", "merge", "rebase"],
-        request_changes: true,
-        reopen: true,
-        mergeability: true,
-        ci: CiAbilities {
-            attempts: true,
-            approvals: true,
-            dispatch: true,
-            annotations: true,
-            summaries: true,
-            artifacts: true,
-            billing: true,
-            workflow_file: true,
-            rerun_failed: true,
-            rerun_job: true,
-            debug_logs: true,
-            delete_runs: true,
-            delete_logs: true,
-        },
-    },
-    Host {
-        id: "bitbucket",
-        ci_name: "Pipelines",
-        label: "Bitbucket",
-        merges: &[None],
-        run_path: "/pipelines/results/",
-        job_path: None,
-        pull_heads: None,
-        merge_methods: &["squash", "merge"],
-        request_changes: true,
-        reopen: false,
-        mergeability: true,
-        ci: CiAbilities {
-            attempts: false,
-            approvals: false,
-            dispatch: true,
-            annotations: false,
-            summaries: false,
-            artifacts: false,
-            billing: false,
-            workflow_file: true,
-            rerun_failed: false,
-            rerun_job: false,
-            debug_logs: false,
-            delete_runs: false,
-            delete_logs: false,
-        },
-    },
-    Host {
-        id: "gitlab",
-        ci_name: "Pipelines",
-        label: "GitLab",
-        merges: &[None],
-        run_path: "/-/pipelines/",
-        job_path: Some("/-/jobs/"),
-        pull_heads: Some("merge-requests"),
-        merge_methods: &["merge", "squash"],
-        request_changes: false,
-        reopen: true,
-        mergeability: true,
-        ci: CiAbilities {
-            attempts: false,
-            approvals: false,
-            dispatch: true,
-            annotations: false,
-            summaries: false,
-            artifacts: false,
-            billing: false,
-            workflow_file: true,
-            rerun_failed: true,
-            rerun_job: true,
-            debug_logs: false,
-            delete_runs: true,
-            delete_logs: false,
-        },
-    },
-];
+impl Host {
+    /// What the board and clients know it by, such as `github`.
+    fn id(&self) -> &'static str {
+        self.plugin.strip_prefix("sikemux.").unwrap_or(self.plugin)
+    }
+
+    fn plugin(&self) -> &'static str {
+        self.plugin
+    }
+
+    /// The ways to merge, tried in order; none is the repository's own default.
+    fn merges(&self) -> Vec<Option<&'static str>> {
+        if self.spec.merges.is_empty() {
+            return vec![None];
+        }
+        self.spec
+            .merges
+            .iter()
+            .map(|method| Some(method.as_str()))
+            .collect()
+    }
+}
+
+/// Every code host a plugin speaks for.
+fn hosts() -> impl Iterator<Item = Host> {
+    plugins::manifests().into_iter().filter_map(|manifest| {
+        Some(Host {
+            plugin: &manifest.id,
+            spec: manifest.code_host.as_ref()?,
+        })
+    })
+}
 
 /// The plugin that speaks for the code host `id`.
 fn plugin_of(id: &str) -> String {
     format!("sikemux.{id}")
 }
 
-fn host(id: &str) -> Result<&'static Host, String> {
-    HOSTS
-        .iter()
-        .find(|host| host.id == id)
+fn host(id: &str) -> Result<Host, String> {
+    hosts()
+        .find(|host| host.id() == id)
         .ok_or_else(|| format!("Sikemux does not know the code host {id}"))
 }
 
 /// A repository on a code host, and the account that reaches it.
 #[derive(Clone)]
 pub(crate) struct Repo {
-    host: &'static Host,
+    host: Host,
     owner: String,
     name: String,
     account: Option<String>,
@@ -169,16 +97,10 @@ impl Pull {
     }
 }
 
-impl Host {
-    fn plugin(&self) -> String {
-        plugin_of(self.id)
-    }
-}
-
 impl Repo {
     /// Calls `method` of the host's plugin about this repository, with `more`.
     pub(crate) async fn call(&self, method: &str, more: Value) -> Result<Value, Failure> {
-        plugins::call(&self.host.plugin(), method, self.params(more)).await
+        plugins::call(self.host.plugin(), method, self.params(more)).await
     }
 }
 
@@ -215,9 +137,9 @@ pub(crate) fn picks(core: &Core, dir: &Path) -> BTreeMap<String, CodeHostChoice>
 async fn locate(
     url: &str,
     picks: &BTreeMap<String, CodeHostChoice>,
-) -> Option<(&'static Host, String, String)> {
-    for host in &HOSTS {
-        let Ok(found) = plugins::call(&host.plugin(), "resolveRemote", json!({ "url": url })).await
+) -> Option<(Host, String, String)> {
+    for host in hosts() {
+        let Ok(found) = plugins::call(host.plugin(), "resolveRemote", json!({ "url": url })).await
         else {
             continue;
         };
@@ -229,7 +151,7 @@ async fn locate(
             continue;
         }
         let picked = picks
-            .get(&host.plugin())
+            .get(host.plugin())
             .and_then(|pick| pick.repo.as_deref())
             .and_then(|slug| slug.split_once('/'));
         return Some(match picked {
@@ -247,17 +169,17 @@ pub(crate) async fn find(
     picks: &BTreeMap<String, CodeHostChoice>,
 ) -> Result<Repo, String> {
     let Some((host, owner, name)) = locate(url, picks).await else {
-        let labels: Vec<&str> = HOSTS.iter().map(|host| host.label).collect();
+        let labels: Vec<&str> = hosts().map(|host| host.spec.label.as_str()).collect();
         return Err(format!(
             "this project's origin is on none of {}",
             labels.join(", ")
         ));
     };
-    let pick = picks.get(&host.plugin()).cloned().unwrap_or_default();
+    let pick = picks.get(host.plugin()).cloned().unwrap_or_default();
     let account = match pick.account {
         Some(account) => Some(account),
         None => plugins::call(
-            &host.plugin(),
+            host.plugin(),
             "accountFor",
             json!({ "owner": owner, "name": name }),
         )
@@ -268,7 +190,7 @@ pub(crate) async fn find(
     if account.is_none() {
         return Err(format!(
             "sign in to {} in Sikemux with an account that can reach {owner}/{name}",
-            host.label
+            host.spec.label
         ));
     }
     Ok(Repo {
@@ -301,7 +223,7 @@ pub(crate) async fn of_project(core: &Arc<Core>, project: &str) -> Result<Repo, 
     };
     find(&origin, &picks)
         .await
-        .map_err(|message| Failure::new(&host.plugin(), Category::Unconfigured, message))
+        .map_err(|message| Failure::new(host.plugin(), Category::Unconfigured, message))
 }
 
 impl Repo {
@@ -331,13 +253,15 @@ impl Repo {
     /// The ref the host keeps pull request `number`'s head at, when it keeps one.
     pub(crate) fn pull_head(&self, number: u64) -> Option<String> {
         self.host
+            .spec
             .pull_heads
+            .as_ref()
             .map(|heads| format!("{heads}/{number}/head"))
     }
 
     /// What the host is called, as people know it.
     pub(crate) fn label(&self) -> &'static str {
-        self.host.label
+        &self.host.spec.label
     }
 
     pub(crate) fn account(&self) -> Option<&str> {
@@ -346,7 +270,7 @@ impl Repo {
 
     pub(crate) fn id(&self) -> RepoId {
         RepoId {
-            provider: self.host.plugin(),
+            provider: self.host.plugin().to_owned(),
             owner: self.owner.clone(),
             name: self.name.clone(),
         }
@@ -386,23 +310,14 @@ pub(crate) async fn shown(
 ) -> Option<ProjectCodeHost> {
     let (host, owner, name) = locate(url, picks).await?;
     Some(ProjectCodeHost {
-        host: host.id.to_owned(),
+        host: host.id().to_owned(),
         repo: format!("{owner}/{name}"),
-        ci_name: host.ci_name.to_owned(),
+        ci_name: host.spec.ci_name.clone(),
         sections: ["pulls", "actions", "issues", "releases"]
             .map(str::to_owned)
             .to_vec(),
-        pulls: PullAbilities {
-            merge_methods: host
-                .merge_methods
-                .iter()
-                .map(|method| (*method).to_owned())
-                .collect(),
-            request_changes: host.request_changes,
-            reopen: host.reopen,
-            mergeability: host.mergeability,
-        },
-        ci: host.ci.clone(),
+        pulls: host.spec.pulls.clone(),
+        ci: host.spec.ci.clone(),
     })
 }
 
@@ -488,7 +403,7 @@ fn pull_of(repo: &Repo, found: &Value) -> Result<Pull, String> {
         .as_u64()
         .ok_or("the code host answered without the pull request's number")?;
     Ok(Pull {
-        host: repo.host.id.to_owned(),
+        host: repo.host.id().to_owned(),
         owner: repo.owner.clone(),
         name: repo.name.clone(),
         number,
@@ -645,17 +560,15 @@ pub(crate) async fn log_tail(
 /// A run's id as its code host takes it from an address on it, such as
 /// GitHub's `/actions/runs/<id>`.
 pub(crate) fn run_in(address: &str) -> Option<Value> {
-    HOSTS
-        .iter()
-        .find_map(|host| address.split_once(host.run_path))
+    hosts()
+        .find_map(|host| address.split_once(host.spec.run_path.as_str()))
         .and_then(|(_, rest)| digits(rest))
 }
 
 /// The job an address on a run points at, such as GitHub's `/job/<id>`.
 pub(crate) fn job_in(address: &str) -> Option<Value> {
-    HOSTS
-        .iter()
-        .filter_map(|host| host.job_path)
+    hosts()
+        .filter_map(|host| host.spec.job_path.as_deref())
         .find_map(|path| address.split_once(path))
         .and_then(|(_, rest)| digits(rest))
 }
@@ -739,7 +652,7 @@ pub(crate) async fn close(pull: &Pull) -> Result<(), String> {
 pub(crate) async fn merge(pull: &Pull, sha: &str) -> Result<(), String> {
     let repo = pull.repo()?;
     let mut refused = None;
-    for method in repo.host.merges {
+    for method in repo.host.merges() {
         let asked = json!({ "number": pull.number, "method": method, "sha": sha });
         match repo.call("mergePull", asked).await {
             Ok(_) => return Ok(()),
@@ -748,6 +661,27 @@ pub(crate) async fn merge(pull: &Pull, sha: &str) -> Result<(), String> {
         }
     }
     Err(refused.map_or_else(|| "the code host merges no way".to_owned(), String::from))
+}
+
+#[cfg(test)]
+impl Repo {
+    /// `nodelike/sikemux` on a host that keeps pull requests' heads under
+    /// `pull_heads`, as GitHub does and Bitbucket does not.
+    pub(crate) fn on_test_host(pull_heads: Option<&str>) -> Self {
+        let spec = Box::leak(Box::new(CodeHostSpec {
+            pull_heads: pull_heads.map(str::to_owned),
+            ..CodeHostSpec::default()
+        }));
+        Self {
+            host: Host {
+                plugin: "sikemux.test",
+                spec,
+            },
+            owner: "nodelike".to_owned(),
+            name: "sikemux".to_owned(),
+            account: None,
+        }
+    }
 }
 
 #[cfg(test)]

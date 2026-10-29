@@ -1839,7 +1839,7 @@ mod tests {
 
     #[test]
     fn a_pull_request_on_the_repository_checks_out_on_its_own_branch() {
-        let repo = Repo::named("github", "nodelike", "sikemux", None).expect("a repository");
+        let repo = Repo::on_test_host(Some("pull"));
         let pull = headed(7, Some("feat/x"), Some("nodelike:feat/x"));
         assert!(own_branch(&pull, repo.owner()));
         assert_eq!(checks_out_as(&repo, &pull).as_deref(), Some("feat/x"));
@@ -1847,7 +1847,7 @@ mod tests {
 
     #[test]
     fn a_forks_pull_request_checks_out_on_a_branch_named_after_its_number() {
-        let repo = Repo::named("github", "nodelike", "sikemux", None).expect("a repository");
+        let repo = Repo::on_test_host(Some("pull"));
         let pull = headed(
             49,
             Some("feat/github-actions-plugin"),
@@ -1855,8 +1855,7 @@ mod tests {
         );
         assert!(!own_branch(&pull, repo.owner()));
         assert_eq!(checks_out_as(&repo, &pull).as_deref(), Some("pr-49"));
-        let bitbucket =
-            Repo::named("bitbucket", "nodelike", "sikemux", None).expect("a repository");
+        let bitbucket = Repo::on_test_host(None);
         assert_eq!(checks_out_as(&bitbucket, &pull), None);
     }
 

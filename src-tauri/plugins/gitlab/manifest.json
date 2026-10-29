@@ -6,6 +6,40 @@
   "callTimeoutSecs": 120,
   "writes": ["addComment", "cancel", "createIssue", "createPull", "deleteRun", "dispatch", "mergePull", "rerun", "rerunJob", "reviewPull", "setIssueState", "setPullState"],
   "accountMethods": ["setDefaultAccount", "signInWithToken", "signOut"],
+  "codeHost": {
+    "label": "GitLab",
+    "ciName": "Pipelines",
+    "runPath": "/-/pipelines/",
+    "jobPath": "/-/jobs/",
+    "pullHeads": "merge-requests",
+    "compare": {
+      "path": "-/merge_requests/new",
+      "query": {
+        "merge_request[source_branch]": "{branch}"
+      }
+    },
+    "pulls": {
+      "mergeMethods": ["merge", "squash"],
+      "requestChanges": false,
+      "reopen": true,
+      "mergeability": true
+    },
+    "ci": {
+      "attempts": false,
+      "approvals": false,
+      "dispatch": true,
+      "annotations": false,
+      "summaries": false,
+      "artifacts": false,
+      "billing": false,
+      "workflowFile": true,
+      "rerunFailed": true,
+      "rerunJob": true,
+      "debugLogs": false,
+      "deleteRuns": true,
+      "deleteLogs": false
+    }
+  },
   "tools": [
     {
       "name": "gitlab_merge_requests",

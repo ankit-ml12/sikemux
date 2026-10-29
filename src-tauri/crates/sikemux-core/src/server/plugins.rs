@@ -15,7 +15,7 @@ use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_plugin_api::SignInStatus;
-pub use sikemux_plugin_api::{Category, Manifest};
+pub use sikemux_plugin_api::{Category, CodeHostSpec, Manifest};
 
 use crate::cli::protocol::HarnessRequest;
 

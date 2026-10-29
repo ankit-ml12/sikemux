@@ -6,6 +6,38 @@
   "callTimeoutSecs": 120,
   "writes": ["addComment", "cancel", "createIssue", "createPull", "dispatch", "editPull", "mergePull", "rerun", "reviewPull", "setIssueState", "setPullState"],
   "accountMethods": ["setDefaultAccount", "signInWithBrowser", "signInWithToken", "signOut"],
+  "codeHost": {
+    "label": "Bitbucket",
+    "ciName": "Pipelines",
+    "runPath": "/pipelines/results/",
+    "compare": {
+      "path": "pull-requests/new",
+      "query": {
+        "source": "{branch}"
+      }
+    },
+    "pulls": {
+      "mergeMethods": ["squash", "merge"],
+      "requestChanges": true,
+      "reopen": false,
+      "mergeability": true
+    },
+    "ci": {
+      "attempts": false,
+      "approvals": false,
+      "dispatch": true,
+      "annotations": false,
+      "summaries": false,
+      "artifacts": false,
+      "billing": false,
+      "workflowFile": true,
+      "rerunFailed": false,
+      "rerunJob": false,
+      "debugLogs": false,
+      "deleteRuns": false,
+      "deleteLogs": false
+    }
+  },
   "tools": [
     {
       "name": "bitbucket_pulls",

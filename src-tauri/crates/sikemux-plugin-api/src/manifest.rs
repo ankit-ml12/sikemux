@@ -4,6 +4,8 @@ use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use sikemux_wire::protocol::{CiAbilities, PullAbilities};
+
 use crate::{Category, PluginError};
 
 const MAX_ID_LENGTH: usize = 128;
@@ -37,6 +39,47 @@ pub struct Manifest {
     /// which clients read the plugins again and its views are read afresh.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub account_methods: Vec<String>,
+    /// What the core and clients know of the code host the plugin speaks for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_host: Option<CodeHostSpec>,
+}
+
+/// A code host as its plugin describes it, so the core and clients reach and
+/// show it without naming it.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CodeHostSpec {
+    /// What people call it, such as GitHub.
+    pub label: String,
+    /// What it calls its CI, such as Actions or Pipelines.
+    pub ci_name: String,
+    /// What comes before a run's number in an address on the host.
+    pub run_path: String,
+    /// What comes before a job's number, where an address names one.
+    #[serde(default)]
+    pub job_path: Option<String>,
+    /// Where the host keeps a pull request's head for fetching, before its
+    /// number, when it keeps one; a fork's branch is fetched from there.
+    #[serde(default)]
+    pub pull_heads: Option<String>,
+    /// The ways to merge, tried in order while the repository refuses one;
+    /// none tries the repository's own default.
+    #[serde(default)]
+    pub merges: Vec<String>,
+    /// Where a new pull request from a branch is opened on the host's website.
+    pub compare: Compare,
+    pub pulls: PullAbilities,
+    pub ci: CiAbilities,
+}
+
+/// The address after a repository's own that opens a new pull request, with
+/// `{branch}` standing for the branch it comes from.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Compare {
+    pub path: String,
+    #[serde(default)]
+    pub query: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
