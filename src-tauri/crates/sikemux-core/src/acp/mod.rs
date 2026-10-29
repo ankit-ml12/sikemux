@@ -89,13 +89,6 @@ pub fn permission_mode_id(
         .ok_or_else(|| format!("The {provider} adapter does not offer permission mode {expected}"))
 }
 
-/// Every agent still asks before some actions in its most open mode, such as
-/// Claude Code for an `rm -rf` of a computed path, and some agents have no
-/// such mode at all, so under YOLO the host says yes for the person.
-pub fn approves_for_user(mode: &str) -> bool {
-    PermissionMode::parse(mode) == Ok(PermissionMode::Bypass)
-}
-
 fn resource_link(path: &str) -> Result<ContentBlock, String> {
     bounded_text("attachment path", path, 4_096)?;
     let path = PathBuf::from(path);
@@ -281,12 +274,6 @@ mod tests {
             ended_status(&Err("no adapter".into()), false),
             json!({ "state": "error", "reason": "failed", "message": "no adapter" })
         );
-    }
-
-    #[test]
-    fn yolo_answers_every_agent_for_the_person_and_safe_mode_asks_them() {
-        assert!(approves_for_user("bypass"));
-        assert!(!approves_for_user("workspace-write"));
     }
 
     #[test]

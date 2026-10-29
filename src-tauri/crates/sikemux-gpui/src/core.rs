@@ -18,8 +18,8 @@ use sikemux_wire::grid::{
 };
 use sikemux_wire::protocol::{
     CallId, ChatAccount, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event,
-    LaunchIdentity, NetworkChange, RemoteStatus, Request, Response, SessionId, SpawnTarget,
-    StreamId, TerminalSpawn, WindowAnswer, WindowCall,
+    LaunchIdentity, NetworkChange, PermissionMode, RemoteStatus, Request, Response, SessionId,
+    SpawnTarget, StreamId, TerminalSpawn, WindowAnswer, WindowCall,
 };
 use sikemux_wire::pty::shell_protocol::{PtyShellMetadataEvent, ShellMetadataSnapshot};
 use tokio::sync::{mpsc, oneshot};
@@ -306,7 +306,7 @@ pub enum Ask {
         launcher: String,
         project: String,
         /// The permission mode it starts in, for this launch only; none starts in the launcher's.
-        mode: Option<String>,
+        mode: Option<PermissionMode>,
         started: Option<oneshot::Sender<String>>,
     },
     /// Stops every agent and terminal the core runs.
@@ -431,7 +431,7 @@ pub enum ChatAsk {
     },
     Mode {
         agent: String,
-        mode: String,
+        mode: PermissionMode,
     },
     /// One of the session's settings, such as its model, set to one of its choices.
     Config {
@@ -921,7 +921,7 @@ impl Target {
         &self,
         launcher: String,
         project: String,
-        mode: Option<String>,
+        mode: Option<PermissionMode>,
         started: Option<oneshot::Sender<String>>,
     ) {
         self.send(Ask::StartChat {

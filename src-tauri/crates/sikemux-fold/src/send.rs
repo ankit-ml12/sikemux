@@ -701,7 +701,7 @@ impl Fold {
         beyond: Option<u64>,
         session: Option<&str>,
     ) -> ChatPage {
-        let mut fold = Fold::new(&self.head.permission_mode);
+        let mut fold = Fold::new(self.head.permission_mode);
         fold.head.session_id = self.head.session_id.clone();
         for (index, event) in events {
             let at = event

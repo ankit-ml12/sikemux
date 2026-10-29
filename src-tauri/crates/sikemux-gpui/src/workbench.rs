@@ -20,8 +20,8 @@ use gpui_kit::{
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
     AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind,
-    Preferences, ProjectCodeHost, ProjectInfo, ProjectLayout, RecentInfo, RemoteStatus, SessionId,
-    SessionInfo, SpaceInfo, Tab, TabRailPage, TabRailScope,
+    PermissionMode, Preferences, ProjectCodeHost, ProjectInfo, ProjectLayout, RecentInfo,
+    RemoteStatus, SessionId, SessionInfo, SpaceInfo, Tab, TabRailPage, TabRailScope,
 };
 use tokio::sync::mpsc;
 
@@ -1823,14 +1823,14 @@ impl Workbench {
     }
 
     /// Whether the agent asks before it acts, kept for its next session and changed in the one running.
-    pub fn switch_mode(&self, agent: &str, mode: &str) {
+    pub fn switch_mode(&self, agent: &str, mode: PermissionMode) {
         self.chat_target(agent).call(
             "updateAgent",
             json!({ "agentId": agent, "patch": { "permissionMode": mode } }),
         );
         self.ask_chat(ChatAsk::Mode {
             agent: agent.to_owned(),
-            mode: mode.to_owned(),
+            mode,
         });
     }
 

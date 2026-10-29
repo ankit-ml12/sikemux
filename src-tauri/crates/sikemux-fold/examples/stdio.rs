@@ -39,7 +39,7 @@ fn main() -> io::Result<()> {
             chats.remove(&request.chat);
         }
         let chat = chats.entry(request.chat).or_insert_with(|| Chat {
-            fold: Fold::new("workspace-write"),
+            fold: Fold::new(sikemux_wire::protocol::PermissionMode::WorkspaceWrite),
             next: 0,
             seq: 0,
         });

@@ -17,7 +17,7 @@ use serde_json::Value;
 use sikemux_core::client::{probe, CoreClient};
 use sikemux_core::protocol::{
     encode_control, read_frame_sync, BuildIdentity, ChatAccount, ChatAttachment, ChatLaunch,
-    ClientMessage, Request, PROTOCOL, PROTOCOL_VERSION,
+    ClientMessage, PermissionMode, Request, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
 use sikemux_wire::chat::{ChatPage, ChatRole, FailureKind, PermissionAsk};
@@ -129,7 +129,7 @@ fn claude_launch(agent_id: &str, config: &Path) -> ChatLaunch {
         )]),
         mcp_servers: Vec::new(),
         resume_id: None,
-        permission_mode: "bypass".into(),
+        permission_mode: PermissionMode::Bypass,
         model: None,
         effort: Some("high".into()),
         account: None,
@@ -251,7 +251,7 @@ async fn a_claude_tool_waits_for_the_persons_answer() {
     let core = TestCore::start();
     let (client, mut chat) = core.connect("claude-b").await;
     let mut launch = claude_launch("claude-b", config.path());
-    launch.permission_mode = "workspace-write".into();
+    launch.permission_mode = PermissionMode::WorkspaceWrite;
     client.acp_start(launch).await.expect("start");
 
     prompt(&client, "claude-b", &message_id(), "ask").await;
@@ -505,7 +505,7 @@ async fn a_codex_command_waits_for_the_persons_answer() {
     let core = TestCore::start();
     let (client, mut chat) = core.connect("codex-b").await;
     let mut launch = codex_launch("codex-b", home.path());
-    launch.permission_mode = "workspace-write".into();
+    launch.permission_mode = PermissionMode::WorkspaceWrite;
     client.acp_start(launch).await.expect("start");
 
     prompt(&client, "codex-b", &message_id(), "ask").await;
@@ -661,7 +661,7 @@ async fn live_claude_streams_edits_and_resumes() {
         env: BTreeMap::new(),
         mcp_servers: Vec::new(),
         resume_id: None,
-        permission_mode: "bypass".into(),
+        permission_mode: PermissionMode::Bypass,
         model: Some("haiku".into()),
         effort: None,
         account: None,

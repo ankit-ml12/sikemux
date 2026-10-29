@@ -210,7 +210,6 @@ pub(crate) struct Chat {
     held: AtomicBool,
     /// A turn of this chat was answered, so its provider has it saved.
     pub answered: AtomicBool,
-    approving: AtomicBool,
     /// The chat's loop waits for its next command, so it can let go of its
     /// agent at once.
     pub at_rest: AtomicBool,
@@ -657,14 +656,15 @@ impl Chat {
         self.running.load(Ordering::Acquire) || self.unprompted.load(Ordering::Acquire)
     }
 
+    /// Every agent still asks before some actions in its most open mode, such as
+    /// Claude Code for an `rm -rf` of a computed path, and some agents have no
+    /// such mode at all, so under YOLO the host says yes for the person.
     pub(crate) fn approves(&self) -> bool {
-        self.approving.load(Ordering::Acquire)
+        self.feed.permission_mode() == PermissionMode::Bypass
     }
 
     pub(crate) fn set_permission_mode(&self, mode: PermissionMode) {
-        self.approving
-            .store(mode == PermissionMode::Bypass, Ordering::Release);
-        self.feed.set_permission_mode(mode.as_str());
+        self.feed.set_permission_mode(mode);
         if let Some(core) = self.core.upgrade() {
             core.view_changed();
         }
@@ -1023,7 +1023,6 @@ impl Chat {
             turned: self.turned.load(Ordering::Acquire),
             held: self.held.load(Ordering::Acquire),
             answered: self.answered.load(Ordering::Acquire),
-            approving: self.approving.load(Ordering::Acquire),
         }
     }
 
@@ -1106,7 +1105,6 @@ struct Flags {
     turned: bool,
     held: bool,
     answered: bool,
-    approving: bool,
 }
 
 /// A chat handed whole to a core that replaces this one: the agent goes on
@@ -1502,7 +1500,7 @@ impl Chats {
             let feed = rested.unwrap_or_else(|| {
                 Feed::new(
                     launch.agent_id.clone(),
-                    launch.permission_mode.clone(),
+                    launch.permission_mode,
                     self.history.as_deref(),
                 )
             });
@@ -1512,7 +1510,6 @@ impl Chats {
                 turned: false,
                 held: false,
                 answered: false,
-                approving: crate::acp::approves_for_user(&launch.permission_mode),
             };
             (feed, flags)
         });
@@ -1544,7 +1541,6 @@ impl Chats {
             turned: AtomicBool::new(flags.turned),
             held: AtomicBool::new(flags.held),
             answered: AtomicBool::new(flags.answered),
-            approving: AtomicBool::new(flags.approving),
             at_rest: AtomicBool::new(false),
             releasing: AtomicBool::new(false),
             unreported: AtomicBool::new(flags.running || flags.unprompted || flags.held),
@@ -1585,7 +1581,7 @@ pub(crate) fn idle(core: &Arc<Core>, agent_id: &str, provider: &str, cwd: &str) 
         env: Default::default(),
         mcp_servers: Vec::new(),
         resume_id: None,
-        permission_mode: PermissionMode::WorkspaceWrite.as_str().into(),
+        permission_mode: PermissionMode::WorkspaceWrite,
         model: None,
         effort: None,
         account: None,
@@ -1614,7 +1610,6 @@ fn validate(launch: &ChatLaunch) -> CoreResult<()> {
     bounded_text("agent id", &launch.agent_id, MAX_AGENT_ID)?;
     bounded_text("provider", &launch.provider, 64)?;
     bounded_text("working directory", &launch.cwd.to_string_lossy(), 4_096)?;
-    PermissionMode::parse(&launch.permission_mode)?;
     if !launch.cwd.is_absolute() {
         return Err("ACP working directory must be absolute".into());
     }
@@ -1904,7 +1899,7 @@ fn take_up(core: &Arc<Core>, dir: &std::path::Path, kept: KeptChat) -> CoreResul
     let launch_spec = &kept.launch;
     let feed = Feed::recovering(
         launch_spec.agent_id.clone(),
-        launch_spec.permission_mode.clone(),
+        launch_spec.permission_mode,
         core.chats.history.as_deref(),
         &kept.feed,
     );
@@ -1916,7 +1911,6 @@ fn take_up(core: &Arc<Core>, dir: &std::path::Path, kept: KeptChat) -> CoreResul
         turned: saved,
         held: false,
         answered: saved,
-        approving: crate::acp::approves_for_user(&launch_spec.permission_mode),
     };
     let (chat, queue) = core.chats.insert(
         core,
@@ -2455,9 +2449,8 @@ pub(crate) fn reply_permission(
 pub(crate) async fn set_permission_mode(
     core: &Core,
     agent_id: &str,
-    mode: String,
+    mode: PermissionMode,
 ) -> CoreResult<()> {
-    let mode = PermissionMode::parse(&mode)?;
     let chat = core.chats.running(agent_id)?;
     let (reply, answer) = oneshot::channel();
     chat.send(ChatCommand::SetPermissionMode { mode, reply })?;

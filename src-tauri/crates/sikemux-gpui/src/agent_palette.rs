@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use gpui_kit::{Context, SharedString, Window};
 use serde_json::{json, Value};
-use sikemux_wire::protocol::{AgentStatus, LauncherInfo};
+use sikemux_wire::protocol::{AgentStatus, LauncherInfo, PermissionMode};
 
 use crate::icons::Icon;
 use crate::palette::{Choice, Mark, Row, Spec};
@@ -25,7 +25,6 @@ const RESUME: &str = "resume:";
 /// Agents whose accounts the core signs in to itself; the rest sign in with their own
 /// command, in the sheet Settings › Installed shows.
 const SIGNS_IN: [&str; 2] = ["claude", "codex"];
-const SAFE: &str = "workspace-write";
 const YOLO: &str = "bypass";
 
 impl Workbench {
@@ -57,14 +56,14 @@ impl Workbench {
                     let can_skip =
                         kind_of(bench, &provider).is_some_and(|kind| kind["bypass"] == true);
                     let launch_mode = if mode.get() == 1 && can_skip {
-                        YOLO
+                        PermissionMode::Bypass
                     } else {
-                        SAFE
+                        PermissionMode::WorkspaceWrite
                     };
                     bench.target().start_chat(
                         launcher.to_owned(),
                         project.clone(),
-                        Some(launch_mode.to_owned()),
+                        Some(launch_mode),
                         None,
                     );
                 } else if let Some(launcher) = key.strip_prefix(SIGN_IN) {

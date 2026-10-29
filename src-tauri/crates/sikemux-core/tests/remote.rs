@@ -15,8 +15,8 @@ use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::grid::{decode_frame, Screen};
 use sikemux_core::protocol::{
     Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatLaunch, ChatMark,
-    ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity, RemoteStatus, SessionId,
-    SpawnTarget, TerminalSpawn, MAX_ATTACHMENT_BYTES,
+    ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity, PermissionMode, RemoteStatus,
+    SessionId, SpawnTarget, TerminalSpawn, MAX_ATTACHMENT_BYTES,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -917,7 +917,7 @@ fn fake_launch(agent_id: &str) -> ChatLaunch {
         env: Default::default(),
         mcp_servers: Vec::new(),
         resume_id: None,
-        permission_mode: "bypass".into(),
+        permission_mode: PermissionMode::Bypass,
         model: None,
         effort: None,
         account: None,
@@ -967,7 +967,7 @@ async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
     };
     assert_eq!(begun.agent_id, agent_id);
     assert_eq!(begun.launcher.as_deref(), Some("opencode:fake"));
-    assert_eq!(begun.permission_mode, "workspace-write");
+    assert_eq!(begun.permission_mode, PermissionMode::WorkspaceWrite);
     assert_eq!(begun.started_by, Some(phone.id()));
     client
         .acp_prompt(

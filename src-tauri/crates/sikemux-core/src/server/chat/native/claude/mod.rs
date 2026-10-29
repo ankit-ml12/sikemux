@@ -476,7 +476,7 @@ impl Claude {
 
 impl Backend for Claude {
     async fn start(launch: &ChatLaunch, sink: Sink) -> Result<(Self, Opened), String> {
-        let mode = config::permission_mode(PermissionMode::parse(&launch.permission_mode)?);
+        let mode = config::permission_mode(launch.permission_mode);
         let shared = Arc::new(Mutex::new(Shared {
             mode: mode.to_owned(),
             untitled: launch.resume_id.is_none().then(String::new),

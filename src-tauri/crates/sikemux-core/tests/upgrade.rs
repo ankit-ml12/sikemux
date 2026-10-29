@@ -27,8 +27,8 @@ use sikemux_core::client::{
 use sikemux_core::frozen::{FrozenReply, FrozenRequest};
 use sikemux_core::grid::{decode_frame, Screen};
 use sikemux_core::protocol::{
-    BuildIdentity, ChatAttachment, ChatLaunch, ChatMark, Event, LaunchIdentity, SessionId,
-    SpawnTarget, StreamId, TerminalSpawn, BUILD_ID_OVERRIDE_ENV,
+    BuildIdentity, ChatAttachment, ChatLaunch, ChatMark, Event, LaunchIdentity, PermissionMode,
+    SessionId, SpawnTarget, StreamId, TerminalSpawn, BUILD_ID_OVERRIDE_ENV,
 };
 use sikemux_pty::output_log::OutputQuery;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -658,7 +658,7 @@ fn chat_launch(core: &CoreProcess, agent_id: &str) -> ChatLaunch {
         .into(),
         mcp_servers: Vec::new(),
         resume_id: None,
-        permission_mode: "workspace-write".into(),
+        permission_mode: PermissionMode::WorkspaceWrite,
         model: None,
         effort: None,
         account: None,

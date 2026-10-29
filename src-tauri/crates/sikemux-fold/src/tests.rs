@@ -17,7 +17,7 @@ struct Chat {
 impl Chat {
     fn new() -> Self {
         Self {
-            fold: Fold::new("default"),
+            fold: Fold::new(PermissionMode::WorkspaceWrite),
             index: 0,
             at: 1_000,
         }

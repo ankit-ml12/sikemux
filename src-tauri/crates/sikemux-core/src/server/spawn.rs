@@ -15,6 +15,7 @@ use sikemux_pty::agent_detection::AgentKind;
 
 use crate::cli::protocol::HarnessRequest;
 use crate::launch::providers::ROUTED_ENV;
+use crate::launch::PermissionMode;
 use crate::protocol::Event;
 
 use super::chat;
@@ -138,7 +139,7 @@ pub(crate) fn lead_of(
         return Ok((
             Lead {
                 provider: chat.provider().to_owned(),
-                permission_mode: Some(launch.permission_mode.clone()),
+                permission_mode: Some(launch.permission_mode),
                 launcher: chat
                     .origin
                     .launcher
@@ -159,7 +160,7 @@ pub(crate) fn lead_of(
             provider: info.agent_type.unwrap_or_default(),
             launch: None,
             launcher: run.as_ref().map(|run| run.launcher.clone()),
-            permission_mode: run.map(|run| run.permission_mode),
+            permission_mode: run.and_then(|run| PermissionMode::parse(&run.permission_mode).ok()),
         },
         PathBuf::from(cwd),
     ))
@@ -196,7 +197,10 @@ pub(crate) fn start_for_host(core: &Arc<Core>, plan: ForHost) -> Result<Value, S
         provider: String::new(),
         launch: None,
         launcher: None,
-        permission_mode: plan.mode.clone(),
+        permission_mode: plan
+            .mode
+            .as_deref()
+            .and_then(|mode| PermissionMode::parse(mode).ok()),
     };
     let (mut launch, launcher) = core.workspaces.worker_launch(
         &lead,
@@ -210,7 +214,7 @@ pub(crate) fn start_for_host(core: &Arc<Core>, plan: ForHost) -> Result<Value, S
         .as_ref()
         .filter(|_| plan.lead_cli == plan.provider)
     {
-        launch.permission_mode = mode.clone();
+        launch.permission_mode = PermissionMode::parse(mode)?;
     }
     let project = names::project_of(&launch.cwd, &core.workspaces.project_paths());
     let named = core.names.adopt(
@@ -575,7 +579,7 @@ struct Opening {
     name: String,
     provider: String,
     model: Option<String>,
-    permission_mode: String,
+    permission_mode: PermissionMode,
     launcher: Option<String>,
     lead_id: String,
     lead_name: String,

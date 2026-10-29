@@ -1,9 +1,11 @@
-import type { ChatChange, ChatHead, ChatMessage, ChatPage, ChatPart, ChatView, PartTree } from "../wire.generated";
+import type { ChatChange, ChatHead, ChatMessage, ChatPage, ChatPart, ChatView, PartTree, PermissionMode } from "../wire.generated";
 import { applyPatch } from "../markdown/patch";
 import type { MdChange, MdElement } from "../markdown/types";
 
 /** A chat as a client holds it: how it stands, its rows, and each subagent's own rows. */
-export interface ChatRows extends Omit<ChatHead, "capabilities" | "setup"> {
+export interface ChatRows extends Omit<ChatHead, "capabilities" | "setup" | "permissionMode"> {
+    /** Empty until the core sends the chat's head. */
+    permissionMode: PermissionMode | "";
     capabilities: Record<string, unknown>;
     setup: Record<string, unknown>;
     messages: ChatMessage[];

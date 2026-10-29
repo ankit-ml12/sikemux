@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 use sikemux_markdown::Doc;
+use sikemux_wire::protocol::PermissionMode;
 
 use sikemux_wire::chat::{
     AccountMove, AgentNotice, AsyncTask, ChatCommandInfo, ChatConnection, ChatDraft, ChatFailure,
@@ -557,10 +558,10 @@ impl Fold {
         self.place = Some(place);
     }
 
-    pub fn new(permission_mode: &str) -> Self {
+    pub fn new(permission_mode: PermissionMode) -> Self {
         Self {
             head: ChatHead {
-                permission_mode: permission_mode.to_owned(),
+                permission_mode,
                 capabilities: Value::Object(Map::new()),
                 setup: Value::Object(Map::new()),
                 ..ChatHead::default()
@@ -625,9 +626,9 @@ impl Fold {
         self.head_dirty.insert(field);
     }
 
-    pub fn set_permission_mode(&mut self, mode: &str) {
+    pub fn set_permission_mode(&mut self, mode: PermissionMode) {
         if self.head.permission_mode != mode {
-            self.head.permission_mode = mode.to_owned();
+            self.head.permission_mode = mode;
             self.set_head("permissionMode");
         }
     }

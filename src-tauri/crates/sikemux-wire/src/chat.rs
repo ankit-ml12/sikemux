@@ -112,7 +112,7 @@ pub struct ChatHead {
     pub running: bool,
     /// A turn has run in this session, so the provider keeps it.
     pub turned: bool,
-    pub permission_mode: String,
+    pub permission_mode: crate::protocol::PermissionMode,
     /// A change of the permission mode is on its way to the agent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub changing_mode: bool,

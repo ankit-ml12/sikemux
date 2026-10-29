@@ -17,7 +17,7 @@ use serde_json::json;
 use sikemux_core::client::{probe, CoreClient};
 use sikemux_core::protocol::{
     encode_control, read_frame_sync, BuildIdentity, ChatAccount, ChatAttachment, ChatLaunch,
-    ChatState, ClientMessage, Request, PROTOCOL, PROTOCOL_VERSION,
+    ChatState, ClientMessage, PermissionMode, Request, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
 use sikemux_wire::chat::{ChatConnection, ChatPart, FailureKind, MoveReason, PermissionAsk};
@@ -112,7 +112,7 @@ fn chat_launch(agent_id: &str, permission_mode: &str) -> ChatLaunch {
         env: BTreeMap::new(),
         mcp_servers: Vec::new(),
         resume_id: None,
-        permission_mode: permission_mode.into(),
+        permission_mode: PermissionMode::parse(permission_mode).unwrap(),
         model: Some("slow".into()),
         effort: None,
         account: None,
@@ -253,7 +253,7 @@ async fn a_client_that_attaches_replays_what_another_watched() {
     let head = replayed.head();
     assert!(!head.running);
     assert!(head.turned);
-    assert_eq!(head.permission_mode, "workspace-write");
+    assert_eq!(head.permission_mode, PermissionMode::WorkspaceWrite);
     assert!(head
         .session_id
         .as_deref()
@@ -358,12 +358,12 @@ async fn yolo_answers_permission_requests_for_the_person() {
         .is_none_or(Vec::is_empty)));
 
     client
-        .acp_set_permission_mode("agent-d".into(), "workspace-write".into())
+        .acp_set_permission_mode("agent-d".into(), PermissionMode::WorkspaceWrite)
         .await
         .expect("permission mode");
     assert_eq!(
         attach(&client, "agent-d").await.head().permission_mode,
-        "workspace-write"
+        PermissionMode::WorkspaceWrite
     );
 }
 

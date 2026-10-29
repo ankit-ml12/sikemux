@@ -371,7 +371,7 @@ pub(crate) struct Workspaces {
 pub(crate) struct ChatChoice {
     pub launcher: String,
     pub project: String,
-    pub permission_mode: Option<String>,
+    pub permission_mode: Option<PermissionMode>,
     pub model: Option<String>,
     pub effort: Option<String>,
     /// The provider's session to load instead of opening a new one.
@@ -410,7 +410,7 @@ pub(crate) struct RecentSession {
 /// What a device asked of a recent chat it takes up again.
 pub(crate) struct ResumeChoice {
     pub recent: String,
-    pub permission_mode: Option<String>,
+    pub permission_mode: Option<PermissionMode>,
     pub model: Option<String>,
     pub effort: Option<String>,
 }
@@ -1111,7 +1111,7 @@ impl Workspaces {
             renamed: false,
             lead: lead.map(|lead| lead.id),
             resume_id: launch.resume_id.clone(),
-            permission_mode: launch.permission_mode.clone(),
+            permission_mode: launch.permission_mode.as_str().to_owned(),
             profile_id,
             model: launch.model.clone(),
             model_provider: launch.env.get(ROUTED_ENV).cloned(),
@@ -1158,7 +1158,7 @@ impl Workspaces {
             if let Some(kept) = saved.kept_mut(chat.agent_id()) {
                 let agent = &mut kept.agent;
                 agent.resume_id = launch.resume_id.or(agent.resume_id.take());
-                agent.permission_mode = launch.permission_mode;
+                agent.permission_mode = launch.permission_mode.as_str().to_owned();
                 agent.model = launch.model;
                 agent.effort = launch.effort;
                 kept.account = launch.account;
@@ -1358,7 +1358,7 @@ impl Workspaces {
             env: built.env,
             mcp_servers: Vec::new(),
             resume_id: None,
-            permission_mode: launcher.permission_mode.clone(),
+            permission_mode: PermissionMode::parse(&launcher.permission_mode)?,
             model,
             effort: None,
             account: None,
@@ -1687,7 +1687,7 @@ impl Workspaces {
                 reconnecting: None,
                 started_by: None,
                 launcher: None,
-                permission_mode: String::new(),
+                permission_mode: PermissionMode::parse(&agent.permission_mode).unwrap_or_default(),
                 model: None,
                 model_provider: None,
                 effort: None,
@@ -1810,18 +1810,14 @@ pub(crate) struct Lead {
     /// Its launch, when it is a chat the core runs.
     pub launch: Option<ChatLaunch>,
     pub launcher: Option<String>,
-    pub permission_mode: Option<String>,
+    pub permission_mode: Option<PermissionMode>,
 }
 
 impl Lead {
     /// The permission mode a worker of the lead takes: the lead's own, or
     /// Normal when the lead's is unknown.
-    pub(crate) fn worker_mode(&self) -> String {
-        let mode = self.permission_mode.as_deref().map(PermissionMode::parse);
-        mode.and_then(Result::ok)
-            .unwrap_or(PermissionMode::WorkspaceWrite)
-            .as_str()
-            .to_owned()
+    pub(crate) fn worker_mode(&self) -> PermissionMode {
+        self.permission_mode.unwrap_or_default()
     }
 }
 
@@ -2668,7 +2664,7 @@ mod tests {
         let launch = launch(&workspaces, choice()).unwrap();
         assert_eq!(launch.cwd, PathBuf::from("/Users/me/sikemux"));
         assert_eq!(launch.program, PathBuf::from("/usr/local/bin/claude"));
-        assert_eq!(launch.permission_mode, "bypass");
+        assert_eq!(launch.permission_mode, PermissionMode::Bypass);
         assert_eq!(launch.model.as_deref(), Some("opus"));
         assert_eq!(
             launch.env.get("CLAUDE_CONFIG_DIR").map(String::as_str),
@@ -2729,7 +2725,7 @@ mod tests {
             reconnecting: None,
             started_by: None,
             launcher: None,
-            permission_mode: String::new(),
+            permission_mode: PermissionMode::WorkspaceWrite,
             model: None,
             model_provider: None,
             effort: None,
@@ -2761,7 +2757,7 @@ mod tests {
         assert_eq!(launch.resume_id.as_deref(), Some("s1"));
         assert_eq!(launch.cwd, PathBuf::from("/Users/me/sikemux"));
         assert_eq!(launch.provider, "claude");
-        assert_eq!(launch.permission_mode, "bypass");
+        assert_eq!(launch.permission_mode, PermissionMode::Bypass);
     }
 
     #[test]

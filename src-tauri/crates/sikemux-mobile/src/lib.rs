@@ -17,8 +17,8 @@ use sikemux_client::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_client::join::{JoinHello, JoinReply};
 use sikemux_wire::accounts::protocol::{JoinTicket, Relay};
 use sikemux_wire::protocol::{
-    CallId, Event, NotifyPrefs, Request, Response, StreamId, WindowCall, MAX_ATTACHMENT_BYTES,
-    OLDEST_PROTOCOL_VERSION, WAKE_WAIT,
+    CallId, Event, NotifyPrefs, PermissionMode, Request, Response, StreamId, WindowCall,
+    MAX_ATTACHMENT_BYTES, OLDEST_PROTOCOL_VERSION, WAKE_WAIT,
 };
 use tokio::sync::mpsc;
 
@@ -762,6 +762,7 @@ impl Connection {
         agent_id: String,
         mode: String,
     ) -> Result<(), MobileError> {
+        let mode = PermissionMode::parse(&mode).map_err(invalid)?;
         self.done(Request::AcpSetPermissionMode { agent_id, mode })
             .await
     }
@@ -813,6 +814,10 @@ impl Connection {
         project: String,
         permission_mode: Option<String>,
     ) -> Result<String, MobileError> {
+        let permission_mode = permission_mode
+            .map(|mode| PermissionMode::parse(&mode))
+            .transpose()
+            .map_err(invalid)?;
         let request = Request::StartChat {
             launcher,
             project,

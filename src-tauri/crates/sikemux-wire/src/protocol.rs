@@ -310,7 +310,7 @@ pub enum Request {
     },
     AcpSetPermissionMode {
         agent_id: String,
-        mode: String,
+        mode: PermissionMode,
     },
     AcpSetConfig {
         agent_id: String,
@@ -414,7 +414,7 @@ pub enum Request {
     StartChat {
         launcher: String,
         project: String,
-        permission_mode: Option<String>,
+        permission_mode: Option<PermissionMode>,
         model: Option<String>,
         effort: Option<String>,
     },
@@ -422,7 +422,7 @@ pub enum Request {
     /// named by its [`RecentInfo::id`], and answers like `StartChat`.
     ResumeChat {
         recent: String,
-        permission_mode: Option<String>,
+        permission_mode: Option<PermissionMode>,
         model: Option<String>,
         effort: Option<String>,
     },
@@ -442,7 +442,7 @@ pub struct ChatLaunch {
     pub mcp_servers: Vec<Value>,
     /// The provider's session to load instead of opening a new one.
     pub resume_id: Option<String>,
-    pub permission_mode: String,
+    pub permission_mode: PermissionMode,
     pub model: Option<String>,
     pub effort: Option<String>,
     /// The account the agent signs in as, when the app names one.
@@ -451,6 +451,32 @@ pub struct ChatLaunch {
     /// Accounts the chat moves to, in order, when its own runs out of usage.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fallbacks: Vec<ChatAccount>,
+}
+
+/// Whether a chat agent asks before it acts outside its workspace, or never asks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PermissionMode {
+    #[default]
+    WorkspaceWrite,
+    Bypass,
+}
+
+impl PermissionMode {
+    pub fn parse(mode: &str) -> Result<Self, String> {
+        match mode {
+            "workspace-write" => Ok(Self::WorkspaceWrite),
+            "bypass" => Ok(Self::Bypass),
+            _ => Err(format!("Unsupported permission mode: {mode}")),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::WorkspaceWrite => "workspace-write",
+            Self::Bypass => "bypass",
+        }
+    }
 }
 
 /// One of the person's accounts with a provider, as the variables that point
@@ -666,7 +692,7 @@ pub struct ChatInfo {
     pub started_by: Option<String>,
     /// The app's launcher a device started it with.
     pub launcher: Option<String>,
-    pub permission_mode: String,
+    pub permission_mode: PermissionMode,
     pub model: Option<String>,
     /// The provider its turns are paid with, in place of the agent's own account.
     #[serde(default, skip_serializing_if = "Option::is_none")]

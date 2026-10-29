@@ -486,11 +486,9 @@ impl Backend for Acp {
             },
         };
 
-        if let Some(mode_id) = permission_mode_id(
-            &acp.provider,
-            PermissionMode::parse(&launch.permission_mode)?,
-            &acp.kept.setup,
-        )? {
+        if let Some(mode_id) =
+            permission_mode_id(&acp.provider, launch.permission_mode, &acp.kept.setup)?
+        {
             acp.set_mode(mode_id).await?;
             if let Some(modes) = acp
                 .kept

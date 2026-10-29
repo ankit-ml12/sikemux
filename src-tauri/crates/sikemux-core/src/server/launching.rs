@@ -238,7 +238,7 @@ pub(crate) struct Launch {
     pub agent_id: String,
     pub launcher: String,
     pub cwd: PathBuf,
-    pub permission_mode: Option<String>,
+    pub permission_mode: Option<PermissionMode>,
     pub model: Option<String>,
     /// The hosted model provider it runs on in place of its maker's account.
     pub model_provider: Option<String>,
@@ -309,7 +309,7 @@ pub(crate) async fn start_agent(
         agent_id: agent.id.clone(),
         launcher: launcher_of(&agent),
         cwd: agent.cwd,
-        permission_mode: Some(agent.permission_mode),
+        permission_mode: Some(PermissionMode::parse(&agent.permission_mode)?),
         model: agent.model,
         model_provider: agent.model_provider,
         effort: agent.effort,
@@ -443,7 +443,9 @@ async fn start_new(
             "project": choice.project,
             "cwd": cwd,
             "title": kind,
-            "permissionMode": choice.permission_mode.unwrap_or(launcher.permission_mode),
+            "permissionMode": choice
+                .permission_mode
+                .map_or(launcher.permission_mode, |mode| mode.as_str().to_owned()),
             "profileId": launcher.id.strip_prefix(&format!("{kind}:")),
             "resumeId": choice.resume_id,
             "worktree": worktree,

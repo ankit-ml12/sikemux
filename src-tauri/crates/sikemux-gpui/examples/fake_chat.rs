@@ -27,7 +27,7 @@ use std::time::Duration;
 
 use serde_json::json;
 use sikemux_client::client::CoreClient;
-use sikemux_wire::protocol::ChatContext;
+use sikemux_wire::protocol::{ChatContext, PermissionMode};
 
 fn main() -> anyhow::Result<()> {
     tokio::runtime::Runtime::new()?.block_on(run())
@@ -76,6 +76,7 @@ async fn run() -> anyhow::Result<()> {
     println!("chat {chat}");
     if let Ok(mode) = std::env::var("FAKE_MODE") {
         std::thread::sleep(Duration::from_secs(2));
+        let mode = PermissionMode::parse(&mode).map_err(anyhow::Error::msg)?;
         client.acp_set_permission_mode(chat.clone(), mode).await?;
     }
     let mentions: Vec<ChatContext> = std::env::var("FAKE_MENTION")

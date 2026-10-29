@@ -29,8 +29,8 @@ use sikemux_wire::chat::{
     SubagentCard, SubagentState, WorkFold,
 };
 use sikemux_wire::protocol::{
-    AgentStatus, ChatAttachment, ChatContext, ChatMark, ConfigPicker, MidTurnSend, WorkspaceAgent,
-    DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE, MIN_TEXT_SCALE,
+    AgentStatus, ChatAttachment, ChatContext, ChatMark, ConfigPicker, MidTurnSend, PermissionMode,
+    WorkspaceAgent, DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE, MIN_TEXT_SCALE,
 };
 
 use crate::agent_setup::Installing;
@@ -3298,7 +3298,7 @@ fn composer(
         composer = composer.pickers(model, effort, pick);
     }
     if kind.is_some_and(|kind| kind["bypass"] == true) {
-        let on = head.is_some_and(|head| head.permission_mode == "bypass");
+        let on = head.is_some_and(|head| head.permission_mode == PermissionMode::Bypass);
         let held = head.is_some_and(|head| head.changing_mode || !head.permissions.is_empty());
         let agent = agent.id.clone();
         composer = composer.yolo(
@@ -3642,7 +3642,12 @@ impl Workbench {
             .is_some_and(|kind| kind["bypass"] == true);
         if can {
             let on = saved.permission_mode == "bypass";
-            self.switch_mode(agent, if on { "workspace-write" } else { "bypass" });
+            let mode = if on {
+                PermissionMode::WorkspaceWrite
+            } else {
+                PermissionMode::Bypass
+            };
+            self.switch_mode(agent, mode);
         }
     }
 }

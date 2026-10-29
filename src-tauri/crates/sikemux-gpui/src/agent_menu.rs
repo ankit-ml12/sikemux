@@ -6,7 +6,7 @@ use gpui_kit::{App, ClickEvent, ClipboardItem, Context, WeakEntity, Window};
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
 use serde_json::{json, Value};
-use sikemux_wire::protocol::{PinnedChat, WorkspaceAgent};
+use sikemux_wire::protocol::{PermissionMode, PinnedChat, WorkspaceAgent};
 
 use crate::icons::Icon;
 use crate::toast;
@@ -279,7 +279,11 @@ impl AgentMenu {
             );
         if self.can_skip_permissions {
             let yolo = agent.permission_mode == "bypass";
-            let mode = if yolo { "workspace-write" } else { "bypass" };
+            let mode = if yolo {
+                PermissionMode::WorkspaceWrite
+            } else {
+                PermissionMode::Bypass
+            };
             popup = popup.separator().item(
                 PopupMenuItem::new(if yolo {
                     "Disable YOLO Mode"

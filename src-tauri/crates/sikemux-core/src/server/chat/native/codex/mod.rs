@@ -571,7 +571,7 @@ impl Codex {
 
 impl Backend for Codex {
     async fn start(launch: &ChatLaunch, sink: Sink) -> Result<(Self, Opened), String> {
-        let mode = Mode::from_app(PermissionMode::parse(&launch.permission_mode)?);
+        let mode = Mode::from_app(launch.permission_mode);
         let (process, writer, lines) = Process::spawn(
             launch,
             ["app-server".to_owned()],

@@ -709,7 +709,7 @@ async fn page_history(rpc: &Rpc, session_id: &str) -> Vec<Value> {
 
 impl Backend for Muse {
     async fn start(launch: &ChatLaunch, sink: Sink) -> Result<(Self, Opened), String> {
-        let mode = Mode::from_app(PermissionMode::parse(&launch.permission_mode)?);
+        let mode = Mode::from_app(launch.permission_mode);
         let cwd = launch.cwd.to_string_lossy().into_owned();
         // Muse asks again about approvals left waiting as soon as a session
         // loads, so the session is known by its id before then.

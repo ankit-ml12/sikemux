@@ -477,7 +477,7 @@ export interface ChatInfo {
     startedBy: string | null;
     /** The app's launcher a device started it with. */
     launcher: string | null;
-    permissionMode: string;
+    permissionMode: PermissionMode;
     model: string | null;
     /** The provider its turns are paid with, in place of the agent's own account. */
     modelProvider?: string;
@@ -509,6 +509,9 @@ export interface ChatInfo {
 }
 
 export type ChatState = "starting" | "ready" | "asleep" | "stopped";
+
+/** Whether a chat agent asks before it acts outside its workspace, or never asks. */
+export type PermissionMode = "workspace-write" | "bypass";
 
 /** Something an agent is waiting on a person for. */
 export interface Attention {
@@ -916,7 +919,7 @@ export interface ChatHead {
     running: boolean;
     /** A turn has run in this session, so the provider keeps it. */
     turned: boolean;
-    permissionMode: string;
+    permissionMode: PermissionMode;
     /** A change of the permission mode is on its way to the agent. */
     changingMode?: boolean;
     /** A turn has begun and its first row has not arrived yet. */

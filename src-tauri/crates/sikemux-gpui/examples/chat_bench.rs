@@ -28,7 +28,7 @@ use sikemux_gpui::core::{Ask, ChatAsk, ChatNews, Link, Update};
 use sikemux_gpui::workbench::Workbench;
 use sikemux_gpui::{icons, theme, WINDOW_SIZE};
 use sikemux_wire::chat::{ChatChange, ChatHead, ChatMessage, ChatView};
-use sikemux_wire::protocol::{ChatAttachment, ChatMark, DeviceView, Event};
+use sikemux_wire::protocol::{ChatAttachment, ChatMark, DeviceView, Event, PermissionMode};
 use tokio::sync::mpsc;
 
 const ROWS: usize = 2_000;
@@ -209,7 +209,7 @@ struct Folded {
 
 impl Folded {
     fn new() -> Folded {
-        let mut fold = Fold::new("workspace-write");
+        let mut fold = Fold::new(PermissionMode::WorkspaceWrite);
         let ready = event(
             "ready",
             json!({ "sessionId": format!("session-{FEED}"), "capabilities": {}, "setup": { "configOptions": [] } }),

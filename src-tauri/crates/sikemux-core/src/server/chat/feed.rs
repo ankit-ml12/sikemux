@@ -14,8 +14,8 @@ use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 
 use crate::protocol::{
-    encode_control, fits, ChatAttachment, ChatContext, ChatMark, ChatStart, Event, RequestId,
-    Response, ServerMessage,
+    encode_control, fits, ChatAttachment, ChatContext, ChatMark, ChatStart, Event, PermissionMode,
+    RequestId, Response, ServerMessage,
 };
 use sikemux_process::clock::epoch_ms;
 use sikemux_wire::chat::{
@@ -1504,7 +1504,7 @@ struct Inner {
     settle_scheduled: bool,
     catch_up_scheduled: bool,
     start: Option<ChatStart>,
-    permission_mode: String,
+    permission_mode: PermissionMode,
     title: Option<String>,
     /// The session ended, so nobody new is let in to wait for events that
     /// will not come.
@@ -1535,7 +1535,7 @@ pub(crate) struct FeedState {
     replay: Replay,
     history: Option<HistoryState>,
     start: Option<ChatStart>,
-    permission_mode: String,
+    permission_mode: PermissionMode,
     title: Option<String>,
     reach: Option<(String, Reach)>,
 }
@@ -1614,7 +1614,11 @@ fn queued_view(queued: &[Queued]) -> Vec<QueuedMessage> {
 
 /// A fold for a chat, showing an effort picker from the start when its agent
 /// always offers one.
-fn new_fold(permission_mode: &str, offers_effort: bool, work: Option<&(PathBuf, Place)>) -> Fold {
+fn new_fold(
+    permission_mode: PermissionMode,
+    offers_effort: bool,
+    work: Option<&(PathBuf, Place)>,
+) -> Fold {
     let mut fold = Fold::new(permission_mode);
     if offers_effort {
         fold.offer_effort();
@@ -1646,7 +1650,7 @@ impl Feed {
     /// for clients to page back through.
     pub(crate) fn new(
         agent_id: String,
-        permission_mode: String,
+        permission_mode: PermissionMode,
         history: Option<&std::path::Path>,
     ) -> Arc<Self> {
         let id = uuid::Uuid::new_v4().to_string();
@@ -1663,7 +1667,7 @@ impl Feed {
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
                 replay: Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, history),
-                fold: Some(Fold::new(&permission_mode)),
+                fold: Some(Fold::new(permission_mode)),
                 offers_effort: false,
                 flush_scheduled: false,
                 settle_scheduled: false,
@@ -1688,7 +1692,7 @@ impl Feed {
     /// it is read until [`Feed::recover`].
     pub(crate) fn recovering(
         agent_id: String,
-        permission_mode: String,
+        permission_mode: PermissionMode,
         dir: Option<&std::path::Path>,
         from: &str,
     ) -> Arc<Self> {
@@ -1841,7 +1845,7 @@ impl Feed {
             replay,
             history,
             start: inner.start.clone(),
-            permission_mode: inner.permission_mode.clone(),
+            permission_mode: inner.permission_mode,
             title: inner.title.clone(),
             reach: inner.reach.clone(),
         };
@@ -1885,7 +1889,7 @@ impl Feed {
             inner.replay.reload();
             self.account(inner);
             let mut fold = new_fold(
-                &inner.permission_mode,
+                inner.permission_mode,
                 inner.offers_effort,
                 inner.work.as_ref(),
             );
@@ -2386,9 +2390,9 @@ impl Feed {
         self.flush_locked(&mut inner);
     }
 
-    pub(crate) fn set_permission_mode(&self, mode: &str) {
+    pub(crate) fn set_permission_mode(&self, mode: PermissionMode) {
         let mut inner = self.inner.locked();
-        inner.permission_mode = mode.to_owned();
+        inner.permission_mode = mode;
         if let Some(fold) = inner.fold.as_mut() {
             fold.set_permission_mode(mode);
         }
@@ -2403,8 +2407,8 @@ impl Feed {
         self.flush_locked(&mut inner);
     }
 
-    pub(crate) fn permission_mode(&self) -> String {
-        self.inner.locked().permission_mode.clone()
+    pub(crate) fn permission_mode(&self) -> PermissionMode {
+        self.inner.locked().permission_mode
     }
 
     /// Numbers what the chat takes in from high up, so what is read further back into the
@@ -2917,7 +2921,7 @@ mod tests {
 
     #[test]
     fn a_client_catching_up_is_not_asked_an_answered_permission_request() {
-        let mut fold = Fold::new("default");
+        let mut fold = Fold::new(PermissionMode::WorkspaceWrite);
         for request_id in ["a", "b"] {
             fold.apply(
                 0,
@@ -3307,7 +3311,7 @@ mod tests {
 
     #[tokio::test]
     async fn subagents_outlive_their_turn_but_not_the_agent() {
-        let feed = Feed::new("agent".into(), "default".into(), None);
+        let feed = Feed::new("agent".into(), PermissionMode::WorkspaceWrite, None);
         let spawned = json!({ "sessionId": "s", "update": { "sessionUpdate": "subagent_spawned", "subagentSessionId": "a" } });
         feed.emit(ChatEventKind::TurnStarted, json!({}));
         feed.emit(ChatEventKind::SessionUpdate, spawned.clone());
@@ -3345,7 +3349,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let core = crate::server::Core::new(Default::default(), None).unwrap();
         let (client, mut frames) = ClientConn::inside(&core, crate::server::access::Peer::Local);
-        let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
+        let feed = Feed::new(
+            "agent".into(),
+            PermissionMode::WorkspaceWrite,
+            Some(dir.path()),
+        );
         feed.subscribe(&client);
 
         feed.hold();
@@ -3409,7 +3417,11 @@ mod tests {
     #[tokio::test]
     async fn a_long_chat_opens_at_its_last_turns_and_pages_back() {
         let dir = tempfile::tempdir().unwrap();
-        let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
+        let feed = Feed::new(
+            "agent".into(),
+            PermissionMode::WorkspaceWrite,
+            Some(dir.path()),
+        );
         feed.set_start(ChatStart {
             session_id: "s".into(),
             capabilities: json!({}),
@@ -3460,7 +3472,11 @@ mod tests {
     #[tokio::test]
     async fn a_sleeping_chat_opens_at_its_last_turns_from_disk() {
         let dir = tempfile::tempdir().unwrap();
-        let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
+        let feed = Feed::new(
+            "agent".into(),
+            PermissionMode::WorkspaceWrite,
+            Some(dir.path()),
+        );
         feed.set_start(ChatStart {
             session_id: "s".into(),
             capabilities: json!({}),
@@ -3569,7 +3585,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let core = crate::server::Core::new(Default::default(), None).unwrap();
         let (client, mut frames) = ClientConn::inside(&core, crate::server::access::Peer::Local);
-        let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
+        let feed = Feed::new(
+            "agent".into(),
+            PermissionMode::WorkspaceWrite,
+            Some(dir.path()),
+        );
         feed.set_start(ChatStart {
             session_id: "s".into(),
             capabilities: json!({}),
