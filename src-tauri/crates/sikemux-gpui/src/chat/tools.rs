@@ -249,15 +249,17 @@ pub(super) fn word(row: &ToolRow) -> &str {
     }
 }
 
+fn plugin_mark(row: &ToolRow) -> Option<Icon> {
+    let plugin = row.plugin.as_deref()?;
+    Icon::named(plugin.strip_prefix("sikemux.").unwrap_or(plugin))
+}
+
 fn icon(call: &Call) -> Icon {
     let row = &call.tool.row;
     if call.status() == "failed" {
         return Icon::Warning;
     }
-    let plugin = row
-        .plugin
-        .as_deref()
-        .and_then(|plugin| Icon::named(plugin.strip_prefix("sikemux.").unwrap_or(plugin)));
+    let plugin = plugin_mark(row);
     let own = row.icon.as_deref().and_then(Icon::named);
     plugin.or(own).unwrap_or(match row.action {
         ToolAction::Mcp => Icon::Plug,
@@ -273,10 +275,14 @@ fn icon(call: &Call) -> Icon {
 }
 
 /// A call takes the colour of what it did, mixed back toward the row's text so a run reads as a column.
+/// A plugin's call shows only its service's own colours, in its mark.
 fn tint(call: &Call, looks: &Drawn) -> Hsla {
     let tints = &looks.tints;
     if call.status() == "failed" {
         return tints.failed;
+    }
+    if plugin_mark(&call.tool.row).is_some() {
+        return looks.quiet;
     }
     match call.tool.row.action {
         ToolAction::Read | ToolAction::Search | ToolAction::Fetch => tints.looked,
@@ -579,7 +585,7 @@ fn row(
                 .flex_none()
                 .flex()
                 .justify_center()
-                .child(ui::icon(icon(call), 11.).text_color(tint)),
+                .child(ui::picture(icon(call), 11., tint)),
         )
         .child(
             div()
