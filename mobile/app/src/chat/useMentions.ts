@@ -1,8 +1,7 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
-import type { ConnectionLike } from '@sikemux/native';
 
 import { formatAge } from '@shared/lib/format';
-import type { ClosedAgent, ProjectEntry, SessionMatch } from '@shared/wire.generated';
+import type { ClosedAgent, PluginOutcome, ProjectEntry, SessionMatch } from '@shared/wire.generated';
 import type { AgentGroup, ProjectInfo } from '@/core/protocol';
 import { callHost } from '@/core/hostCalls';
 import { problem as problemOf } from '@/core/problem';
@@ -45,15 +44,12 @@ export type MentionMenuView = {
 
 type Item = { kind: 'issue' | 'pull'; number: number; title: string; url: string };
 type Tracked = { items: Item[] } | { failed: string };
-async function ask<T>(connection: ConnectionLike, method: string, params: unknown): Promise<T> {
-  return JSON.parse(await connection.call(method, JSON.stringify(params))) as T;
-}
-
-function read(answer: { failed?: { category?: string; message?: string }; value?: unknown }, host: string): Tracked {
-  if (answer.failed?.category === 'auth') return { failed: `Sign in to ${host} in the Git pane to pick from its issues` };
-  if (answer.failed) return { failed: answer.failed.message ?? 'The code host did not answer' };
-  const items = answer.value ?? answer;
-  return { items: Array.isArray(items) ? (items as Item[]) : [] };
+function read(answer: PluginOutcome, host: string): Tracked {
+  if ('failed' in answer)
+    return {
+      failed: answer.failed.category === 'auth' ? `Sign in to ${host} in the Git pane to pick from its issues` : answer.failed.message,
+    };
+  return { items: Array.isArray(answer.value) ? (answer.value as Item[]) : [] };
 }
 
 /** The issues `#` lists or pull requests `!` lists: by the start of the number while only digits are typed, else by every word in the title. */
@@ -136,7 +132,7 @@ export function useMentions(session: ChatSession, typed: Typed | undefined): Men
   useEffect(() => {
     if (!listsTracked || !connection || !cwd || !host || tracked?.cwd === cwd) return;
     let current = true;
-    ask<Parameters<typeof read>[0]>(connection, 'codeHostTracked', { project: cwd }).then(
+    callHost(connection, 'codeHostTracked', { project: cwd }).then(
       (answer) => current && setTracked({ cwd, read: read(answer, host) }),
       (error: unknown) => current && setTracked({ cwd, read: { failed: problemOf(error) } }),
     );
@@ -245,14 +241,12 @@ export function useMentions(session: ChatSession, typed: Typed | undefined): Men
         mark: { icon: item.kind === 'pull' ? 'IconPullRequest' : 'IconIssue' },
         take: () => {
           write(`${sign}${item.number}`, id, `#${item.number} ${item.title}`);
-          if (!connection) return;
-          ask<{ value?: ContextChip } & ContextChip>(connection, 'codeHostTrackedContext', {
-            project: cwd,
-            kind: item.kind,
-            number: item.number,
-          }).then(
-            (answer) => session.track(id, answer.value ?? answer),
-            () => {},
+          if (!connection || !cwd) return;
+          callHost(connection, 'codeHostTrackedContext', { project: cwd, kind: item.kind, number: item.number }).then(
+            (answer) => {
+              if ('value' in answer) session.track(id, answer.value as ContextChip);
+            },
+            (error: unknown) => console.warn('sikemux: could not read what the issue or pull request says', error),
           );
         },
       };

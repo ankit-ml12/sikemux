@@ -50,6 +50,10 @@ const SOURCES = [
   `${CORE}/server/chat/find.rs`,
   `${CORE}/sessions/search.rs`,
   `${CORE}/server/questions.rs`,
+  `${CORE}/server/codehost/mod.rs`,
+  `${CORE}/server/plugins.rs`,
+  `${PLUGIN_API}/codehost/mod.rs`,
+  `${PLUGIN_API}/error.rs`,
   `${WIRE}/changed.rs`,
   `${CORE}/server/board.rs`,
   `${CORE}/server/board/auto.rs`,
@@ -105,6 +109,15 @@ const RENAMES = {
     ForAgent: "MadeAgentWorktree",
   },
   [`${CORE}/fuzzy.rs`]: { Entry: "ProjectEntry" },
+  [`${CORE}/server/codehost/mod.rs`]: {
+    ReleasesParams: "CodeHostProjectParams",
+    TrackedParams: "TrackedContextParams",
+  },
+  [`${CORE}/server/plugins.rs`]: {
+    Outcome: "PluginOutcome",
+    Failure: "PluginFailure",
+  },
+  [`${PLUGIN_API}/error.rs`]: { Category: "FailureCategory" },
   [`${CORE}/server/saved.rs`]: { SearchParams: "SessionSearchParams" },
   [`${CORE}/server/chat/find.rs`]: {
     Direction: "FindDirection",
@@ -319,7 +332,7 @@ function serde(attrs, where) {
 const KNOWN = {
   container: ["rename_all", "default", "tag", "rename_all_fields"],
   field: ["rename", "default", "skip_serializing_if", "skip", "alias"],
-  variant: ["rename", "other", "alias"],
+  variant: ["rename", "other", "alias", "untagged"],
 };
 
 function only(settings, allowed, where) {
@@ -622,11 +635,37 @@ function parse(item) {
   }
   if (settings.rename_all_fields)
     fail(`${where} renames fields but has no tag`);
-  const variants = splitTop(item.body.slice(1, -1)).map((member) => {
+  const members = splitTop(item.body.slice(1, -1));
+  // Every variant holding one value is serde's default tagging: an object keyed by the variant.
+  if (
+    members.every((member) => /^\w+\s*\(.*\)$/s.test(readMember(member).rest))
+  )
+    return {
+      name,
+      docs: item.docs,
+      kind: "wrapped",
+      variants: members.map((member) => {
+        const { docs, attrs, rest } = readMember(member);
+        const [, variantName, held] = /^(\w+)\s*\((.*)\)$/s.exec(rest);
+        const variant = serde(attrs, `${where}::${variantName}`);
+        only(variant, KNOWN.variant, `${where}::${variantName}`);
+        return {
+          name:
+            variant.rename ??
+            renameAll(variantName, settings.rename_all, where),
+          docs,
+          type: parseType(held, item.file),
+        };
+      }),
+    };
+  const variants = members.map((member) => {
     const { docs, attrs, rest } = readMember(member);
-    if (!/^\w+$/.test(rest)) fail(`${where}::${rest} carries data`);
     const variant = serde(attrs, `${where}::${rest}`);
     only(variant, KNOWN.variant, `${where}::${rest}`);
+    // An untagged variant holding a string is any other string.
+    if (variant.untagged && /^\w+\s*\(\s*String\s*\)$/.test(rest))
+      return { name: rest, rust: rest, docs, other: true, open: true };
+    if (!/^\w+$/.test(rest)) fail(`${where}::${rest} carries data`);
     return {
       name: variant.rename ?? renameAll(rest, settings.rename_all, where),
       rust: rest,
@@ -669,6 +708,7 @@ function closure(roots, fieldsOf = () => undefined) {
       ...(declaration.kind === "tagged"
         ? declaration.variants.flatMap((variant) => variant.fields)
         : []),
+      ...(declaration.kind === "wrapped" ? declaration.variants : []),
     ]
       .flatMap((field) => named(field.type))
       .forEach(visit);
@@ -728,15 +768,23 @@ function typescript(roots, preamble) {
           `${tsDocs(v.docs, "  ")}  | {\n  ${d.tag}: ${JSON.stringify(v.name)};\n${v.fields.map(field).join("\n")}\n}`,
       )
       .join("\n")};`;
+  const wrapped = (d) =>
+    `${tsDocs(d.docs)}export type ${d.name} =\n${d.variants
+      .map((v) => `${tsDocs(v.docs, "  ")}  | { ${v.name}: ${tsType(v.type)} }`)
+      .join("\n")};`;
   const declare = (d) =>
     d.kind === "struct"
       ? `${tsDocs(d.docs)}export interface ${d.name} {\n${d.fields.map(field).join("\n")}\n}`
       : d.kind === "tagged"
         ? tagged(d)
-        : `${tsDocs(d.docs)}export type ${d.name} = ${d.variants
-            .filter((v) => !v.other)
-            .map((v) => JSON.stringify(v.name))
-            .join(" | ")};`;
+        : d.kind === "wrapped"
+          ? wrapped(d)
+          : `${tsDocs(d.docs)}export type ${d.name} = ${[
+              ...d.variants
+                .filter((v) => !v.other)
+                .map((v) => JSON.stringify(v.name)),
+              ...(d.variants.some((v) => v.open) ? ["(string & {})"] : []),
+            ].join(" | ")};`;
   const calls = coreCalls();
   const callMap = `/** The core's calls that name what they take and answer, by method. */\nexport interface CoreCalls {\n${calls
     .map(

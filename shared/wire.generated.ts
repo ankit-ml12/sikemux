@@ -2880,6 +2880,58 @@ export interface WorktreeDefaultParams {
     on: boolean;
 }
 
+export interface TrackedContextParams {
+    project: string;
+    kind: TrackedKind;
+    number: number;
+}
+
+export type TrackedKind = "issue" | "pull";
+
+/** What the core answers the window's `plugin` call with. */
+export type PluginOutcome = { value: unknown } | { failed: PluginFailure };
+
+/** How a plugin call failed, as the window shows it. */
+export interface PluginFailure {
+    plugin: string;
+    category: FailureCategory;
+    message: string;
+    status?: number;
+}
+
+/**
+ * What kind of failure a call met. Clients branch on it, so it stays stable
+ * while the words in a failure's message may change.
+ */
+export type FailureCategory =
+    | "unconfigured"
+    | "auth"
+    | "forbidden"
+    | "rate-limited"
+    | "http"
+    | "bad-params"
+    | "not-found"
+    | "unsupported"
+    | "merge-method"
+    | "keychain"
+    | "response"
+    | "unknown-method"
+    | "stream-closed"
+    | "internal"
+    | "manifest"
+    | "timed-out"
+    | "not-installed"
+    | "disabled"
+    | "stopped"
+    | "offline"
+    | "timeout"
+    | "invalid"
+    | (string & {});
+
+export interface CodeHostProjectParams {
+    project: string;
+}
+
 export interface ApprovalSetting {
     requireApproval: boolean;
 }
@@ -2974,6 +3026,8 @@ export interface CoreCalls {
     removeStash: { params: StashItemParams; answer: null };
     setDraft: { params: SetDraftParams; answer: null };
     setWorktreeDefault: { params: WorktreeDefaultParams; answer: null };
+    codeHostTrackedContext: { params: TrackedContextParams; answer: PluginOutcome };
+    codeHostTracked: { params: CodeHostProjectParams; answer: PluginOutcome };
     requireApproval: { params: NoParams; answer: ApprovalSetting };
     setRequireApproval: { params: ApprovalSetting; answer: RemoteStatus };
     questions: { params: NoParams; answer: AgentQuestion[] };
