@@ -66,6 +66,10 @@ pub struct CodeHostSpec {
     /// none tries the repository's own default.
     #[serde(default)]
     pub merges: Vec<String>,
+    /// The names its website goes by for everyone, a trailing `*` standing for
+    /// any ending, as `gitlab.*` does for a company's own GitLab.
+    #[serde(default)]
+    pub web_hosts: Vec<String>,
     /// Where a new pull request from a branch is opened on the host's website.
     pub compare: Compare,
     pub pulls: PullAbilities,

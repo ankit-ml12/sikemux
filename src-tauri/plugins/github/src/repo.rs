@@ -222,6 +222,8 @@ mod tests {
             "https://github.com/a/b/c",
             "https://github.com/../etc",
             "/var/repos/local.git",
+            "file:///tmp/github.com/o/r",
+            "javascript:alert(1)//github.com/o/r",
         ] {
             assert_eq!(from_remote(url), None, "{url}");
         }

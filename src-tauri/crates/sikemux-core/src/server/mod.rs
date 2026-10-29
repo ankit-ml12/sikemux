@@ -18,7 +18,7 @@ mod catalog;
 mod changed;
 mod chat;
 mod cli_install;
-mod codehost;
+pub(crate) mod codehost;
 mod collisions;
 mod connection;
 mod custom_command;

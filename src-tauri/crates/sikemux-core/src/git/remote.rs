@@ -41,106 +41,10 @@ pub fn project_identity(path: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-#[derive(Debug, PartialEq)]
-enum PullRequestHost {
-    GitHub,
-    Bitbucket,
-    GitLab,
-}
-
-fn remote_host_and_path(remote_url: &str) -> Option<(String, String)> {
-    if let Ok(parsed) = url::Url::parse(remote_url) {
-        if !matches!(
-            parsed.scheme(),
-            "https" | "http" | "ssh" | "git" | "git+ssh"
-        ) {
-            return None;
-        }
-        return Some((parsed.host_str()?.to_string(), parsed.path().to_string()));
-    }
-    let (user_host, path) = remote_url.split_once(':')?;
-    if user_host.contains('/') {
-        return None;
-    }
-    let host = user_host
-        .rsplit_once('@')
-        .map_or(user_host, |(_, host)| host);
-    Some((host.to_string(), path.to_string()))
-}
-
-fn is_plain_path_segment(segment: &str) -> bool {
-    !segment.is_empty()
-        && segment != "."
-        && segment != ".."
-        && segment
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-}
-
-/// gitlab.com, or a company's own GitLab, which goes by a `gitlab.` name.
-fn is_gitlab(host: &str) -> bool {
-    host == "gitlab.com" || host.starts_with("gitlab.")
-}
-
-fn compare_url(remote_url: &str, branch: &str) -> Result<String, String> {
-    let unsupported = || format!("unsupported remote: {remote_url}");
-    let (host, path) = remote_host_and_path(remote_url.trim()).ok_or_else(unsupported)?;
-    let host = host.to_ascii_lowercase();
-    let provider = match host.as_str() {
-        "github.com" => PullRequestHost::GitHub,
-        "bitbucket.org" => PullRequestHost::Bitbucket,
-        gitlab if is_gitlab(gitlab) => PullRequestHost::GitLab,
-        _ => return Err(unsupported()),
-    };
-    let path = path.trim_matches('/');
-    let path = path.strip_suffix(".git").unwrap_or(path);
-    let parts: Vec<&str> = path.split('/').collect();
-    // A GitLab project can sit in groups inside groups; the other hosts have one owner.
-    let shaped = match provider {
-        PullRequestHost::GitLab => parts.len() >= 2,
-        _ => parts.len() == 2,
-    };
-    if !shaped || !parts.iter().all(|part| is_plain_path_segment(part)) {
-        return Err(unsupported());
-    }
-
-    let mut url = url::Url::parse(&match provider {
-        PullRequestHost::GitHub => "https://github.com/".to_string(),
-        PullRequestHost::Bitbucket => "https://bitbucket.org/".to_string(),
-        PullRequestHost::GitLab => format!("https://{host}/"),
-    })
-    .map_err(|e| e.to_string())?;
-    {
-        let mut segments = url
-            .path_segments_mut()
-            .map_err(|_| "cannot build pull request url".to_string())?;
-        segments.clear().extend(&parts);
-        match provider {
-            PullRequestHost::GitHub => {
-                segments.push("compare").extend(branch.split('/'));
-            }
-            PullRequestHost::Bitbucket => {
-                segments.extend(["pull-requests", "new"]);
-            }
-            PullRequestHost::GitLab => {
-                segments.extend(["-", "merge_requests", "new"]);
-            }
-        }
-    }
-    match provider {
-        PullRequestHost::GitHub => url.query_pairs_mut().append_pair("expand", "1"),
-        PullRequestHost::Bitbucket => url.query_pairs_mut().append_pair("source", branch),
-        PullRequestHost::GitLab => url
-            .query_pairs_mut()
-            .append_pair("merge_request[source_branch]", branch),
-    };
-    Ok(url.into())
-}
-
 /// Where the current branch's pull request opens on its host, for a client to
 /// open there.
 pub async fn pull_request_url(repo: String) -> Result<String, String> {
-    run_blocking(move || -> Result<String, String> {
+    let (remote_url, branch) = run_blocking(move || -> Result<(String, String), String> {
         let r = open_repo(&repo)?;
         let remote_url = r
             .find_remote("origin")
@@ -155,9 +59,10 @@ pub async fn pull_request_url(repo: String) -> Result<String, String> {
             .and_then(|h| h.shorthand().ok().map(String::from))
             .ok_or("no current branch (detached HEAD?)")?;
 
-        compare_url(&remote_url, &branch)
+        Ok((remote_url, branch))
     })
-    .await
+    .await?;
+    crate::server::codehost::repo::compare_url(remote_url.trim(), &branch).await
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
@@ -525,8 +430,6 @@ pub async fn git_set_upstream(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn a_fetched_ref_part_cannot_smuggle_an_option_or_a_second_refspec() {
         for good in ["origin", "pull/12/head", "pr-12", "feat/thing"] {
@@ -534,50 +437,6 @@ mod tests {
         }
         for bad in ["", "-u", "a:b", "a b", "a..b", "a~1", "a^", "*"] {
             assert!(!super::plain_ref_part(bad), "{bad}");
-        }
-    }
-
-    #[test]
-    fn pull_request_urls_only_point_at_known_hosts() {
-        let github = "https://github.com/nodelike/sikemux/compare/feat/x?expand=1";
-        for remote in [
-            "git@github.com:nodelike/sikemux.git",
-            "https://github.com/nodelike/sikemux.git",
-            "https://token@github.com/nodelike/sikemux",
-            "ssh://git@github.com/nodelike/sikemux.git",
-        ] {
-            assert_eq!(compare_url(remote, "feat/x").as_deref(), Ok(github));
-        }
-        assert_eq!(
-            compare_url("git@bitbucket.org:team/app.git", "feat/x").as_deref(),
-            Ok("https://bitbucket.org/team/app/pull-requests/new?source=feat%2Fx")
-        );
-        assert_eq!(
-            compare_url("git@gitlab.com:team/app.git", "feat/x").as_deref(),
-            Ok("https://gitlab.com/team/app/-/merge_requests/new?merge_request%5Bsource_branch%5D=feat%2Fx")
-        );
-        assert_eq!(
-            compare_url("git@gitlab.acme.dev:platform/payments/billing-api.git", "fix").as_deref(),
-            Ok("https://gitlab.acme.dev/platform/payments/billing-api/-/merge_requests/new?merge_request%5Bsource_branch%5D=fix")
-        );
-        assert_eq!(
-            compare_url("git@github.com:o/r.git", "a#b?c d").as_deref(),
-            Ok("https://github.com/o/r/compare/a%23b%3Fc%20d?expand=1")
-        );
-        for remote in [
-            "https://github.com.evil.test/o/r.git",
-            "https://evil.test/github.com/o/r.git",
-            "git@evil.test:github.com/r.git",
-            "file:///tmp/github.com/o/r",
-            "javascript:alert(1)//github.com/o/r",
-            "/tmp/github.com/o/r",
-            "https://github.com/o/r/extra",
-            "https://github.com/../r",
-            "https://gitlab.com/only",
-            "https://evilgitlab.com/o/r.git",
-            "https://gitlab.com/o/../r",
-        ] {
-            assert!(compare_url(remote, "main").is_err(), "{remote}");
         }
     }
 }

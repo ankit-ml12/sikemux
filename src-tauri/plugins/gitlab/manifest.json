@@ -12,6 +12,7 @@
     "runPath": "/-/pipelines/",
     "jobPath": "/-/jobs/",
     "pullHeads": "merge-requests",
+    "webHosts": ["gitlab.*"],
     "compare": {
       "path": "-/merge_requests/new",
       "query": {

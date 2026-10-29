@@ -13,6 +13,7 @@ use crate::server::board::Pull;
 use crate::server::plugins::{self, Category, CodeHostSpec, Failure};
 use crate::server::workspace::project_of;
 use crate::server::Core;
+use sikemux_plugin_api::codehost::{Repo as RemoteRepo, Resolved};
 
 /// A code host the core reaches through its plugin, as the plugin's manifest
 /// describes it.
@@ -31,6 +32,17 @@ impl Host {
 
     fn plugin(&self) -> &'static str {
         self.plugin
+    }
+
+    /// Whether `server` is a name the host's website goes by for everyone.
+    fn public(&self, server: &str) -> bool {
+        self.spec
+            .web_hosts
+            .iter()
+            .any(|known| match known.strip_suffix('*') {
+                Some(prefix) => server.starts_with(prefix),
+                None => server == known,
+            })
     }
 
     /// The ways to merge, tried in order; none is the repository's own default.
@@ -319,6 +331,54 @@ pub(crate) async fn shown(
         pulls: host.spec.pulls.clone(),
         ci: host.spec.ci.clone(),
     })
+}
+
+/// Where a new pull request from `branch` opens on the website of the code
+/// host the remote `url` is on, signed in to or not.
+pub(crate) async fn compare_url(url: &str, branch: &str) -> Result<String, String> {
+    for host in hosts() {
+        let Ok(found) = plugins::call(host.plugin(), "resolveRemote", json!({ "url": url })).await
+        else {
+            continue;
+        };
+        let Ok(found) = serde_json::from_value::<Resolved>(found) else {
+            continue;
+        };
+        let Some(repo) = found
+            .repo
+            .filter(|repo| found.same_host || host.public(&repo.host))
+        else {
+            continue;
+        };
+        return compare_address(host.spec, &repo, branch);
+    }
+    Err(format!("unsupported remote: {url}"))
+}
+
+fn compare_address(spec: &CodeHostSpec, repo: &RemoteRepo, branch: &str) -> Result<String, String> {
+    let mut url =
+        url::Url::parse(&format!("https://{}/", repo.host)).map_err(|error| error.to_string())?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|()| "cannot build pull request url".to_owned())?;
+        segments
+            .clear()
+            .extend(repo.owner.split('/'))
+            .push(&repo.name);
+        for part in spec.compare.path.split('/') {
+            if part == "{branch}" {
+                segments.extend(branch.split('/'));
+            } else {
+                segments.push(part);
+            }
+        }
+    }
+    for (key, value) in &spec.compare.query {
+        url.query_pairs_mut()
+            .append_pair(key, &value.replace("{branch}", branch));
+    }
+    Ok(url.into())
 }
 
 /// Branches others usually merge into, in the order one is picked as a base.
@@ -690,6 +750,61 @@ mod tests {
 
     fn names(branches: &[&str]) -> Vec<String> {
         branches.iter().map(|branch| (*branch).to_owned()).collect()
+    }
+
+    fn host(manifest: &str) -> Host {
+        let manifest = sikemux_plugin_api::Manifest::from_json(manifest).expect("a manifest");
+        let spec = manifest.code_host.expect("a code host");
+        Host {
+            plugin: "sikemux.test",
+            spec: Box::leak(Box::new(spec)),
+        }
+    }
+
+    fn compare(host: &Host, server: &str, slug: &str, branch: &str) -> Result<String, String> {
+        let (owner, name) = slug.rsplit_once('/').expect("owner/name");
+        let repo = RemoteRepo {
+            host: server.to_owned(),
+            owner: owner.to_owned(),
+            name: name.to_owned(),
+        };
+        compare_address(host.spec, &repo, branch)
+    }
+
+    #[test]
+    fn pull_request_urls_only_point_at_known_hosts() {
+        let github = host(include_str!("../../../../../plugins/github/manifest.json"));
+        let bitbucket = host(include_str!(
+            "../../../../../plugins/bitbucket/manifest.json"
+        ));
+        let gitlab = host(include_str!("../../../../../plugins/gitlab/manifest.json"));
+        assert_eq!(
+            compare(&github, "github.com", "nodelike/sikemux", "feat/x").as_deref(),
+            Ok("https://github.com/nodelike/sikemux/compare/feat/x?expand=1")
+        );
+        assert_eq!(
+            compare(&bitbucket, "bitbucket.org", "team/app", "feat/x").as_deref(),
+            Ok("https://bitbucket.org/team/app/pull-requests/new?source=feat%2Fx")
+        );
+        assert_eq!(
+            compare(&gitlab, "gitlab.com", "team/app", "feat/x").as_deref(),
+            Ok("https://gitlab.com/team/app/-/merge_requests/new?merge_request%5Bsource_branch%5D=feat%2Fx")
+        );
+        assert_eq!(
+            compare(&gitlab, "gitlab.acme.dev", "platform/payments/billing-api", "fix").as_deref(),
+            Ok("https://gitlab.acme.dev/platform/payments/billing-api/-/merge_requests/new?merge_request%5Bsource_branch%5D=fix")
+        );
+        assert_eq!(
+            compare(&github, "github.com", "o/r", "a#b?c d").as_deref(),
+            Ok("https://github.com/o/r/compare/a%23b%3Fc%20d?expand=1")
+        );
+        assert!(github.public("github.com") && bitbucket.public("bitbucket.org"));
+        assert!(gitlab.public("gitlab.com") && gitlab.public("gitlab.acme.dev"));
+        for server in ["github.com.evil.test", "evil.test", "evilgitlab.com"] {
+            for host in [&github, &bitbucket, &gitlab] {
+                assert!(!host.public(server), "{server}");
+            }
+        }
     }
 
     #[test]

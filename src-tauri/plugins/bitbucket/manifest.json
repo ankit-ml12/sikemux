@@ -10,6 +10,7 @@
     "label": "Bitbucket",
     "ciName": "Pipelines",
     "runPath": "/pipelines/results/",
+    "webHosts": ["bitbucket.org"],
     "compare": {
       "path": "pull-requests/new",
       "query": {
