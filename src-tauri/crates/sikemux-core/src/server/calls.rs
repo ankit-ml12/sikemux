@@ -533,9 +533,13 @@ calls! { core, client, params;
     "codeHostLink": Watch => answer(super::codehost::link(&core, parse(params)?).await),
     "codeHostCheckout": Person => answer(super::codehost::checkout(&core, parse(params)?).await),
     "codeHostNewPull": Watch => answer(super::codehost::new_pull(&core, parse(params)?).await),
-    "codeHostTrackedContext": Watch => answer(super::codehost::tracked_context(&core, parse(params)?).await),
+    "codeHostTrackedContext" (super::codehost::TrackedParams) -> plugins::Outcome: Watch => {
+        super::codehost::tracked_context(&core, params).await
+    },
     "codeHostWorkOn": Person => answer(super::codehost::work_on(&core, parse(params)?).await),
-    "codeHostTracked": Watch => answer(super::codehost::tracked(&core, client.id, parse(params)?).await),
+    "codeHostTracked" (super::codehost::ReleasesParams) -> plugins::Outcome: Watch => {
+        super::codehost::tracked(&core, client.id, params).await
+    },
     "codeHostRun": Watch => answer(super::codehost::run(&core, client.id, parse(params)?).await),
     "codeHostJobLog": Watch => answer(super::codehost::job_log(&core, client.id, parse(params)?).await),
     "codeHostAway": Watch => {
