@@ -39,6 +39,7 @@ use super::spawn::Ending;
 use super::{Core, CoreError, CoreResult};
 use feed::{Feed, FeedState, Standing};
 use kept::{Keeper, KeptAgent, KeptChat};
+pub(crate) use native::kill_and_reap;
 use native::Begin;
 pub(crate) use sikemux_fold::ChatEventKind;
 use sikemux_process::clock::epoch_ms;
@@ -1071,7 +1072,7 @@ impl Chat {
             let _ = tokio::time::timeout(STOP_SETTLE, task).await;
         }
         let Some((feed, subscribers)) = self.feed.release() else {
-            native::kill_agent(handed.released.pid);
+            kill_and_reap(handed.released.pid);
             return Err("its transcript could not be kept".into());
         };
         Ok(HandedChat {
@@ -1139,11 +1140,6 @@ pub(crate) enum HandOver {
     Live(Box<HandedChat>),
     /// Started again on its session, saying why.
     Resume(Box<ChatRecord>),
-}
-
-/// Stops a chat agent no core will take up.
-pub(crate) fn kill_agent(pid: u32) {
-    native::kill_agent(pid);
 }
 
 /// The notice a chat shows when an update started its agent again rather

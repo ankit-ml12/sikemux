@@ -254,7 +254,7 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &mut [HandOver
                 }
                 Err(error) => {
                     eprintln!("sikemux core: a chat's agent is started again after the update, as its state could not be written: {error}");
-                    chat::kill_agent(live.released.pid);
+                    chat::kill_and_reap(live.released.pid);
                     ChatRecord {
                         notice: Some("its state could not be written down".into()),
                         ..live.live.record.clone()
@@ -640,7 +640,7 @@ fn adopt_chat(core: &Arc<Core>, live: Value, inherited: &mut Inherited) {
         None => "its agent's pipes were not handed over".to_owned(),
     };
     eprintln!("sikemux core: a chat's agent is started again after the update: {why}");
-    chat::kill_agent(pid);
+    chat::kill_and_reap(pid);
     chat::resume(
         core,
         ChatRecord {

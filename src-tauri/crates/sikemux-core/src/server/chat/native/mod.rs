@@ -28,13 +28,8 @@ use crate::protocol::ChatLaunch;
 use super::rebind::Outcome;
 use super::{Chat, ChatCommand};
 
-pub(crate) use process::{kill_group, AgentRecord, Released};
+pub(crate) use process::{kill_and_reap, kill_group, AgentRecord, Released};
 pub(crate) use session::{Adopted, Begin, Handed, SessionState};
-
-/// Stops an agent that was let go of but that no core will take up.
-pub(crate) fn kill_agent(pid: u32) {
-    process::kill_and_reap(pid);
-}
 
 /// What a client rebuilding a chat needs to tell its turns apart: when a
 /// replayed update first happened, in Unix milliseconds, and whether it began

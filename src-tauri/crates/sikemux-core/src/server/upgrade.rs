@@ -376,7 +376,7 @@ fn restart_chats(core: &Arc<Core>, chats: Vec<HandOver>) {
                 let pipes = [released.stdin, released.stdout, released.stderr];
                 if let Err(error) = chat::adopt(core, live, pipes, &subscribers) {
                     eprintln!("sikemux core: a chat's agent is started again after the failed update: {error}");
-                    chat::kill_agent(pid);
+                    chat::kill_and_reap(pid);
                     chat::resume(
                         core,
                         chat::ChatRecord {
