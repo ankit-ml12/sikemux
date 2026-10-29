@@ -1,10 +1,8 @@
 import { createContext } from "react";
 import { fsapi } from "./page/files";
-import * as cmd from "./page/commands";
 import { swallow } from "./page/toast";
 import type { Agent } from "./page/agent";
 import type { ChatMessage, SubagentCard, ToolDetail } from "@shared/chat/types";
-import { safeWebUrl } from "@shared/lib/urls";
 import { localPath } from "@shared/lib/imagePaths";
 import { openUrl } from "./page/links";
 
@@ -29,10 +27,8 @@ export const ReaderScrollContext = createContext<(deltaY: number) => void>(
   () => {},
 );
 
-export function openLink(href: string, agentId: string, external: boolean) {
+export function openLink(href: string) {
   const path = localPath(href);
-  const webUrl = safeWebUrl(href);
   if (path) void fsapi.revealInFinder(path).catch(swallow("reveal chat file"));
-  else if (webUrl && agentId && !external) cmd.openUrlOnDesk(agentId, webUrl);
   else void openUrl(href).catch(swallow("open chat link"));
 }

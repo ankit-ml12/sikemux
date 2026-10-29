@@ -6,9 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { frontendPlugin } from "./page/plugins";
 import { CopyButton } from "./ui/CopyButton";
-import { hasPrimaryModifier } from "@shared/lib/platform";
 import {
   IconActivity,
   IconAgent,
@@ -72,7 +70,7 @@ import {
   Logo,
 } from "@shared/ui/Icons";
 import { ChatFileRef, useFileRef } from "./FileRef";
-import { ChatAgentContext, openLink, ToolDetailContext } from "./chatAgent";
+import { openLink, ToolDetailContext } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
 import { DiffBody } from "./DiffView";
 import { LiveSeconds } from "./LiveSeconds";
@@ -163,15 +161,11 @@ const TOOL_ICONS: Record<ToolIconName, ComponentType<{ size?: number }>> = {
 };
 
 function ToolKindIcon({ tool }: { tool: ToolCall }) {
-  const plugin = tool.status === "failed" ? null : tool.row.plugin;
-  const mark = plugin ? frontendPlugin(plugin)?.mark : undefined;
-  if (mark) return mark(11);
   const Icon = TOOL_ICONS[toolIconName(tool)];
   return <Icon size={11} />;
 }
 
 function ToolTarget({ text }: { text: string }) {
-  const agentId = useContext(ChatAgentContext).id;
   const link = toolUrl(text);
   if (!link) return <>{text}</>;
   return (
@@ -182,7 +176,7 @@ function ToolTarget({ text }: { text: string }) {
         href={link.url}
         onClick={(event) => {
           event.preventDefault();
-          openLink(link.url, agentId, hasPrimaryModifier(event));
+          openLink(link.url);
         }}
       >
         {link.raw}

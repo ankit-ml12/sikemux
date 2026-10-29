@@ -7,10 +7,6 @@ export interface FilesPlace {
   host?: string;
 }
 
-export function openUrlOnDesk(_agentId: string, url: string) {
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-
 export function openFileOnDesk(
   _agentId: string,
   _path: string,
@@ -24,5 +20,3 @@ export function requestOpenFile(
   _column?: number,
   _place?: FilesPlace,
 ) {}
-
-export function revealAgent(_agentId: string) {}

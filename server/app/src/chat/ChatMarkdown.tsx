@@ -1,10 +1,6 @@
-import { Children, useContext, useMemo, type ReactNode } from "react";
-import { isPluginEnabled } from "./page/plugins";
-import { linkPlugin } from "./page/plugins";
-import { useStore } from "./page/store";
+import { useMemo, type ReactNode } from "react";
 import { CopyButton } from "./ui/CopyButton";
 import { FileIcon } from "./ui/FileIcon";
-import { hasPrimaryModifier } from "@shared/lib/platform";
 import {
   Markdown,
   MarkdownBlocks,
@@ -29,7 +25,7 @@ import {
   showRestLabel,
   useLongTextFold,
 } from "@shared/chat/longText";
-import { ChatAgentContext, openLink } from "./chatAgent";
+import { openLink } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
 import { DiffText } from "./DiffView";
 import { decodedFenceName } from "@shared/chat/transcript";
@@ -40,29 +36,6 @@ import { decodedFenceName } from "@shared/chat/transcript";
    A name the message only mentioned in passing arrives here too, marked as a
    guess. It is a file when the project has one by that name, and the words the
    agent wrote when it has not. */
-/* A link to a service a plugin speaks for leads with that service's mark. The
-   mark is held to the first letter so a line never ends on it alone. */
-function MarkedText({
-  mark,
-  children,
-}: {
-  mark: ReactNode;
-  children?: ReactNode;
-}) {
-  const [first, ...rest] = Children.toArray(children);
-  const letter = typeof first === "string" ? [...first][0] : undefined;
-  return (
-    <>
-      <span className="chat-link-lead">
-        <span className="chat-link-mark">{mark}</span>
-        {letter ?? first}
-      </span>
-      {letter !== undefined && (first as string).slice(letter.length)}
-      {rest}
-    </>
-  );
-}
-
 /** A link made from a name the message only mentioned: written plainly, or between backticks. */
 type PathGuess = "text" | "code";
 
@@ -78,12 +51,6 @@ function ChatLink({
   const imagePath = localImagePath(href);
   const preview = useImagePreview(guess ? null : imagePath);
   const file = useFileRef(href);
-  const agentId = useContext(ChatAgentContext).id;
-  const service = linkPlugin(href);
-  const serviceOn = useStore(
-    (s) =>
-      service !== undefined && isPluginEnabled(service.id, s.disabledPlugins),
-  );
   if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
   if (file)
     return (
@@ -98,16 +65,15 @@ function ChatLink({
     );
   if (guess === "code") return <code>{children}</code>;
   if (guess === "text") return <>{children}</>;
-  const mark = serviceOn ? service?.mark?.(13) : undefined;
   return (
     <a
       href={href}
       onClick={(event) => {
         event.preventDefault();
-        if (href) openLink(href, agentId, hasPrimaryModifier(event));
+        if (href) openLink(href);
       }}
     >
-      {mark ? <MarkedText mark={mark}>{children}</MarkedText> : children}
+      {children}
     </a>
   );
 }

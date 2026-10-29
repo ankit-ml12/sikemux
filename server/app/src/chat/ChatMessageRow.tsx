@@ -18,7 +18,6 @@ import {
 import { Tooltip } from "./ui/Tooltip";
 import { AgentMark } from "./agents/AgentMark";
 import sikemuxMark from "../../../../brand/mark/mark-purple.svg";
-import * as cmd from "./page/commands";
 import { AnsweredQuestion } from "./AgentQuestions";
 import { rateLabel, sentLabel, sentTitle } from "@shared/chat/messageMeta";
 import { durationLabel } from "@shared/chat/durationLabel";
@@ -440,7 +439,6 @@ function TeammateLetter({ id, letter }: { id: string; letter: AgentLetter }) {
               type="button"
               className="chat-letter-name"
               title={`Open ${letter.name}`}
-              onClick={() => letter.agentId && cmd.revealAgent(letter.agentId)}
             >
               {letter.name}
             </button>

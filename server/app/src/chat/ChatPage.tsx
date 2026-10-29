@@ -37,7 +37,7 @@ export function ChatPage({ page }: { page: PageRef }) {
         reportedHeights.set(page.id, message.height);
         setHeight(clampPageHeight(message.height));
       } else if (message?.kind === "link" && personJustActedIn(frame.current))
-        openLink(message.url, agent.id, false);
+        openLink(message.url);
       else if (message?.kind === "wheel") scrollByReader(message.deltaY);
     };
     window.addEventListener("message", receive);
