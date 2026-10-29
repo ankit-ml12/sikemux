@@ -77,7 +77,7 @@ struct Contributor {
 }
 
 fn news_of(bench: &mut Workbench) -> Option<&mut WhatsNew> {
-    match bench.experience.as_mut()? {
+    match bench.overlays.experience.as_mut()? {
         Experience::WhatsNew(news) => Some(news),
         _ => None,
     }
@@ -453,7 +453,7 @@ pub fn render(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let Some(Experience::WhatsNew(news)) = &bench.experience else {
+    let Some(Experience::WhatsNew(news)) = &bench.overlays.experience else {
         return div().into_any_element();
     };
     let t = Tokens::get(cx).clone();

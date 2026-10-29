@@ -82,7 +82,7 @@ fn field(
 
 /// The dialog, while one is open.
 pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let adding = bench.adding_task.as_ref()?;
+    let adding = bench.overlays.adding_task.as_ref()?;
     let editing = adding.replaces.is_some();
     let t = Tokens::get(cx).clone();
     let note = if adding.team {
@@ -109,7 +109,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 .child(
                     Segmented::new("task-scope", scope, usize::from(!adding.team)).on_select(
                         cx.listener(|bench, picked: &usize, _, cx| {
-                            if let Some(adding) = bench.adding_task.as_mut() {
+                            if let Some(adding) = bench.overlays.adding_task.as_mut() {
                                 adding.team = *picked == 0;
                             }
                             cx.notify();
@@ -130,7 +130,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         Rc::new(move |window, cx| saving.update(cx, |bench, cx| save_task(bench, window, cx)));
     let close: dialog::Answer = Rc::new(move |_, cx| {
         closing.update(cx, |bench, cx| {
-            bench.adding_task = None;
+            bench.overlays.adding_task = None;
             cx.notify();
         })
     });
@@ -156,7 +156,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
 
 /// Saves the task the dialog holds, once it has a name and a command.
 fn save_task(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
-    let Some(adding) = bench.adding_task.as_ref() else {
+    let Some(adding) = bench.overlays.adding_task.as_ref() else {
         return;
     };
     let read = |input: &Entity<InputState>| input.read(cx).value().trim().to_owned();
@@ -172,7 +172,7 @@ fn save_task(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
     let edited = replaces.is_some();
     let params = json!({ "project": project, "label": label, "command": command, "cwd": folder, "team": team, "replaces": replaces });
     let adding = bench.target().request("addTask", params);
-    bench.adding_task = None;
+    bench.overlays.adding_task = None;
     cx.notify();
     cx.spawn_in(window, async move |bench, cx| {
         let added = adding.await;

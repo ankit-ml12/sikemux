@@ -35,7 +35,8 @@ pub fn preferences_read(
     preferences: &Preferences,
     cx: &mut Context<Workbench>,
 ) {
-    if preferences.onboarding_complete || bench.shown.welcome || bench.experience.is_some() {
+    if preferences.onboarding_complete || bench.shown.welcome || bench.overlays.experience.is_some()
+    {
         return;
     }
     bench.shown.welcome = true;
@@ -44,7 +45,7 @@ pub fn preferences_read(
 
 /// A release the person has not read the notes of opens them, once the welcome is done.
 pub fn whats_new_read(bench: &mut Workbench, value: &Value, cx: &mut Context<Workbench>) {
-    if value["unseen"] != true || bench.shown.news || bench.experience.is_some() {
+    if value["unseen"] != true || bench.shown.news || bench.overlays.experience.is_some() {
         return;
     }
     bench.shown.news = true;
@@ -53,7 +54,7 @@ pub fn whats_new_read(bench: &mut Workbench, value: &Value, cx: &mut Context<Wor
 
 pub fn open_welcome(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     close_shown(bench, cx);
-    bench.experience = Some(Experience::Welcome(welcome::Welcome::new(cx)));
+    bench.overlays.experience = Some(Experience::Welcome(welcome::Welcome::new(cx)));
     welcome::opened(bench, cx);
     crate::ui::grain::sky_shown(true, cx);
     redraw(bench, cx);
@@ -61,7 +62,7 @@ pub fn open_welcome(bench: &mut Workbench, cx: &mut Context<Workbench>) {
 
 pub fn open_whats_new(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     close_shown(bench, cx);
-    bench.experience = Some(Experience::WhatsNew(whats_new::WhatsNew::default()));
+    bench.overlays.experience = Some(Experience::WhatsNew(whats_new::WhatsNew::default()));
     whats_new::opened(bench, cx);
     crate::ui::grain::sky_shown(true, cx);
     redraw(bench, cx);
@@ -69,14 +70,14 @@ pub fn open_whats_new(bench: &mut Workbench, cx: &mut Context<Workbench>) {
 
 pub fn open_diagnostics(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     close_shown(bench, cx);
-    bench.experience = Some(Experience::Diagnostics(diagnostics::Diagnostics::default()));
+    bench.overlays.experience = Some(Experience::Diagnostics(diagnostics::Diagnostics::default()));
     diagnostics::opened(bench, cx);
     redraw(bench, cx);
 }
 
 /// Closes the screen up, counting the welcome done or the release's notes read.
 pub fn close(bench: &mut Workbench, cx: &mut Context<Workbench>) {
-    let Some(shown) = bench.experience.take() else {
+    let Some(shown) = bench.overlays.experience.take() else {
         return;
     };
     let sky = shown.has_sky();
@@ -99,7 +100,12 @@ pub fn close(bench: &mut Workbench, cx: &mut Context<Workbench>) {
 
 /// Swaps one screen for the other without counting the first as finished.
 fn close_shown(bench: &mut Workbench, cx: &mut Context<Workbench>) {
-    if bench.experience.take().is_some_and(|shown| shown.has_sky()) {
+    if bench
+        .overlays
+        .experience
+        .take()
+        .is_some_and(|shown| shown.has_sky())
+    {
         crate::ui::grain::sky_shown(false, cx);
     }
 }
@@ -112,7 +118,7 @@ fn redraw(_: &Workbench, cx: &mut Context<Workbench>) {
 /// What the part over the shell draws.
 pub fn draw(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) -> AnyElement {
     let this = cx.entity();
-    match &bench.experience {
+    match &bench.overlays.experience {
         Some(Experience::Welcome(_)) => welcome::render(bench, &this, window, cx),
         Some(Experience::WhatsNew(_)) => {
             whats_new::take_keys(bench, window, cx);

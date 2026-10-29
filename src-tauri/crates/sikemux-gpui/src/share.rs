@@ -80,7 +80,7 @@ impl Workbench {
 
     /// Opens the dialog that shares `agent`'s chat, or shows the share it has.
     pub fn open_share(&mut self, agent: &str, _: &mut Window, cx: &mut Context<Self>) {
-        self.sharing = Some(Sharing {
+        self.overlays.sharing = Some(Sharing {
             agent: agent.to_owned(),
             lifetime: 1,
             working: false,
@@ -97,19 +97,19 @@ impl Workbench {
     }
 
     fn close_share(&mut self, cx: &mut Context<Self>) {
-        self.sharing = None;
+        self.overlays.sharing = None;
         cx.notify();
     }
 
     fn start_share(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(agent) = (self.sharing.as_ref())
+        let Some(agent) = (self.overlays.sharing.as_ref())
             .filter(|sharing| !sharing.working)
             .map(|sharing| sharing.agent.clone())
         else {
             return;
         };
         let title = self.agent_title(&agent);
-        let Some(sharing) = self.sharing.as_mut() else {
+        let Some(sharing) = self.overlays.sharing.as_mut() else {
             return;
         };
         let asked = json!({ "agentId": sharing.agent, "lifetimeMs": LIFETIMES[sharing.lifetime].1, "title": title });
@@ -125,7 +125,7 @@ impl Workbench {
                         cx.write_to_clipboard(ClipboardItem::new_string(url.clone()));
                         window.push_notification("Copied the share link", cx);
                     }
-                    if let Some(sharing) = bench.sharing.as_mut() {
+                    if let Some(sharing) = bench.overlays.sharing.as_mut() {
                         sharing.working = false;
                         sharing.problem = match url {
                             Ok(Some(_)) => None,
@@ -142,7 +142,7 @@ impl Workbench {
 
     fn stop_share(&mut self, share: String, window: &mut Window, cx: &mut Context<Self>) {
         let stopped = crate::core::request(&self.asks, "stopShare", json!({ "id": share }));
-        if let Some(sharing) = self.sharing.as_mut() {
+        if let Some(sharing) = self.overlays.sharing.as_mut() {
             sharing.working = true;
         }
         cx.notify();
@@ -151,9 +151,9 @@ impl Workbench {
             bench
                 .update(cx, |bench, cx| {
                     match answer {
-                        Ok(_) => bench.sharing = None,
+                        Ok(_) => bench.overlays.sharing = None,
                         Err(error) => {
-                            if let Some(sharing) = bench.sharing.as_mut() {
+                            if let Some(sharing) = bench.overlays.sharing.as_mut() {
                                 (sharing.working, sharing.problem) = (false, Some(error));
                             }
                         }
@@ -178,7 +178,7 @@ pub struct Sharing {
 /// The share dialog, as the Mac's sheet draws it: what sharing shows, then how long the link
 /// works or the link itself, and the buttons on the foot.
 pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let sharing = bench.sharing.as_ref()?;
+    let sharing = bench.overlays.sharing.as_ref()?;
     let t = Tokens::get(cx).clone();
     let share = bench.share_of(&sharing.agent);
     let problem = sharing
@@ -271,7 +271,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                                     }),
                             })
                             .on_click(cx.listener(move |bench, _, _, cx| {
-                                if let Some(sharing) = bench.sharing.as_mut() {
+                                if let Some(sharing) = bench.overlays.sharing.as_mut() {
                                     sharing.lifetime = at;
                                 }
                                 cx.notify();

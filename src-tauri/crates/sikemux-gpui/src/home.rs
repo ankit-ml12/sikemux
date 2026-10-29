@@ -393,6 +393,7 @@ fn pane_header(
     };
     let id = agent.id.clone();
     let editing = bench
+        .overlays
         .retitling
         .as_ref()
         .filter(|retitling| retitling.agent == agent.id && !retitling.in_rail)

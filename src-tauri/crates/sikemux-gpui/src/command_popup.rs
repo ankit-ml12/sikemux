@@ -33,7 +33,7 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         self.close_command_popup(cx);
-        self.command_popup = Some(Popup {
+        self.overlays.command_popup = Some(Popup {
             title: title.into(),
             session,
         });
@@ -41,7 +41,7 @@ impl Workbench {
     }
 
     pub fn close_command_popup(&mut self, cx: &mut Context<Self>) {
-        if let Some(popup) = self.command_popup.take() {
+        if let Some(popup) = self.overlays.command_popup.take() {
             let _ = self
                 .asks
                 .send(Ask::Terminal(popup.session, TerminalAsk::Kill));
@@ -51,7 +51,7 @@ impl Workbench {
 }
 
 pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let popup = bench.command_popup.as_ref()?;
+    let popup = bench.overlays.command_popup.as_ref()?;
     let t = Tokens::get(cx).clone();
     let this = cx.entity();
     let terminal = crate::terminal::pane(

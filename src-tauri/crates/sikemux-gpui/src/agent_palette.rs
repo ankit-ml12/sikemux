@@ -87,7 +87,7 @@ impl Workbench {
         .on_stage()
         .ruled();
         self.toggle_palette(spec, window, cx);
-        if self.palette.is_some() {
+        if self.overlays.palette.is_some() {
             self.look_for_older(true, crate::recent::PALETTE_PAGE, cx);
         }
     }
@@ -95,6 +95,7 @@ impl Workbench {
     /// Offers the open ⌘⇧N the saved chats that came in since it opened.
     pub fn refill_agent_palette(&mut self, cx: &mut Context<Self>) {
         let open = self
+            .overlays
             .palette
             .as_ref()
             .is_some_and(|palette| palette.id() == "agent.choose");
@@ -106,7 +107,7 @@ impl Workbench {
             return;
         };
         let rows = self.agent_palette_rows(&project);
-        if let Some(palette) = self.palette.as_mut() {
+        if let Some(palette) = self.overlays.palette.as_mut() {
             palette.refill(rows, cx);
         }
     }

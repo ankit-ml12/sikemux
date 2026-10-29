@@ -92,7 +92,7 @@ impl Workbench {
     /// Steps `by` places on among those of the kind in front, projects among projects and
     /// hosts among hosts: in the switcher while a modifier is held, else at once.
     pub fn step_place(&mut self, by: isize, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(switcher) = self.switcher.as_mut() {
+        if let Some(switcher) = self.overlays.switcher.as_mut() {
             let count = switcher.places.len() as isize;
             switcher.at = (switcher.at as isize + by).rem_euclid(count) as usize;
             return self.parts.redraw(&self.parts.finder, cx);
@@ -118,7 +118,7 @@ impl Workbench {
         let at = (here as isize + by).rem_euclid(count) as usize;
         match Held::of(&window.modifiers()) {
             Some(held) => {
-                self.switcher = Some(Switcher { places, at, held });
+                self.overlays.switcher = Some(Switcher { places, at, held });
                 self.parts.redraw(&self.parts.finder, cx);
                 cx.notify();
             }
@@ -128,6 +128,7 @@ impl Workbench {
 
     pub fn modifiers_changed(&mut self, event: &ModifiersChangedEvent, cx: &mut Context<Self>) {
         if self
+            .overlays
             .switcher
             .as_ref()
             .is_some_and(|switcher| !switcher.held.held(&event.modifiers))
@@ -137,14 +138,14 @@ impl Workbench {
     }
 
     pub fn switcher_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
-        if self.switcher.is_some() && event.keystroke.key == "escape" {
+        if self.overlays.switcher.is_some() && event.keystroke.key == "escape" {
             self.end_switch(false, cx);
             cx.stop_propagation();
         }
     }
 
     fn end_switch(&mut self, open: bool, cx: &mut Context<Self>) {
-        let Some(switcher) = self.switcher.take() else {
+        let Some(switcher) = self.overlays.switcher.take() else {
             return;
         };
         if let Some(place) = switcher.places.get(switcher.at).filter(|_| open) {
@@ -175,7 +176,7 @@ impl Workbench {
 }
 
 pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let switcher = bench.switcher.as_ref()?;
+    let switcher = bench.overlays.switcher.as_ref()?;
     let t = Tokens::get(cx).clone();
     let rows = switcher.places.iter().enumerate().map(|(place, strip)| {
         let (glyph, name, line): (Icon, SharedString, SharedString) = match strip {
@@ -205,7 +206,7 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
             .rounded(theme::RADIUS_2)
             .when(chosen, |row| row.bg(t.surface_chosen))
             .on_click(cx.listener(move |bench, _, _, cx| {
-                if let Some(switcher) = bench.switcher.as_mut() {
+                if let Some(switcher) = bench.overlays.switcher.as_mut() {
                     switcher.at = place;
                 }
                 bench.end_switch(true, cx);

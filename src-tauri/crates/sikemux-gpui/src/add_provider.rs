@@ -153,14 +153,14 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.adding_provider = Some(AddProvider::new(target, chat, window, cx));
+        self.overlays.adding_provider = Some(AddProvider::new(target, chat, window, cx));
         cx.notify();
     }
 }
 
 /// Checks the URL and key once typing rests on them.
 fn settle(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
-    let Some(adding) = bench.adding_provider.as_mut() else {
+    let Some(adding) = bench.overlays.adding_provider.as_mut() else {
         return;
     };
     let asked = adding.asked(cx);
@@ -176,6 +176,7 @@ fn settle(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench
         let still = bench
             .update(cx, |bench, cx| {
                 bench
+                    .overlays
                     .adding_provider
                     .as_ref()
                     .is_some_and(|adding| adding.asked(cx) == asked)
@@ -190,7 +191,7 @@ fn settle(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench
             .await
             .unwrap_or_else(|failure| json!({ "failure": readable(failure) }));
         let _ = bench.update_in(cx, |bench, window, cx| {
-            let Some(adding) = bench.adding_provider.as_mut() else {
+            let Some(adding) = bench.overlays.adding_provider.as_mut() else {
                 return;
             };
             if adding.asked(cx) != asked {
@@ -220,12 +221,12 @@ fn settle(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench
 }
 
 fn close(bench: &mut Workbench, cx: &mut Context<Workbench>) {
-    bench.adding_provider = None;
+    bench.overlays.adding_provider = None;
     cx.notify();
 }
 
 fn add(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
-    let Some(adding) = bench.adding_provider.as_mut() else {
+    let Some(adding) = bench.overlays.adding_provider.as_mut() else {
         return;
     };
     let Some(read) = adding.current(cx).cloned() else {
@@ -255,12 +256,16 @@ fn add(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) 
                         )),
                         cx,
                     );
-                    let chat = bench.adding_provider.take().and_then(|adding| adding.chat);
+                    let chat = bench
+                        .overlays
+                        .adding_provider
+                        .take()
+                        .and_then(|adding| adding.chat);
                     crate::settings::providers_changed(bench, cx);
                     chat.zip(onto(bench, &provider))
                 }
                 Err(failure) => {
-                    if let Some(adding) = bench.adding_provider.as_mut() {
+                    if let Some(adding) = bench.overlays.adding_provider.as_mut() {
                         adding.adding = false;
                         adding.failure = Some(readable(failure));
                     }
@@ -364,7 +369,7 @@ fn running_bar(t: &Tokens, still: bool) -> AnyElement {
 
 /// The dialog, while one is open.
 pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let adding = bench.adding_provider.as_ref()?;
+    let adding = bench.overlays.adding_provider.as_ref()?;
     let t = Tokens::get(cx).clone();
     let this = cx.entity();
     let read = adding.current(cx).cloned();
@@ -413,7 +418,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 let (this, agent) = (this.clone(), agent.clone());
                 move |_: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut gpui_kit::App| {
                     this.update(cx, |bench, cx| {
-                        bench.adding_provider = None;
+                        bench.overlays.adding_provider = None;
                         agent_setup::show_install(bench, &agent, window, cx)
                     })
                 }

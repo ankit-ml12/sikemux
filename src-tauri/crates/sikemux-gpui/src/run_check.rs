@@ -51,7 +51,12 @@ impl Workbench {
     }
 
     fn run_task(&mut self, project: String, task: String, how: How, cx: &mut Context<Self>) {
-        if self.run_check.as_ref().is_some_and(|check| check.fixing) {
+        if self
+            .overlays
+            .run_check
+            .as_ref()
+            .is_some_and(|check| check.fixing)
+        {
             return;
         }
         let label = self.task_label(&task);
@@ -64,7 +69,12 @@ impl Workbench {
                 "fix": how == How::Fixed,
             }),
         );
-        if let Some(check) = self.run_check.as_mut().filter(|_| how == How::Fixed) {
+        if let Some(check) = self
+            .overlays
+            .run_check
+            .as_mut()
+            .filter(|_| how == How::Fixed)
+        {
             check.fixing = true;
         }
         cx.notify();
@@ -74,7 +84,7 @@ impl Workbench {
                 match answer {
                     Ok(answer) => match answer["checks"].as_array() {
                         Some(checks) => {
-                            bench.run_check = Some(RunCheck {
+                            bench.overlays.run_check = Some(RunCheck {
                                 project,
                                 task,
                                 label,
@@ -83,7 +93,7 @@ impl Workbench {
                             })
                         }
                         None => {
-                            bench.run_check = None;
+                            bench.overlays.run_check = None;
                             if let Some(execution) = answer["executionId"].as_str() {
                                 bench.runs_to_show.insert(execution.to_owned());
                                 bench.show_started_runs();
@@ -92,7 +102,7 @@ impl Workbench {
                         }
                     },
                     Err(error) => {
-                        if let Some(check) = bench.run_check.as_mut() {
+                        if let Some(check) = bench.overlays.run_check.as_mut() {
                             check.fixing = false;
                         }
                         bench.notify(toast::error(format!("Start task {label}: {error}")), cx);
@@ -171,7 +181,7 @@ impl Workbench {
     }
 
     fn close_run_check(&mut self, cx: &mut Context<Self>) {
-        self.run_check = None;
+        self.overlays.run_check = None;
         cx.notify();
     }
 }
@@ -180,6 +190,7 @@ impl Workbench {
 /// its checks.
 pub fn card(bench: &Workbench, project: &str, cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let check = bench
+        .overlays
         .run_check
         .as_ref()
         .filter(|check| check.project == project)?;
@@ -274,7 +285,7 @@ pub fn card(bench: &Workbench, project: &str, cx: &mut Context<Workbench>) -> Op
         .on_mouse_down_out(cx.listener(|bench, _, _, cx| bench.close_run_check(cx)))
         .child(crate::test_card::head_closing(
             title,
-            |bench| bench.run_check = None,
+            |bench| bench.overlays.run_check = None,
             cx,
         ))
         .children(items)

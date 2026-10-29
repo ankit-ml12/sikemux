@@ -32,7 +32,7 @@ impl Workbench {
         else {
             return;
         };
-        self.buddy_picker = Some(BuddyPicker {
+        self.overlays.buddy_picker = Some(BuddyPicker {
             agent: agent.to_owned(),
             pack: face.pack,
         });
@@ -48,7 +48,7 @@ impl Workbench {
     }
 
     fn close_buddy_picker(&mut self, cx: &mut Context<Self>) {
-        self.buddy_picker = None;
+        self.overlays.buddy_picker = None;
         cx.notify();
     }
 
@@ -71,7 +71,7 @@ fn own(agent: &WorkspaceAgent) -> (Option<&str>, Option<u64>) {
 
 /// The dialog, while it is open.
 pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let picking = bench.buddy_picker.as_ref()?;
+    let picking = bench.overlays.buddy_picker.as_ref()?;
     let agent = bench.workspace_agent(&picking.agent)?;
     let face = agent.face.clone()?;
     let packs = faces::packs();
@@ -234,7 +234,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                         row.child(ui::icon(Icon::Check, 12.).text_color(t.text_secondary))
                     })
                     .on_click(cx.listener(move |bench, _, _, cx| {
-                        if let Some(picking) = bench.buddy_picker.as_mut() {
+                        if let Some(picking) = bench.overlays.buddy_picker.as_mut() {
                             picking.pack = picked.clone();
                         }
                         cx.notify();

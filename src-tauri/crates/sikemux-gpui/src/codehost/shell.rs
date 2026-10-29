@@ -750,6 +750,7 @@ impl HostArea {
             bench
                 .update(cx, |bench, cx| {
                     if let Some(palette) = bench
+                        .overlays
                         .palette
                         .as_mut()
                         .filter(|open| open.id() == "codehost.repo")

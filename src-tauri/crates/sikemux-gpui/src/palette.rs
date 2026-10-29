@@ -532,6 +532,7 @@ impl Workbench {
     /// the one open.
     pub fn toggle_palette(&mut self, spec: Spec, window: &mut Window, cx: &mut Context<Self>) {
         let same = self
+            .overlays
             .palette
             .as_ref()
             .is_some_and(|open| open.id() == spec.id);
@@ -548,7 +549,7 @@ impl Workbench {
             |bench, input, event: &InputEvent, window, cx| {
                 if let InputEvent::Change = event {
                     let query = input.read(cx).value().to_string();
-                    if let Some(palette) = bench.palette.as_mut() {
+                    if let Some(palette) = bench.overlays.palette.as_mut() {
                         palette.filter(&query);
                     }
                     bench.browse(window, cx);
@@ -569,7 +570,7 @@ impl Workbench {
             _typing: typing,
         };
         palette.filter("");
-        self.palette = Some(palette);
+        self.overlays.palette = Some(palette);
         self.parts.redraw(&self.parts.finder, cx);
         cx.notify();
     }
@@ -582,7 +583,7 @@ impl Workbench {
     }
 
     fn leave_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Spec> {
-        let palette = self.palette.take()?;
+        let palette = self.overlays.palette.take()?;
         palette
             .before
             .as_ref()
@@ -594,7 +595,7 @@ impl Workbench {
     }
 
     fn browse(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(palette) = self.palette.as_ref() else {
+        let Some(palette) = self.overlays.palette.as_ref() else {
             return;
         };
         let (Some(browse), Some(row)) = (
@@ -607,7 +608,7 @@ impl Workbench {
     }
 
     fn step_palette(&mut self, by: isize, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(palette) = self.palette.as_mut() {
+        if let Some(palette) = self.overlays.palette.as_mut() {
             palette.step(by);
         }
         self.browse(window, cx);
@@ -622,6 +623,7 @@ impl Workbench {
             return;
         };
         let line = self
+            .overlays
             .palette
             .as_ref()
             .and_then(|palette| palette.line_numbered(number, cx));
@@ -633,6 +635,7 @@ impl Workbench {
 
     fn pick(&mut self, line: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
         let Some(row) = self
+            .overlays
             .palette
             .as_ref()
             .and_then(|palette| {
@@ -668,7 +671,7 @@ pub fn overlay(
     window: &Window,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
-    let palette = bench.palette.as_ref()?;
+    let palette = bench.overlays.palette.as_ref()?;
     let t = Tokens::get(cx).clone();
     let count = palette.lines.len();
     let deck = palette.spec.deck;
@@ -742,7 +745,11 @@ pub fn overlay(
                         bench.step_palette(-PAGE, window, cx)
                     }))
                     .on_action(cx.listener(|bench, _: &Choose, window, cx| {
-                        let selected = bench.palette.as_ref().and_then(|palette| palette.selected);
+                        let selected = bench
+                            .overlays
+                            .palette
+                            .as_ref()
+                            .and_then(|palette| palette.selected);
                         bench.pick(selected, window, cx);
                     }))
                     .on_action(
@@ -847,7 +854,7 @@ pub fn overlay(
 
 fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let Some(palette) = bench.palette.as_ref() else {
+    let Some(palette) = bench.overlays.palette.as_ref() else {
         return div().into_any_element();
     };
     let row = match palette.lines.get(line) {
@@ -904,6 +911,7 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
             element
                 .on_mouse_move(cx.listener(move |bench, _, window, cx| {
                     let Some(palette) = bench
+                        .overlays
                         .palette
                         .as_mut()
                         .filter(|palette| palette.selected != Some(line))
@@ -1036,7 +1044,7 @@ fn mode_switch(choice: Choice, cx: &mut Context<Workbench>) -> impl IntoElement 
                         })
                         .on_click(cx.listener(move |bench, _, window, cx| {
                             chosen.set(at);
-                            if let Some(palette) = &bench.palette {
+                            if let Some(palette) = &bench.overlays.palette {
                                 let input = palette.input.clone();
                                 input.update(cx, |input, cx| input.focus(window, cx));
                             }

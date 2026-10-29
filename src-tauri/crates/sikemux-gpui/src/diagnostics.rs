@@ -40,7 +40,7 @@ pub fn take_keys(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Wo
 }
 
 fn diagnostics_of(bench: &mut Workbench) -> Option<&mut Diagnostics> {
-    match bench.experience.as_mut()? {
+    match bench.overlays.experience.as_mut()? {
         Experience::Diagnostics(diagnostics) => Some(diagnostics),
         _ => None,
     }
@@ -130,7 +130,7 @@ pub fn render(
     this: &Entity<Workbench>,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let Some(Experience::Diagnostics(diagnostics)) = &bench.experience else {
+    let Some(Experience::Diagnostics(diagnostics)) = &bench.overlays.experience else {
         return div().into_any_element();
     };
     let t = Tokens::get(cx).clone();

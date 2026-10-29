@@ -62,7 +62,12 @@ impl Workbench {
                 return;
             };
             let _ = this.update(cx, |bench, cx| {
-                if let Some(palette) = bench.palette.as_mut().filter(|palette| palette.id() == ID) {
+                if let Some(palette) = bench
+                    .overlays
+                    .palette
+                    .as_mut()
+                    .filter(|palette| palette.id() == ID)
+                {
                     palette.refill(rows(themes), cx);
                     bench.parts.redraw(&bench.parts.finder, cx);
                 }
@@ -83,6 +88,7 @@ impl Workbench {
             };
             let _ = this.update(cx, |bench, cx| {
                 let highlighted = bench
+                    .overlays
                     .palette
                     .as_ref()
                     .filter(|open| open.id() == ID)

@@ -869,6 +869,7 @@ fn agent_row(
         .chat_of(&agent.id)
         .map(|chat| (chat.pinned, pin_chat(&cx.entity(), chat).1));
     let editing = bench
+        .overlays
         .retitling
         .as_ref()
         .filter(|retitling| retitling.agent == agent.id && retitling.in_rail)
@@ -899,6 +900,7 @@ fn agent_row(
         let id = id.clone();
         move |bench, event: &ClickEvent, window, cx| {
             if bench
+                .overlays
                 .retitling
                 .as_ref()
                 .is_some_and(|retitling| retitling.agent == id)

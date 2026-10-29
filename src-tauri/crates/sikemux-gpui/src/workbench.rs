@@ -34,10 +34,11 @@ use crate::desk::{
 };
 use crate::editor::OpenAt;
 use crate::files::FileTree;
-use crate::finder::{Finder, OpenFile, ProjectFiles};
+use crate::finder::{OpenFile, ProjectFiles};
 use crate::git::{FocusGit, GitPane};
 use crate::hosts::Place;
 use crate::motion;
+use crate::overlays::{Layer, Overlays};
 use crate::reads::Reads;
 use crate::search::{FocusSearch, FocusSearchWindow, SearchPane};
 use crate::terminal::NewTerminal;
@@ -115,10 +116,7 @@ pub struct Workbench {
     watched_place: crate::hosts::Place,
     pub battery: Option<Battery>,
     pub agent_setup: crate::agent_setup::Setup,
-    /// The welcome or the release notes, while one is over the window.
-    pub experience: Option<crate::experience::Experience>,
-    /// A custom command running in a terminal over the window.
-    pub command_popup: Option<crate::command_popup::Popup>,
+    pub overlays: Overlays,
     /// The question over the window while a phone waits to connect.
     pub pairing: crate::pairing::Pairing,
     /// Whether this window has looked for what kept running while Sikemux was closed.
@@ -203,13 +201,8 @@ pub struct Workbench {
     pub files: FileTree,
     /// The file tree's, which its arrow keys and F2 move and act in.
     pub files_focus: FocusHandle,
-    pub finder: Option<Finder>,
-    pub palette: Option<crate::palette::Palette>,
     /// The agent the project picker moves to the project picked, while it does.
     pub moving: Option<String>,
-    /// Edit Spaces, while it is open under the space switch.
-    pub space_editor: Option<Entity<crate::space_editor::SpaceEditor>>,
-    pub switcher: Option<crate::switcher::Switcher>,
     /// The command deck's keys, the last used first.
     pub recent_commands: Vec<SharedString>,
     /// The rails' state waiting to be kept in the core's preferences, once a drag settles.
@@ -272,10 +265,6 @@ pub struct Workbench {
     pub top_bar_hovered: bool,
     /// Settings, while they take the stage's place.
     pub settings: Option<crate::settings::Settings>,
-    /// The agent whose title is being edited in place in its header.
-    pub retitling: Option<Retitling>,
-    /// The question the shell is putting to the person, over the window.
-    asking: Option<Asking>,
     /// The account's other hosts this app reaches, by key: each one's view, as its core sends it.
     pub host_views: HashMap<String, DeviceView>,
     /// The account's other hosts this app is connected to now, by key.
@@ -290,15 +279,8 @@ pub struct Workbench {
     pub(crate) track: crate::track::Slide<String>,
     /// The tab rail's pages while they move between one another.
     pub(crate) rail_slide: crate::track::Slide<RailPage>,
-    /// The task the person is writing in the Add a task dialog, while it is open.
-    pub adding_task: Option<crate::add_task::AddTask>,
-    pub adding_provider: Option<crate::add_provider::AddProvider>,
-    pub buddy_picker: Option<crate::buddy_picker::BuddyPicker>,
-    /// A task its checks held back, waiting on the person.
-    pub run_check: Option<crate::run_check::RunCheck>,
     /// The runs the person started here, whose terminal opens once the run has one.
     pub runs_to_show: HashSet<String>,
-    pub sharing: Option<crate::share::Sharing>,
     /// The agent in front whose worktree its header reads, by id and folder, and where it is.
     pub watched_worktree: Option<(String, String, crate::hosts::Place)>,
     /// The core's trust questions already put to the person, by id.
@@ -377,7 +359,7 @@ pub enum Choice {
 type Typed = Rc<dyn Fn(&mut Workbench, String, &mut Window, &mut Context<Workbench>)>;
 
 /// A question the shell puts to the person over the window, and what its answer does.
-enum Asking {
+pub(crate) enum Asking {
     Confirm {
         title: SharedString,
         body: SharedString,
@@ -681,8 +663,7 @@ impl Workbench {
             },
             battery: crate::battery::read(),
             agent_setup: Default::default(),
-            experience: None,
-            command_popup: None,
+            overlays: Overlays::default(),
             project_settings: HashMap::new(),
             kept_running_told: false,
             open_waits: Vec::new(),
@@ -719,8 +700,6 @@ impl Workbench {
             side_rail_width: rail::SIDE_RAIL.initial,
             tab_rail_width: agents::TAB_RAIL.initial,
             resizers: [cx.focus_handle(), cx.focus_handle()],
-            retitling: None,
-            asking: None,
             host_views: HashMap::new(),
             hosts_reached: HashSet::new(),
             host_homes: HashMap::new(),
@@ -728,12 +707,7 @@ impl Workbench {
             hosts_unavailable: None,
             track: crate::track::Slide::default(),
             rail_slide: crate::track::Slide::default(),
-            adding_task: None,
-            adding_provider: None,
-            buddy_picker: None,
-            run_check: None,
             runs_to_show: HashSet::new(),
-            sharing: None,
             watched_worktree: None,
             trust_asked: HashSet::new(),
             skills_offered: HashSet::new(),
@@ -746,11 +720,7 @@ impl Workbench {
             rail_page: RailPage::Agents,
             files: FileTree::default(),
             files_focus: cx.focus_handle(),
-            finder: None,
-            palette: None,
             moving: None,
-            space_editor: None,
-            switcher: None,
             recent_commands: Vec::new(),
             keeping_rails: None,
             files_retry: Default::default(),
@@ -1941,7 +1911,7 @@ impl Workbench {
             if self.files.changed(paths.as_deref()) {
                 self.parts.redraw(&self.parts.tabs, cx);
             }
-            if self.finder.is_some() {
+            if self.overlays.finder.is_some() {
                 self.project_files.read(root.as_deref(), &self.target());
             }
         }
@@ -2328,7 +2298,7 @@ impl Workbench {
     /// Whether anything is over the whole window: a phone waiting to pair, a command's terminal,
     /// or the welcome, the release notes or runtime diagnostics.
     fn over_shown(&self) -> bool {
-        self.experience.is_some() || self.command_popup.is_some() || self.someone_waits()
+        self.overlays.in_layer(Layer::Over) || self.someone_waits()
     }
 
     /// Whether a push from a watch carries what the window already holds, so nothing in it
@@ -2411,7 +2381,7 @@ impl Workbench {
     /// Opens the Add a task dialog for the project whose tasks the Run menu lists.
     pub fn add_task(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(project) = self.watched_project.clone() {
-            self.adding_task = Some(crate::add_task::AddTask::new(project, window, cx));
+            self.overlays.adding_task = Some(crate::add_task::AddTask::new(project, window, cx));
             cx.notify();
         }
     }
@@ -2424,7 +2394,7 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.adding_task = Some(crate::add_task::AddTask::edit(
+        self.overlays.adding_task = Some(crate::add_task::AddTask::edit(
             project.to_owned(),
             task,
             window,
@@ -2741,7 +2711,7 @@ impl Workbench {
                 bench.finish_retitle(true, cx);
             }
         });
-        self.retitling = Some(Retitling {
+        self.overlays.retitling = Some(Retitling {
             agent: agent.to_owned(),
             in_rail,
             input,
@@ -2753,7 +2723,7 @@ impl Workbench {
     }
 
     pub fn finish_retitle(&mut self, save: bool, cx: &mut Context<Self>) {
-        let Some(retitling) = self.retitling.take() else {
+        let Some(retitling) = self.overlays.retitling.take() else {
             return;
         };
         let title: String = retitling
@@ -2807,7 +2777,7 @@ impl Workbench {
         then: impl Fn(&mut Workbench, Choice, &mut Window, &mut Context<Workbench>) + 'static,
         cx: &mut Context<Self>,
     ) {
-        self.asking = Some(Asking::Confirm {
+        self.overlays.asking = Some(Asking::Confirm {
             title: title.into(),
             body: body.into(),
             yes: yes.into(),
@@ -2827,7 +2797,7 @@ impl Workbench {
         then: impl Fn(&mut Workbench, String, &mut Window, &mut Context<Workbench>) + 'static,
         cx: &mut Context<Self>,
     ) {
-        self.asking = Some(Asking::Prompt {
+        self.overlays.asking = Some(Asking::Prompt {
             title: title.into(),
             initial: initial.into(),
             field: None,
@@ -2841,12 +2811,12 @@ impl Workbench {
         review: Entity<crate::agent_review::AgentReview>,
         cx: &mut Context<Self>,
     ) {
-        self.asking = Some(Asking::Review(review));
+        self.overlays.asking = Some(Asking::Review(review));
         cx.notify();
     }
 
     pub(crate) fn close_review(&mut self, cx: &mut Context<Self>) {
-        if matches!(self.asking, Some(Asking::Review(_))) {
+        if matches!(self.overlays.asking, Some(Asking::Review(_))) {
             self.take_asking(cx);
             cx.notify();
         }
@@ -2857,7 +2827,7 @@ impl Workbench {
     fn take_asking(&mut self, cx: &mut Context<Self>) -> Option<Asking> {
         let bench = cx.entity();
         cx.defer(move |cx| bench.update(cx, |bench, cx| bench.ask_trust(cx)));
-        self.asking.take()
+        self.overlays.asking.take()
     }
 
     /// The question being asked, as a dialog, making a prompt's field the first time.
@@ -2874,7 +2844,7 @@ impl Workbench {
                 })
             }
         };
-        Some(match self.asking.as_mut()? {
+        Some(match self.overlays.asking.as_mut()? {
             Asking::Review(review) => {
                 let t = Tokens::get(cx).clone();
                 let leaving = cx.entity();
@@ -2987,7 +2957,7 @@ impl Workbench {
         };
         self.trust_asked
             .retain(|asked| asks.iter().any(|(host, ask)| &asked_as(host, ask) == asked));
-        if self.asking.is_some() {
+        if self.overlays.asking.is_some() {
             return;
         }
         let Some((host, ask)) = asks.into_iter().find(|(host, ask)| {
@@ -3622,10 +3592,7 @@ impl Workbench {
         }
         let held = window.focused(cx);
         let kept = self.settings.is_some()
-            || self.experience.is_some()
-            || self.palette.is_some()
-            || self.finder.is_some()
-            || self.switcher.is_some()
+            || self.overlays.take_keys()
             || self.front_asks().is_some()
             || self.waits_for_keys();
         if kept {
@@ -3930,6 +3897,7 @@ impl Workbench {
             };
             let _ = this.update(cx, |bench, cx| {
                 if let Some(open) = bench
+                    .overlays
                     .palette
                     .as_mut()
                     .filter(|open| open.id() == palette.id)
@@ -3939,7 +3907,7 @@ impl Workbench {
                         Err(failure) => open.failed(
                             failure,
                             move |bench, _, cx| {
-                                if let Some(open) = bench.palette.as_mut() {
+                                if let Some(open) = bench.overlays.palette.as_mut() {
                                     open.refill(Vec::new(), cx);
                                 }
                                 bench.parts.redraw(&bench.parts.finder, cx);
@@ -5210,17 +5178,14 @@ impl Render for Workbench {
                     .children(crate::whats_new::required(self, cx))
                     .children(crate::boot::opening(self, cx))
                     .children(crate::boot::stuck(self, cx))
-                    .when(
-                        self.finder.is_some() || self.palette.is_some() || self.switcher.is_some(),
-                        |above| {
-                            above.child(
-                                parts
-                                    .finder
-                                    .clone()
-                                    .cached(StyleRefinement::default().absolute().inset_0()),
-                            )
-                        },
-                    )
+                    .when(self.overlays.in_layer(Layer::Finder), |above| {
+                        above.child(
+                            parts
+                                .finder
+                                .clone()
+                                .cached(StyleRefinement::default().absolute().inset_0()),
+                        )
+                    })
                     .when(self.over_shown(), |above| {
                         above.child(
                             parts

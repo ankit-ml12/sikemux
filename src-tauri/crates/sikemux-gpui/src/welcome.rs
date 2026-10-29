@@ -70,7 +70,7 @@ impl Welcome {
 }
 
 fn welcome_of(bench: &mut Workbench) -> Option<&mut Welcome> {
-    match bench.experience.as_mut()? {
+    match bench.overlays.experience.as_mut()? {
         Experience::Welcome(welcome) => Some(welcome),
         _ => None,
     }
@@ -174,7 +174,7 @@ pub fn render(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let Some(Experience::Welcome(welcome)) = &bench.experience else {
+    let Some(Experience::Welcome(welcome)) = &bench.overlays.experience else {
         return div().into_any_element();
     };
     if !welcome.focused.replace(true) {

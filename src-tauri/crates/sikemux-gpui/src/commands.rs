@@ -364,6 +364,7 @@ impl Workbench {
                 rows.extend(config.iter().flat_map(|config| action_rows(config, cx)));
                 rows.extend(worktrees.iter().flat_map(worktree_rows));
                 if let Some(palette) = bench
+                    .overlays
                     .palette
                     .as_mut()
                     .filter(|open| open.id() == "palette.commands")

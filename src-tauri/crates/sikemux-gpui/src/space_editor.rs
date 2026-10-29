@@ -282,12 +282,12 @@ impl Workbench {
     /// Opens Edit Spaces under the space switch.
     pub fn open_space_editor(&mut self, cx: &mut Context<Self>) {
         let bench = cx.weak_entity();
-        self.space_editor = Some(cx.new(|_| SpaceEditor::new(bench)));
+        self.overlays.space_editor = Some(cx.new(|_| SpaceEditor::new(bench)));
         cx.notify();
     }
 
     pub fn close_space_editor(&mut self, cx: &mut Context<Self>) {
-        self.space_editor = None;
+        self.overlays.space_editor = None;
         cx.notify();
     }
 
@@ -324,7 +324,7 @@ impl Workbench {
 
 /// Where Edit Spaces opens: under the space switch, as wide as it.
 pub fn anchor(bench: &Workbench, width: f32, cx: &mut Context<Workbench>) -> impl IntoElement {
-    let editor = bench.space_editor.clone();
+    let editor = bench.overlays.space_editor.clone();
     let this = cx.weak_entity();
     gpui_kit::base::Popover::new("space-editor")
         .open(editor.is_some())

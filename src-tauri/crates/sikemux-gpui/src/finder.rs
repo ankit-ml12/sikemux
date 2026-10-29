@@ -139,7 +139,7 @@ impl Finder {
         let typing = cx.subscribe(&input, |bench, input, event: &InputEvent, cx| {
             if let InputEvent::Change = event {
                 let query = input.read(cx).value().to_string();
-                if let Some(finder) = bench.finder.as_mut() {
+                if let Some(finder) = bench.overlays.finder.as_mut() {
                     finder.query = query;
                 }
                 bench.rank(cx);
@@ -190,14 +190,14 @@ impl Drop for Finder {
 
 impl Workbench {
     pub fn toggle_finder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.finder.is_some() {
+        if self.overlays.finder.is_some() {
             return self.close_finder(window, cx);
         }
         if let Some(palette) = self.plugin_palette_in_front() {
             return self.open_plugin_palette(palette, window, cx);
         }
         self.close_palette(window, cx);
-        self.finder = Some(Finder::open(window, cx));
+        self.overlays.finder = Some(Finder::open(window, cx));
         let project = self
             .project()
             .map(|project| project.path.to_string_lossy().into_owned());
@@ -209,7 +209,7 @@ impl Workbench {
     /// the last ranking until the new one is in.
     pub fn rank(&mut self, cx: &mut Context<Self>) {
         let files = self.project_files.files.clone();
-        let Some(finder) = self.finder.as_mut() else {
+        let Some(finder) = self.overlays.finder.as_mut() else {
             return;
         };
         let query = finder.query.clone();
@@ -225,7 +225,7 @@ impl Workbench {
                 return;
             };
             let _ = this.update(cx, |bench, cx| {
-                if let Some(finder) = bench.finder.as_mut() {
+                if let Some(finder) = bench.overlays.finder.as_mut() {
                     finder.shown = shown;
                     finder.ranked = files;
                     finder.select(0);
@@ -236,7 +236,7 @@ impl Workbench {
     }
 
     pub fn close_finder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(finder) = self.finder.take() else {
+        let Some(finder) = self.overlays.finder.take() else {
             return;
         };
         finder
@@ -248,7 +248,7 @@ impl Workbench {
     }
 
     fn choose(&mut self, place: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let (Some(finder), Some(project)) = (self.finder.as_ref(), self.project()) else {
+        let (Some(finder), Some(project)) = (self.overlays.finder.as_ref(), self.project()) else {
             return;
         };
         if let Some(path) = finder.chosen(place) {
@@ -263,7 +263,7 @@ pub fn overlay(
     window: &Window,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
-    let finder = bench.finder.as_ref()?;
+    let finder = bench.overlays.finder.as_ref()?;
     let t = Tokens::get(cx).clone();
     let project = bench.project().is_some();
     let empty = if !project {
@@ -303,19 +303,23 @@ pub fn overlay(
                     .overflow_hidden()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_action(cx.listener(|bench, _: &Next, _, cx| {
-                        if let Some(finder) = bench.finder.as_mut() {
+                        if let Some(finder) = bench.overlays.finder.as_mut() {
                             finder.step(1);
                         }
                         bench.parts.redraw(&bench.parts.finder, cx);
                     }))
                     .on_action(cx.listener(|bench, _: &Previous, _, cx| {
-                        if let Some(finder) = bench.finder.as_mut() {
+                        if let Some(finder) = bench.overlays.finder.as_mut() {
                             finder.step(-1);
                         }
                         bench.parts.redraw(&bench.parts.finder, cx);
                     }))
                     .on_action(cx.listener(|bench, _: &Choose, window, cx| {
-                        let selected = bench.finder.as_ref().map_or(0, |finder| finder.selected);
+                        let selected = bench
+                            .overlays
+                            .finder
+                            .as_ref()
+                            .map_or(0, |finder| finder.selected);
                         bench.choose(selected, window, cx);
                     }))
                     .on_action(
@@ -381,7 +385,7 @@ pub fn overlay(
 
 fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let Some(finder) = bench.finder.as_ref() else {
+    let Some(finder) = bench.overlays.finder.as_ref() else {
         return div().into_any_element();
     };
     let path = finder.chosen(place).unwrap_or_default();
@@ -407,6 +411,7 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
         .when(selected, |row| row.bg(t.surface_chosen))
         .on_mouse_move(cx.listener(move |bench, _, _, cx| {
             if let Some(finder) = bench
+                .overlays
                 .finder
                 .as_mut()
                 .filter(|finder| finder.selected != place)

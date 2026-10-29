@@ -204,14 +204,15 @@ impl Workbench {
     /// Lists what the core answered since the picker opened.
     pub fn picker_answered(&mut self, cx: &mut Context<Self>) {
         let Some(picking) = Picking::ALL.into_iter().find(|picking| {
-            self.palette
+            self.overlays
+                .palette
                 .as_ref()
                 .is_some_and(|open| open.id() == picking.id())
         }) else {
             return;
         };
         let rows = self.places(picking);
-        if let Some(palette) = self.palette.as_mut() {
+        if let Some(palette) = self.overlays.palette.as_mut() {
             palette.refill(rows, cx);
         }
         self.parts.redraw(&self.parts.finder, cx);
