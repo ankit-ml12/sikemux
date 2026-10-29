@@ -43,14 +43,6 @@ pub enum Place {
     Account(String),
 }
 
-impl Place {
-    /// The home folder of the host, when the app knows it. The core does not say another
-    /// host's, so for now an account host is taken to keep its home where this one does.
-    pub fn home(&self) -> Option<String> {
-        crate::ui::path::this_home()
-    }
-}
-
 pub struct HostOption {
     pub choice: HostChoice,
     pub label: SharedString,
@@ -107,6 +99,14 @@ impl Workbench {
         match self.strip() {
             Some(Strip::Host(alias)) => HostChoice::Ssh(alias),
             _ => HostChoice::This,
+        }
+    }
+
+    /// The home folder of the host at `place`, once its core has said it.
+    pub fn home_at(&self, place: &Place) -> Option<String> {
+        match place {
+            Place::This => crate::ui::path::this_home(),
+            Place::Account(host) => self.host_homes.get(host).cloned(),
         }
     }
 

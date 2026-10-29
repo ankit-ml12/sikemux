@@ -280,6 +280,8 @@ pub struct Workbench {
     pub host_views: HashMap<String, DeviceView>,
     /// The account's other hosts this app is connected to now, by key.
     pub hosts_reached: HashSet<String>,
+    /// The home folders of the account's other hosts, by the host's key.
+    pub(crate) host_homes: HashMap<String, String>,
     /// Whether each host asks the person before a new device joins, by key, none for this one.
     pub approvals: HashMap<Option<String>, bool>,
     /// Why this app reaches none of the account's other hosts, when it cannot.
@@ -717,6 +719,7 @@ impl Workbench {
             asking: None,
             host_views: HashMap::new(),
             hosts_reached: HashSet::new(),
+            host_homes: HashMap::new(),
             approvals: HashMap::new(),
             hosts_unavailable: None,
             track: crate::track::Slide::default(),
@@ -870,6 +873,9 @@ impl Workbench {
                 self.parts.redraw(&self.parts.stage, cx);
             }
             Update::HostsUnavailable(reason) => self.hosts_unavailable = Some(reason),
+            Update::HostHome(host, home) => {
+                self.host_homes.insert(host, home);
+            }
             Update::Read("hosts", value) => {
                 let linked = |id: &String| {
                     value
@@ -880,6 +886,7 @@ impl Workbench {
                 };
                 self.host_views.retain(|id, _| linked(id));
                 self.hosts_reached.retain(linked);
+                self.host_homes.retain(|id, _| linked(id));
                 self.approvals
                     .retain(|id, _| id.as_ref().is_none_or(linked));
                 if !self.approvals.contains_key(&None) {

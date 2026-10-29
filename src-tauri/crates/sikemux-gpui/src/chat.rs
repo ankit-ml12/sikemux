@@ -1816,7 +1816,8 @@ pub fn pane(
             .find(|saved| saved.id == agent.id)
     }) {
         let cwd = saved.cwd.to_string_lossy();
-        (chat.looks.borrow().files.borrow_mut()).place(&cwd, &chat.target, &chat.reader);
+        let home = bench.home_at(chat.target.place());
+        (chat.looks.borrow().files.borrow_mut()).place(&cwd, &chat.target, home, &chat.reader);
     }
     let file_menu = chat.file_menu.as_ref().map(|open| {
         gpui_kit::deferred(
@@ -3334,7 +3335,7 @@ fn strip(
             .map(|profile| profile.id.clone())
     });
     let place = bench.chat_target(&agent.id).place().clone();
-    let home = place.home();
+    let home = bench.home_at(&place);
     let host = match &place {
         crate::hosts::Place::Account(host) => Some(bench.host_name(host)),
         crate::hosts::Place::This => None,

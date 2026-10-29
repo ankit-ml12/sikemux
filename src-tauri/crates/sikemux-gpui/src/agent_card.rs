@@ -208,7 +208,12 @@ pub fn view(
         .as_ref()
         .and_then(|worktree| worktree.path.to_str())
         .map(|path| {
-            crate::ui::path::tilde(path, bench.chat_target(&agent.id).place().home().as_deref())
+            crate::ui::path::tilde(
+                path,
+                bench
+                    .home_at(bench.chat_target(&agent.id).place())
+                    .as_deref(),
+            )
         });
     let who: Vec<String> = agent
         .name

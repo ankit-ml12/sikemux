@@ -185,7 +185,7 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                     project.name.clone().into(),
                     crate::ui::path::tilde(
                         &project.path.to_string_lossy(),
-                        bench.place().home().as_deref(),
+                        bench.home_at(&bench.place()).as_deref(),
                     )
                     .into(),
                 ),

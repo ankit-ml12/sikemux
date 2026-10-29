@@ -140,7 +140,7 @@ impl Switcher {
             .upgrade()
             .map(|bench| {
                 let bench = bench.read(cx);
-                let home = bench.place().home();
+                let home = bench.home_at(&bench.place());
                 bench
                     .projects()
                     .iter()

@@ -79,6 +79,8 @@ pub enum Update {
     HostView(String, Box<DeviceView>),
     /// Whether this app reaches another host now, by the host's key.
     HostReach(String, bool),
+    /// Another host's home folder, by the host's key, as its core says it once reached.
+    HostHome(String, String),
     /// Why this app cannot reach the account's other hosts at all.
     HostsUnavailable(String),
     /// This host went offline, came back, or woke.
@@ -1180,6 +1182,18 @@ async fn run(
                             Some(Happened::Connected(host)) => {
                                 for (key, watch) in host_watches.get(&host).into_iter().flatten() {
                                     read_on(&linked, &host, key, watch, &current, &updates);
+                                }
+                                if let Some(linked) = linked.clone() {
+                                    let (host, updates) = (host.clone(), updates.clone());
+                                    tokio::spawn(async move {
+                                        let Ok(client) = linked.client(&host).await else {
+                                            return;
+                                        };
+                                        if let Ok(Response::Host { host: info }) = client.request(Request::Host).await {
+                                            let home = info.home.to_string_lossy().into_owned();
+                                            let _ = updates.send(Update::HostHome(host, home));
+                                        }
+                                    });
                                 }
                                 let _ = updates.send(Update::HostReach(host, true));
                             }

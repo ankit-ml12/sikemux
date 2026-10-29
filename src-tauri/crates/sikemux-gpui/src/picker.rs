@@ -221,7 +221,7 @@ impl Workbench {
         let mut rows = Vec::new();
         if picking.projects() {
             let projects = self.projects();
-            let home = self.place().home();
+            let home = self.home_at(&self.place());
             let from = self.moving_from().map(|(_, from)| from);
             for project in projects
                 .iter()

@@ -188,20 +188,31 @@ pub struct Files {
     waiting: Vec<String>,
     gathering: bool,
     reader: Option<WeakEntity<Reading>>,
+    /// The home folder of the chat's host, once known.
+    home: Option<String>,
     /// After the host failed to answer, how long the next wait is and when this one ends.
     failing: Option<(Backoff, Instant)>,
 }
 
 impl Files {
-    /// Points the names at the chat's folder on the chat's host, starting over when either moved.
-    pub fn place(&mut self, cwd: &str, target: &Target, reader: &Entity<Reading>) {
+    /// Points the names at the chat's folder on the chat's host, whose home is `home`, starting
+    /// over when any of them moved.
+    pub fn place(
+        &mut self,
+        cwd: &str,
+        target: &Target,
+        home: Option<String>,
+        reader: &Entity<Reading>,
+    ) {
         let moved = self.cwd != cwd
+            || self.home != home
             || self
                 .target
                 .as_ref()
                 .is_none_or(|held| held.place() != target.place());
         if moved {
             self.cwd = cwd.to_owned();
+            self.home = home;
             self.target = Some(target.clone());
             self.known.clear();
             self.waiting.clear();
@@ -210,12 +221,8 @@ impl Files {
         self.reader = Some(reader.downgrade());
     }
 
-    fn home(&self) -> Option<String> {
-        let here = self
-            .target
-            .as_ref()
-            .is_some_and(|target| *target.place() == Place::This);
-        here.then(crate::ui::path::this_home).flatten()
+    fn home(&self) -> Option<&str> {
+        self.home.as_deref()
     }
 
     /// `path` as the chat would write it: within its folder from there, else from home.
@@ -225,12 +232,12 @@ impl Files {
                 .and_then(|rest| rest.strip_prefix('/'))
                 .map(str::to_owned)
         };
-        within(&self.cwd).unwrap_or_else(|| crate::ui::path::tilde(path, self.home().as_deref()))
+        within(&self.cwd).unwrap_or_else(|| crate::ui::path::tilde(path, self.home()))
     }
 
     /// Where `name` points, given the chat's folder.
     pub fn resolve(&self, name: &str) -> Option<PathRef> {
-        parse(name, &self.cwd, self.home().as_deref())
+        parse(name, &self.cwd, self.home())
     }
 
     /// Whether the chat's host holds `name`, asking it when that is not known.

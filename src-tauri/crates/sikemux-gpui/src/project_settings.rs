@@ -415,7 +415,7 @@ pub fn pane(
                 )
                 .child(
                     ui::mono(
-                        crate::ui::path::tilde(folder, bench.place().home().as_deref()),
+                        crate::ui::path::tilde(folder, bench.home_at(&bench.place()).as_deref()),
                         10.,
                         cx,
                     )
