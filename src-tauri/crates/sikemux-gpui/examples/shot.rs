@@ -594,12 +594,13 @@ fn state(bench: &workbench::Workbench, stack: &[gpui::KeyContext]) -> String {
     };
     let shown = |name: Option<String>| name.map_or_else(|| "none".to_owned(), |name| kebab(&name));
     let host = bench.chosen_host().key();
-    let asking = ["trust", "host-trust"].iter().any(|key| {
-        bench
-            .read(key)
-            .and_then(|asks| asks.as_array())
-            .is_some_and(|asks| !asks.is_empty())
-    });
+    let asking = [&bench.reads.trust, &bench.reads.host_trust]
+        .iter()
+        .any(|asks| {
+            asks.as_ref()
+                .and_then(|asks| asks.as_array())
+                .is_some_and(|asks| !asks.is_empty())
+        });
     let trust = if asking { "asking" } else { "none" };
     format!(
         "state settings={settings} modal={} tab={} focus={} tabs={tabs} host={host} trust={trust}",

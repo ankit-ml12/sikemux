@@ -247,7 +247,7 @@ fn main() -> anyhow::Result<()> {
     run.frames.clear();
 
     run.bench.update(&mut run.cx, |bench, cx| {
-        bench.experience = None;
+        bench.overlays.experience = None;
         cx.notify();
     });
     for _ in 0..30 {
@@ -359,7 +359,7 @@ fn main() -> anyhow::Result<()> {
         let task = run
             .bench
             .read_with(&run.cx, |bench, _| {
-                let tasks = bench.read("tasks")?["tasks"].as_array()?;
+                let tasks = bench.reads.tasks.as_ref()?["tasks"].as_array()?;
                 tasks.first()?["id"].as_str().map(str::to_owned)
             })
             .ok_or_else(|| anyhow::anyhow!("the project lists no task"))?;
