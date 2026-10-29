@@ -572,7 +572,7 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
     }
     let t = Tokens::get(cx).clone();
     let live = Tints::new(&t).task;
-    let steerable = head.running && head.capabilities["steering"] == true;
+    let steerable = head.running && head.capabilities.steering;
     let steer = |ids: Vec<String>, label: &str, keys: bool, cx: &mut Context<Workbench>| {
         let agent = agent.to_owned();
         let id = SharedString::from(format!("steer:{}", ids.join(",")));

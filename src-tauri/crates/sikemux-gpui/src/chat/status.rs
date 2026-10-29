@@ -2,6 +2,7 @@
 //! runs, why the last turn failed and what can be done about it, and a session that
 //! dropped.
 
+use sikemux_wire::chat::{ChatCapabilities, SignInMethod};
 use std::time::Instant;
 
 use gpui_kit::prelude::FluentBuilder;
@@ -471,7 +472,7 @@ fn account_ways(
     bench: &Workbench,
     agent: &AgentRow,
     failure: Option<&sikemux_wire::chat::ChatFailure>,
-    capabilities: &serde_json::Value,
+    capabilities: &ChatCapabilities,
     this: &WeakEntity<Workbench>,
 ) -> Vec<Button> {
     let limit = failure.is_some_and(|failure| failure.kind == FailureKind::Limit);
@@ -547,13 +548,14 @@ fn account_ways(
         |bench, agent| bench.account_call("retryFailed", agent),
     );
     if on.is_none() {
-        let methods: Vec<Button> = capabilities["signInMethods"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|method| method["kind"] == "agent")
+        let methods: Vec<Button> = (capabilities.sign_in_methods.iter())
             .filter_map(|method| {
-                let (id, label) = (method["id"].as_str()?, method["name"].as_str()?);
+                let SignInMethod::Agent {
+                    id, name: label, ..
+                } = method
+                else {
+                    return None;
+                };
                 let (this, chat, method) = (this.clone(), agent.id.clone(), id.to_owned());
                 Some(
                     Button::new(
@@ -661,10 +663,7 @@ pub(super) fn plan(
             .ok();
         });
     let shown = open.then(|| {
-        let mut text = match plan {
-            serde_json::Value::String(text) => text.clone(),
-            plan => serde_json::to_string_pretty(plan).unwrap_or_default(),
-        };
+        let mut text = serde_json::to_string_pretty(plan).unwrap_or_default();
         if text.len() > MOST_PLAN {
             let cut = text.floor_char_boundary(MOST_PLAN);
             text.truncate(cut);

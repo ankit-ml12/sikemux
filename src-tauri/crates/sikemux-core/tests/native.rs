@@ -20,7 +20,7 @@ use sikemux_core::protocol::{
     ClientMessage, PermissionMode, Request, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
-use sikemux_wire::chat::{ChatPage, ChatRole, FailureKind, PermissionAsk};
+use sikemux_wire::chat::{ChatPage, ChatRole, FailureKind, PermissionAsk, StopReason};
 
 const FAKE_CLAUDE: &str = env!("CARGO_BIN_EXE_sikemux-fake-claude");
 const FAKE_CODEX: &str = env!("CARGO_BIN_EXE_sikemux-fake-codex");
@@ -172,7 +172,7 @@ async fn a_claude_chat_streams_a_turn_with_its_options_and_commands() {
 
     prompt(&client, "claude-a", &message_id(), "stream 5").await;
     chat.turn_started().await;
-    assert_eq!(chat.turn_ended().await.as_deref(), Some("end_turn"));
+    assert_eq!(chat.turn_ended().await, Some(StopReason::EndTurn));
     assert_eq!(chat.text(), "w0 w1 w2 w3 w4 ");
     assert_eq!(
         chat.head()
@@ -279,7 +279,7 @@ async fn a_stopped_claude_turn_ends_cancelled() {
     prompt(&client, "claude-c", &message_id(), "hold 10000").await;
     chat.until(|chat| chat.text().contains("holding")).await;
     client.acp_cancel("claude-c".into()).await.expect("cancel");
-    assert_eq!(chat.turn_ended().await.as_deref(), Some("cancelled"));
+    assert_eq!(chat.turn_ended().await, Some(StopReason::Cancelled));
     assert!(!chat.text().contains("held"));
 }
 
@@ -496,7 +496,7 @@ async fn a_codex_chat_streams_a_turn_with_its_options() {
         .any(|option| option["category"] == "thought_level" && option["currentValue"] == "high"));
 
     prompt(&client, "codex-a", &message_id(), "stream 5").await;
-    assert_eq!(chat.turn_ended().await.as_deref(), Some("end_turn"));
+    assert_eq!(chat.turn_ended().await, Some(StopReason::EndTurn));
     assert_eq!(chat.text(), "w0 w1 w2 w3 w4 ");
 }
 
@@ -531,7 +531,7 @@ async fn a_stopped_codex_turn_ends_cancelled() {
     prompt(&client, "codex-c", &message_id(), "hold 10000").await;
     chat.until(|chat| chat.text().contains("holding")).await;
     client.acp_cancel("codex-c".into()).await.expect("cancel");
-    assert_eq!(chat.turn_ended().await.as_deref(), Some("cancelled"));
+    assert_eq!(chat.turn_ended().await, Some(StopReason::Cancelled));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -706,7 +706,7 @@ async fn live_claude_streams_edits_and_resumes() {
         )
         .await
         .expect("edit");
-    assert_eq!(chat.turn_ended().await.as_deref(), Some("end_turn"));
+    assert_eq!(chat.turn_ended().await, Some(StopReason::EndTurn));
     let answer = chat.text();
     assert!(answer.trim_end().ends_with('1'), "{answer}");
 

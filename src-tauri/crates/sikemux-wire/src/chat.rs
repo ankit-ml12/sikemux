@@ -102,6 +102,110 @@ pub enum ChatConnection {
     Error,
 }
 
+/// Why the agent ended its turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StopReason {
+    EndTurn,
+    MaxTokens,
+    MaxTurnRequests,
+    Refusal,
+    Cancelled,
+    /// A reason a newer agent gives.
+    #[serde(other)]
+    Unknown,
+}
+
+/// One step of the plan an agent keeps for its turn.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanEntry {
+    pub content: String,
+    #[serde(default)]
+    pub priority: PlanPriority,
+    #[serde(default)]
+    pub status: PlanStatus,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanPriority {
+    High,
+    #[default]
+    Medium,
+    Low,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanStatus {
+    #[default]
+    Pending,
+    InProgress,
+    Completed,
+    #[serde(other)]
+    Unknown,
+}
+
+/// How a tool call stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+    Cancelled,
+    /// A status a newer agent gives, taken as still under way.
+    #[serde(other)]
+    Unknown,
+}
+
+impl ToolStatus {
+    /// The call has not finished yet.
+    pub fn running(self) -> bool {
+        !matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+    }
+}
+
+/// What the chat's agent can do beyond taking a prompt.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatCapabilities {
+    /// It takes a message in the middle of a turn.
+    #[serde(default)]
+    pub steering: bool,
+    /// A sent message can be edited, which takes the chat back to it.
+    #[serde(default)]
+    pub editing: bool,
+    /// The ways the person can sign its account in.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sign_in_methods: Vec<SignInMethod>,
+}
+
+/// A way an agent says it can be signed in.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum SignInMethod {
+    /// Run the agent's own program again with `args` and `env`, in a terminal
+    /// the person can see. A zero exit means it worked.
+    Terminal {
+        id: String,
+        name: String,
+        description: Option<String>,
+        args: Vec<String>,
+        env: Vec<(String, String)>,
+    },
+    /// Ask the agent to sign in by itself, through `authenticate`.
+    Agent {
+        id: String,
+        name: String,
+        description: Option<String>,
+    },
+}
+
 /// How a chat stands, apart from what it said.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -127,15 +231,16 @@ pub struct ChatHead {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure: Option<ChatFailure>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stop_reason: Option<String>,
+    pub stop_reason: Option<StopReason>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<ContextUsage>,
+    /// The steps the agent plans for the turn, once it has said them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan: Option<Value>,
+    pub plan: Option<Vec<PlanEntry>>,
     pub commands: Vec<ChatCommandInfo>,
-    pub capabilities: Value,
+    pub capabilities: ChatCapabilities,
     pub setup: Value,
     /// The model the session runs on, and the ones it can switch to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -651,9 +756,8 @@ pub struct ToolCall {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
-    /// `pending`, `in_progress`, `completed`, `failed` or `cancelled`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub status: Option<ToolStatus>,
     /// Its arguments, each cut to one short line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_input: Option<Value>,

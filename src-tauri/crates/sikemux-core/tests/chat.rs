@@ -20,7 +20,9 @@ use sikemux_core::protocol::{
     ChatState, ClientMessage, PermissionMode, Request, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
-use sikemux_wire::chat::{ChatConnection, ChatPart, FailureKind, MoveReason, PermissionAsk};
+use sikemux_wire::chat::{
+    ChatConnection, ChatPart, FailureKind, MoveReason, PermissionAsk, StopReason,
+};
 
 const FAKE_AGENT: &str = env!("CARGO_BIN_EXE_sikemux-fake-acp-agent");
 const WAIT: Duration = Duration::from_secs(30);
@@ -147,7 +149,7 @@ async fn a_chat_starts_and_streams_a_turn() {
         .await
         .expect("prompt");
     chat.turn_started().await;
-    assert_eq!(chat.turn_ended().await.as_deref(), Some("end_turn"));
+    assert_eq!(chat.turn_ended().await, Some(StopReason::EndTurn));
     let expected: String = (0..40).map(|index| format!("w{index} ")).collect();
     assert_eq!(chat.text(), expected);
     let answer = chat.view.rows.last().expect("the answer");
@@ -541,7 +543,7 @@ async fn an_agent_that_dies_carries_on_until_it_has_died_too_often() {
         .await;
         chat.until(|chat| {
             !chat.head().running
-                && chat.head().stop_reason.as_deref() == Some("end_turn")
+                && chat.head().stop_reason == Some(StopReason::EndTurn)
                 && chat.text().matches(CARRIED_ON).count() >= restarts
         })
         .await;

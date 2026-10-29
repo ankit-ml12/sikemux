@@ -1,6 +1,7 @@
 //! A run of tool calls in a chat: each call's row as the core worked it out,
 //! and what the call changed or printed once the reader opens it.
 
+use sikemux_wire::chat::ToolStatus;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -152,12 +153,12 @@ impl<'a> Call<'a> {
         })
     }
 
-    fn status(&self) -> &str {
-        self.tool.status.as_deref().unwrap_or("pending")
+    fn status(&self) -> ToolStatus {
+        self.tool.status.unwrap_or(ToolStatus::Pending)
     }
 
     fn running(&self) -> bool {
-        !matches!(self.status(), "completed" | "failed" | "cancelled")
+        self.status().running()
     }
 
     fn took(&self) -> u64 {
@@ -242,7 +243,7 @@ fn plugin_mark(row: &ToolRow) -> Option<Icon> {
 
 fn icon(call: &Call) -> Icon {
     let row = &call.tool.row;
-    if call.status() == "failed" {
+    if call.status() == ToolStatus::Failed {
         return Icon::Warning;
     }
     let plugin = plugin_mark(row);
@@ -264,7 +265,7 @@ fn icon(call: &Call) -> Icon {
 /// A plugin's call shows only its service's own colours, in its mark.
 fn tint(call: &Call, looks: &Drawn) -> Hsla {
     let tints = &looks.tints;
-    if call.status() == "failed" {
+    if call.status() == ToolStatus::Failed {
         return tints.failed;
     }
     if plugin_mark(&call.tool.row).is_some() {
@@ -497,7 +498,7 @@ fn row(
     let open = opens && looks.reading.tools.calls.contains(&id);
     let tint = tint(call, looks);
     let target = (!row.target.is_empty()).then(|| target(row, running, &id, looks, cx));
-    let elapsed = if call.status() == "cancelled" {
+    let elapsed = if call.status() == ToolStatus::Cancelled {
         Some("stopped".into_any_element())
     } else if running {
         call.started
@@ -508,7 +509,7 @@ fn row(
             .map(|(ended, started)| time::took(ended.saturating_sub(started)).into_any_element())
     };
     let elapsed = elapsed.map(|elapsed| settled(format!("call-time:{id}"), running, elapsed));
-    let quiet = call.diff.is_none() && call.status() != "failed";
+    let quiet = call.diff.is_none() && call.status() != ToolStatus::Failed;
     let group = SharedString::from(format!("tool:{id}"));
     let end = div()
         .flex()
@@ -955,7 +956,7 @@ fn terminal(
     let exit = call
         .output
         .and_then(|output| output.exit_code)
-        .filter(|_| call.status() == "failed");
+        .filter(|_| call.status() == ToolStatus::Failed);
     let mut parts: Vec<AnyElement> = command
         .into_iter()
         .map(IntoElement::into_any_element)

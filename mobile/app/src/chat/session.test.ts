@@ -14,7 +14,7 @@ const HEAD = {
   turned: false,
   permissionMode: 'default',
   commands: [],
-  capabilities: {},
+  capabilities: { steering: false, editing: false },
   setup: {},
   permissions: [],
   tasks: [],

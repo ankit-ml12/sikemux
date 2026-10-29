@@ -17,20 +17,18 @@ const task = (asyncTaskId: string, name: string, taskType: string): AsyncTask =>
 describe('live work', () => {
   it('reads a plan as its named steps', () => {
     expect(
-      planEntries({
-        entries: [
-          { content: ' Read the tests ', status: 'completed' },
-          { content: 'Fix the race', status: 'in_progress' },
-          { content: '', status: 'pending' },
-          { content: 'Commit', status: 'something new' },
-        ],
-      }),
+      planEntries([
+        { content: ' Read the tests ', priority: 'medium', status: 'completed' },
+        { content: 'Fix the race', priority: 'medium', status: 'in_progress' },
+        { content: '', priority: 'medium', status: 'pending' },
+        { content: 'Commit', priority: 'medium', status: 'unknown' as 'pending' },
+      ]),
     ).toEqual([
       { content: 'Read the tests', status: 'completed' },
       { content: 'Fix the race', status: 'in_progress' },
       { content: 'Commit', status: 'pending' },
     ]);
-    expect(planEntries(null)).toEqual([]);
+    expect(planEntries(undefined)).toEqual([]);
   });
 
   it('counts running subagents, tasks by kind, waiting messages and an unfinished plan', () => {
@@ -38,7 +36,7 @@ describe('live work', () => {
       ...emptyChat,
       runningSubagents: [subagent('a', 'Explore')],
       tasks: [task('t1', 'pnpm dev', 'shell'), task('t2', 'CI', 'monitor'), task('t3', 'tsc -w', 'shell')],
-      plan: { entries: [{ content: 'Fix', status: 'completed' }] },
+      plan: [{ content: 'Fix', priority: 'medium', status: 'completed' }],
       queued: [{ id: 'q1', text: 'and the docs', paths: [], context: [] }],
     });
     expect(work.subagents.map((subagent) => subagent.name)).toEqual(['Explore']);

@@ -20,16 +20,18 @@ use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use serde::Deserialize;
 use serde_json::{Map, Value};
 use sikemux_markdown::Doc;
 use sikemux_wire::protocol::PermissionMode;
 
 use sikemux_wire::chat::{
-    AccountMove, AgentNotice, AsyncTask, ChatCommandInfo, ChatConnection, ChatDraft, ChatFailure,
-    ChatHead, ChatMessage, ChatPart, ChatRole, ChatTrigger, ContextUsage, FailureKind, MoveReason,
-    NoticeSeverity, NoticeState, PermissionAsk, PermissionOption, QueuedMessage, Retrying,
-    SentContext, SessionEnded, SubagentCard, SubagentState, TaskNotice, TaskState, TaskUsage,
-    ToolDetail, TurnStart, UsageCost, WorkflowAgent,
+    AccountMove, AgentNotice, AsyncTask, ChatCapabilities, ChatCommandInfo, ChatConnection,
+    ChatDraft, ChatFailure, ChatHead, ChatMessage, ChatPart, ChatRole, ChatTrigger, ContextUsage,
+    FailureKind, MoveReason, NoticeSeverity, NoticeState, PermissionAsk, PermissionOption,
+    PlanEntry, QueuedMessage, Retrying, SentContext, SessionEnded, StopReason, SubagentCard,
+    SubagentState, TaskNotice, TaskState, TaskUsage, ToolDetail, ToolStatus, TurnStart, UsageCost,
+    WorkflowAgent,
 };
 use tools::WithRow;
 
@@ -562,7 +564,7 @@ impl Fold {
         Self {
             head: ChatHead {
                 permission_mode,
-                capabilities: Value::Object(Map::new()),
+                capabilities: Default::default(),
                 setup: Value::Object(Map::new()),
                 ..ChatHead::default()
             },
@@ -740,9 +742,9 @@ impl Fold {
                 self.head.connection = ChatConnection::Ready;
                 if let Some(capabilities) = payload
                     .get("capabilities")
-                    .filter(|value| value.is_object())
+                    .and_then(|value| ChatCapabilities::deserialize(value).ok())
                 {
-                    self.head.capabilities = capabilities.clone();
+                    self.head.capabilities = capabilities;
                 }
                 if let Some(setup) = payload.get("setup").filter(|value| value.is_object()) {
                     self.head.setup = setup.clone();
@@ -801,7 +803,9 @@ impl Fold {
                 }
             }
             ChatEventKind::TurnCompleted => {
-                let stop = text_of(payload.get("stopReason")).map(str::to_owned);
+                let stop = payload
+                    .get("stopReason")
+                    .and_then(|reason| StopReason::deserialize(reason).ok());
                 let at = payload.get("at").and_then(Value::as_u64).unwrap_or(at);
                 self.end_turn(stop, at);
             }
@@ -1101,7 +1105,15 @@ impl Fold {
             }
             "notice" => self.agent_notice(index, update),
             "plan" => {
-                self.head.plan = Some(update.clone());
+                self.head.plan = update
+                    .get("entries")
+                    .and_then(Value::as_array)
+                    .map(|entries| {
+                        entries
+                            .iter()
+                            .filter_map(|entry| PlanEntry::deserialize(entry).ok())
+                            .collect()
+                    });
                 self.set_head("plan");
                 self.suppress_user_echo = false;
             }
@@ -1723,7 +1735,9 @@ impl Fold {
             for row in &transcript.rows {
                 for (position, part) in row.msg.parts.iter().enumerate() {
                     match part {
-                        ChatPart::Tool { tool, .. } if tools::running(tool.status.as_deref()) => {
+                        ChatPart::Tool { tool, .. }
+                            if tool.status.is_none_or(ToolStatus::running) =>
+                        {
                             running.push((row.msg.id.clone(), position, tool.tool_call_id.clone()));
                         }
                         ChatPart::Subagent { subagent, .. } => {
@@ -2072,7 +2086,7 @@ impl Fold {
 
     /// A cancelled turn stops only the subagents it was waiting on, and the
     /// agent says which. Background ones run on and report their own end.
-    fn end_turn(&mut self, stop_reason: Option<String>, at: u64) {
+    fn end_turn(&mut self, stop_reason: Option<StopReason>, at: u64) {
         let was_running = self.head.running;
         self.settle_transcript(&None, at, false);
         if was_running {

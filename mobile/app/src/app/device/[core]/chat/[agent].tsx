@@ -12,7 +12,6 @@ import { activityText, composerPlaceholder } from '@shared/chat/chatStatus';
 import { sentPrompts } from '@shared/chat/promptHistory';
 import { activeToolLabel } from '@shared/chat/toolLabels';
 import type { ChatMessage } from '@shared/chat/types';
-import { recordOf } from '@shared/lib/guards';
 import { ChatMenu } from '@/chat/ChatMenu';
 import { ChatFind, type Hit } from '@/chat/chatFind';
 import { FindBar } from '@/chat/FindBar';
@@ -209,12 +208,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     return shownRows(state.messages, (id) => opened.has(`work/${id}`));
   }, [state.messages, openWork]);
   const watchOnly = access === 'watch';
-  const canEdit =
-    !watchOnly &&
-    recordOf(state.capabilities)?.editing === true &&
-    state.connection === 'ready' &&
-    !state.running &&
-    chat.attached === 'live';
+  const canEdit = !watchOnly && state.capabilities.editing && state.connection === 'ready' && !state.running && chat.attached === 'live';
   if (editing !== undefined && !canEdit) setEditing(undefined);
   const editable = (message: ChatMessage) =>
     canEdit && message.role === 'user' && message.promptId !== undefined && !message.context?.length && !chat.unsent.has(message.id);
@@ -317,7 +311,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   );
   const activity = chat.stoppingTurn ? 'Stopping…' : activityText({ ...state, permissions: chat.permissions }, activeToolLabel(state));
   const title = state.title ?? live.snapshot?.inbox.agents.find((shown) => shown.agentId === agentId)?.title ?? agentLabel(provider);
-  const steerable = recordOf(state.capabilities)?.steering === true && state.running && !watchOnly;
+  const steerable = state.capabilities.steering && state.running && !watchOnly;
   // The person may change how sending mid-turn goes between turns, so each turn reads it afresh.
   const preferences = useHostCall<Preferences>(connection, 'preferences', null, String(state.running)).data;
   const steers = steerable && preferences?.midTurnSend !== 'queue';

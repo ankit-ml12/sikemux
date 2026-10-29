@@ -3,10 +3,9 @@ import { applyPatch } from "../markdown/patch";
 import type { MdChange, MdElement } from "../markdown/types";
 
 /** A chat as a client holds it: how it stands, its rows, and each subagent's own rows. */
-export interface ChatRows extends Omit<ChatHead, "capabilities" | "setup" | "permissionMode"> {
+export interface ChatRows extends Omit<ChatHead, "setup" | "permissionMode"> {
     /** Empty until the core sends the chat's head. */
     permissionMode: PermissionMode | "";
-    capabilities: Record<string, unknown>;
     setup: Record<string, unknown>;
     messages: ChatMessage[];
     subagentRows: Record<string, ChatMessage[]>;
@@ -20,7 +19,7 @@ export const emptyChat: ChatRows = {
     turned: false,
     permissionMode: "",
     commands: [],
-    capabilities: {},
+    capabilities: { steering: false, editing: false },
     setup: {},
     permissions: [],
     tasks: [],
@@ -36,8 +35,7 @@ export const emptyChat: ChatRows = {
 export function fromView(view: ChatView): ChatRows {
     return {
         ...emptyChat,
-        ...(view.head as Omit<ChatHead, "capabilities" | "setup">),
-        capabilities: (view.head.capabilities ?? {}) as Record<string, unknown>,
+        ...(view.head as Omit<ChatHead, "setup">),
         setup: (view.head.setup ?? {}) as Record<string, unknown>,
         messages: view.rows,
         subagentRows: view.subagents ?? {},

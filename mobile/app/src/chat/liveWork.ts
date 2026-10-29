@@ -1,5 +1,5 @@
-import { recordOf } from '@shared/lib/guards';
 import type { ChatRows } from '@shared/chat/rows';
+import type { PlanEntry as AgentPlanEntry } from '@shared/wire.generated';
 import { groupTasks, subagentActivity, taskDetail, workflowAgentDetail } from '@shared/chat/transcript';
 import type { AsyncTask, SubagentCard } from '@shared/chat/types';
 import { counted } from '@/devices/words';
@@ -8,14 +8,11 @@ import type { Held } from './outbox';
 export type PlanEntry = { content: string; status: 'pending' | 'in_progress' | 'completed' };
 
 /** The checklist an agent keeps for its turn, as the steps it names. */
-export function planEntries(plan: unknown): PlanEntry[] {
-  const entries = recordOf(plan)?.entries;
-  if (!Array.isArray(entries)) return [];
-  return entries.flatMap((entry): PlanEntry[] => {
-    const record = recordOf(entry);
-    const content = typeof record?.content === 'string' ? record.content.trim() : '';
+export function planEntries(plan: readonly AgentPlanEntry[] | undefined): PlanEntry[] {
+  return (plan ?? []).flatMap((entry): PlanEntry[] => {
+    const content = entry.content.trim();
     if (!content) return [];
-    const status = record?.status === 'completed' || record?.status === 'in_progress' ? record.status : 'pending';
+    const status = entry.status === 'completed' || entry.status === 'in_progress' ? entry.status : 'pending';
     return [{ content, status }];
   });
 }

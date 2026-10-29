@@ -581,7 +581,9 @@ pub(super) fn call(raw: &Map<String, Value>) -> ToolCall {
     ToolCall {
         tool_call_id: text(raw.get("toolCallId")).unwrap_or_default().to_owned(),
         title: text(raw.get("title")).unwrap_or_default().to_owned(),
-        status: text(raw.get("status")).map(str::to_owned),
+        status: raw
+            .get("status")
+            .and_then(|status| serde_json::from_value(status.clone()).ok()),
         raw_input: short_input(raw.get("rawInput")),
         path: location(raw.get("locations")),
         description: description(kind.as_deref(), raw.get("rawInput")),

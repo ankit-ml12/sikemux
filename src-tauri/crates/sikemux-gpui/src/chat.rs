@@ -919,9 +919,7 @@ impl Chat {
         }
         let running = self.running();
         let editable = self.state.as_ref().is_some_and(|head| {
-            head.capabilities["editing"] == true
-                && head.connection == ChatConnection::Ready
-                && !head.running
+            head.capabilities.editing && head.connection == ChatConnection::Ready && !head.running
         });
         let earlier_lost = self.state.as_ref().is_some_and(|head| head.earlier_lost);
         self.reader.update(cx, |reading, cx| {
@@ -1724,7 +1722,7 @@ impl Chat {
     fn steers(&self) -> bool {
         self.state
             .as_ref()
-            .is_some_and(|head| head.running && head.capabilities["steering"] == true)
+            .is_some_and(|head| head.running && head.capabilities.steering)
     }
 
     /// With ⌘ and nothing written, the messages waiting behind the turn go into it now.

@@ -4,28 +4,8 @@
 
 use std::path::Path;
 
-use serde::Serialize;
 use serde_json::Value;
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum SignInMethod {
-    /// Run the agent's own program again with `args` and `env`, in a terminal
-    /// the person can see. A zero exit means it worked.
-    Terminal {
-        id: String,
-        name: String,
-        description: Option<String>,
-        args: Vec<String>,
-        env: Vec<(String, String)>,
-    },
-    /// Ask the agent to sign in by itself, through `authenticate`.
-    Agent {
-        id: String,
-        name: String,
-        description: Option<String>,
-    },
-}
+use sikemux_wire::chat::SignInMethod;
 
 /// The sign-in methods in `initialize`, for an agent whose program is called
 /// `command`. A terminal method in Zed's earlier `_meta` form counts only when

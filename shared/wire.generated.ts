@@ -932,12 +932,13 @@ export interface ChatHead {
     retrying?: Retrying;
     error?: string;
     failure?: ChatFailure;
-    stopReason?: string;
+    stopReason?: StopReason;
     title?: string;
     usage?: ContextUsage;
-    plan?: unknown;
+    /** The steps the agent plans for the turn, once it has said them. */
+    plan?: PlanEntry[];
     commands: ChatCommandInfo[];
-    capabilities: unknown;
+    capabilities: ChatCapabilities;
     setup: unknown;
     /** The model the session runs on, and the ones it can switch to. */
     model?: ConfigPicker;
@@ -990,6 +991,9 @@ export interface ChatFailure {
 
 export type FailureKind = "signIn" | "limit" | "network" | "other";
 
+/** Why the agent ended its turn. */
+export type StopReason = "end_turn" | "max_tokens" | "max_turn_requests" | "refusal" | "cancelled";
+
 /** How full the session's context window is, as the agent last reported it. */
 export interface ContextUsage {
     used: number;
@@ -1002,12 +1006,55 @@ export interface UsageCost {
     currency: string;
 }
 
+/** One step of the plan an agent keeps for its turn. */
+export interface PlanEntry {
+    content: string;
+    priority: PlanPriority;
+    status: PlanStatus;
+}
+
+export type PlanPriority = "high" | "medium" | "low";
+
+export type PlanStatus = "pending" | "in_progress" | "completed";
+
 /** A slash command the agent offers. */
 export interface ChatCommandInfo {
     name: string;
     description: string;
     hint?: string;
 }
+
+/** What the chat's agent can do beyond taking a prompt. */
+export interface ChatCapabilities {
+    /** It takes a message in the middle of a turn. */
+    steering: boolean;
+    /** A sent message can be edited, which takes the chat back to it. */
+    editing: boolean;
+    /** The ways the person can sign its account in. */
+    signInMethods?: SignInMethod[];
+}
+
+/** A way an agent says it can be signed in. */
+export type SignInMethod =
+    /**
+     * Run the agent's own program again with `args` and `env`, in a terminal
+     * the person can see. A zero exit means it worked.
+     */
+    | {
+          kind: "terminal";
+          id: string;
+          name: string;
+          description: string | null;
+          args: string[];
+          env: [string, string][];
+      }
+    /** Ask the agent to sign in by itself, through `authenticate`. */
+    | {
+          kind: "agent";
+          id: string;
+          name: string;
+          description: string | null;
+      };
 
 /** A tool call waiting on the person's permission. */
 export interface PermissionAsk {
@@ -1027,8 +1074,7 @@ export interface ToolCall {
     toolCallId: string;
     title: string;
     kind?: string;
-    /** `pending`, `in_progress`, `completed`, `failed` or `cancelled`. */
-    status?: string;
+    status?: ToolStatus;
     /** Its arguments, each cut to one short line. */
     rawInput?: unknown;
     /** The file it touched, with its line when it said. */
@@ -1038,6 +1084,9 @@ export interface ToolCall {
     /** What its row shows, worked out from the rest. */
     row: ToolRow;
 }
+
+/** How a tool call stands. */
+export type ToolStatus = "pending" | "in_progress" | "completed" | "failed" | "cancelled";
 
 /**
  * What a tool call's row shows. Each client words, marks and colours the

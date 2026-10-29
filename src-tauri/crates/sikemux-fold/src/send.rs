@@ -9,10 +9,11 @@ use sikemux_markdown::{Doc, Op, Options};
 
 use sikemux_wire::chat::{
     ChatChange, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, PartTree, SubagentCard,
+    ToolStatus,
 };
 
 use super::event::ChatEvent;
-use super::{tools, Fold, Row, Side, Transcript};
+use super::{Fold, Row, Side, Transcript};
 
 /// How an agent's answers are read as markdown.
 const ANSWER: Options = Options {
@@ -477,9 +478,11 @@ impl Fold {
     fn active_tool(&self) -> Option<String> {
         let last = self.main.rows.last()?;
         last.msg.parts.iter().rev().find_map(|part| match part {
-            ChatPart::Tool { id, tool, .. } => {
-                Some(tools::running(tool.status.as_deref()).then(|| id.clone()))
-            }
+            ChatPart::Tool { id, tool, .. } => Some(
+                tool.status
+                    .is_none_or(ToolStatus::running)
+                    .then(|| id.clone()),
+            ),
             _ => None,
         })?
     }
@@ -729,7 +732,7 @@ impl Fold {
                             *subagent = (*card).clone();
                         }
                     }
-                    ChatPart::Tool { tool, .. } if tools::running(tool.status.as_deref()) => {
+                    ChatPart::Tool { tool, .. } if tool.status.is_none_or(ToolStatus::running) => {
                         if let Some(known) = self.tool_part(&tool.tool_call_id) {
                             *part = known;
                         }

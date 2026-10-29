@@ -1,7 +1,7 @@
 use serde_json::json;
 use sikemux_wire::chat::{
-    ChatChange, ChatView, DiffLine, DiffSummary, OutputImage, OutputSummary, PageRef, RowMeta,
-    ToolCall, ToolOutput,
+    ChatChange, ChatView, DiffLine, DiffSummary, OutputImage, OutputSummary, PageRef, PlanEntry,
+    PlanPriority, PlanStatus, RowMeta, StopReason, ToolCall, ToolOutput, ToolStatus,
 };
 
 use super::*;
@@ -405,7 +405,7 @@ mod reducer {
         let part = first_tool(&mut chat);
         assert_eq!(part.tool.tool_call_id, "tool-1");
         assert_eq!(part.tool.title, "Read file");
-        assert_eq!(part.tool.status.as_deref(), Some("completed"));
+        assert_eq!(part.tool.status, Some(ToolStatus::Completed));
         assert_eq!(part.output, None);
     }
 
@@ -637,10 +637,10 @@ mod reducer {
         let parts = &view.rows[0].parts;
         assert_eq!(card_of(&parts[0]).state, SubagentState::Running);
         let call = tool_of(&parts[1]);
-        assert_eq!(call.tool.status.as_deref(), Some("cancelled"));
+        assert_eq!(call.tool.status, Some(ToolStatus::Cancelled));
         assert!(call.ended_at.is_some());
         let nested = tool_of(&view.subagents["subagent-1"][0].parts[0]);
-        assert_eq!(nested.tool.status.as_deref(), Some("in_progress"));
+        assert_eq!(nested.tool.status, Some(ToolStatus::InProgress));
     }
 
     #[test]
@@ -1009,7 +1009,7 @@ mod reducer {
             ToolCall {
                 tool_call_id: "tool-1".into(),
                 title: "Read b.ts".into(),
-                status: Some("in_progress".into()),
+                status: Some(ToolStatus::InProgress),
                 ..ToolCall::default()
             }
             .with_row()
@@ -1023,7 +1023,7 @@ mod reducer {
             .update(json!({ "sessionUpdate": "tool_call_update", "toolCallId": "tool-1", "title": "", "status": "in_progress" }));
         let part = first_tool(&mut chat);
         assert_eq!(part.tool.title, "Run tests");
-        assert_eq!(part.tool.status.as_deref(), Some("in_progress"));
+        assert_eq!(part.tool.status, Some(ToolStatus::InProgress));
         assert_eq!(part.ended_at, None);
         assert!(part.started_at.is_some());
     }
@@ -1042,7 +1042,7 @@ mod reducer {
         }));
         let part = first_tool(&mut chat);
         assert_eq!(part.ended_at, Some(2_000));
-        assert_eq!(part.tool.status.as_deref(), Some("failed"));
+        assert_eq!(part.tool.status, Some(ToolStatus::Failed));
         assert_eq!(part.failure, None);
     }
 
@@ -1080,8 +1080,8 @@ mod reducer {
         )
         .turn_completed(None);
         assert_eq!(
-            first_tool(&mut chat).tool.status.as_deref(),
-            Some("cancelled")
+            first_tool(&mut chat).tool.status,
+            Some(ToolStatus::Cancelled)
         );
         assert_eq!(chat.head().stop_reason, None);
     }
@@ -1095,7 +1095,7 @@ mod reducer {
         assert!(chat.rows_untouched_by(|chat| {
             chat.turn_completed(Some("end_turn"));
         }));
-        assert_eq!(chat.head().stop_reason.as_deref(), Some("end_turn"));
+        assert_eq!(chat.head().stop_reason, Some(StopReason::EndTurn));
     }
 
     #[test]
@@ -1111,7 +1111,7 @@ mod reducer {
             SubagentState::Completed
         );
         let inner = tool_of(&view.subagents["sub-1"][0].parts[0]);
-        assert_eq!(inner.tool.status.as_deref(), Some("cancelled"));
+        assert_eq!(inner.tool.status, Some(ToolStatus::Cancelled));
     }
 
     #[test]
@@ -1257,7 +1257,14 @@ mod reducer {
         chat.update(plan.clone())
             .update(json!({ "sessionUpdate": "session_info_update", "title": "Coverage work" }))
             .update(json!({ "sessionUpdate": "config_option_update", "configOptions": [{ "id": "model" }] }));
-        assert_eq!(chat.head().plan, Some(plan));
+        assert_eq!(
+            chat.head().plan,
+            Some(vec![PlanEntry {
+                content: "Write tests".into(),
+                priority: PlanPriority::Medium,
+                status: PlanStatus::Pending,
+            }])
+        );
         assert_eq!(chat.head().title.as_deref(), Some("Coverage work"));
         assert_eq!(
             chat.head().setup,
@@ -1330,8 +1337,8 @@ mod reducer {
         assert_eq!(starting.head().permissions.len(), 1);
         assert_eq!(starting.head().tasks.len(), 1);
         assert_eq!(
-            first_tool(&mut starting).tool.status.as_deref(),
-            Some("in_progress")
+            first_tool(&mut starting).tool.status,
+            Some(ToolStatus::InProgress)
         );
 
         let mut failed = busy();
@@ -1343,8 +1350,8 @@ mod reducer {
         assert!(failed.head().permissions.is_empty());
         assert!(failed.head().tasks.is_empty());
         assert_eq!(
-            first_tool(&mut failed).tool.status.as_deref(),
-            Some("cancelled")
+            first_tool(&mut failed).tool.status,
+            Some(ToolStatus::Cancelled)
         );
 
         let mut errored = busy();
@@ -1906,7 +1913,7 @@ mod tool_duration {
         chat.update(json!({ "sessionUpdate": "tool_call", "toolCallId": "t2", "title": "pnpm rust:test", "status": "completed" }));
         let part = first_tool(&mut chat);
         assert_eq!(part.started_at, None);
-        assert_eq!(part.tool.status.as_deref(), Some("completed"));
+        assert_eq!(part.tool.status, Some(ToolStatus::Completed));
     }
 }
 

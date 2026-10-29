@@ -11,7 +11,7 @@ use serde_json::Value;
 use sikemux_core::client::ClientEvent;
 use sikemux_core::protocol::{ChatAttachment, Event};
 use sikemux_wire::chat::{
-    ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPart, ChatRole, ChatView,
+    ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPart, ChatRole, ChatView, StopReason,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -22,7 +22,7 @@ pub struct Folded {
     pub frames: usize,
     pub turns_started: usize,
     /// The stop reason each ended turn left in the head, in order.
-    pub ends: Vec<Option<String>>,
+    pub ends: Vec<Option<StopReason>>,
     pub errors: usize,
     /// Every head change, in order, for what comes and goes between frames.
     pub heads: Vec<Value>,
@@ -328,7 +328,7 @@ impl Chat {
 
     /// Waits for the next turn to end after the last one waited for, and
     /// answers why it stopped.
-    pub async fn turn_ended(&mut self) -> Option<String> {
+    pub async fn turn_ended(&mut self) -> Option<StopReason> {
         let next = self.ended + 1;
         self.until(|chat| chat.turns_ended() >= next).await;
         self.ended = next;

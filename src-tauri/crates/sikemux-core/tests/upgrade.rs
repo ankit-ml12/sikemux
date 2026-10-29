@@ -31,6 +31,7 @@ use sikemux_core::protocol::{
     SessionId, SpawnTarget, StreamId, TerminalSpawn, BUILD_ID_OVERRIDE_ENV,
 };
 use sikemux_pty::output_log::OutputQuery;
+use sikemux_wire::chat::StopReason;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const CORE: &str = env!("CARGO_BIN_EXE_sikemux-core");
@@ -857,7 +858,7 @@ async fn an_upgrade_carries_running_chats_over_with_their_agents() {
     }
     until_chats(&mut events, &mut carried, |_, chat| chat.turns_ended() >= 1).await;
     for (agent_id, chat) in &carried {
-        assert_eq!(chat.ends[0].as_deref(), Some("end_turn"), "{agent_id}");
+        assert_eq!(chat.ends[0], Some(StopReason::EndTurn), "{agent_id}");
     }
     for agent_id in &holding {
         let text = carried[agent_id].text();
@@ -965,7 +966,7 @@ async fn a_core_that_crashes_mid_turn_carries_the_turn_on_when_it_starts_again()
             "{agent_id}: {:#?}",
             chat.view
         );
-        assert_eq!(head.stop_reason.as_deref(), Some("end_turn"), "{agent_id}");
+        assert_eq!(head.stop_reason, Some(StopReason::EndTurn), "{agent_id}");
         assert_eq!(
             chat.notices()
                 .iter()
