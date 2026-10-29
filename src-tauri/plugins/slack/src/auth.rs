@@ -3,11 +3,12 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 
 use sikemux_plugin_api::store::{self, Accounts};
 use sikemux_plugin_api::SignInStatus;
+use sikemux_plugin_slack_views::{Listed, Signed};
 
 use crate::client::{self, Session};
 use crate::config::{self, SlackConfig, Workspace};
@@ -33,23 +34,7 @@ pub fn workspace_of(answer: &Value) -> SlackResult<Workspace> {
     })
 }
 
-#[derive(Serialize, Default)]
-pub struct Signed {
-    pub workspaces: Vec<Listed>,
-}
-
 pub type Status = SignInStatus<Signed>;
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Listed {
-    pub id: String,
-    pub name: String,
-    pub domain: String,
-    pub user: String,
-    pub user_id: String,
-    pub is_default: bool,
-}
 
 /// Every workspace signed in, and whether the default one's token still works.
 pub async fn status(data_dir: &Path) -> Status {

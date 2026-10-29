@@ -16,10 +16,13 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, Subscription, Task, UniformListScrollHandle, Window,
 };
 use serde_json::{json, Value};
+use sikemux_plugin_api::SignInStatus;
 use sikemux_plugin_rundeck_views::{
-    ActivityPage, DeployForm, DeployTarget, EnvTone, ExecutionPage, GroupNode, JobCatalog,
-    JobOption, JobPage, JobRow, Jobs, LiveRun, OptionChoice, OptionKind, OutputLine, OutputTick,
-    Plan, Run, RunCheck, RunNotice, RunStep, Section, StatusKind, StepState, TermColor, Tone, Tree,
+    ActivityPage, ActivityRequest, CheckRequest, Connection, DeployForm, DeployRequest,
+    DeployTarget, EnvTone, ExecutionPage, ExecutionRequest, GroupNode, JobCatalog, JobOption,
+    JobPage, JobRequest, JobRow, Jobs, JobsRequest, LiveRun, OptionChoice, OptionKind, OutputLine,
+    OutputTick, Picked, Plan, Run, RunCheck, RunNotice, RunStep, Section, StatusKind, StepState,
+    TargetRequest, TermColor, Tone, Tree,
 };
 
 use super::{after, listen, Failure, Host, Panel, PluginPane, Streamed};
@@ -54,6 +57,9 @@ const ACTIVITY_MOST: u32 = 200;
 /// The most output lines a run's page keeps; older ones are counted, not shown.
 const LOG_LINES_KEPT: usize = 10_000;
 const LOG_ROW: f32 = 18.;
+
+/// Which Rundeck the pane is signed in to, as the plugin's `status` says.
+type Status = SignInStatus<Connection>;
 
 /// A job as the plugin's views address it.
 #[derive(Clone, PartialEq)]
@@ -219,7 +225,10 @@ impl Panel for Rundeck {
         let jobs = (!self.project.is_empty()).then(|| {
             host.view(
                 "jobsView",
-                json!({ "project": self.project, "group": self.group }),
+                JobsRequest {
+                    project: self.project.clone(),
+                    group: self.group.clone(),
+                },
                 cx,
             )
             .read::<Jobs>()

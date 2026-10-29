@@ -10,10 +10,12 @@ impl Signoz {
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
-        let mut asked = self.trace_search(settings);
-        let show_service = !asked.contains_key("service");
-        asked.insert("limit".into(), json!(TRACE_PAGE));
-        let key = Value::Object(asked.clone()).to_string();
+        let asked = TraceSearch {
+            limit: Some(TRACE_PAGE),
+            ..self.trace_search(settings)
+        };
+        let show_service = asked.scope.service.is_none();
+        let key = serde_json::to_string(&asked).unwrap_or_default();
         let columns = div()
             .px(px(16.))
             .py(px(4.))
@@ -28,10 +30,7 @@ impl Signoz {
             })
             .child(div().flex_1().child(ui::caps("Operation", cx)))
             .child(div().w(px(180.)).child(ui::caps("Duration", cx)));
-        let page = match host
-            .view("tracesView", Value::Object(asked), cx)
-            .read::<TracePage>()
-        {
+        let page = match host.view("tracesView", asked, cx).read::<TracePage>() {
             Ok(Some(page)) => page,
             Ok(None) => {
                 return div()
@@ -178,15 +177,14 @@ impl Signoz {
         let Some(offset) = self.more_traces.next.filter(|_| !self.more_traces.reading) else {
             return;
         };
-        let Ok(mut asked) = serde_json::from_str::<Map<String, Value>>(&self.more_traces.key)
-        else {
+        let Ok(mut asked) = serde_json::from_str::<TraceSearch>(&self.more_traces.key) else {
             return;
         };
-        asked.insert("offset".into(), json!(offset));
+        asked.offset = Some(offset);
         self.more_traces.reading = true;
         let key = self.more_traces.key.clone();
         after::<Signoz, _>(
-            host.call("tracesView", Value::Object(asked)),
+            host.call("tracesView", asked),
             move |signoz, host, done, cx| {
                 if signoz.more_traces.key != key {
                     return;
@@ -218,12 +216,27 @@ impl Signoz {
         let _ = window;
         let t = Tokens::get(cx).clone();
         let read = host
-            .view("traceView", json!({ "traceId": trace_id }), cx)
+            .view(
+                "traceView",
+                TraceRequest {
+                    trace_id: trace_id.to_owned(),
+                    ..TraceRequest::default()
+                },
+                cx,
+            )
             .read::<Trace>();
         let logs = host
             .view(
                 "logsView",
-                json!({ "traceId": trace_id, "minutes": TRACE_LOG_LOOKBACK, "limit": 500 }),
+                LogSearch {
+                    scope: Scope {
+                        minutes: Some(TRACE_LOG_LOOKBACK),
+                        ..Scope::default()
+                    },
+                    trace_id: Some(trace_id.to_owned()),
+                    limit: Some(500),
+                    ..LogSearch::default()
+                },
                 cx,
             )
             .read::<LogPage>();
@@ -345,26 +358,24 @@ impl Signoz {
                 ))
             })
             .children(spans);
-        let lines = match logs {
-            Ok(Some(page)) if page.lines.is_empty() => {
-                quiet("No log lines carry this trace id.", cx)
-            }
-            Ok(Some(page)) => {
-                let lines: Vec<LogLine> = page.lines.iter().rev().cloned().collect();
-                div()
-                    .flex()
-                    .flex_col()
-                    .children(
-                        lines
-                            .iter()
-                            .enumerate()
-                            .map(|(index, line)| self.log_row(line, index, true, &lines, None, cx)),
-                    )
-                    .into_any_element()
-            }
-            Ok(None) => crate::plugin_pane::loading(cx),
-            Err(failure) => crate::plugin_pane::failure(&failure, cx),
-        };
+        let lines =
+            match logs {
+                Ok(Some(page)) if page.lines.is_empty() => {
+                    quiet("No log lines carry this trace id.", cx)
+                }
+                Ok(Some(page)) => {
+                    let lines: Vec<LogLine> = page.lines.iter().rev().cloned().collect();
+                    div()
+                        .flex()
+                        .flex_col()
+                        .children(lines.iter().enumerate().map(|(index, line)| {
+                            self.log_row(line, index, true, &lines, false, cx)
+                        }))
+                        .into_any_element()
+                }
+                Ok(None) => crate::plugin_pane::loading(cx),
+                Err(failure) => crate::plugin_pane::failure(&failure, cx),
+            };
         div()
             .size_full()
             .flex()

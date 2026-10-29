@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sikemux_plugin_api::process::sync::Locked;
 
+pub use sikemux_plugin_jira_views::{
+    AssignRequest, AssignableRequest, CommentRequest, IssueRequest, SiteRequest, TaskRequest,
+    TransitionRequest,
+};
 use sikemux_plugin_jira_views::{
     Change, Comment, FieldChange, Filter, IssueSummary, Parent, Person, Project, Transition,
 };
@@ -393,13 +397,6 @@ pub async fn search(data_dir: &Path, request: Search) -> JiraResult<Found> {
 }
 
 #[derive(Deserialize)]
-pub struct IssueRequest {
-    pub key: String,
-    #[serde(default)]
-    pub site: Option<String>,
-}
-
-#[derive(Deserialize)]
 pub struct AgentIssueRequest {
     pub key: String,
     #[serde(default)]
@@ -510,14 +507,6 @@ pub async fn issue(data_dir: &Path, request: IssueRequest) -> JiraResult<IssueDe
     })
 }
 
-#[derive(Deserialize)]
-pub struct CommentRequest {
-    pub key: String,
-    pub body: String,
-    #[serde(default)]
-    pub site: Option<String>,
-}
-
 pub async fn comment(data_dir: &Path, request: CommentRequest) -> JiraResult<Comment> {
     if request.body.trim().is_empty() {
         return Err(JiraError::BadArg("the comment is empty".into()));
@@ -539,15 +528,6 @@ pub async fn comment(data_dir: &Path, request: CommentRequest) -> JiraResult<Com
         created: text(posted.get("created")).unwrap_or_default(),
         body: adf::to_markdown(posted.get("body").unwrap_or(&Value::Null)),
     })
-}
-
-#[derive(Deserialize)]
-pub struct TransitionRequest {
-    pub key: String,
-    #[serde(default)]
-    pub to: Option<String>,
-    #[serde(default)]
-    pub site: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -603,19 +583,6 @@ pub async fn transition(data_dir: &Path, request: TransitionRequest) -> JiraResu
     })
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AssignRequest {
-    pub key: String,
-    /// Whom to assign; absent or empty takes the issue off whoever has it, unless `me` is set.
-    #[serde(default)]
-    pub account_id: Option<String>,
-    #[serde(default)]
-    pub me: bool,
-    #[serde(default)]
-    pub site: Option<String>,
-}
-
 pub async fn assign(data_dir: &Path, request: AssignRequest) -> JiraResult<()> {
     let (site, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
     let path = format!("{}/assignee", issue_path(&request.key)?);
@@ -633,19 +600,6 @@ pub async fn assign(data_dir: &Path, request: AssignRequest) -> JiraResult<()> {
     )
     .await?;
     Ok(())
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskRequest {
-    pub key: String,
-    /// The task's place among the description's tasks, in reading order.
-    pub index: usize,
-    /// The task's words as the person saw them, checked before anything is written.
-    pub text: String,
-    pub done: bool,
-    #[serde(default)]
-    pub site: Option<String>,
 }
 
 /// Ticks or clears one task in an issue's description, writing back Jira's own document so
@@ -681,15 +635,6 @@ pub async fn set_task(data_dir: &Path, request: TaskRequest) -> JiraResult<()> {
     )
     .await?;
     Ok(())
-}
-
-#[derive(Deserialize)]
-pub struct AssignableRequest {
-    pub key: String,
-    #[serde(default)]
-    pub query: String,
-    #[serde(default)]
-    pub site: Option<String>,
 }
 
 pub async fn assignable(data_dir: &Path, request: AssignableRequest) -> JiraResult<Vec<Person>> {
@@ -1152,12 +1097,6 @@ pub async fn worklog(data_dir: &Path, request: WorklogRequest) -> JiraResult<Val
     }
     let logged = client::send(&credentials, Method::POST, &path, &[], Some(&body)).await?;
     Ok(json!({ "id": logged.get("id"), "timeSpent": logged.get("timeSpent") }))
-}
-
-#[derive(Deserialize)]
-pub struct SiteRequest {
-    #[serde(default)]
-    pub site: Option<String>,
 }
 
 /// The filters the person has starred in Jira, to list beside "assigned to me" and the sprint.

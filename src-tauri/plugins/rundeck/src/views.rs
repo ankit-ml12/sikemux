@@ -5,10 +5,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use futures::future::try_join;
-use serde::Deserialize;
 use sikemux_plugin_rundeck_views::{
-    ActivityPage, ExecutionPage, GroupNode, JobPage, JobRow, Jobs, LiveRun, LiveStep, Run, RunStep,
-    Section, StatusKind, StepState, Tree, TreeProject,
+    ActivityPage, ActivityRequest, ExecutionPage, ExecutionRequest, GroupNode, JobPage, JobRequest,
+    JobRow, Jobs, JobsRequest, LiveRun, LiveStep, Run, RunStep, Section, StatusKind, StepState,
+    Tree, TreeProject,
 };
 
 use crate::client::Session;
@@ -86,14 +86,6 @@ fn sort(nodes: &mut [GroupNode]) {
     for node in nodes {
         sort(&mut node.children);
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JobsRequest {
-    project: String,
-    #[serde(default)]
-    group: Option<String>,
 }
 
 pub async fn jobs_view(
@@ -282,13 +274,6 @@ const LIVE_JOB_SECS: u64 = 3;
 const LIVE_ACTIVITY_SECS: u64 = 5;
 const LIVE_EXECUTION_SECS: u64 = 2;
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JobRequest {
-    job_id: String,
-    project: String,
-}
-
 pub async fn job_view(
     session: &Session,
     settings: &Settings,
@@ -372,13 +357,6 @@ pub async fn job_view(
         slowest_secs: succeeded_secs.iter().max().copied(),
         runs,
     })
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActivityRequest {
-    project: String,
-    max: u32,
 }
 
 pub async fn activity_view(
@@ -506,14 +484,6 @@ fn step_state(state: Option<&str>) -> StepState {
         "NOT_ELIGIBLE" | "SKIPPED" => StepState::Skip,
         _ => StepState::Pending,
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExecutionRequest {
-    execution_id: u64,
-    job_id: String,
-    project: String,
 }
 
 pub async fn execution_view(

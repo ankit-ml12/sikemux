@@ -1,8 +1,7 @@
 //! Where jobs live, for picking one: the jobs a project on this host deploys
 //! with, and every job to search.
 
-use serde::Deserialize;
-use sikemux_plugin_rundeck_views::{DeployTarget, JobCatalog, JobPlace, LastRun};
+use sikemux_plugin_rundeck_views::{DeployTarget, JobCatalog, JobPlace, LastRun, TargetRequest};
 
 use crate::client::Session;
 use crate::config::Settings;
@@ -28,22 +27,6 @@ fn place_of(job: &RundeckJob, prod_envs: &[String]) -> JobPlace {
             .join(" / "),
         tone: target_tone(&job.project, job.group.as_deref(), prod_envs),
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Picked {
-    project: String,
-    job_id: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TargetRequest {
-    /// The project's folder name, which its deploy jobs are named after.
-    folder: String,
-    #[serde(default)]
-    picked: Option<Picked>,
 }
 
 pub async fn deploy_target_view(

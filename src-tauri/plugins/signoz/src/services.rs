@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 use crate::client;
 use crate::error::{SignozError, SignozResult};
-use crate::filter::Scope;
+use crate::filter::{Narrows, Scope};
 use crate::query;
 pub use sikemux_plugin_signoz_views::{ErrorGroup, Operation, Overview, Point, ServiceHealth};
 

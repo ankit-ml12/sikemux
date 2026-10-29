@@ -16,13 +16,7 @@ use crate::error::{SignozError, SignozResult};
 pub const API_KEYS: Secrets = Secrets::new("signoz-api");
 pub const SESSIONS: Secrets = Secrets::new(keychain_service!("sikemux-signoz-session"));
 
-#[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-pub enum AuthMode {
-    #[default]
-    Session,
-    ApiKey,
-}
+pub use sikemux_plugin_signoz_views::AuthMode;
 
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]

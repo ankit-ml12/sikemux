@@ -71,3 +71,21 @@ pub struct OpenThread {
     pub thread: Thread,
     pub for_agent: String,
 }
+
+/// The workspaces signed in, as the plugin's `status` says.
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+pub struct Signed {
+    pub workspaces: Vec<Listed>,
+}
+
+/// A workspace signed in, and who in it.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Listed {
+    pub id: String,
+    pub name: String,
+    pub domain: String,
+    pub user: String,
+    pub user_id: String,
+    pub is_default: bool,
+}

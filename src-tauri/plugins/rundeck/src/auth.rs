@@ -13,6 +13,7 @@ use serde_json::Value;
 use sikemux_plugin_api::http::{self, Deadline, Redirects};
 use sikemux_plugin_api::process;
 use sikemux_plugin_api::SignInStatus;
+use sikemux_plugin_rundeck_views::Connection;
 
 use crate::error::{Rundeck, RundeckError, RundeckResult};
 
@@ -179,16 +180,6 @@ async fn perform_login(req: &LoginRequest) -> RundeckResult<MintedToken> {
         token,
         id: text("id").unwrap_or_default(),
     })
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Connection {
-    pub url: String,
-    pub user: String,
-    pub token_present: bool,
-    pub rundeck_version: Option<String>,
-    pub allow_insecure_private_http: bool,
 }
 
 pub type RundeckStatus = SignInStatus<Connection>;

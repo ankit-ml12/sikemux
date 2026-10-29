@@ -37,10 +37,10 @@ impl Rundeck {
         }
         let message = host
             .status(cx)
-            .read::<Value>()
+            .read::<Status>()
             .ok()
             .flatten()
-            .and_then(|status| status["message"].as_str().map(str::to_owned));
+            .and_then(|status| status.message.clone());
         let form = self.sign_in.as_ref().expect("made just now");
         let value = |input: &Entity<InputState>| input.read(cx).value().trim().to_owned();
         let filled = !value(&form.url).is_empty()

@@ -6,7 +6,7 @@ impl Signoz {
     pub(super) fn sidebar(
         &mut self,
         host: &mut Host,
-        status: &Value,
+        status: &Status,
         settings: &Settings,
         services: Option<Rc<Services>>,
         cx: &mut Context<PluginPane>,
@@ -123,14 +123,14 @@ impl Signoz {
             }
             pinned
         });
-        let url = status["url"].as_str().unwrap_or_default().to_owned();
+        let url = status.details.url.clone();
         let host_name = url
             .trim_start_matches("https://")
             .trim_start_matches("http://")
             .to_owned();
-        let account = match status["email"].as_str() {
-            Some(email) if !email.is_empty() => email.to_owned(),
-            _ => "API key".into(),
+        let account = match status.details.email.as_str() {
+            "" => "API key".to_owned(),
+            email => email.to_owned(),
         };
         div()
             .size_full()

@@ -17,9 +17,12 @@ use gpui_kit::{
 use gpui_transcript::{Markdown, Pen};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_core::git::log::GitCommit;
+use sikemux_plugin_api::SignInStatus;
 use sikemux_plugin_jira_views::{
-    Activity, BoardPage, Column, IssueList, IssueListKind, IssueSummary, IssueView, Parent, Person,
-    Spaces,
+    Activity, AssignRequest, AssignableRequest, BoardPage, BoardRequest, Column, CommentRequest,
+    IssueList, IssueListKind, IssueRequest, IssueSummary, IssueView, ListRequest, MoveRequest,
+    Parent, Person, SiteRequest, Sites, Spaces, TaskRequest, TransitionRequest,
 };
 
 use super::{after, listen, Host, Panel, PluginPane};
@@ -27,7 +30,6 @@ use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::toast;
 use crate::ui::{self, sign_in, Button, IconButton, Segmented, Toggle, Variant};
-use crate::workbench::Workbench;
 
 mod board;
 mod issue;
@@ -44,6 +46,9 @@ use self::parts::{
 const API_TOKENS_PAGE: &str = "https://id.atlassian.com/manage-profile/security/api-tokens";
 const SPACES_SHOWN: usize = 8;
 const FACES: usize = 6;
+
+/// The Jira sites signed in to, as the plugin's `status` says.
+type Status = SignInStatus<Sites>;
 
 fn jira_blue() -> Hsla {
     rgb(0x7aa7f5).into()
@@ -244,16 +249,16 @@ impl Panel for Jira {
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
-        let status = match host.status(cx).read::<Value>() {
+        let status = match host.status(cx).read::<Status>() {
             Ok(Some(status)) => status,
             Ok(None) => return super::loading(cx),
             Err(failure) => return super::failure(&failure, cx),
         };
-        let sites: Vec<String> = status["sites"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|site| site["host"].as_str().map(str::to_owned))
+        let sites: Vec<String> = status
+            .details
+            .sites
+            .iter()
+            .map(|site| site.host.clone())
             .collect();
         if host.signed_in(cx) == Some(false) || sites.is_empty() {
             return self.sign_in(host, &status, window, cx);
@@ -371,11 +376,8 @@ const DETAIL_MIN: f32 = 360.;
 struct DetailEdge;
 
 /// The value a view's `site` takes: none for the plugin's default site.
-fn site_of(site: &str) -> Value {
-    match site {
-        "" => Value::Null,
-        site => json!(site),
-    }
+fn site_of(site: &str) -> Option<String> {
+    (!site.is_empty()).then(|| site.to_owned())
 }
 
 /// A one-line field, made the first time the pane draws it.
@@ -447,7 +449,7 @@ impl Jira {
         host: &Host,
         doing: &'static str,
         method: &str,
-        params: Value,
+        params: impl Serialize,
         cx: &mut Context<PluginPane>,
     ) {
         if let Some(issue) = &mut self.issue {

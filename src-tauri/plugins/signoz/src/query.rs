@@ -1,19 +1,9 @@
-use serde::Deserialize;
 use serde_json::{json, Value};
 use sikemux_plugin_api::process::clock::epoch_ms;
+pub use sikemux_plugin_signoz_views::View;
 
 pub const DEFAULT_MINUTES: u32 = 30;
 const MAX_MINUTES: u32 = 7 * 24 * 60;
-
-/// Who reads the answer. Agents get a compact shape by default; the SigNoz pane
-/// asks for every field it draws.
-#[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-pub enum View {
-    #[default]
-    Agent,
-    Pane,
-}
 
 /// Milliseconds to the microsecond, which is finer than any span or request needs.
 pub fn round_ms(ms: f64) -> f64 {

@@ -38,16 +38,12 @@ impl Panel for DeployChip {
             .next()
             .unwrap_or_default()
             .to_owned();
-        let picked = self
-            .picked
-            .get(&project)
-            .map(|(project, job_id)| json!({ "project": project, "jobId": job_id }));
+        let picked = self.picked.get(&project).map(|(project, job_id)| Picked {
+            project: project.clone(),
+            job_id: job_id.clone(),
+        });
         let target = host
-            .view(
-                "deployTargetView",
-                json!({ "folder": folder, "picked": picked }),
-                cx,
-            )
+            .view("deployTargetView", TargetRequest { folder, picked }, cx)
             .read::<DeployTarget>();
         let Ok(Some(target)) = target else {
             return nothing();
@@ -66,7 +62,7 @@ impl Panel for DeployChip {
         let pane = cx.weak_entity();
         let menu_target = target.clone();
         let repo = project.clone();
-        let read = repo_read(host, cx);
+        let read = host.current_branch(cx);
         let checkout = read.clone().flatten();
         let checking_out = self.checking_out;
         KitButton::new("rundeck-deploy-chip")
@@ -162,10 +158,7 @@ impl Panel for DeployChip {
                                         if let Some((chip, _)) = pane.parts::<DeployChip>() {
                                             chip.checking_out = true;
                                         }
-                                        let checked = pane.host.core(
-                                            "git.checkoutSmart",
-                                            json!({ "repo": repo, "branch": deployed }),
-                                        );
+                                        let checked = pane.host.checkout_branch(&repo, &deployed);
                                         crate::plugin_pane::after::<DeployChip, _>(
                                             checked,
                                             |chip, host, done, cx| {
@@ -188,17 +181,4 @@ impl Panel for DeployChip {
             )
             .into_any_element()
     }
-}
-
-/// The branch checked out in the project in front, as the git pane last read it: none until it
-/// has, and a read without a branch while HEAD is detached.
-fn repo_read(host: &Host, cx: &App) -> Option<Option<String>> {
-    let bench = host.bench().upgrade()?;
-    let overview = bench.read(cx).reads.git_overview.as_ref()?;
-    Some(
-        overview["status"]["branch"]
-            .as_str()
-            .filter(|branch| !branch.is_empty())
-            .map(str::to_owned),
-    )
 }

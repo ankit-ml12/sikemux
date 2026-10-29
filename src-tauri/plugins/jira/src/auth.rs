@@ -1,11 +1,12 @@
 use std::path::Path;
 
 use reqwest::Method;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use sikemux_plugin_api::oauth::Tokens;
 use sikemux_plugin_api::store::{self, Accounts};
 use sikemux_plugin_api::{SignInStatus, StreamSink};
+use sikemux_plugin_jira_views::{SiteStatus, Sites};
 
 use crate::client::{self, Auth, Credentials};
 use crate::config::{self, normalise_host, JiraConfig, SignIn as SiteSignIn, Site};
@@ -172,22 +173,6 @@ pub async fn sign_out(data_dir: &Path, request: SignOut) -> JiraResult<()> {
         oauth::ACCESS.forget(Some(&account_id)).await;
     }
     Ok(())
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SiteStatus {
-    pub host: String,
-    pub display_name: Option<String>,
-    pub default: bool,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Sites {
-    pub sites: Vec<SiteStatus>,
-    /// A build without the OAuth secret can only take an API token.
-    pub browser_sign_in: bool,
 }
 
 /// `ok` says whether the default site still takes its token; false with `authFailed` when it was revoked.

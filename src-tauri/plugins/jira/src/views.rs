@@ -3,10 +3,9 @@
 //! its comments and edits together. The core keeps each and reads it again on
 //! the pace the manifest gives.
 
-use serde::Deserialize;
 use sikemux_plugin_jira_views::{
     Activity, Board, BoardPage, BoardPerson, BoardView, Change, Column, Comment, IssueList,
-    IssueListKind, IssueSummary, IssueView, Space, Spaces, StatusCount, Swimlane,
+    IssueListKind, IssueSummary, IssueView, ListRequest, Space, Spaces, StatusCount, Swimlane,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -216,13 +215,6 @@ pub fn activity(comments: Vec<Comment>, history: Vec<Change>) -> Vec<Activity> {
         .collect();
     all.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
     all.into_iter().map(|(_, entry)| entry).collect()
-}
-
-#[derive(Deserialize)]
-pub struct ListRequest {
-    pub list: IssueListKind,
-    #[serde(default)]
-    pub site: Option<String>,
 }
 
 pub async fn list_view(data_dir: &Path, request: ListRequest) -> JiraResult<IssueList> {

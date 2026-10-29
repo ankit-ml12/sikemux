@@ -5,10 +5,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use serde::Deserialize;
 use sikemux_plugin_signoz_views::{
-    Dashboard, DashboardSummary, LogPage, PanelData, Series, ServiceHealth, ServicePage,
-    ServiceRow, ServiceSort, Services, Trace, TracePage, VolumeBucket,
+    Dashboard, DashboardSummary, DashboardViewRequest, LogPage, PanelData, Series, ServiceHealth,
+    ServicePage, ServiceRow, ServiceSort, Services, ServicesRequest, Trace, TracePage,
+    VolumeBucket,
 };
 
 use crate::dashboards::{self, PanelRequest};
@@ -18,15 +18,6 @@ use crate::logs::{self, LogSearch, VolumeQuery};
 use crate::query::View;
 use crate::services::{self, ServiceQuery, ServiceRequest};
 use crate::traces::{self, TraceRequest, TraceSearch};
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ServicesRequest {
-    #[serde(flatten)]
-    pub scope: Scope,
-    #[serde(default)]
-    pub sort: ServiceSort,
-}
 
 /// Every service in the environment asked for, or across all of them, sorted, beside the
 /// environments SigNoz knows.
@@ -130,11 +121,6 @@ pub async fn trace_view(data_dir: &Path, mut request: TraceRequest) -> SignozRes
 
 pub async fn dashboards_view(data_dir: &Path) -> SignozResult<Vec<DashboardSummary>> {
     dashboards::list(data_dir).await
-}
-
-#[derive(Deserialize)]
-pub struct DashboardViewRequest {
-    pub id: String,
 }
 
 pub async fn dashboard_view(

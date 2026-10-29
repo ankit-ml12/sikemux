@@ -3,8 +3,28 @@
 
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+
+/// How the plugin signs in to SigNoz: a session from an email and password, or an API key.
+#[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthMode {
+    #[default]
+    Session,
+    ApiKey,
+}
+
+/// Which SigNoz the plugin is signed in to, and as whom.
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Where {
+    pub url: String,
+    pub auth: AuthMode,
+    pub email: String,
+    pub key_from_environment: bool,
+    pub version: Option<String>,
+}
 
 /// Unix milliseconds and a value.
 pub type Point = (u64, f64);
@@ -271,4 +291,217 @@ pub struct FieldKey {
     pub name: String,
     pub context: String,
     pub data_type: String,
+}
+
+/// Who reads the answer. Agents get a compact shape by default; the SigNoz pane
+/// asks for every field it draws.
+#[derive(Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum View {
+    #[default]
+    Agent,
+    Pane,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum FilterOp {
+    Equals,
+    NotEquals,
+    Contains,
+    NotContains,
+    Exists,
+    NotExists,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Filter {
+    pub key: String,
+    pub op: FilterOp,
+    #[serde(default, deserialize_with = "plain_value")]
+    pub value: String,
+}
+
+/// A value as written in a filter or a dashboard variable. Numbers and booleans
+/// are read as their text, since SigNoz compares `status = '503'` and `status = 503` alike.
+fn text_of(value: Value) -> Result<String, String> {
+    match value {
+        Value::String(text) => Ok(text),
+        Value::Number(number) => Ok(number.to_string()),
+        Value::Bool(flag) => Ok(flag.to_string()),
+        Value::Null => Ok(String::new()),
+        other => Err(format!("expected text or a number, not {other}")),
+    }
+}
+
+pub fn plain_value<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    text_of(Value::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+}
+
+pub fn plain_values<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, String>, D::Error> {
+    BTreeMap::<String, Value>::deserialize(deserializer)?
+        .into_iter()
+        .map(|(name, value)| {
+            text_of(value)
+                .map(|text| (name.clone(), text))
+                .map_err(|problem| serde::de::Error::custom(format!("`{name}`: {problem}")))
+        })
+        .collect()
+}
+
+/// What every query narrows by, whichever signal it reads.
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Scope {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filters: Vec<Filter>,
+    /// A filter in SigNoz's own query syntax, for anything the others cannot say.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expression: Option<String>,
+    /// A fixed range in Unix milliseconds. Without one, the last `minutes`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minutes: Option<u32>,
+}
+
+/// The services, as `servicesView` reads them.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ServicesRequest {
+    #[serde(flatten)]
+    pub scope: Scope,
+    #[serde(default)]
+    pub sort: ServiceSort,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LogSearch {
+    #[serde(flatten)]
+    pub scope: Scope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub severities: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u32>,
+    /// The pane never says who reads the answer: the view it asks decides that.
+    #[serde(default, skip_serializing)]
+    pub view: View,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeQuery {
+    #[serde(flatten)]
+    pub search: LogSearch,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buckets: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum TraceOrder {
+    #[default]
+    Slowest,
+    Recent,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceSearch {
+    #[serde(flatten)]
+    pub scope: Scope,
+    #[serde(default)]
+    pub errors_only: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_duration_ms: Option<f64>,
+    #[serde(default)]
+    pub order: TraceOrder,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TraceRequest {
+    pub trace_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minutes: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_spans: Option<u32>,
+    /// The pane never says who reads the answer: the view it asks decides that.
+    #[serde(default, skip_serializing)]
+    pub view: View,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DashboardViewRequest {
+    pub id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelRequest {
+    pub kind: String,
+    pub query: Value,
+    #[serde(default)]
+    pub variables: BTreeMap<String, String>,
+    #[serde(flatten)]
+    pub scope: Scope,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Signal {
+    #[default]
+    Logs,
+    Traces,
+}
+
+impl Signal {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Logs => "logs",
+            Self::Traces => "traces",
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyQuery {
+    #[serde(default)]
+    pub signal: Signal,
+    #[serde(default)]
+    pub search: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueQuery {
+    #[serde(default)]
+    pub signal: Signal,
+    pub name: String,
+    #[serde(default)]
+    pub search: String,
 }

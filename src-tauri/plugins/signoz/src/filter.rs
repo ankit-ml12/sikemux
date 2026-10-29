@@ -1,76 +1,9 @@
-use std::collections::BTreeMap;
-
-use serde::{Deserialize, Deserializer};
-use serde_json::Value;
+pub use sikemux_plugin_signoz_views::{Filter, FilterOp, Scope};
 
 use crate::error::{SignozError, SignozResult};
 use crate::query::{self, quote};
 
 const MAX_WINDOW_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
-
-#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum FilterOp {
-    Equals,
-    NotEquals,
-    Contains,
-    NotContains,
-    Exists,
-    NotExists,
-}
-
-#[derive(Deserialize, Clone, Debug)]
-pub struct Filter {
-    pub key: String,
-    pub op: FilterOp,
-    #[serde(default, deserialize_with = "plain_value")]
-    pub value: String,
-}
-
-/// A value as written in a filter or a dashboard variable. Numbers and booleans
-/// are read as their text, since SigNoz compares `status = '503'` and `status = 503` alike.
-fn text_of(value: Value) -> Result<String, String> {
-    match value {
-        Value::String(text) => Ok(text),
-        Value::Number(number) => Ok(number.to_string()),
-        Value::Bool(flag) => Ok(flag.to_string()),
-        Value::Null => Ok(String::new()),
-        other => Err(format!("expected text or a number, not {other}")),
-    }
-}
-
-pub fn plain_value<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
-    text_of(Value::deserialize(deserializer)?).map_err(serde::de::Error::custom)
-}
-
-pub fn plain_values<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<BTreeMap<String, String>, D::Error> {
-    BTreeMap::<String, Value>::deserialize(deserializer)?
-        .into_iter()
-        .map(|(name, value)| {
-            text_of(value)
-                .map(|text| (name.clone(), text))
-                .map_err(|problem| serde::de::Error::custom(format!("`{name}`: {problem}")))
-        })
-        .collect()
-}
-
-/// What every query narrows by, whichever signal it reads.
-#[derive(Deserialize, Default, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Scope {
-    pub service: Option<String>,
-    pub environment: Option<String>,
-    #[serde(default)]
-    pub filters: Vec<Filter>,
-    /// A filter in SigNoz's own query syntax, for anything the others cannot say.
-    pub expression: Option<String>,
-    /// A fixed range in Unix milliseconds. Without one, the last `minutes`.
-    pub start: Option<u64>,
-    pub end: Option<u64>,
-    pub minutes: Option<u32>,
-}
 
 /// Each part of a query is bracketed and joined with AND, so an expression with
 /// a stray closing bracket could step outside its own part and undo the rest.
@@ -147,8 +80,14 @@ fn present(value: &Option<String>) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
-impl Scope {
-    pub fn clauses(&self) -> SignozResult<Vec<String>> {
+/// How a scope reads as SigNoz's query syntax and as a window of time.
+pub trait Narrows {
+    fn clauses(&self) -> SignozResult<Vec<String>>;
+    fn window(&self) -> SignozResult<(u64, u64)>;
+}
+
+impl Narrows for Scope {
+    fn clauses(&self) -> SignozResult<Vec<String>> {
         let mut clauses = Vec::new();
         if let Some(service) = present(&self.service) {
             clauses.push(format!("service.name = {}", quote(service)));
@@ -167,7 +106,7 @@ impl Scope {
 
     /// A fixed range, or the last `minutes`. A range that runs backwards, has
     /// only one end, or spans more than a week is refused rather than replaced.
-    pub fn window(&self) -> SignozResult<(u64, u64)> {
+    fn window(&self) -> SignozResult<(u64, u64)> {
         match (self.start, self.end) {
             (None, None) => Ok(query::window(self.minutes)),
             (Some(start), Some(end)) if start >= end => Err(SignozError::BadArg(

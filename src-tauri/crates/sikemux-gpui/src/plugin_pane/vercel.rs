@@ -2,27 +2,26 @@
 //! overview, deployments, environment variables and domains, and a deployment with its
 //! build log, to roll back, promote, redeploy, cancel, open or hand to an agent.
 
-use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::component::notification::Notification;
+use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, Anchor, AnyElement, App, AppContext, ClickEvent, Context, Entity, FontWeight, Hsla,
     InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
     Styled, Subscription, Window,
 };
-use serde::Deserialize;
-use std::rc::Rc;
 use serde_json::{json, Value};
+use sikemux_plugin_api::SignInStatus;
 use sikemux_plugin_vercel_views::{
-    Deployment, Deployments, Domains, LogLine, OpenLog, Production, Project, Projects, Target,
-    Variables,
+    Deployment, Deployments, Domains, LogLine, OpenLog, Production, Project, Projects, Signed,
+    Target, Variables,
 };
+use std::rc::Rc;
 
 use super::{after, listen, Host, Panel, PluginPane};
-use crate::toast;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
+use crate::toast;
 use crate::ui;
 
 pub const REGISTRATION: super::Registration = super::Registration {
@@ -33,30 +32,8 @@ pub const REGISTRATION: super::Registration = super::Registration {
     palettes: &[],
 };
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Account {
-    username: String,
-    name: String,
-}
-
-#[derive(Deserialize)]
-struct Team {
-    id: String,
-    name: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Status {
-    ok: bool,
-    message: Option<String>,
-    account: Option<Account>,
-    teams: Vec<Team>,
-    team: Option<String>,
-    personal: bool,
-    browser_sign_in: bool,
-}
+/// Who is signed in to Vercel, as the plugin's `status` says.
+type Status = SignInStatus<Signed>;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 enum Section {
@@ -113,10 +90,10 @@ impl Panel for Vercel {
             Ok(None) => return super::loading(cx),
             Err(failure) => return super::failure(&failure, cx),
         };
-        if !status.ok || status.account.is_none() {
+        if !status.ok || status.details.account.is_none() {
             return self.sign_in(host, &status, window, cx);
         }
-        let team = status.team.clone().unwrap_or_default();
+        let team = status.details.team.clone().unwrap_or_default();
         let projects = host
             .view("projectsView", json!({ "team": team }), cx)
             .read::<Projects>();
@@ -210,12 +187,6 @@ impl Panel for Vercel {
 }
 
 type Act = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
-
-fn notify(host: &Host, note: Notification, cx: &mut App) {
-    if let Some(bench) = host.bench().upgrade() {
-        bench.update(cx, |bench, cx| bench.notify(note, cx));
-    }
-}
 
 /// Still on its way: building, queued or starting.
 fn underway(state: &str) -> bool {
@@ -346,7 +317,7 @@ impl Vercel {
             move |vercel: &mut Vercel, host, answer, cx| {
                 vercel.busy = false;
                 match answer {
-                    Ok(_) => notify(host, toast::success(done), cx),
+                    Ok(_) => host.notify(toast::success(done), cx),
                     Err(failure) => host.said(&failure.titled(what), cx),
                 }
             },
@@ -451,13 +422,17 @@ impl Vercel {
             )))
         };
         let opens = |url: Option<String>| -> Option<Act> {
-            url.map(|url| Rc::new(move |_: &ClickEvent, _: &mut Window, cx: &mut App| cx.open_url(&url)) as Act)
+            url.map(|url| {
+                Rc::new(move |_: &ClickEvent, _: &mut Window, cx: &mut App| cx.open_url(&url))
+                    as Act
+            })
         };
         let (inspector, url) = (deployment.inspector_url.clone(), deployment.url.clone());
         let copies = url.clone().map(|url| {
-            Rc::new(listen::<Vercel, ClickEvent>(cx, move |_, host, _, _, cx| {
-                host.copy(url.clone(), "the URL", cx)
-            })) as Act
+            Rc::new(listen::<Vercel, ClickEvent>(
+                cx,
+                move |_, host, _, _, cx| host.copy(url.clone(), "the URL", cx),
+            )) as Act
         });
         let items: Vec<(&'static str, Option<Icon>, bool, Option<Act>)> = vec![
             (
@@ -548,12 +523,15 @@ impl Vercel {
                 token
             }
         };
-        let failed = status.message.clone().filter(|_| status.account.is_some());
+        let failed = status
+            .message
+            .clone()
+            .filter(|_| status.details.account.is_some());
         let ink = Tokens::get(cx).text_primary;
         ui::sign_in::Screen::new("vercel-sign-in", ui::picture(Icon::Vercel, 26., ink), "Connect Vercel")
             .lede("Your projects and their deployments beside the code, to roll back, promote or hand a failed build to an agent.")
             .foot(ui::sign_in::KEPT)
-            .when(status.browser_sign_in, |screen| {
+            .when(status.details.browser_sign_in, |screen| {
                 screen
                     .child(super::browser_sign_in(
                         host,
@@ -570,7 +548,7 @@ impl Vercel {
                 ui::Button::new(
                     "vercel-token-sign-in",
                     if self.busy { "Signing in…" } else { "Sign in" },
-                    if status.browser_sign_in {
+                    if status.details.browser_sign_in {
                         ui::Variant::Outline
                     } else {
                         ui::Variant::Primary
@@ -628,9 +606,9 @@ impl Vercel {
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
-        let account = status.account.as_ref();
+        let account = status.details.account.as_ref();
         let mut scopes: Vec<(String, String)> = Vec::new();
-        if status.personal {
+        if status.details.personal {
             let name = account.map_or_else(
                 || "Personal".to_owned(),
                 |account| match account.name.is_empty() {
@@ -642,6 +620,7 @@ impl Vercel {
         }
         scopes.extend(
             status
+                .details
                 .teams
                 .iter()
                 .map(|each| (each.id.clone(), each.name.clone())),
@@ -845,7 +824,10 @@ impl Vercel {
                     .child(ui::meta(
                         [
                             project.repo.clone(),
-                            Some(format!("updated {}", crate::ui::time::ago(project.updated_at))),
+                            Some(format!(
+                                "updated {}",
+                                crate::ui::time::ago(project.updated_at)
+                            )),
                         ]
                         .into_iter()
                         .flatten()
@@ -1536,7 +1518,11 @@ impl Vercel {
                                 .clone()
                                 .map(|branch| ui::meta(branch, cx)),
                         )
-                        .children(variable.updated_at.map(|at| ui::meta(crate::ui::time::ago(at), cx)))
+                        .children(
+                            variable
+                                .updated_at
+                                .map(|at| ui::meta(crate::ui::time::ago(at), cx)),
+                        )
                 }))
                 .into_any_element(),
         };

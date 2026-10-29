@@ -13,7 +13,11 @@ impl Rundeck {
         let page = host
             .view(
                 "executionView",
-                json!({ "executionId": id, "jobId": job.job_id, "project": job.project }),
+                ExecutionRequest {
+                    execution_id: id,
+                    job_id: job.job_id.clone(),
+                    project: job.project.clone(),
+                },
                 cx,
             )
             .read::<ExecutionPage>();
@@ -656,55 +660,49 @@ impl Output {
 }
 
 fn abort(host: &Host, job: &JobRef, id: u64, cx: &mut Context<PluginPane>) {
-    let Some(bench) = host.bench().upgrade() else {
-        return;
-    };
     let pane = cx.weak_entity();
     let name = job.name.clone();
-    bench.update(cx, |bench, cx| {
-        bench.confirm(
-            format!("Abort execution #{id}?"),
-            format!("{name} will be stopped where it is."),
-            "abort",
-            true,
-            move |_, yes, _, cx| {
-                if !yes {
-                    return;
+    host.confirm(
+        format!("Abort execution #{id}?"),
+        format!("{name} will be stopped where it is."),
+        "abort",
+        true,
+        move |yes, cx| {
+            if !yes {
+                return;
+            }
+            let _ = pane.update(cx, |pane, cx| {
+                let stopped = pane.host.call("abort", json!({ "executionId": id }));
+                if let Some((rd, _)) = pane.parts::<Rundeck>() {
+                    rd.aborting = Some(id);
                 }
-                let _ = pane.update(cx, |pane, cx| {
-                    let stopped = pane.host.call("abort", json!({ "executionId": id }));
-                    if let Some((rd, _)) = pane.parts::<Rundeck>() {
-                        rd.aborting = Some(id);
-                    }
-                    cx.notify();
-                    after::<Rundeck, _>(
-                        stopped,
-                        |rd, host, done, cx| {
-                            rd.aborting = None;
-                            match done {
-                                Ok(result) if result["abort"]["status"] == "failed" => {
-                                    let reason = result["abort"]["reason"]
-                                        .as_str()
-                                        .unwrap_or("no reason given");
-                                    let failure = Failure {
-                                        category: "rundeck".into(),
-                                        message: format!("Rundeck refused to abort: {reason}")
-                                            .into(),
-                                        status: None,
-                                    };
-                                    host.said(&failure, cx);
-                                }
-                                Ok(_) => {}
-                                Err(failure) => host.said(&failure.titled("Abort"), cx),
+                cx.notify();
+                after::<Rundeck, _>(
+                    stopped,
+                    |rd, host, done, cx| {
+                        rd.aborting = None;
+                        match done {
+                            Ok(result) if result["abort"]["status"] == "failed" => {
+                                let reason = result["abort"]["reason"]
+                                    .as_str()
+                                    .unwrap_or("no reason given");
+                                let failure = Failure {
+                                    category: "rundeck".into(),
+                                    message: format!("Rundeck refused to abort: {reason}").into(),
+                                    status: None,
+                                };
+                                host.said(&failure, cx);
                             }
-                        },
-                        cx,
-                    );
-                });
-            },
-            cx,
-        );
-    });
+                            Ok(_) => {}
+                            Err(failure) => host.said(&failure.titled("Abort"), cx),
+                        }
+                    },
+                    cx,
+                );
+            });
+        },
+        cx,
+    );
 }
 
 /// Says how a run ended over the window.
@@ -718,9 +716,7 @@ fn tell(host: &Host, notice: &RunNotice, cx: &mut Context<PluginPane>) {
     } else {
         toast::error(text)
     };
-    if let Some(bench) = host.bench().upgrade() {
-        bench.update(cx, |bench, cx| bench.notify(note, cx));
-    }
+    host.notify(note, cx);
 }
 
 fn level_of(line: &OutputLine) -> String {

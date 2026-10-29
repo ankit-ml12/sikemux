@@ -8,14 +8,14 @@ impl Signoz {
     pub(super) fn sign_in(
         &mut self,
         host: &mut Host,
-        status: &Value,
+        status: &Status,
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
         if self.form.is_none() {
-            let url_now = status["url"].as_str().unwrap_or_default().to_owned();
-            let email_now = status["email"].as_str().unwrap_or_default().to_owned();
+            let url_now = status.details.url.clone();
+            let email_now = status.details.email.clone();
             let look: Typed = |signoz, host, event, _, cx| {
                 if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
                     signoz.inspect(host, true, cx);
@@ -51,10 +51,9 @@ impl Signoz {
                 password,
                 key,
                 account,
-                method: if status["auth"] == "apiKey" {
-                    Method::ApiKey
-                } else {
-                    Method::Password
+                method: match status.details.auth {
+                    AuthMode::ApiKey => Method::ApiKey,
+                    AuthMode::Session => Method::Password,
                 },
                 keychain: false,
                 editing_url: url_now.is_empty(),
@@ -119,7 +118,7 @@ impl Signoz {
             .into_any_element()
         };
         let mut fields = vec![address];
-        if status["keyFromEnvironment"] == true {
+        if status.details.key_from_environment {
             fields.push(
                 sign_in::note(
                     "SIGNOZ_API_KEY is set in your shell, so Sikemux uses that key.",
@@ -250,10 +249,11 @@ impl Signoz {
             "Your password goes to SigNoz once. Sikemux keeps only the session, in the macOS Keychain.",
         );
         let error = form.error.clone().or_else(|| {
-            status["message"]
-                .as_str()
-                .filter(|_| status["configured"] == true)
-                .map(|message| message.to_owned().into())
+            status
+                .message
+                .clone()
+                .filter(|_| status.configured)
+                .map(Into::into)
         });
         sign_in::Screen::new(
             "signoz-sign-in",
@@ -377,15 +377,15 @@ impl Signoz {
                     return;
                 };
                 form.busy = false;
-                form.error = match done {
-                    Ok(status) if status["ok"] == true => None,
-                    Ok(status) => Some(
-                        status["message"]
-                            .as_str()
-                            .unwrap_or("SigNoz did not answer the first query")
-                            .to_owned()
+                form.error = match done.map(|status| Status::deserialize(&status)) {
+                    Ok(Ok(status)) if status.ok => None,
+                    Ok(Ok(status)) => Some(
+                        status
+                            .message
+                            .unwrap_or_else(|| "SigNoz did not answer the first query".to_owned())
                             .into(),
                     ),
+                    Ok(Err(error)) => Some(error.to_string().into()),
                     Err(failure) => Some(failure.message),
                 };
             },

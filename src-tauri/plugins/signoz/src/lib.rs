@@ -26,14 +26,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use reqwest::Method;
-use serde::Serialize;
 use serde_json::{json, Value};
 use sikemux_plugin_api::{
     answer, params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture,
     SignInStatus, StreamSink,
 };
+use sikemux_plugin_signoz_views::Where;
 
-use crate::config::AuthMode;
 use crate::error::{SignozError, SignozResult};
 
 pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
@@ -44,16 +43,6 @@ pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
 
 struct Signoz {
     manifest: Manifest,
-}
-
-#[derive(Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct Where {
-    url: String,
-    auth: AuthMode,
-    email: String,
-    key_from_environment: bool,
-    version: Option<String>,
 }
 
 type Status = SignInStatus<Where>;

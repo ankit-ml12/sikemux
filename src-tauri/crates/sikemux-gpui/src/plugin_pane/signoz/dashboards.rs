@@ -153,7 +153,11 @@ impl Signoz {
         let _ = window;
         let t = Tokens::get(cx).clone();
         let dashboard = match host
-            .view("dashboardView", json!({ "id": id }), cx)
+            .view(
+                "dashboardView",
+                DashboardViewRequest { id: id.to_owned() },
+                cx,
+            )
             .read::<Dashboard>()
         {
             Ok(Some(dashboard)) => dashboard,
@@ -322,7 +326,7 @@ impl Signoz {
         &self,
         host: &mut Host,
         panel: &Chart,
-        scope: &Map<String, Value>,
+        scope: &Scope,
         variables: &BTreeMap<String, String>,
         open: &str,
         index: usize,
@@ -349,14 +353,13 @@ impl Signoz {
                 )
                 .into_any_element();
         }
-        let mut asked = scope.clone();
-        asked.insert("kind".into(), json!(panel.kind));
-        asked.insert("query".into(), panel.query.clone());
-        asked.insert("variables".into(), json!(variables));
-        let data = match host
-            .view("panelView", Value::Object(asked), cx)
-            .read::<PanelData>()
-        {
+        let asked = PanelRequest {
+            kind: panel.kind.clone(),
+            query: panel.query.clone(),
+            variables: variables.clone(),
+            scope: scope.clone(),
+        };
+        let data = match host.view("panelView", asked, cx).read::<PanelData>() {
             Ok(Some(data)) => data,
             Ok(None) => return crate::plugin_pane::loading(cx),
             Err(failure) => return crate::plugin_pane::failure(&failure, cx),

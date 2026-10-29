@@ -3,6 +3,24 @@
 
 use serde::{Deserialize, Serialize};
 
+/// A Jira site signed in to.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SiteStatus {
+    pub host: String,
+    pub display_name: Option<String>,
+    pub default: bool,
+}
+
+/// The sites signed in to, as the plugin's `status` says.
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Sites {
+    pub sites: Vec<SiteStatus>,
+    /// A build without the OAuth secret can only take an API token.
+    pub browser_sign_in: bool,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Person {
@@ -274,4 +292,104 @@ pub struct IssueView {
 pub enum Activity {
     Comment { comment: Comment },
     Change { change: Change },
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ListRequest {
+    pub list: IssueListKind,
+    #[serde(default)]
+    pub site: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct IssueRequest {
+    pub key: String,
+    #[serde(default)]
+    pub site: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CommentRequest {
+    pub key: String,
+    pub body: String,
+    #[serde(default)]
+    pub site: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TransitionRequest {
+    pub key: String,
+    #[serde(default)]
+    pub to: Option<String>,
+    #[serde(default)]
+    pub site: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignRequest {
+    pub key: String,
+    /// Whom to assign; absent or empty takes the issue off whoever has it, unless `me` is set.
+    #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
+    pub me: bool,
+    #[serde(default)]
+    pub site: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRequest {
+    pub key: String,
+    /// The task's place among the description's tasks, in reading order.
+    pub index: usize,
+    /// The task's words as the person saw them, checked before anything is written.
+    pub text: String,
+    pub done: bool,
+    #[serde(default)]
+    pub site: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AssignableRequest {
+    pub key: String,
+    #[serde(default)]
+    pub query: String,
+    #[serde(default)]
+    pub site: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SiteRequest {
+    #[serde(default)]
+    pub site: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardRequest {
+    pub id: u64,
+    #[serde(default)]
+    pub site: Option<String>,
+    /// Account ids whose cards to show. With none of these set, the whole board shows.
+    #[serde(default)]
+    pub people: Vec<String>,
+    #[serde(default)]
+    pub mine: bool,
+    #[serde(default)]
+    pub unassigned: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveRequest {
+    pub key: String,
+    /// The statuses of the column the issue was dropped on.
+    pub status_ids: Vec<String>,
+    /// The column's name, for the message when the workflow cannot get there.
+    #[serde(default)]
+    pub column: String,
+    #[serde(default)]
+    pub site: Option<String>,
 }

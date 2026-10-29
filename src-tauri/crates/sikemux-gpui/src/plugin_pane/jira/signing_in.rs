@@ -6,7 +6,7 @@ impl Jira {
     pub(super) fn sign_in(
         &mut self,
         host: &Host,
-        status: &Value,
+        status: &Status,
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
@@ -40,8 +40,8 @@ impl Jira {
         let filled = [&form.site, &form.email, &form.token]
             .iter()
             .all(|input| !input.read(cx).value().trim().is_empty());
-        let browser = status["browserSignIn"] == Value::Bool(true);
-        let message = status["message"].as_str().map(str::to_owned);
+        let browser = status.details.browser_sign_in;
+        let message = status.message.clone();
         sign_in::Screen::new(
             "jira-sign-in",
             ui::icon(Icon::Jira, 28.).text_color(jira_blue()),

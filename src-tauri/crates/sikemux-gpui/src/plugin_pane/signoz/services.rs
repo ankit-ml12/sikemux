@@ -222,7 +222,7 @@ impl Signoz {
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
         let read = host
-            .view("serviceView", Value::Object(self.scope(settings)), cx)
+            .view("serviceView", self.scope(settings), cx)
             .read::<ServicePage>();
         let page = match read {
             Ok(Some(page)) => page,
@@ -349,7 +349,7 @@ impl Signoz {
                         move |signoz, _, _, _, cx| {
                             signoz.add_filter(Filter {
                                 key: "name".into(),
-                                op: "equals",
+                                op: FilterOp::Equals,
                                 value: name.clone(),
                             });
                             signoz.tab = Tab::Traces;

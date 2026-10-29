@@ -75,7 +75,13 @@ impl Jira {
             lists = lists.child(self.list_row(list, label, icon, cx));
         }
         let spaces = host
-            .view("spacesView", json!({ "site": site_of(site) }), cx)
+            .view(
+                "spacesView",
+                SiteRequest {
+                    site: site_of(site),
+                },
+                cx,
+            )
             .read::<Spaces>()
             .ok()
             .flatten();

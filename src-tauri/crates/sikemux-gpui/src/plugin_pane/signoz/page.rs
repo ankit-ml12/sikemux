@@ -20,7 +20,7 @@ impl Signoz {
     pub(super) fn main(
         &mut self,
         host: &mut Host,
-        status: &Value,
+        status: &Status,
         settings: &Settings,
         services: Result<Option<Rc<Services>>, crate::plugin_pane::Failure>,
         window: &mut Window,
@@ -234,7 +234,7 @@ impl Signoz {
     fn body(
         &mut self,
         host: &mut Host,
-        status: &Value,
+        status: &Status,
         settings: &Settings,
         services: Result<Option<Rc<Services>>, crate::plugin_pane::Failure>,
         window: &mut Window,
@@ -257,7 +257,7 @@ impl Signoz {
                 .child(div().flex_1().min_h_0().child(feed))
                 .into_any_element();
         }
-        let url = status["url"].as_str().unwrap_or_default().to_owned();
+        let url = status.details.url.clone();
         match (self.section, self.service.clone(), self.dashboard.clone()) {
             (Section::Dashboards, _, Some(id)) => {
                 self.dashboard_view(host, settings, &id, &url, window, cx)

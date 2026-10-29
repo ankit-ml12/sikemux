@@ -12,10 +12,10 @@ use serde_json::{json, Map, Value};
 
 use crate::client;
 use crate::error::{SignozError, SignozResult};
-use crate::filter::Scope;
+use crate::filter::{Narrows, Scope};
 use crate::query::View;
 pub use sikemux_plugin_signoz_views::{
-    Column, Dashboard, DashboardSummary, Layout, Panel, PanelData, Series, Variable,
+    Column, Dashboard, DashboardSummary, Layout, Panel, PanelData, PanelRequest, Series, Variable,
 };
 
 fn text(value: &Value, key: &str) -> String {
@@ -257,17 +257,6 @@ pub fn parse_dashboard(id: &str, data: &Value) -> Dashboard {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PanelRequest {
-    pub kind: String,
-    pub query: Value,
-    #[serde(default)]
-    pub variables: BTreeMap<String, String>,
-    #[serde(flatten)]
-    pub scope: Scope,
-}
-
 fn is_disabled(value: &Value) -> bool {
     value
         .get("disabled")
@@ -393,7 +382,10 @@ fn request_type(kind: &str) -> SignozResult<&'static str> {
 pub struct SavedPanelRequest {
     pub dashboard_id: String,
     pub panel_id: String,
-    #[serde(default, deserialize_with = "crate::filter::plain_values")]
+    #[serde(
+        default,
+        deserialize_with = "sikemux_plugin_signoz_views::plain_values"
+    )]
     pub variables: BTreeMap<String, String>,
     #[serde(flatten)]
     pub scope: Scope,

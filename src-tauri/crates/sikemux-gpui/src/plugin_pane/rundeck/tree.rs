@@ -247,21 +247,24 @@ fn tree_row(
 /// Where the pane is signed in, and signing out.
 fn connection(host: &mut Host, cx: &mut Context<PluginPane>) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let status = match host.status(cx).read::<Value>() {
-        Ok(Some(status)) => status,
-        _ => Rc::new(Value::Null),
-    };
-    let place = status["url"]
-        .as_str()
-        .map(|url| {
-            url.trim_start_matches("https://")
+    let status = host.status(cx).read::<Status>().ok().flatten();
+    let place = status
+        .as_ref()
+        .map(|status| {
+            status
+                .details
+                .url
+                .trim_start_matches("https://")
                 .trim_start_matches("http://")
                 .trim_end_matches('/')
                 .to_owned()
         })
         .unwrap_or_default();
-    let user = status["user"].as_str().unwrap_or_default().to_owned();
-    let ok = status["ok"].as_bool() == Some(true);
+    let user = status
+        .as_ref()
+        .map(|status| status.details.user.clone())
+        .unwrap_or_default();
+    let ok = status.as_ref().is_some_and(|status| status.ok);
     div()
         .border_t_1()
         .border_color(t.border)

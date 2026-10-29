@@ -2,16 +2,18 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::Path;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 use sikemux_plugin_api::process;
 use sikemux_plugin_api::{reply, PluginResult, StreamSink};
 
 use crate::client;
 use crate::error::{SignozError, SignozResult};
-use crate::filter::Scope;
+use crate::filter::Narrows;
 use crate::query::{self, all_of, quote, View};
-pub use sikemux_plugin_signoz_views::{LogLine, LogPage, TailTick, VolumeBucket};
+pub use sikemux_plugin_signoz_views::{
+    LogLine, LogPage, LogSearch, TailTick, VolumeBucket, VolumeQuery,
+};
 
 const DEFAULT_LIMIT: u32 = 30;
 const MAX_LIMIT: u32 = 500;
@@ -21,22 +23,6 @@ const TAIL_INTERVAL: Duration = Duration::from_secs(2);
 const TAIL_MAX_BACKOFF: Duration = Duration::from_secs(30);
 const TAIL_GIVE_UP_AFTER: u32 = 8;
 const TAIL_REMEMBERED_IDS: usize = 4_000;
-
-#[derive(Deserialize, Default, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct LogSearch {
-    #[serde(flatten)]
-    pub scope: Scope,
-    pub text: Option<String>,
-    #[serde(default)]
-    pub severities: Vec<String>,
-    pub trace_id: Option<String>,
-    pub id: Option<String>,
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-    #[serde(default)]
-    pub view: View,
-}
 
 /// What every returned line has in common, written once instead of on each line.
 #[derive(Serialize, Default, Debug, PartialEq)]
@@ -191,14 +177,6 @@ fn lines_of(result: &Value) -> Vec<LogLine> {
 
 const DEFAULT_BUCKETS: u32 = 60;
 const MAX_BUCKETS: u32 = 240;
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct VolumeQuery {
-    #[serde(flatten)]
-    pub search: LogSearch,
-    pub buckets: Option<u32>,
-}
 
 /// How many lines of each level arrived in each slice of the window. The
 /// severity toggles are left out on purpose: the chart shows the whole shape
@@ -538,6 +516,7 @@ pub async fn tail(data_dir: &Path, mut search: LogSearch, sink: StreamSink) -> P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::filter::Scope;
 
     fn row() -> Value {
         json!({

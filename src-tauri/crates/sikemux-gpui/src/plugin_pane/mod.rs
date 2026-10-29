@@ -9,13 +9,17 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::rc::Rc;
 
+use gpui_kit::component::menu::PopupMenu;
+use gpui_kit::component::notification::Notification;
 use gpui_kit::{
     div, px, AnyElement, App, Context, FontWeight, IntoElement, ParentElement, Render,
     SharedString, Styled, Task, WeakEntity, Window,
 };
+use gpui_transcript::Style;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use sikemux_core::git::log::GitCommit;
 
 use crate::core::Target;
 use crate::icons::Icon;
@@ -277,7 +281,13 @@ fn open_sign_in(url: String, browser: Option<(String, String)>, cx: &mut gpui::A
 impl Host {
     /// The plugin's view `method` with `params`, asked of the core the first time and kept
     /// after, until the core says it changed.
-    pub fn view(&mut self, method: &str, params: Value, cx: &mut Context<PluginPane>) -> View<'_> {
+    pub fn view(
+        &mut self,
+        method: &str,
+        params: impl Serialize,
+        cx: &mut Context<PluginPane>,
+    ) -> View<'_> {
+        let params = to_params(params);
         self.asks += 1;
         let key = (method.to_owned(), params.to_string());
         if !self.kept.contains_key(&key) {
@@ -383,11 +393,11 @@ impl Host {
     pub fn call(
         &self,
         method: &str,
-        params: Value,
+        params: impl Serialize,
     ) -> impl Future<Output = Result<Value, Failure>> + 'static {
         let asked = self.target.request(
             "plugin",
-            json!({ "plugin": self.plugin, "method": method, "params": params }),
+            json!({ "plugin": self.plugin, "method": method, "params": to_params(params) }),
         );
         async move {
             let answer = asked.await.map_err(Failure::core)?;
@@ -403,13 +413,13 @@ impl Host {
     pub fn stream<P: Panel>(
         &self,
         method: &str,
-        params: Value,
+        params: impl Serialize,
         cx: &mut Context<PluginPane>,
         each: impl Fn(&mut P, &mut Host, Streamed, &mut Context<PluginPane>) + 'static,
     ) -> Task<()> {
         let mut streaming = self.target.stream(
             "pluginStream",
-            json!({ "plugin": self.plugin, "method": method, "params": params }),
+            json!({ "plugin": self.plugin, "method": method, "params": to_params(params) }),
         );
         cx.spawn(async move |pane, cx| loop {
             let part = streaming.parts.recv().await;
@@ -438,14 +448,30 @@ impl Host {
         })
     }
 
-    /// Asks the core one of its own methods, such as `git.push`.
-    pub fn core(
+    fn ask_core(
         &self,
         method: &'static str,
         params: Value,
     ) -> impl Future<Output = Result<Value, Failure>> + 'static {
         let asked = self.target.request(method, params);
         async move { asked.await.map_err(Failure::core) }
+    }
+
+    /// Checks out `branch` in the repository at `repo`, carrying uncommitted work along.
+    pub fn checkout_branch(
+        &self,
+        repo: &str,
+        branch: &str,
+    ) -> impl Future<Output = Result<Value, Failure>> + 'static {
+        self.ask_core(
+            "git.checkoutSmart",
+            json!({ "repo": repo, "branch": branch }),
+        )
+    }
+
+    /// Pushes the branch checked out in the repository at `repo`.
+    pub fn push(&self, repo: &str) -> impl Future<Output = Result<Value, Failure>> + 'static {
+        self.ask_core("git.push", json!({ "repo": repo }))
     }
 
     /// What the plugin's `status` call says of its sign-in, such as its accounts or sites,
@@ -583,12 +609,98 @@ impl Host {
 
     /// Copies `text` and says what was copied.
     pub fn copy(&self, text: String, what: &str, cx: &mut App) {
-        copy(&self.bench, text, what, cx);
+        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
+        self.notify(toast::success(format!("Copied {what}")), cx);
     }
 
-    /// The workbench the pane is in.
-    pub fn bench(&self) -> &WeakEntity<Workbench> {
-        &self.bench
+    /// Says `note` over the window.
+    pub fn notify(&self, note: Notification, cx: &mut App) {
+        if let Some(bench) = self.bench.upgrade() {
+            bench.update(cx, |bench, cx| bench.notify(note, cx));
+        }
+    }
+
+    /// Asks the person over the window, handing `then` whether they said `yes`.
+    pub fn confirm(
+        &self,
+        title: impl Into<SharedString>,
+        body: impl Into<SharedString>,
+        yes: impl Into<SharedString>,
+        destructive: bool,
+        then: impl Fn(bool, &mut App) + 'static,
+        cx: &mut App,
+    ) {
+        if let Some(bench) = self.bench.upgrade() {
+            bench.update(cx, |bench, cx| {
+                bench.confirm(
+                    title,
+                    body,
+                    yes,
+                    destructive,
+                    move |_, said, _, cx| then(said, cx),
+                    cx,
+                )
+            });
+        }
+    }
+
+    /// How the pane's markdown reads at `text_size`, its links opening as the window opens them.
+    pub fn reading(&self, text_size: f32, cx: &App) -> Style {
+        crate::editor::preview::reading_linked(text_size, &self.bench, cx)
+    }
+
+    /// The project folder the Git views follow.
+    pub fn watched_project(&self, cx: &App) -> Option<String> {
+        let bench = self.bench.upgrade()?;
+        bench.read(cx).watched_project.clone()
+    }
+
+    /// The branch checked out in the project in front, as the Git views last read it: none
+    /// until they have, and a read without a branch while HEAD is detached.
+    pub fn current_branch(&self, cx: &App) -> Option<Option<String>> {
+        let bench = self.bench.upgrade()?;
+        let overview = bench.read(cx).reads.git_overview.as_ref()?;
+        Some(
+            overview["status"]["branch"]
+                .as_str()
+                .filter(|branch| !branch.is_empty())
+                .map(str::to_owned),
+        )
+    }
+
+    /// The latest commits in the project in front, as the Git views last read them.
+    pub fn recent_commits(&self, cx: &App) -> Option<Vec<GitCommit>> {
+        let bench = self.bench.upgrade()?;
+        let overview = bench.read(cx).reads.git_overview.as_ref()?;
+        Vec::<GitCommit>::deserialize(&overview["log"]).ok()
+    }
+
+    /// Puts a ticket on the board of the project in front, as the core's `boardAddTicket` takes
+    /// it, and says over the window what came of it, `put` once it is on.
+    pub fn add_board_ticket(&self, params: Value, put: String, cx: &mut App) {
+        let Some(bench) = self.bench.upgrade() else {
+            return;
+        };
+        let asked = bench.read(cx).target().request("boardAddTicket", params);
+        let weak = bench.downgrade();
+        cx.spawn(async move |cx| {
+            let answer = asked.await;
+            let _ = weak.update(cx, |bench, cx| match answer {
+                Ok(board) => {
+                    for problem in board["problems"].as_array().into_iter().flatten() {
+                        if let Some(problem) = problem.as_str() {
+                            bench.notify(toast::error(problem.to_owned()), cx);
+                        }
+                    }
+                    bench.notify(toast::success(put), cx);
+                }
+                Err(error) => {
+                    let failed = format!("Send to the board: {error}");
+                    bench.notify(toast::error(failed), cx)
+                }
+            });
+        })
+        .detach();
     }
 
     /// Has the core read the plugin's views again now, each of `method`'s or all of them.
@@ -601,9 +713,17 @@ impl Host {
 
     /// The project in front, by its path.
     pub fn project(&self, cx: &App) -> Option<String> {
+        self.front_project(cx).map(|(path, _)| path)
+    }
+
+    /// The project in front, by its path and its name.
+    pub fn front_project(&self, cx: &App) -> Option<(String, String)> {
         let bench = self.bench.upgrade()?;
         let project = bench.read(cx).project()?;
-        Some(project.path.to_string_lossy().into_owned())
+        Some((
+            project.path.to_string_lossy().into_owned(),
+            project.name.clone(),
+        ))
     }
 
     /// Whether the pointer is over the window's top bar.
@@ -716,10 +836,7 @@ impl Host {
 
     /// Says what went wrong with a call, over the window.
     pub fn said(&self, failure: &Failure, cx: &mut App) {
-        let note = toast::error(failure.message.clone());
-        if let Some(bench) = self.bench.upgrade() {
-            bench.update(cx, |bench, cx| bench.notify(note, cx));
-        }
+        self.notify(toast::error(failure.message.clone()), cx);
     }
 }
 
@@ -841,12 +958,16 @@ impl Render for PluginPane {
     }
 }
 
-/// Copies `text` and says over the window what was copied.
 fn fields(settings: &impl Serialize) -> Map<String, Value> {
     match serde_json::to_value(settings) {
         Ok(Value::Object(fields)) => fields,
         _ => Map::new(),
     }
+}
+
+/// A plugin call's params as the JSON the core passes on.
+fn to_params(params: impl Serialize) -> Value {
+    serde_json::to_value(params).unwrap_or_default()
 }
 
 /// Logs `said` the first time only, for what is read again on every frame.
@@ -856,14 +977,6 @@ fn say_once(said: String) {
     }
     if SAID.with(|kept| kept.borrow_mut().insert(said.clone())) {
         eprintln!("{said}");
-    }
-}
-
-pub fn copy(bench: &WeakEntity<Workbench>, text: String, what: &str, cx: &mut App) {
-    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
-    let note = toast::success(format!("Copied {what}"));
-    if let Some(bench) = bench.upgrade() {
-        bench.update(cx, |bench, cx| bench.notify(note, cx));
     }
 }
 
@@ -974,6 +1087,21 @@ pub fn browser_sign_in(
         .icon(mark)
         .on_click(cx.listener(move |pane, _, _, cx| start(&mut pane.host, cx)))
         .into_any_element()
+}
+
+/// A menu's way to hand `text` to an agent, for the pane `pane` names.
+pub fn send_submenu(
+    popup: PopupMenu,
+    label: impl Into<SharedString>,
+    pane: &WeakEntity<PluginPane>,
+    text: String,
+    window: &mut Window,
+    cx: &mut Context<PopupMenu>,
+) -> PopupMenu {
+    let Some(bench) = pane.upgrade().map(|pane| pane.read(cx).host.bench.clone()) else {
+        return popup;
+    };
+    send_to::submenu_with_text(popup, label, bench, text, window, cx)
 }
 
 /// Hands `text` to the agent the person picks, or a new chat, as its next message.

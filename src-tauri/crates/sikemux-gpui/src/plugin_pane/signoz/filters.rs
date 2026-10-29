@@ -95,7 +95,7 @@ impl Signoz {
             let op = OPS
                 .iter()
                 .find(|(op, _)| *op == filter.op)
-                .map_or(filter.op, |(_, label)| *label);
+                .map_or("", |(_, label)| *label);
             row = row.child(
                 div()
                     .flex()
@@ -212,21 +212,24 @@ impl Signoz {
         let _ = signal;
         self.draft = Some(Draft {
             key,
-            op: "equals",
+            op: FilterOp::Equals,
             value,
             keys: Vec::new(),
             values: Vec::new(),
         });
     }
 
-    fn draft_signal(&self) -> &'static str {
-        self.signal().unwrap_or(Signal::Logs).word()
+    fn draft_signal(&self) -> Signal {
+        self.signal().unwrap_or(Signal::Logs)
     }
 
     fn suggest_keys(&mut self, host: &Host, text: &str, cx: &mut Context<PluginPane>) {
         let call = host.call(
             "fieldKeys",
-            json!({ "signal": self.draft_signal(), "search": text }),
+            KeyQuery {
+                signal: self.draft_signal(),
+                search: text.to_owned(),
+            },
         );
         after::<Signoz, _>(
             call,
@@ -253,7 +256,11 @@ impl Signoz {
         if name.is_empty() || !takes_value(draft.op) {
             return;
         }
-        let params = json!({ "signal": self.draft_signal(), "name": name, "search": text });
+        let params = ValueQuery {
+            signal: self.draft_signal(),
+            name,
+            search: text.to_owned(),
+        };
         after::<Signoz, _>(
             host.call("fieldValues", params),
             |signoz, _, found, _| {
@@ -332,20 +339,20 @@ impl Signoz {
             .iter()
             .find(|(op, _)| *op == draft.op)
             .map_or("=", |(_, label)| *label);
+        let picked_at = OPS.iter().position(|(op, _)| *op == draft.op);
         let ops = ui::select(
             "signoz-op",
             op_label,
             OPS.iter()
-                .map(|(op, label)| ui::Pick::new(*op, *label))
+                .enumerate()
+                .map(|(at, (_, label))| ui::Pick::new(at.to_string(), *label))
                 .collect(),
-            Some(draft.op.into()),
+            picked_at.map(|at| at.to_string().into()),
             false,
             listen::<Signoz, SharedString>(cx, |signoz, _, picked, _, cx| {
-                if let (Some(draft), Some((op, _))) = (
-                    &mut signoz.draft,
-                    OPS.iter().find(|(op, _)| *op == picked.as_ref()),
-                ) {
-                    draft.op = op;
+                let op = picked.parse::<usize>().ok().and_then(|at| OPS.get(at));
+                if let (Some(draft), Some((op, _))) = (&mut signoz.draft, op) {
+                    draft.op = *op;
                 }
                 cx.notify();
             }),

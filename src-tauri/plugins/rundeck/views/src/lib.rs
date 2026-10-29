@@ -5,6 +5,17 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+/// Which Rundeck the plugin is signed in to, and as whom.
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Connection {
+    pub url: String,
+    pub user: String,
+    pub token_present: bool,
+    pub rundeck_version: Option<String>,
+    pub allow_insecure_private_http: bool,
+}
+
 /// The projects the person can see, each with its folders of jobs.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -510,4 +521,89 @@ pub struct OutputTick {
     /// The stream gave up after too many errors.
     pub failed: bool,
     pub error: Option<String>,
+}
+
+/// A project's jobs, as `jobsView` reads them.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobsRequest {
+    pub project: String,
+    #[serde(default)]
+    pub group: Option<String>,
+}
+
+/// A job with its runs, as `jobView` reads it.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobRequest {
+    pub job_id: String,
+    pub project: String,
+}
+
+/// A project's latest runs, as `activityView` reads them.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityRequest {
+    pub project: String,
+    pub max: u32,
+}
+
+/// One run of a job, as `executionView` reads it.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionRequest {
+    pub execution_id: u64,
+    pub job_id: String,
+    pub project: String,
+}
+
+/// The deploy job the person picked for a folder.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Picked {
+    pub project: String,
+    pub job_id: String,
+}
+
+/// Where a folder deploys, as `deployTargetView` reads it.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetRequest {
+    /// The project's folder name, which its deploy jobs are named after.
+    pub folder: String,
+    #[serde(default)]
+    pub picked: Option<Picked>,
+}
+
+/// A job's run form, as `deployView` reads it.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployRequest {
+    pub job_id: String,
+    pub project: String,
+    pub name: String,
+    #[serde(default)]
+    pub group: Option<String>,
+    /// The branch to start with.
+    #[serde(default)]
+    pub branch: Option<String>,
+    /// Option values carried over from an earlier run.
+    #[serde(default)]
+    pub given: BTreeMap<String, String>,
+}
+
+/// A run form's values to check, as `checkRun` reads them.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckRequest {
+    pub options: Vec<JobOption>,
+    pub values: BTreeMap<String, String>,
+    /// The values read from each option's values URL; none where reading them failed.
+    #[serde(default)]
+    pub remote: BTreeMap<String, Option<Vec<String>>>,
+    /// Given when the form is about to start the job, to ask whether a run goes on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
 }

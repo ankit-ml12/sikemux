@@ -15,9 +15,9 @@ use serde_json::{json, Value};
 use sikemux_plugin_linear_views::{IssueList, IssueRow, IssueView};
 
 use super::{Failure, Host, Panel, PluginPane};
-use crate::ui::time::ago_written as ago;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
+use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, IconButton, Pick, Variant};
 
 const PITCH: &str = "The issues you are working on, beside the code.";
@@ -211,11 +211,7 @@ impl Linear {
         let issue = &words.of;
         let t = Tokens::get(cx).clone();
         let busy = picked.read(cx).busy;
-        let pen = Pen::new(Rc::new(crate::editor::preview::reading_linked(
-            13.,
-            host.bench(),
-            cx,
-        )));
+        let pen = Pen::new(Rc::new(host.reading(13., cx)));
         let description = match &words.description {
             Some(description) => pen.markdown("linear-description", description, window, cx),
             None => note("No description.", cx),

@@ -12,19 +12,20 @@ impl Jira {
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
-        let people: Vec<&String> = self
+        let people: Vec<String> = self
             .listing
             .picked
             .iter()
             .filter(|who| *who != "me" && *who != "none")
+            .cloned()
             .collect();
-        let params = json!({
-            "id": id,
-            "site": site_of(site),
-            "people": people,
-            "mine": self.listing.picked.contains("me"),
-            "unassigned": self.listing.picked.contains("none"),
-        });
+        let params = BoardRequest {
+            id,
+            site: site_of(site),
+            people,
+            mine: self.listing.picked.contains("me"),
+            unassigned: self.listing.picked.contains("none"),
+        };
         let page = match host.view("boardView", params, cx).read::<BoardPage>() {
             Ok(Some(page)) => {
                 if !self
@@ -519,12 +520,12 @@ fn with_moves<'a>(
 /// statuses, showing it there until the board comes again.
 fn move_card(pane: &WeakEntity<PluginPane>, moved: Moved, cx: &mut App) {
     let key = moved.key.to_owned();
-    let params = json!({
-        "key": moved.key,
-        "statusIds": moved.status_ids,
-        "column": moved.column,
-        "site": site_of(moved.site),
-    });
+    let params = MoveRequest {
+        key: moved.key.to_owned(),
+        status_ids: moved.status_ids.to_vec(),
+        column: moved.column.to_owned(),
+        site: site_of(moved.site),
+    };
     let to = moved.to;
     let _ = pane.update(cx, |pane, cx| {
         let Some((jira, host)) = pane.parts::<Jira>() else {

@@ -32,7 +32,10 @@ impl Jira {
         let read = host
             .view(
                 "issueView",
-                json!({ "key": key, "site": site_of(site) }),
+                IssueRequest {
+                    key: key.to_owned(),
+                    site: site_of(site),
+                },
                 cx,
             )
             .read::<IssueView>();
@@ -91,7 +94,7 @@ impl Jira {
                                 "Put this issue on the open project's board as a card for agents",
                             )
                             .on_click(listen::<Jira, _>(cx, move |_, host, _, _, cx| {
-                                send_to_board(host.bench(), &sent, cx)
+                                send_to_board(host, &sent, cx)
                             })),
                     )
                     .child(
@@ -108,18 +111,18 @@ impl Jira {
                     .text_color(t.text_primary)
                     .whitespace_normal(),
             )
-            .context_menu(ui::menu(issue_menu(issue, host.bench().clone())));
-        let mut style = crate::editor::preview::reading_linked(13., host.bench(), cx);
+            .context_menu(ui::menu(issue_menu(issue, cx.weak_entity())));
+        let mut style = host.reading(13., cx);
         let pane = cx.weak_entity();
         let (task_key, task_site) = (issue.key.clone(), site.to_owned());
         style.on_task = Some(Rc::new(move |index, text, done, _, cx| {
-            let params = json!({
-                "key": task_key,
-                "index": index,
-                "text": text,
-                "done": done,
-                "site": site_of(&task_site),
-            });
+            let params = TaskRequest {
+                key: task_key.clone(),
+                index,
+                text: text.to_owned(),
+                done,
+                site: site_of(&task_site),
+            };
             let _ = pane.update(cx, |pane, cx| {
                 if let Some((jira, host)) = pane.parts::<Jira>() {
                     jira.write(host, "Update the task", "setTask", params, cx);
@@ -194,11 +197,11 @@ impl Jira {
             None,
             busy || view.transitions.is_empty(),
             listen::<Jira, SharedString>(cx, move |jira, host, to, _, cx| {
-                let params = json!({
-                    "key": move_key,
-                    "to": to.to_string(),
-                    "site": site_of(&move_site),
-                });
+                let params = TransitionRequest {
+                    key: move_key.clone(),
+                    to: Some(to.to_string()),
+                    site: site_of(&move_site),
+                };
                 jira.write(host, "Move issue", "transition", params, cx);
             }),
             cx,
@@ -245,19 +248,21 @@ impl Jira {
                                     cx,
                                     move |jira, host, _, _, cx| match at {
                                         0 => {
-                                            let params = json!({
-                                                "key": me_key,
-                                                "me": true,
-                                                "site": site_of(&me_site),
-                                            });
+                                            let params = AssignRequest {
+                                                key: me_key.clone(),
+                                                account_id: None,
+                                                me: true,
+                                                site: site_of(&me_site),
+                                            };
                                             jira.write(host, "Assign", "assign", params, cx);
                                         }
                                         1 => {
-                                            let params = json!({
-                                                "key": me_key,
-                                                "accountId": null,
-                                                "site": site_of(&me_site),
-                                            });
+                                            let params = AssignRequest {
+                                                key: me_key.clone(),
+                                                account_id: None,
+                                                me: false,
+                                                site: site_of(&me_site),
+                                            };
                                             jira.write(host, "Unassign", "assign", params, cx);
                                         }
                                         _ => {
@@ -283,40 +288,51 @@ impl Jira {
             .gap(px(6.))
             .child(status)
             .child(group);
-        let finder =
-            self.issue
-                .as_mut()
-                .filter(|open| open.assigning)
-                .map(|open| {
-                    let find = field(
-                        &mut open.assign_find,
-                        &mut self.typing,
-                        "Find a person",
-                        false,
-                        (Some(Jira::find_people), None),
-                        window,
+        let finder = self
+            .issue
+            .as_mut()
+            .filter(|open| open.assigning)
+            .map(|open| {
+                let find = field(
+                    &mut open.assign_find,
+                    &mut self.typing,
+                    "Find a person",
+                    false,
+                    (Some(Jira::find_people), None),
+                    window,
+                    cx,
+                );
+                let chips = open.people.iter().enumerate().map(|(index, person)| {
+                    let (key, site) = at(&issue.key);
+                    let account = person.account_id.clone();
+                    Button::new(
+                        ("jira-person", index),
+                        person.name.clone(),
+                        Variant::Outline,
+                    )
+                    .on_click(listen::<Jira, _>(
                         cx,
-                    );
-                    let chips = open.people.iter().enumerate().map(|(index, person)| {
-                        let (key, site) = at(&issue.key);
-                        let account = person.account_id.clone();
-                        Button::new(("jira-person", index), person.name.clone(), Variant::Outline)
-                    .on_click(listen::<Jira, _>(cx, move |jira, host, _, _, cx| {
-                        if let Some(issue) = &mut jira.issue {
-                            issue.assigning = false;
-                        }
-                        let params =
-                            json!({ "key": key, "accountId": account, "site": site_of(&site) });
-                        jira.write(host, "Assign", "assign", params, cx);
-                    }))
-                    });
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(6.))
-                        .child(ui::Field::new(&find).icon(Icon::Search))
-                        .child(div().flex().flex_wrap().gap(px(4.)).children(chips))
+                        move |jira, host, _, _, cx| {
+                            if let Some(issue) = &mut jira.issue {
+                                issue.assigning = false;
+                            }
+                            let params = AssignRequest {
+                                key: key.clone(),
+                                account_id: Some(account.clone()),
+                                me: false,
+                                site: site_of(&site),
+                            };
+                            jira.write(host, "Assign", "assign", params, cx);
+                        },
+                    ))
                 });
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(ui::Field::new(&find).icon(Icon::Search))
+                    .child(div().flex().flex_wrap().gap(px(4.)).children(chips))
+            });
         div()
             .flex()
             .flex_col()
@@ -330,7 +346,11 @@ impl Jira {
         let Some(key) = self.open_key().map(str::to_owned) else {
             return;
         };
-        let params = json!({ "key": key, "query": query, "site": site_of(&self.shown_site) });
+        let params = AssignableRequest {
+            key: key.clone(),
+            query: query.to_owned(),
+            site: site_of(&self.shown_site),
+        };
         let call = host.call("assignable", params);
         let asked = query.to_owned();
         after::<Jira, _>(
@@ -694,7 +714,11 @@ impl Jira {
         self.commenting = true;
         let call = host.call(
             "comment",
-            json!({ "key": key, "body": body, "site": site_of(site) }),
+            CommentRequest {
+                key: key.to_owned(),
+                body,
+                site: site_of(site),
+            },
         );
         let pane = cx.weak_entity();
         cx.spawn(async move |_, cx| {
@@ -733,19 +757,10 @@ fn at_site(key: &str, site: &str) -> (String, String) {
 
 /// Puts the issue on the front project's board as a card for agents, its open subtasks
 /// under it.
-fn send_to_board(bench: &WeakEntity<Workbench>, view: &IssueView, cx: &mut App) {
-    let Some(bench) = bench.upgrade() else {
-        return;
-    };
+fn send_to_board(host: &Host, view: &IssueView, cx: &mut App) {
     let ticket = |issue: &IssueSummary| json!({ "key": issue.key, "url": issue.url, "source": issue.issue_type, "provider": "jira" });
-    let Some((folder, name)) = bench
-        .read(cx)
-        .project()
-        .map(|project| (project.path.clone(), project.name.clone()))
-    else {
-        bench.update(cx, |bench, cx| {
-            bench.notify(toast::error("Open a project to put this on its board"), cx)
-        });
+    let Some((folder, name)) = host.front_project(cx) else {
+        host.notify(toast::error("Open a project to put this on its board"), cx);
         return;
     };
     let subtasks: Vec<Value> = view
@@ -763,45 +778,21 @@ fn send_to_board(bench: &WeakEntity<Workbench>, view: &IssueView, cx: &mut App) 
         "blockedBy": view.blocked_by,
         "blocks": view.blocks,
     });
-    let key = view.issue.key.clone();
-    let asked = bench.read(cx).target().request("boardAddTicket", params);
-    let weak = bench.downgrade();
-    cx.spawn(async move |cx| {
-        let answer = asked.await;
-        let _ = weak.update(cx, |bench, cx| match answer {
-            Ok(board) => {
-                for problem in board["problems"].as_array().into_iter().flatten() {
-                    if let Some(problem) = problem.as_str() {
-                        bench.notify(toast::error(problem.to_owned()), cx);
-                    }
-                }
-                let put = format!("Put {key} on {name}'s board");
-                bench.notify(toast::success(put), cx);
-            }
-            Err(error) => {
-                let failed = format!("Send to the board: {error}");
-                bench.notify(toast::error(failed), cx)
-            }
-        });
-    })
-    .detach();
+    let put = format!("Put {} on {name}'s board", view.issue.key);
+    host.add_board_ticket(params, put, cx);
 }
 
 /// The front project's recent commits that name the issue.
 fn commits(host: &Host, key: &str, cx: &App) -> Option<AnyElement> {
-    let bench = host.bench().upgrade()?;
-    let log = bench.read(cx).reads.git_overview.as_ref()?["log"]
-        .as_array()?
-        .clone();
-    let named: Vec<&Value> = log
+    let log = host.recent_commits(cx)?;
+    let named: Vec<&GitCommit> = log
         .iter()
-        .filter(|commit| mentions(commit["subject"].as_str().unwrap_or_default(), key))
+        .filter(|commit| mentions(&commit.subject, key))
         .collect();
     if named.is_empty() {
         return None;
     }
     let t = Tokens::get(cx);
-    let line = |commit: &Value, field: &str| commit[field].as_str().unwrap_or_default().to_owned();
     Some(
         div()
             .flex()
@@ -814,7 +805,7 @@ fn commits(host: &Host, key: &str, cx: &App) -> Option<AnyElement> {
                     .items_center()
                     .gap(px(8.))
                     .min_w_0()
-                    .child(ui::mono(line(commit, "hash"), 11., cx))
+                    .child(ui::mono(commit.hash.clone(), 11., cx))
                     .child(
                         div()
                             .flex_1()
@@ -822,9 +813,9 @@ fn commits(host: &Host, key: &str, cx: &App) -> Option<AnyElement> {
                             .truncate()
                             .text_size(crate::theme::ui_text(12.))
                             .text_color(t.text_primary)
-                            .child(line(commit, "subject")),
+                            .child(commit.subject.clone()),
                     )
-                    .child(ui::meta(line(commit, "author"), cx))
+                    .child(ui::meta(commit.author.clone(), cx))
             }))
             .into_any_element(),
     )

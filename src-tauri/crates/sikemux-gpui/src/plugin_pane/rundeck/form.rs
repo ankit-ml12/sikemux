@@ -16,14 +16,14 @@ impl Rundeck {
         let read = host
             .view(
                 "deployView",
-                json!({
-                    "jobId": job.job_id,
-                    "project": job.project,
-                    "name": job.name,
-                    "group": job.group,
-                    "branch": branch,
-                    "given": given,
-                }),
+                DeployRequest {
+                    job_id: job.job_id.clone(),
+                    project: job.project.clone(),
+                    name: job.name.clone(),
+                    group: job.group.clone(),
+                    branch: branch.clone(),
+                    given: given.clone(),
+                },
                 cx,
             )
             .read::<DeployForm>();
@@ -508,7 +508,13 @@ impl Rundeck {
         };
         let call = host.call(
             "checkRun",
-            json!({ "options": form.options, "values": form.values, "remote": form.remote }),
+            CheckRequest {
+                options: form.options.clone(),
+                values: form.values.clone(),
+                remote: form.remote.clone(),
+                job_id: None,
+                project: None,
+            },
         );
         form.checking = Some(cx.spawn(async move |pane, cx| {
             let checked = call.await;
@@ -599,13 +605,13 @@ impl Rundeck {
         cx.notify();
         let ready = host.call(
             "checkRun",
-            json!({
-                "options": form_data.options,
-                "values": form.values,
-                "remote": form.remote,
-                "jobId": form_data.job_id,
-                "project": form_data.project,
-            }),
+            CheckRequest {
+                options: form_data.options.clone(),
+                values: form.values.clone(),
+                remote: form.remote.clone(),
+                job_id: Some(form_data.job_id.clone()),
+                project: Some(form_data.project.clone()),
+            },
         );
         let form_data = form_data.clone();
         after::<Rundeck, _>(
@@ -727,40 +733,35 @@ impl Rundeck {
             return self.start(host, push, request, form_data, target, cx);
         }
         let (title, body, yes, destructive) = questions.remove(0);
-        let Some(bench) = host.bench().upgrade() else {
-            return;
-        };
         let pane = cx.weak_entity();
-        bench.update(cx, |bench, cx| {
-            bench.confirm(
-                title,
-                body,
-                yes,
-                destructive,
-                move |_, yes, _, cx| {
-                    let (questions, push, request, form_data, target) = (
-                        questions.clone(),
-                        push.clone(),
-                        request.clone(),
-                        form_data.clone(),
-                        target.clone(),
-                    );
-                    let _ = pane.update(cx, |pane, cx| {
-                        if let Some((rd, host)) = pane.parts::<Rundeck>() {
-                            if yes {
-                                rd.ask_then_start(
-                                    host, questions, push, request, form_data, target, cx,
-                                );
-                            } else if let Some(form) = &mut rd.form {
-                                form.busy = false;
-                            }
-                            cx.notify();
+        host.confirm(
+            title,
+            body,
+            yes,
+            destructive,
+            move |yes, cx| {
+                let (questions, push, request, form_data, target) = (
+                    questions.clone(),
+                    push.clone(),
+                    request.clone(),
+                    form_data.clone(),
+                    target.clone(),
+                );
+                let _ = pane.update(cx, |pane, cx| {
+                    if let Some((rd, host)) = pane.parts::<Rundeck>() {
+                        if yes {
+                            rd.ask_then_start(
+                                host, questions, push, request, form_data, target, cx,
+                            );
+                        } else if let Some(form) = &mut rd.form {
+                            form.busy = false;
                         }
-                    });
-                },
-                cx,
-            );
-        });
+                        cx.notify();
+                    }
+                });
+            },
+            cx,
+        );
     }
 
     fn start(
@@ -772,9 +773,7 @@ impl Rundeck {
         target: String,
         cx: &mut Context<PluginPane>,
     ) {
-        let pushed = push
-            .as_ref()
-            .map(|repo| host.core("git.push", json!({ "repo": repo })));
+        let pushed = push.as_ref().map(|repo| host.push(repo));
         let run = {
             let started = host.call("run", request);
             async move {
@@ -1060,8 +1059,7 @@ fn plan_card(
 
 /// The front project, when the job is named after its folder: the checkout a deploy pushes.
 fn repo_of(host: &Host, job: &str, cx: &App) -> Option<String> {
-    let bench = host.bench().upgrade()?;
-    let project = bench.read(cx).watched_project.as_deref()?.to_owned();
+    let project = host.watched_project(cx)?;
     let folder = project.trim_end_matches('/').rsplit('/').next()?;
     (folder == job).then_some(project)
 }

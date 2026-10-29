@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::client;
 use crate::error::{SignozError, SignozResult};
-use crate::filter::Scope;
+use crate::filter::Narrows;
 use crate::query::{self, quote, round_ms, View};
-pub use sikemux_plugin_signoz_views::{Trace, TracePage, TraceSpan, TraceSummary};
+pub use sikemux_plugin_signoz_views::{
+    Trace, TraceOrder, TracePage, TraceRequest, TraceSearch, TraceSpan, TraceSummary,
+};
 
 const MAX_SPANS: u32 = 5_000;
 const DEFAULT_LOOKBACK_MINUTES: u32 = 24 * 60;
@@ -16,28 +18,6 @@ const DEFAULT_TRACE_LIMIT: u32 = 20;
 const DEFAULT_OUTLINE_SPANS: u32 = 40;
 const MAX_OUTLINE_SPANS: u32 = 500;
 const MAX_TRACE_LIMIT: u32 = 500;
-
-#[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-pub enum TraceOrder {
-    #[default]
-    Slowest,
-    Recent,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct TraceSearch {
-    #[serde(flatten)]
-    pub scope: Scope,
-    #[serde(default)]
-    pub errors_only: bool,
-    pub min_duration_ms: Option<f64>,
-    #[serde(default)]
-    pub order: TraceOrder,
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
 
 fn search_expression(search: &TraceSearch) -> SignozResult<Option<String>> {
     let own = [
@@ -123,17 +103,6 @@ pub async fn search(data_dir: &Path, search: TraceSearch) -> SignozResult<TraceP
         traces,
         next_offset,
     })
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TraceRequest {
-    pub trace_id: String,
-    pub minutes: Option<u32>,
-    pub span_id: Option<String>,
-    pub max_spans: Option<u32>,
-    #[serde(default)]
-    pub view: View,
 }
 
 #[derive(Clone, Debug)]

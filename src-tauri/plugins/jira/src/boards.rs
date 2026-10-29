@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sikemux_plugin_api::http;
 use sikemux_plugin_jira_views::{Board, BoardView, Column, Sprint};
+pub use sikemux_plugin_jira_views::{BoardRequest, MoveRequest};
 
 use crate::auth;
 use crate::client::{self, Credentials};
@@ -64,21 +65,6 @@ pub async fn boards(data_dir: &Path, request: BoardsRequest) -> JiraResult<Vec<B
     )
     .await?;
     Ok(boards_of(&body))
-}
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct BoardRequest {
-    pub id: u64,
-    #[serde(default)]
-    pub site: Option<String>,
-    /// Account ids whose cards to show. With none of these set, the whole board shows.
-    #[serde(default)]
-    pub people: Vec<String>,
-    #[serde(default)]
-    pub mine: bool,
-    #[serde(default)]
-    pub unassigned: bool,
 }
 
 /// The JQL that keeps only the cards of the people picked on a board, or nothing when nobody is.
@@ -362,19 +348,6 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
         sprint,
         truncated,
     })
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MoveRequest {
-    pub key: String,
-    /// The statuses of the column the issue was dropped on.
-    pub status_ids: Vec<String>,
-    /// The column's name, for the message when the workflow cannot get there.
-    #[serde(default)]
-    pub column: String,
-    #[serde(default)]
-    pub site: Option<String>,
 }
 
 /// The transition that lands in one of `status_ids`, when the workflow offers one now.

@@ -12,9 +12,11 @@ use gpui_kit::{
     Styled, Subscription, Window,
 };
 use gpui_transcript::{Markdown, Pen};
-use serde::Deserialize;
 use serde_json::json;
-use sikemux_plugin_slack_views::{Channel, ChannelKind, Channels, History, Message, OpenThread};
+use sikemux_plugin_api::SignInStatus;
+use sikemux_plugin_slack_views::{
+    Channel, ChannelKind, Channels, History, Listed, Message, OpenThread, Signed,
+};
 
 use super::{after, listen, Failure, Host, Panel, PluginPane};
 use crate::icons::Icon;
@@ -35,21 +37,8 @@ const SLACK_APPS_PAGE: &str = "https://api.slack.com/apps";
 /// Messages read as markdown are kept by their text; past this many, all are read again.
 const BODIES_AT_MOST: usize = 500;
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Workspace {
-    id: String,
-    name: String,
-    is_default: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Status {
-    ok: bool,
-    message: Option<String>,
-    workspaces: Vec<Workspace>,
-}
+/// The Slack workspaces signed in to, as the plugin's `status` says.
+type Status = SignInStatus<Signed>;
 
 /// The thread open beside the channel, by where it is and its first message.
 #[derive(Clone)]
@@ -131,13 +120,20 @@ impl Panel for Slack {
 }
 
 /// The workspace the pane shows: the one picked, else the default, else the first.
-fn shown<'a>(status: &'a Status, picked: Option<&str>) -> Option<&'a Workspace> {
+fn shown<'a>(status: &'a Status, picked: Option<&str>) -> Option<&'a Listed> {
     status
+        .details
         .workspaces
         .iter()
         .find(|each| Some(each.id.as_str()) == picked)
-        .or_else(|| status.workspaces.iter().find(|each| each.is_default))
-        .or(status.workspaces.first())
+        .or_else(|| {
+            status
+                .details
+                .workspaces
+                .iter()
+                .find(|each| each.is_default)
+        })
+        .or(status.details.workspaces.first())
 }
 
 /// A one-line field, made the first time the pane draws it.
@@ -332,7 +328,7 @@ impl Slack {
         let failed = status
             .message
             .clone()
-            .filter(|_| !status.workspaces.is_empty());
+            .filter(|_| !status.details.workspaces.is_empty());
         let ink = Tokens::get(cx).text_primary;
         ui::sign_in::Screen::new("slack-sign-in", ui::picture(Icon::Slack, 26., ink), "Connect Slack")
             .lede("Read a thread beside your code, hand it to an agent, and let the agent reply in it when the work is done.")
@@ -367,7 +363,7 @@ impl Slack {
     fn sidebar(
         &mut self,
         status: &Status,
-        workspace: &Workspace,
+        workspace: &Listed,
         channels: &Result<Option<Rc<Channels>>, Failure>,
         window: &mut Window,
         cx: &mut Context<PluginPane>,
@@ -428,12 +424,12 @@ impl Slack {
                     .into_any_element()
             }
         };
-        let others = (status.workspaces.len() > 1).then(|| {
+        let others = (status.details.workspaces.len() > 1).then(|| {
             div()
                 .flex()
                 .flex_col()
                 .gap(px(2.))
-                .children(status.workspaces.iter().map(|each| {
+                .children(status.details.workspaces.iter().map(|each| {
                     let id = each.id.clone();
                     ui::Row::new(
                         SharedString::from(format!("slack-workspace-{}", each.id)),

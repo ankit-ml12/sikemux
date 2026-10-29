@@ -135,3 +135,48 @@ pub struct Domains {
 pub struct Variables {
     pub variables: Vec<Variable>,
 }
+
+/// The Vercel account signed in.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+    /// Vercel's user id.
+    pub id: String,
+    pub username: String,
+    pub name: String,
+    pub email: String,
+    #[serde(default)]
+    pub sign_in: SignIn,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum SignIn {
+    #[default]
+    Token,
+    /// The Sikemux integration, installed from the browser on one team at a time.
+    Browser,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Team {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+}
+
+/// Who is signed in and the teams it can see, as the plugin's `status` says.
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Signed {
+    pub account: Option<Account>,
+    pub teams: Vec<Team>,
+    /// The team calls use when they name none, by id; none for the account's own projects.
+    pub team: Option<String>,
+    /// Whether the account has projects of its own beside its teams. Newer accounts
+    /// keep theirs in a default team instead, which is then the team chosen.
+    pub personal: bool,
+    /// Whether this build can sign in through the browser.
+    pub browser_sign_in: bool,
+}

@@ -12,21 +12,20 @@ use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     div, px, uniform_list, AnyElement, App, ClickEvent, Context, Div, FontWeight,
     InteractiveElement, IntoElement, ParentElement, ScrollStrategy, SharedString,
-    StatefulInteractiveElement, Styled, Task, UniformListScrollHandle, WeakEntity, Window,
+    StatefulInteractiveElement, Styled, Task, UniformListScrollHandle, Window,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use sikemux_plugin_aws_views::{
     Account, AgentProfiles, Billing, BillingChange, BillingMonth, Ec2, EcsClusters, EcsServices,
-    EcsTasks, Health, Lambda, LogLevel, LogLine, S3, Sqs,
+    EcsTasks, Health, Lambda, LogLevel, LogLine, Sqs, S3,
 };
 
 use super::{after, listen, Failure, Host, Panel, PluginPane, Streamed};
-use crate::ui::time::ago_written as ago;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
+use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, IconButton, Pick, Segmented, Toggle, Tone, Variant};
-use crate::workbench::Workbench;
 
 pub const REGISTRATION: super::Registration = super::Registration {
     plugin: "sikemux.aws",
@@ -284,7 +283,13 @@ impl Aws {
             .p(px(6.))
             .border_r_1()
             .border_color(t.border)
-            .child(div().px(px(8.)).pt(px(4.)).pb(px(4.)).child(ui::caps("Services", cx)))
+            .child(
+                div()
+                    .px(px(8.))
+                    .pt(px(4.))
+                    .pb(px(4.))
+                    .child(ui::caps("Services", cx)),
+            )
             .children(services)
             .child(div().flex_1())
             .child(self.agents(host, cx))
@@ -318,7 +323,11 @@ impl Aws {
                             cx,
                         ));
                 }
-                let every = if project.is_some() { "Other projects" } else { "Every project" };
+                let every = if project.is_some() {
+                    "Other projects"
+                } else {
+                    "Every project"
+                };
                 body = body
                     .child(div().px(px(8.)).child(ui::meta(every, cx)))
                     .child(agent_pick(
@@ -379,8 +388,13 @@ impl Aws {
         profile: &str,
         cx: &mut Context<PluginPane>,
     ) -> Result<AnyElement, AnyElement> {
-        let view: Rc<EcsClusters> =
-            read(host, "ecsClustersView", json!({ "profile": profile }), profile, cx)?;
+        let view: Rc<EcsClusters> = read(
+            host,
+            "ecsClustersView",
+            json!({ "profile": profile }),
+            profile,
+            cx,
+        )?;
         let chosen = self.chosen("ecs-clusters", &view.clusters, |c| &c.name);
         let items = view
             .clusters
@@ -418,13 +432,17 @@ impl Aws {
                     copyable("ARN", cluster.arn.clone()),
                 ],
                 Vec::new(),
-                host.bench(),
                 cx,
             )
         });
         let list = self.list(
             "ecs-clusters",
-            heading(vec!["ECS".into(), "Clusters".into()], view.clusters.len(), None, cx),
+            heading(
+                vec!["ECS".into(), "Clusters".into()],
+                view.clusters.len(),
+                None,
+                cx,
+            ),
             items,
             chosen.map(|c| c.name.as_str()),
             "No clusters in this region.",
@@ -497,7 +515,6 @@ impl Aws {
                         fact("Deployed", service.deployed_at.as_deref().map(ago)),
                     ],
                     vec![tasks],
-                    host.bench(),
                     cx,
                 ))
             }
@@ -619,7 +636,10 @@ impl Aws {
                 dim: instance.idle,
                 ..Item::new(
                     instance.id.clone(),
-                    instance.name.clone().unwrap_or_else(|| "unnamed".to_owned()),
+                    instance
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| "unnamed".to_owned()),
                 )
             })
             .collect();
@@ -640,7 +660,6 @@ impl Aws {
                     copyable("Instance ID", instance.id.clone()),
                 ],
                 Vec::new(),
-                host.bench(),
                 cx,
             )
         });
@@ -666,8 +685,13 @@ impl Aws {
         profile: &str,
         cx: &mut Context<PluginPane>,
     ) -> Result<AnyElement, AnyElement> {
-        let view: Rc<Lambda> =
-            read(host, "lambdaView", json!({ "profile": profile }), profile, cx)?;
+        let view: Rc<Lambda> = read(
+            host,
+            "lambdaView",
+            json!({ "profile": profile }),
+            profile,
+            cx,
+        )?;
         let chosen = self.chosen("lambda", &view.functions, |f| &f.name);
         let items = view
             .functions
@@ -704,20 +728,27 @@ impl Aws {
                 vec![tail.into_any_element(), console(&function.console_url)],
                 vec![
                     fact("Memory", function.memory_label.clone()),
-                    fact("Timeout", function.timeout_secs.map(|secs| format!("{secs} s"))),
+                    fact(
+                        "Timeout",
+                        function.timeout_secs.map(|secs| format!("{secs} s")),
+                    ),
                     fact("Runtime", function.runtime.clone()),
                     copyable("Handler", function.handler.clone()),
                     fact("Modified", function.modified_at.as_deref().map(ago)),
                     copyable("Log group", function.log_group.clone()),
                 ],
                 Vec::new(),
-                host.bench(),
                 cx,
             )
         });
         let list = self.list(
             "lambda",
-            heading(vec!["Lambda".into(), "Functions".into()], view.functions.len(), None, cx),
+            heading(
+                vec!["Lambda".into(), "Functions".into()],
+                view.functions.len(),
+                None,
+                cx,
+            ),
             items,
             chosen.map(|f| f.name.as_str()),
             "No functions in this region.",
@@ -764,22 +795,32 @@ impl Aws {
                     fact("Available", count(queue.available)),
                     fact("In flight", count(queue.in_flight)),
                     fact("Delayed", count(queue.delayed)),
-                    fact("Type", if queue.fifo { "FIFO" } else { "Standard" }.to_owned()),
+                    fact(
+                        "Type",
+                        if queue.fifo { "FIFO" } else { "Standard" }.to_owned(),
+                    ),
                     fact(
                         "Role",
-                        if queue.dead_letter { "Dead-letter queue" } else { "Queue" }.to_owned(),
+                        if queue.dead_letter {
+                            "Dead-letter queue"
+                        } else {
+                            "Queue"
+                        }
+                        .to_owned(),
                     ),
                     copyable("URL", queue.url.clone()),
                 ],
                 Vec::new(),
-                host.bench(),
                 cx,
             )
         });
         let list = self.list(
             "sqs",
             heading(
-                vec!["SQS".into(), format!("{} dead-letter", view.dead_letters).into()],
+                vec![
+                    "SQS".into(),
+                    format!("{} dead-letter", view.dead_letters).into(),
+                ],
                 view.queues.len(),
                 None,
                 cx,
@@ -819,13 +860,17 @@ impl Aws {
                     fact("Created", bucket.created_at.as_deref().map(ago)),
                 ],
                 Vec::new(),
-                host.bench(),
                 cx,
             )
         });
         let list = self.list(
             "s3",
-            heading(vec!["S3".into(), "Buckets".into()], view.buckets.len(), None, cx),
+            heading(
+                vec!["S3".into(), "Buckets".into()],
+                view.buckets.len(),
+                None,
+                cx,
+            ),
             items,
             chosen.map(|b| b.name.as_str()),
             "This account has no buckets.",
@@ -860,8 +905,10 @@ impl Aws {
             .collect();
         let summary = [
             Some(format!("Forecast {}", money(view.forecast, &unit, 0))),
-            view.change_pct.map(|pct| format!("{pct:+.1}% on the last month")),
-            view.average.map(|average| format!("average {}", money(average, &unit, 0))),
+            view.change_pct
+                .map(|pct| format!("{pct:+.1}% on the last month")),
+            view.average
+                .map(|average| format!("average {}", money(average, &unit, 0))),
         ]
         .into_iter()
         .flatten()
@@ -915,7 +962,6 @@ impl Aws {
                     fact("Net", money(month.net, &unit, 2)),
                 ],
                 vec![below],
-                host.bench(),
                 cx,
             )
         });
@@ -925,7 +971,12 @@ impl Aws {
                 .flex()
                 .flex_col()
                 .gap(px(2.))
-                .child(heading(vec!["Billing".into(), "Costs".into()], view.months.len(), None, cx))
+                .child(heading(
+                    vec!["Billing".into(), "Costs".into()],
+                    view.months.len(),
+                    None,
+                    cx,
+                ))
                 .child(ui::meta(summary, cx).truncate())
                 .into_any_element(),
             items,
@@ -1056,18 +1107,15 @@ impl Aws {
             }
             cx.notify();
         }));
-        let follow = Toggle::new("aws-tail-follow", "Follow", tail.follow).on_click(listen::<
-            Aws,
-            ClickEvent,
-        >(
-            cx,
-            |aws, _, _, _, cx| {
-                if let Some(tail) = &mut aws.tail {
-                    tail.follow = !tail.follow;
-                }
-                cx.notify();
-            },
-        ));
+        let follow =
+            Toggle::new("aws-tail-follow", "Follow", tail.follow).on_click(
+                listen::<Aws, ClickEvent>(cx, |aws, _, _, _, cx| {
+                    if let Some(tail) = &mut aws.tail {
+                        tail.follow = !tail.follow;
+                    }
+                    cx.notify();
+                }),
+            );
         let where_from = match &tail.stream {
             Some(stream) => format!("{} · {stream}", tail.group),
             None => tail.group.clone(),
@@ -1183,7 +1231,11 @@ impl AccountView {
     fn account(&self) -> Account {
         Account {
             profile: self.profile.clone(),
-            profiles: self.profiles.iter().map(|each| each.profile.clone()).collect(),
+            profiles: self
+                .profiles
+                .iter()
+                .map(|each| each.profile.clone())
+                .collect(),
         }
     }
 
@@ -1262,55 +1314,60 @@ fn account_switch(
                         .child(said),
                 ),
         )
-        .dropdown_menu_with_anchor(gpui::Anchor::BottomLeft, ui::menu(move |mut menu, _, cx| {
-            let t = Tokens::get(cx).clone();
-            menu = menu
-                .min_w(px(240.))
-                .check_side(gpui_kit::component::Side::Right)
-                .label("Profiles");
-            for each in &profiles {
-                let on = each.name == chosen;
-                let kind = kinds.get(&each.name).map(|kind| match kind.as_str() {
-                    "sso" => "SSO".to_owned(),
-                    other => other.to_owned(),
-                });
-                let meta = [each.account.clone(), kind, each.region.clone()]
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>()
-                    .join(" · ");
-                let (title, name, pane) = (each.title.clone(), each.name.clone(), pane.clone());
-                let picked = name.clone();
-                menu = menu.item(
-                    PopupMenuItem::element(move |_, _| {
-                        div()
-                            .id(SharedString::from(format!("aws-profile-{name}")))
-                            .aria_label(title.clone())
-                            .test_support()
-                            .flex()
-                            .flex_col()
-                            .child(title.clone())
-                            .when(!meta.is_empty(), |item| {
-                                item.child(
-                                    div()
-                                        .text_size(theme::ui_text(11.))
-                                        .text_color(t.text_tertiary)
-                                        .child(meta.clone()),
-                                )
-                            })
-                    })
-                    .icon(Icon::User)
-                    .checked(on)
-                    .on_click(move |_, _, cx| {
-                        if !on {
-                            let params = json!({ "profile": picked });
-                            pane.update(cx, |pane, cx| write(pane, "setDefaultAccount", params, cx));
-                        }
-                    }),
-                );
-            }
-            menu
-        }))
+        .dropdown_menu_with_anchor(
+            gpui::Anchor::BottomLeft,
+            ui::menu(move |mut menu, _, cx| {
+                let t = Tokens::get(cx).clone();
+                menu = menu
+                    .min_w(px(240.))
+                    .check_side(gpui_kit::component::Side::Right)
+                    .label("Profiles");
+                for each in &profiles {
+                    let on = each.name == chosen;
+                    let kind = kinds.get(&each.name).map(|kind| match kind.as_str() {
+                        "sso" => "SSO".to_owned(),
+                        other => other.to_owned(),
+                    });
+                    let meta = [each.account.clone(), kind, each.region.clone()]
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>()
+                        .join(" · ");
+                    let (title, name, pane) = (each.title.clone(), each.name.clone(), pane.clone());
+                    let picked = name.clone();
+                    menu = menu.item(
+                        PopupMenuItem::element(move |_, _| {
+                            div()
+                                .id(SharedString::from(format!("aws-profile-{name}")))
+                                .aria_label(title.clone())
+                                .test_support()
+                                .flex()
+                                .flex_col()
+                                .child(title.clone())
+                                .when(!meta.is_empty(), |item| {
+                                    item.child(
+                                        div()
+                                            .text_size(theme::ui_text(11.))
+                                            .text_color(t.text_tertiary)
+                                            .child(meta.clone()),
+                                    )
+                                })
+                        })
+                        .icon(Icon::User)
+                        .checked(on)
+                        .on_click(move |_, _, cx| {
+                            if !on {
+                                let params = json!({ "profile": picked });
+                                pane.update(cx, |pane, cx| {
+                                    write(pane, "setDefaultAccount", params, cx)
+                                });
+                            }
+                        }),
+                    );
+                }
+                menu
+            }),
+        )
         .into_any_element()
 }
 
@@ -1361,17 +1418,21 @@ fn choose_profile(account: &Account, cx: &mut Context<PluginPane>) -> AnyElement
 fn sign_in(host: &Host, profile: &str, cx: &mut Context<PluginPane>) -> AnyElement {
     let named = profile.to_owned();
     let ink = Tokens::get(cx).text_primary;
-    ui::sign_in::Screen::new("aws-sign-in-page", ui::picture(Icon::Aws, 28., ink), format!("Sign in to {profile}"))
-        .lede("Its AWS sign-in has run out.")
-        .child(super::browser_sign_in(
-            host,
-            "aws-sign-in",
-            Icon::LogIn,
-            "Sign in with the browser",
-            move |host, cx| host.cloud_sign_in("signIn", json!({ "profile": named }), cx),
-            cx,
-        ))
-        .into_any_element()
+    ui::sign_in::Screen::new(
+        "aws-sign-in-page",
+        ui::picture(Icon::Aws, 28., ink),
+        format!("Sign in to {profile}"),
+    )
+    .lede("Its AWS sign-in has run out.")
+    .child(super::browser_sign_in(
+        host,
+        "aws-sign-in",
+        Icon::LogIn,
+        "Sign in with the browser",
+        move |host, cx| host.cloud_sign_in("signIn", json!({ "profile": named }), cx),
+        cx,
+    ))
+    .into_any_element()
 }
 
 /// The profile agents start on in `project`, or in every project not picked for.
@@ -1385,9 +1446,7 @@ fn agent_pick(
 ) -> AnyElement {
     let unset: SharedString = unset.into();
     let options = std::iter::once(Pick::new("", unset.clone()))
-        .chain(
-            (picks.profiles.iter()).map(|name| Pick::new(name.clone(), name.clone())),
-        )
+        .chain((picks.profiles.iter()).map(|name| Pick::new(name.clone(), name.clone())))
         .collect();
     let pane = cx.entity();
     let field = ui::select(
@@ -1508,17 +1567,18 @@ fn detail(
     actions: Vec<AnyElement>,
     facts: Vec<Fact>,
     below: Vec<AnyElement>,
-    bench: &WeakEntity<Workbench>,
     cx: &mut Context<PluginPane>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let facts = facts.into_iter().enumerate().map(|(index, fact)| {
         let value = fact.value.unwrap_or_else(|| "—".to_owned());
         let copy = fact.copy.then(|| {
-            let (bench, text, what) = (bench.clone(), value.clone(), fact.label.to_lowercase());
+            let (text, what) = (value.clone(), fact.label.to_lowercase());
             IconButton::new(("aws-copy", index), Icon::Copy, format!("Copy the {what}"))
                 .small()
-                .on_click(move |_, _, cx| super::copy(&bench, text.clone(), &what, cx))
+                .on_click(listen::<Aws, ClickEvent>(cx, move |_, host, _, _, cx| {
+                    host.copy(text.clone(), &what, cx)
+                }))
         });
         div()
             .flex()

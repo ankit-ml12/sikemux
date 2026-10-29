@@ -4,11 +4,12 @@
 use std::path::Path;
 
 use reqwest::Method;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 
 use sikemux_plugin_api::store;
 use sikemux_plugin_api::{SignInStatus, StreamSink};
+use sikemux_plugin_vercel_views::{Signed, Team};
 
 use crate::client::{self, at, text, Session};
 use crate::config::{self, Account, Install, SignIn, VercelConfig};
@@ -33,14 +34,6 @@ pub fn account_of(data: &Value) -> VercelResult<Account> {
     })
 }
 
-#[derive(Serialize, Clone, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Team {
-    pub id: String,
-    pub slug: String,
-    pub name: String,
-}
-
 pub fn teams_of(data: &Value) -> Vec<Team> {
     at(data, "/teams")
         .as_array()
@@ -53,20 +46,6 @@ pub fn teams_of(data: &Value) -> Vec<Team> {
         })
         .filter(|team| !team.id.is_empty())
         .collect()
-}
-
-#[derive(Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct Signed {
-    pub account: Option<Account>,
-    pub teams: Vec<Team>,
-    /// The team calls use when they name none, by id; none for the account's own projects.
-    pub team: Option<String>,
-    /// Whether the account has projects of its own beside its teams. Newer accounts
-    /// keep theirs in a default team instead, which is then the team chosen.
-    pub personal: bool,
-    /// Whether this build can sign in through the browser.
-    pub browser_sign_in: bool,
 }
 
 pub type Status = SignInStatus<Signed>;

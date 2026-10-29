@@ -12,20 +12,23 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, relative, rgb, AnyElement, App, AppContext, Context, Div, Entity, FontWeight, Hsla,
     InteractiveElement, IntoElement, ParentElement, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, WeakEntity, Window,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
+use sikemux_plugin_api::SignInStatus;
 use sikemux_plugin_signoz_views::{
-    Dashboard, DashboardSummary, LogLine, LogPage, Panel as Chart, PanelData, Point, ServicePage,
-    ServiceSort, Services, TailTick, Trace, TracePage, TraceSummary, VolumeBucket,
+    AuthMode, Dashboard, DashboardSummary, DashboardViewRequest, Filter, FilterOp, KeyQuery,
+    LogLine, LogPage, LogSearch, Panel as Chart, PanelData, PanelRequest, Point, Scope,
+    ServicePage, ServiceSort, Services, ServicesRequest, Signal, TailTick, Trace, TraceOrder,
+    TracePage, TraceRequest, TraceSearch, TraceSummary, ValueQuery, VolumeBucket, VolumeQuery,
+    Where,
 };
 
 use super::{after, listen, Host, Panel, PluginPane};
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, sign_in, Button, IconButton, Segmented, Toggle, Variant};
-use crate::workbench::Workbench;
 
 mod dashboards;
 mod filters;
@@ -58,6 +61,9 @@ const DASHBOARD_ROW: f32 = 44.;
 const TRACE_LOG_LOOKBACK: u32 = 24 * 60;
 const MAX_INDENT: usize = 16;
 
+/// Which SigNoz the pane is signed in to, as the plugin's `status` says.
+type Status = SignInStatus<Where>;
+
 #[derive(Clone, Copy, PartialEq, Default)]
 enum Section {
     #[default]
@@ -82,39 +88,17 @@ enum Tab {
     Traces,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum Signal {
-    Logs,
-    Traces,
-}
-
-impl Signal {
-    fn word(self) -> &'static str {
-        match self {
-            Signal::Logs => "logs",
-            Signal::Traces => "traces",
-        }
-    }
-}
-
-const OPS: [(&str, &str); 6] = [
-    ("equals", "="),
-    ("not-equals", "≠"),
-    ("contains", "contains"),
-    ("not-contains", "not contains"),
-    ("exists", "exists"),
-    ("not-exists", "missing"),
+const OPS: [(FilterOp, &str); 6] = [
+    (FilterOp::Equals, "="),
+    (FilterOp::NotEquals, "≠"),
+    (FilterOp::Contains, "contains"),
+    (FilterOp::NotContains, "not contains"),
+    (FilterOp::Exists, "exists"),
+    (FilterOp::NotExists, "missing"),
 ];
 
-fn takes_value(op: &str) -> bool {
-    op != "exists" && op != "not-exists"
-}
-
-#[derive(Clone, PartialEq)]
-struct Filter {
-    key: String,
-    op: &'static str,
-    value: String,
+fn takes_value(op: FilterOp) -> bool {
+    !matches!(op, FilterOp::Exists | FilterOp::NotExists)
 }
 
 /// What the pane keeps between sessions, saved with the workspace under the plugin's id.
@@ -140,7 +124,7 @@ impl Settings {
 /// suggests for each.
 struct Draft {
     key: Entity<InputState>,
-    op: &'static str,
+    op: FilterOp,
     value: Entity<InputState>,
     keys: Vec<String>,
     values: Vec<String>,
@@ -428,12 +412,12 @@ impl Panel for Signoz {
         if !following && self.feed.tail.is_some() {
             self.feed = Feed::default();
         }
-        let status = match host.status(cx).read::<Value>() {
+        let status = match host.status(cx).read::<Status>() {
             Ok(Some(status)) => status,
             Ok(None) => return super::loading(cx),
             Err(failure) => return super::failure(&failure, cx),
         };
-        if status["ok"] != Value::Bool(true) {
+        if !status.ok {
             self.feed = Feed::default();
             return self.sign_in(host, &status, window, cx);
         }
@@ -510,12 +494,15 @@ impl Signoz {
         }
     }
 
-    fn services_params(&self, settings: &Settings) -> Value {
-        json!({
-            "minutes": settings.minutes(),
-            "environment": settings.environment,
-            "sort": settings.service_sort,
-        })
+    fn services_params(&self, settings: &Settings) -> ServicesRequest {
+        ServicesRequest {
+            scope: Scope {
+                minutes: Some(settings.minutes()),
+                environment: settings.environment.clone(),
+                ..Scope::default()
+            },
+            sort: settings.service_sort,
+        }
     }
 
     /// The minutes the view reads, the window picked or the range picked out of a chart.
@@ -527,59 +514,51 @@ impl Signoz {
     }
 
     /// What every query narrows by, in the shape the plugin reads.
-    fn scope(&self, settings: &Settings) -> Map<String, Value> {
+    fn scope(&self, settings: &Settings) -> Scope {
         let minutes = settings.minutes();
-        let mut scope = Map::new();
-        match (self.range, self.live, self.fixed_end) {
-            (Some((start, end)), _, _) => {
-                scope.insert("start".into(), json!(start));
-                scope.insert("end".into(), json!(end));
-            }
-            (None, false, Some(end)) => {
-                scope.insert(
-                    "start".into(),
-                    json!(end.saturating_sub(u64::from(minutes) * 60_000)),
-                );
-                scope.insert("end".into(), json!(end));
-            }
-            _ => {
-                scope.insert("minutes".into(), json!(minutes));
-            }
+        let (start, end, minutes) = match (self.range, self.live, self.fixed_end) {
+            (Some((start, end)), _, _) => (Some(start), Some(end), None),
+            (None, false, Some(end)) => (
+                Some(end.saturating_sub(u64::from(minutes) * 60_000)),
+                Some(end),
+                None,
+            ),
+            _ => (None, None, Some(minutes)),
+        };
+        let service = match (self.section, &self.service) {
+            (Section::Services, Some(service)) => Some(service.clone()),
+            _ => None,
+        };
+        let expression = self.expression.trim();
+        Scope {
+            service,
+            environment: settings.environment.clone(),
+            filters: self.filters.clone(),
+            expression: (!expression.is_empty()).then(|| expression.to_owned()),
+            start,
+            end,
+            minutes,
         }
-        if let (Section::Services, Some(service)) = (self.section, &self.service) {
-            scope.insert("service".into(), json!(service));
-        }
-        if let Some(environment) = &settings.environment {
-            scope.insert("environment".into(), json!(environment));
-        }
-        let filters: Vec<Value> = self
-            .filters
-            .iter()
-            .map(|filter| json!({ "key": filter.key, "op": filter.op, "value": filter.value }))
-            .collect();
-        scope.insert("filters".into(), json!(filters));
-        if !self.expression.trim().is_empty() {
-            scope.insert("expression".into(), json!(self.expression.trim()));
-        }
-        scope
     }
 
-    fn log_search(&self, settings: &Settings) -> Map<String, Value> {
-        let mut search = self.scope(settings);
-        if !self.text.is_empty() {
-            search.insert("text".into(), json!(self.text));
+    fn log_search(&self, settings: &Settings) -> LogSearch {
+        LogSearch {
+            scope: self.scope(settings),
+            text: (!self.text.is_empty()).then(|| self.text.clone()),
+            severities: self.severities.clone(),
+            ..LogSearch::default()
         }
-        search.insert("severities".into(), json!(self.severities));
-        search
     }
 
-    fn trace_search(&self, settings: &Settings) -> Map<String, Value> {
-        let mut search = self.scope(settings);
-        search.insert(
-            "order".into(),
-            json!(if self.slowest { "slowest" } else { "recent" }),
-        );
-        search.insert("errorsOnly".into(), json!(self.errors_only));
-        search
+    fn trace_search(&self, settings: &Settings) -> TraceSearch {
+        TraceSearch {
+            scope: self.scope(settings),
+            order: match self.slowest {
+                true => TraceOrder::Slowest,
+                false => TraceOrder::Recent,
+            },
+            errors_only: self.errors_only,
+            ..TraceSearch::default()
+        }
     }
 }

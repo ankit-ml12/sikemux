@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use serde::Deserialize;
 use sikemux_plugin_rundeck_views::{
-    DeployForm, JobOption, OptionKind, Plan, PlanCheck, RunCheck, Tone,
+    CheckRequest, DeployForm, DeployRequest, JobOption, OptionKind, Plan, PlanCheck, RunCheck, Tone,
 };
 
 use crate::client::Session;
@@ -21,22 +21,6 @@ use crate::views::{job_permalink, runs_of, usual_secs};
 /// How many of a job's runs its recent branches and usual time come from.
 const RECENT_RUNS: u32 = 30;
 const RECENT_BRANCHES: usize = 6;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeployRequest {
-    job_id: String,
-    project: String,
-    name: String,
-    #[serde(default)]
-    group: Option<String>,
-    /// The branch to start with.
-    #[serde(default)]
-    branch: Option<String>,
-    /// Option values carried over from an earlier run.
-    #[serde(default)]
-    given: BTreeMap<String, String>,
-}
 
 pub async fn deploy_view(
     session: &Session,
@@ -226,21 +210,6 @@ fn initial_values(
         values.insert(key.to_owned(), branch.to_owned());
     }
     values
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckRequest {
-    options: Vec<JobOption>,
-    values: BTreeMap<String, String>,
-    /// The values read from each option's values URL; none where reading them failed.
-    #[serde(default)]
-    remote: BTreeMap<String, Option<Vec<String>>>,
-    /// Given when the form is about to start the job, to ask whether a run goes on.
-    #[serde(default)]
-    job_id: Option<String>,
-    #[serde(default)]
-    project: Option<String>,
 }
 
 pub async fn check_run(

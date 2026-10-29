@@ -12,7 +12,10 @@ impl Rundeck {
         let page = host
             .view(
                 "jobView",
-                json!({ "jobId": job.job_id, "project": job.project }),
+                JobRequest {
+                    job_id: job.job_id.clone(),
+                    project: job.project.clone(),
+                },
                 cx,
             )
             .read::<JobPage>();
@@ -250,7 +253,10 @@ impl Rundeck {
         let page = host
             .view(
                 "activityView",
-                json!({ "project": project, "max": max }),
+                ActivityRequest {
+                    project: project.to_owned(),
+                    max,
+                },
                 cx,
             )
             .read::<ActivityPage>();

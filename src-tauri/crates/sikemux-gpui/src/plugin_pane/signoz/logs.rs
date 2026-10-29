@@ -23,15 +23,17 @@ impl Signoz {
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
         let search = self.log_search(settings);
-        let mut volume_search = search.clone();
-        volume_search.insert("buckets".into(), json!(VOLUME_BUCKETS));
+        let volume_search = VolumeQuery {
+            search: search.clone(),
+            buckets: Some(VOLUME_BUCKETS),
+        };
         let volume = host
-            .view("volumeView", Value::Object(volume_search), cx)
+            .view("volumeView", volume_search, cx)
             .read::<Vec<VolumeBucket>>()
             .ok()
             .flatten();
         let strip = self.volume(volume.as_deref().map(Vec::as_slice), cx);
-        let show_service = !search.contains_key("service");
+        let show_service = search.scope.service.is_none();
         let mut heads = vec![("Time", 96.), ("Level", 52.)];
         if show_service {
             heads.push(("Service", 130.));
@@ -48,8 +50,10 @@ impl Signoz {
                 0. => div().flex_1().child(ui::caps(label, cx)),
                 width => div().w(px(width)).flex_none().child(ui::caps(label, cx)),
             }));
-        let mut asked = search;
-        asked.insert("limit".into(), json!(LOG_PAGE));
+        let asked = LogSearch {
+            limit: Some(LOG_PAGE),
+            ..search
+        };
         let (lines, error, older) = if self.live {
             self.follow(host, asked, cx);
             let error = self.feed.error.clone();
@@ -60,11 +64,8 @@ impl Signoz {
             )
         } else {
             self.feed = Feed::default();
-            let key = Value::Object(asked.clone()).to_string();
-            let page = match host
-                .view("logsView", Value::Object(asked), cx)
-                .read::<LogPage>()
-            {
+            let key = serde_json::to_string(&asked).unwrap_or_default();
+            let page = match host.view("logsView", asked, cx).read::<LogPage>() {
                 Ok(Some(page)) => page,
                 Ok(None) => {
                     return div()
@@ -126,11 +127,10 @@ impl Signoz {
                 .child(crate::plugin_pane::empty(said, cx))
                 .into_any_element();
         }
-        let bench = host.bench().clone();
         let rows: Vec<AnyElement> = lines
             .iter()
             .enumerate()
-            .map(|(index, line)| self.log_row(line, index, show_service, &lines, Some(&bench), cx))
+            .map(|(index, line)| self.log_row(line, index, show_service, &lines, true, cx))
             .collect();
         let older_button = older.map(|reading| {
             div().p(px(10.)).flex().justify_center().child(
@@ -170,8 +170,8 @@ impl Signoz {
     }
 
     /// Follows new lines as SigNoz takes them in, starting again when the search changes.
-    fn follow(&mut self, host: &Host, asked: Map<String, Value>, cx: &mut Context<PluginPane>) {
-        let key = Value::Object(asked.clone()).to_string();
+    fn follow(&mut self, host: &Host, asked: LogSearch, cx: &mut Context<PluginPane>) {
+        let key = serde_json::to_string(&asked).unwrap_or_default();
         if self.feed.key == key {
             return;
         }
@@ -180,46 +180,40 @@ impl Signoz {
             ..Feed::default()
         };
         self.feed.scroll.scroll_to_bottom();
-        let tail = host.stream::<Signoz>(
-            "tailLogs",
-            Value::Object(asked),
-            cx,
-            move |signoz, _, streamed, _| {
-                let feed = &mut signoz.feed;
-                if feed.key != key {
-                    return;
-                }
-                match streamed {
-                    crate::plugin_pane::Streamed::Item(item) => {
-                        let tick = match serde_json::from_value::<TailTick>(item) {
-                            Ok(tick) => tick,
-                            Err(error) => {
-                                eprintln!("sikemux: a SigNoz live log tick did not read: {error}");
-                                return;
-                            }
-                        };
-                        feed.error = tick.error.map(SharedString::from);
-                        if tick.lines.is_empty() {
+        let tail = host.stream::<Signoz>("tailLogs", asked, cx, move |signoz, _, streamed, _| {
+            let feed = &mut signoz.feed;
+            if feed.key != key {
+                return;
+            }
+            match streamed {
+                crate::plugin_pane::Streamed::Item(item) => {
+                    let tick = match serde_json::from_value::<TailTick>(item) {
+                        Ok(tick) => tick,
+                        Err(error) => {
+                            eprintln!("sikemux: a SigNoz live log tick did not read: {error}");
                             return;
                         }
-                        let at_bottom =
-                            -feed.scroll.offset().y >= feed.scroll.max_offset().y - px(48.);
-                        feed.lines.extend(tick.lines);
-                        while feed.lines.len() > KEPT_LINES {
-                            feed.lines.pop_front();
-                        }
-                        if at_bottom {
-                            feed.scroll.scroll_to_bottom();
-                        }
+                    };
+                    feed.error = tick.error.map(SharedString::from);
+                    if tick.lines.is_empty() {
+                        return;
                     }
-                    crate::plugin_pane::Streamed::Ended(failure) => {
-                        if let Some(failure) = failure {
-                            feed.error = Some(failure.message);
-                        }
+                    let at_bottom = -feed.scroll.offset().y >= feed.scroll.max_offset().y - px(48.);
+                    feed.lines.extend(tick.lines);
+                    while feed.lines.len() > KEPT_LINES {
+                        feed.lines.pop_front();
+                    }
+                    if at_bottom {
+                        feed.scroll.scroll_to_bottom();
                     }
                 }
-            },
-        );
+                crate::plugin_pane::Streamed::Ended(failure) => {
+                    if let Some(failure) = failure {
+                        feed.error = Some(failure.message);
+                    }
+                }
+            }
+        });
         self.feed.tail = Some(tail);
     }
 
@@ -227,14 +221,14 @@ impl Signoz {
         let Some(offset) = self.older.next.filter(|_| !self.older.reading) else {
             return;
         };
-        let Ok(mut asked) = serde_json::from_str::<Map<String, Value>>(&self.older.key) else {
+        let Ok(mut asked) = serde_json::from_str::<LogSearch>(&self.older.key) else {
             return;
         };
-        asked.insert("offset".into(), json!(offset));
+        asked.offset = Some(offset);
         self.older.reading = true;
         let key = self.older.key.clone();
         after::<Signoz, _>(
-            host.call("logsView", Value::Object(asked)),
+            host.call("logsView", asked),
             move |signoz, host, done, cx| {
                 if signoz.older.key != key {
                     return;
@@ -275,7 +269,7 @@ impl Signoz {
         index: usize,
         show_service: bool,
         lines: &[LogLine],
-        menu: Option<&WeakEntity<Workbench>>,
+        menu: bool,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
@@ -340,9 +334,9 @@ impl Signoz {
                     cx.notify();
                 },
             ));
-        let Some(bench) = menu.cloned() else {
+        if !menu {
             return self.with_detail(head, line, index, expanded, cx);
-        };
+        }
         let chosen = self.chosen_lines(line, lines);
         let some_picked = !self.picked.is_empty();
         let pane = cx.weak_entity();
@@ -373,8 +367,7 @@ impl Signoz {
             } else {
                 format!("Send {count} Lines to Agent…")
             };
-            popup =
-                crate::send_to::submenu_with_text(popup, send, bench.clone(), delivery, window, cx);
+            popup = crate::plugin_pane::send_submenu(popup, send, &pane, delivery, window, cx);
             if some_picked {
                 let pane = pane.clone();
                 popup = popup.separator().item(
@@ -509,7 +502,7 @@ impl Signoz {
                                             listen::<Signoz, _>(cx, move |signoz, _, _, _, cx| {
                                                 signoz.add_filter(Filter {
                                                     key: keep_key.clone(),
-                                                    op: "equals",
+                                                    op: FilterOp::Equals,
                                                     value: keep_value.clone(),
                                                 });
                                                 cx.notify();
@@ -527,7 +520,7 @@ impl Signoz {
                                             listen::<Signoz, _>(cx, move |signoz, _, _, _, cx| {
                                                 signoz.add_filter(Filter {
                                                     key: drop_key.clone(),
-                                                    op: "not-equals",
+                                                    op: FilterOp::NotEquals,
                                                     value: drop_value.clone(),
                                                 });
                                                 cx.notify();

@@ -15,7 +15,10 @@ impl Jira {
         let read = host
             .view(
                 "listView",
-                json!({ "list": asked, "site": site_of(site) }),
+                ListRequest {
+                    list: asked,
+                    site: site_of(site),
+                },
                 cx,
             )
             .read::<IssueList>();
@@ -167,7 +170,7 @@ fn issue_row(
             jira.open(Some(key.clone()));
             cx.notify();
         }))
-        .context_menu(ui::menu(issue_menu(issue, host.bench().clone())))
+        .context_menu(ui::menu(issue_menu(issue, cx.weak_entity())))
         .into_any_element()
 }
 
@@ -175,7 +178,7 @@ fn issue_row(
 /// people paste.
 pub(super) fn issue_menu(
     issue: &IssueSummary,
-    bench: WeakEntity<Workbench>,
+    pane: WeakEntity<PluginPane>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
     let (key, summary, url) = (issue.key.clone(), issue.summary.clone(), issue.url.clone());
     move |popup, _, _| {
@@ -202,9 +205,11 @@ pub(super) fn issue_menu(
             )
             .separator();
         for (label, text, what) in copies {
-            let bench = bench.clone();
+            let pane = pane.clone();
             popup = popup.item(PopupMenuItem::new(label).icon(Icon::Copy).on_click(
-                move |_, _, cx| crate::plugin_pane::copy(&bench, text.clone(), what, cx),
+                move |_, _, cx| {
+                    let _ = pane.update(cx, |pane, cx| pane.host.copy(text.clone(), what, cx));
+                },
             ));
         }
         popup
