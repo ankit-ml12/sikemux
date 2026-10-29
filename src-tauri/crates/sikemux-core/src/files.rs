@@ -192,12 +192,6 @@ fn read_dir_sorted(dir: &str) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
-fn repo_root(dir: &Path) -> Option<PathBuf> {
-    dir.ancestors()
-        .find(|ancestor| ancestor.join(".git").exists())
-        .map(Path::to_path_buf)
-}
-
 /// Flags what git ignores, asking each repository once for all its folders.
 fn mark_ignored(listings: &mut [Listing]) {
     let joined = |dir: &Path, entry: &Entry| {
@@ -213,7 +207,9 @@ fn mark_ignored(listings: &mut [Listing]) {
         if listing.entries.is_empty() {
             continue;
         }
-        if let Some(root) = repo_root(Path::new(&listing.dir)) {
+        if let Some(root) =
+            sikemux_process::files::repo_root(Path::new(&listing.dir)).map(Path::to_path_buf)
+        {
             let paths = by_repo.entry(root).or_default();
             let dir = Path::new(&listing.dir);
             paths.extend(listing.entries.iter().map(|entry| joined(dir, entry)));

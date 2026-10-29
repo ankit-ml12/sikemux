@@ -450,10 +450,7 @@ pub fn project_root(path: &Path, kind: CliTargetKind) -> PathBuf {
 }
 
 fn git_root(path: &Path, kind: CliTargetKind) -> Option<PathBuf> {
-    enclosing_folder(path, kind)
-        .ancestors()
-        .find(|ancestor| ancestor.join(".git").exists())
-        .map(Path::to_path_buf)
+    sikemux_process::files::repo_root(enclosing_folder(path, kind)).map(Path::to_path_buf)
 }
 
 fn enclosing_folder(path: &Path, kind: CliTargetKind) -> &Path {

@@ -248,7 +248,7 @@ pub(crate) fn project_of(cwd: &Path, projects: &[PathBuf]) -> String {
 
 /// The folder in the main checkout matching `cwd` in a linked git worktree.
 fn in_main_checkout(cwd: &Path) -> Option<PathBuf> {
-    let root = cwd.ancestors().find(|dir| dir.join(".git").exists())?;
+    let root = sikemux_process::files::repo_root(cwd)?;
     let main = crate::git::main_checkout(root)?;
     let inside = cwd.strip_prefix(root).ok()?;
     Some(if inside.as_os_str().is_empty() {

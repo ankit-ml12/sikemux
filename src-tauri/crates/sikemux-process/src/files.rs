@@ -51,6 +51,13 @@ fn write_whole(path: &Path, bytes: &[u8], private: bool, synced: bool) -> io::Re
     result
 }
 
+/// The top of the git checkout `dir` is in: the nearest folder at or above it that holds
+/// a `.git`, whether that is a folder or a linked worktree's file.
+pub fn repo_root(dir: &Path) -> Option<&Path> {
+    dir.ancestors()
+        .find(|ancestor| ancestor.join(".git").exists())
+}
+
 fn staging_path(parent: &Path, path: &Path) -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let name = path

@@ -141,10 +141,7 @@ fn serves_its_folder(folder: &Path) -> bool {
     let broad = |path: &Path| {
         path.parent().is_none() || home.starts_with(path) || catch_alls.iter().any(|f| f == path)
     };
-    folder
-        .ancestors()
-        .find(|ancestor| ancestor.join(".git").exists())
-        .is_some_and(|project| !broad(project))
+    sikemux_process::files::repo_root(folder).is_some_and(|project| !broad(project))
 }
 
 const CATCH_ALL_FOLDERS: &[&str] = &[

@@ -247,7 +247,7 @@ pub fn said(output: &Output) -> String {
 /// The top folder of the main checkout of the repository `path` is in, whether `path` is in
 /// that checkout or in one of its linked worktrees. Read from git's own files, so no git runs.
 pub fn main_checkout(path: &std::path::Path) -> Option<std::path::PathBuf> {
-    let root = path.ancestors().find(|dir| dir.join(".git").exists())?;
+    let root = sikemux_process::files::repo_root(path)?;
     let dot_git = root.join(".git");
     if dot_git.is_dir() {
         return Some(root.to_path_buf());
