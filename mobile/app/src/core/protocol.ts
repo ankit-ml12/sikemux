@@ -76,8 +76,15 @@ function keepItems<T>(previous: T[], next: T[], key: (item: T) => string | numbe
  */
 export function keepUnchanged(previous: Snapshot | undefined, next: Snapshot): Snapshot {
   if (!previous) return next;
+  const keep = <K extends keyof Snapshot>(key: K): Snapshot[K] => (same(previous[key], next[key]) ? previous[key] : next[key]);
   return {
-    workspace: same(previous.workspace, next.workspace) ? previous.workspace : next.workspace,
+    ...next,
+    workspace: keep('workspace'),
+    layout: keep('layout'),
+    account: keep('account'),
+    faceStyle: keep('faceStyle'),
+    load: keep('load'),
+    updates: keep('updates'),
     sessions: keepItems(previous.sessions, next.sessions, (session) => session.id),
     chats: keepItems(previous.chats, next.chats, (chat) => chat.agentId),
     attentions: keepItems(previous.attentions, next.attentions, (attention) => attention.id),
