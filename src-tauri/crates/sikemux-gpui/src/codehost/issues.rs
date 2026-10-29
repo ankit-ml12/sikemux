@@ -73,11 +73,7 @@ pub struct NewIssue {
 }
 
 /// An issue's state, with why it was closed, as a glyph, its colour and its name.
-pub(crate) fn look(
-    state: &str,
-    reason: Option<&str>,
-    t: &Tokens,
-) -> (Icon, Hsla, &'static str) {
+pub(crate) fn look(state: &str, reason: Option<&str>, t: &Tokens) -> (Icon, Hsla, &'static str) {
     match (state, reason) {
         ("open", _) => (Icon::Issues, t.live, "Open"),
         (_, Some("not_planned")) => (
