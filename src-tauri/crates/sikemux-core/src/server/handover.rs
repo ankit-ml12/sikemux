@@ -40,10 +40,7 @@ use super::data_format;
 use super::harness::HarnessRecord;
 use super::prepare::Owner;
 use super::session::{self, Session, SessionParts};
-use super::{
-    continue_clock, lock_path, run_core, tools, uptime_ms, Core, CoreError, CoreResult,
-    ServerConfig, ServerError,
-};
+use super::{lock_path, run_core, tools, Core, CoreError, CoreResult, ServerConfig, ServerError};
 
 const STATE_FILE: &str = "state.json";
 const DEFAULT_ROWS: u16 = 24;
@@ -272,7 +269,7 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &mut [HandOver
     let state = HandoverState {
         format: RESUME_FORMAT,
         from_build: core.build.clone(),
-        uptime_ms: uptime_ms(),
+        uptime_ms: core.uptime_ms(),
         socket: config.socket.clone(),
         listener_fd: listening.listener_fd,
         lock_fd: listening.lock_fd,
@@ -782,7 +779,7 @@ fn adopt_bare(
             owner: Owner::default(),
             screen: Screen::restored(rows, cols, &[], None, None, String::new()),
             shell_protocol: false,
-            last_activity_ms: uptime_ms(),
+            last_activity_ms: core.uptime_ms(),
             trimmed: false,
             killed: false,
             exit: None,
@@ -817,9 +814,6 @@ fn window_size(fd: RawFd) -> Option<(u16, u16)> {
 /// Starts a core from what an earlier one handed over, then serves.
 pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(), ServerError> {
     let state = read_state(&recovery.directory);
-    if let Some(state) = state.as_ref() {
-        continue_clock(state.uptime_ms);
-    }
     let socket = state
         .as_ref()
         .map(|state| state.socket.clone())
@@ -845,7 +839,8 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
         secret_store: true,
     };
     super::data_format::upgrade(&config);
-    let core = Core::new(build, config.data_dir.as_deref())?;
+    let uptime_ms = state.as_ref().map_or(0, |state| state.uptime_ms);
+    let core = Core::continuing(build, config.data_dir.as_deref(), uptime_ms)?;
     let mut inherited = Inherited {
         open: recovery.inherited.clone(),
         claimed: HashSet::new(),

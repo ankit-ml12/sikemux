@@ -29,7 +29,7 @@ use crate::protocol::{
 use super::agent::{self, AgentActivity};
 use super::connection::ClientConn;
 use super::prepare::{Owner, PreparedLaunch};
-use super::{uptime_ms, CapacityPermit, Core, CoreError, CoreResult};
+use super::{CapacityPermit, Core, CoreError, CoreResult};
 
 const OUTPUT_COALESCE: Duration = Duration::from_millis(2);
 const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
@@ -425,7 +425,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     if core.is_frozen() {
         return Err(super::upgrade::UPDATING.into());
     }
-    core.reclaim_exited_sessions(uptime_ms());
+    core.reclaim_exited_sessions(core.uptime_ms());
     let capacity_permit = core.capacity.try_acquire()?;
     let PreparedLaunch {
         cols,
@@ -512,7 +512,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
             owner,
             screen,
             shell_protocol: shell_metadata_enabled,
-            last_activity_ms: uptime_ms(),
+            last_activity_ms: core.uptime_ms(),
             trimmed: false,
             killed: false,
             exit: None,
@@ -774,7 +774,7 @@ async fn read_output(core: Arc<Core>, session: Arc<Session>) {
             let status = child.wait().ok();
             // Stamped under the child lock, so a concurrent kill or drain
             // never signals a pid that may already be reused.
-            stamp_exited(&session);
+            stamp_exited(&core, &session);
             status
         };
         report_exit(&core, &session, status.as_ref());
@@ -782,8 +782,8 @@ async fn read_output(core: Arc<Core>, session: Arc<Session>) {
     .await;
 }
 
-pub(crate) fn stamp_exited(session: &Session) -> Option<u64> {
-    let exited_at = uptime_ms().max(1);
+pub(crate) fn stamp_exited(core: &Core, session: &Session) -> Option<u64> {
+    let exited_at = core.uptime_ms().max(1);
     match session
         .exited_at_ms
         .compare_exchange(0, exited_at, Ordering::AcqRel, Ordering::Acquire)
@@ -800,7 +800,7 @@ pub(crate) fn stamp_exited(session: &Session) -> Option<u64> {
 /// race here; only the first one is reported. The event goes out under the
 /// screen lock, so an attach knows whether its snapshot came after it.
 pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitStatus>) {
-    let exited_at = stamp_exited(session);
+    let exited_at = stamp_exited(core, session);
     session.end_setup();
     let (code, signal) = match status {
         Some(status) => {
@@ -889,7 +889,7 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
             core.schedule_task_output_notice(session.id, TASK_OUTPUT_NOTICE_DELAY);
         }
     }
-    let output_now_ms = uptime_ms();
+    let output_now_ms = core.uptime_ms();
     session
         .last_activity_ms
         .store(output_now_ms, Ordering::Relaxed);
@@ -1354,7 +1354,7 @@ pub(crate) fn kill(core: &Core, session: &Session) {
             session.exited_at_ms.load(Ordering::Acquire),
         );
         let status = sikemux_pty::process::terminate_and_reap_child(&mut child, force_task_tree);
-        stamp_exited(session);
+        stamp_exited(core, session);
         status
     };
     report_exit(core, session, status.as_ref());
@@ -1404,7 +1404,7 @@ pub(crate) fn finish_drain(core: &Core, session: &Session) {
             let pid = child_process_id(&mut child);
             kill_and_reap_child(&mut child, pid)
         };
-        stamp_exited(session);
+        stamp_exited(core, session);
         status
     };
     report_exit(core, session, status.as_ref());

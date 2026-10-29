@@ -17,7 +17,7 @@ use super::activity::Activity;
 use super::messages;
 use super::session::Session;
 use super::spawn::{self, Ending};
-use super::{uptime_ms, Core, CoreResult};
+use super::{Core, CoreResult};
 
 const ACTIVITY_SETTLE: Duration = Duration::from_secs(2);
 /// How long an agent at rest must keep printing before that counts as a turn
@@ -292,7 +292,7 @@ pub(crate) fn note_input(core: &Core, session: &Session, bytes: &[u8]) {
     agent.armed.store(true, Ordering::Release);
     session
         .last_activity_ms
-        .store(uptime_ms(), Ordering::Relaxed);
+        .store(core.uptime_ms(), Ordering::Relaxed);
     agent.idle_confirmations.store(0, Ordering::Release);
     agent.revision.fetch_add(1, Ordering::AcqRel);
     agent.publish(
@@ -314,7 +314,7 @@ pub(crate) fn note_output(core: &Core, agent: &AgentActivity) {
         return;
     }
     agent.idle_confirmations.store(0, Ordering::Release);
-    let now = uptime_ms();
+    let now = core.uptime_ms();
     let previous = agent.last_output_ms.swap(now, Ordering::AcqRel);
     if !agent.busy() {
         if now.saturating_sub(previous) >= ACTIVITY_SETTLE.as_millis() as u64 {
@@ -380,7 +380,9 @@ pub(crate) fn takes_prompt(core: &Core, session: &Session) -> bool {
             AgentDetectionState::Working | AgentDetectionState::Blocked
         );
     }
-    let quiet = uptime_ms().saturating_sub(session.last_activity_ms.load(Ordering::Relaxed))
+    let quiet = core
+        .uptime_ms()
+        .saturating_sub(session.last_activity_ms.load(Ordering::Relaxed))
         >= ACTIVITY_SETTLE.as_millis() as u64;
     quiet
         && matches!(detection.state, AgentDetectionState::Idle)

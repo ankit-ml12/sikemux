@@ -251,25 +251,6 @@ impl From<serde_json::Error> for CoreError {
 
 pub(crate) type CoreResult<T> = Result<T, CoreError>;
 
-static STARTED: OnceLock<Instant> = OnceLock::new();
-
-fn started() -> Instant {
-    *STARTED.get_or_init(Instant::now)
-}
-
-/// A core that replaced an earlier one keeps its clock, so the times the
-/// earlier one stamped on sessions still mean the same moment.
-pub(crate) fn continue_clock(uptime_ms: u64) {
-    let start = Instant::now()
-        .checked_sub(Duration::from_millis(uptime_ms))
-        .unwrap_or_else(Instant::now);
-    let _ = STARTED.set(start);
-}
-
-pub(crate) fn uptime_ms() -> u64 {
-    started().elapsed().as_millis() as u64
-}
-
 /// Counts launching, live and retained sessions, so the PTY budget holds even
 /// while a session is between being spawned and being published.
 pub(crate) struct Capacity {
@@ -350,6 +331,8 @@ pub(crate) struct Listening {
 
 pub(crate) struct Core {
     me: Weak<Core>,
+    /// When this core's clock reads zero, which session times count from.
+    started: Instant,
     sessions: Mutex<HashMap<SessionId, Arc<Session>>>,
     next_session_id: AtomicU64,
     capacity: Arc<Capacity>,
@@ -468,6 +451,19 @@ impl Core {
     }
 
     fn new(build: BuildIdentity, data_dir: Option<&Path>) -> Result<Arc<Self>, ServerError> {
+        Self::continuing(build, data_dir, 0)
+    }
+
+    /// A core whose clock reads `uptime_ms` already: a core that replaced an earlier one keeps
+    /// its clock, so the times the earlier one stamped on sessions still mean the same moment.
+    fn continuing(
+        build: BuildIdentity,
+        data_dir: Option<&Path>,
+        uptime_ms: u64,
+    ) -> Result<Arc<Self>, ServerError> {
+        let started = Instant::now()
+            .checked_sub(Duration::from_millis(uptime_ms))
+            .unwrap_or_else(Instant::now);
         if let Some(dir) = data_dir {
             crate::sessions::index::open(dir);
         }
@@ -479,6 +475,7 @@ impl Core {
         let harness = harness::Harness::new(data_dir, |agent_id| names.get(agent_id).is_some());
         let core = Arc::new_cyclic(|me| Self {
             me: me.clone(),
+            started,
             sessions: Mutex::new(HashMap::new()),
             next_session_id: AtomicU64::new(first_session_id()),
             capacity: Arc::new(Capacity {
@@ -556,6 +553,11 @@ impl Core {
     /// This core, for work that outlives the call it starts in.
     pub(crate) fn arc(&self) -> Option<Arc<Core>> {
         self.me.upgrade()
+    }
+
+    /// Milliseconds on this core's clock, which session times are stamped in.
+    pub(crate) fn uptime_ms(&self) -> u64 {
+        self.started.elapsed().as_millis() as u64
     }
 
     pub(crate) fn is_frozen(&self) -> bool {
@@ -1345,7 +1347,7 @@ async fn poll_sessions(core: Arc<Core>) {
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
-        let now = uptime_ms();
+        let now = core.uptime_ms();
         for session in core.all_sessions() {
             agent::poll(&core, &session, now);
             if !session.shell_protocol {
@@ -1413,7 +1415,7 @@ async fn sweep(core: Arc<Core>) {
     ticker.tick().await;
     loop {
         ticker.tick().await;
-        let now = uptime_ms();
+        let now = core.uptime_ms();
         core.reclaim_exited_sessions(now);
         for session in core.all_sessions() {
             session::trim_if_idle(&session, now, IDLE_TRIM);
