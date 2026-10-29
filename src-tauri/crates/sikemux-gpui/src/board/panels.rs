@@ -12,8 +12,8 @@ use gpui_kit::{
 use serde_json::{json, Value};
 
 use crate::board::{owner, short_title, waits_on_person, BoardPane, Card, MessageRow, Open};
+use crate::chat::model_picker;
 use crate::icons::Icon;
-use crate::model_picker;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, select, Button, IconButton, Pick, Toggle, Variant};
 

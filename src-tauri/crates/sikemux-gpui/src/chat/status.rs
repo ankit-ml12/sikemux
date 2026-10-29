@@ -116,7 +116,7 @@ impl Render for Activity {
                 .items_center()
                 .gap(px(8.))
                 .child(match &self.agent {
-                    Some(agent) => ui::agent_mark(agent, 21., cx),
+                    Some(agent) => agent.mark(21., cx),
                     None => ui::mark(&self.provider, 21.),
                 })
                 .child(words)
@@ -265,9 +265,9 @@ impl Workbench {
             .iter()
             .flatten()
             .find(|found| found.kind == provider)
-            .and_then(|found| crate::agent_setup::signing_in(found, None));
+            .and_then(|found| crate::agents::setup::signing_in(found, None));
         match sheet {
-            Some(sheet) => crate::agent_setup::run(self, sheet, cx),
+            Some(sheet) => crate::agents::setup::run(self, sheet, cx),
             None => crate::accounts::open_sign_in(self, provider, None, window, cx),
         }
     }

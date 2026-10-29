@@ -18,7 +18,7 @@ use serde_json::Value;
 use sikemux_wire::protocol::{Pane, PaneKind, Tab as LayoutTab};
 use sikemux_wire::pty::shell_protocol::SshLink;
 
-use crate::agent_menu::AgentMenu;
+use crate::agents::menu::AgentMenu;
 use crate::icons::Icon;
 use crate::motion;
 use crate::ports::PortRow;
@@ -917,7 +917,7 @@ fn strip_tab(
         .find(|agent| &agent.id == target)
         {
             Some(agent) => base
-                .mark(ui::agent_mark(&agent, 19., cx))
+                .mark(agent.mark(19., cx))
                 .note(
                     agent
                         .name

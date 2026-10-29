@@ -40,7 +40,7 @@ impl Looks {
     pub(super) fn mark_of(&self, agent: &str, cli: &str, size: f32, cx: &App) -> AnyElement {
         let row = (self.bench.upgrade()).and_then(|bench| bench.read(cx).agent_by_id(agent));
         match row {
-            Some(row) => ui::agent_mark(&row, size, cx),
+            Some(row) => row.mark(size, cx),
             None => ui::mark(cli, size),
         }
     }

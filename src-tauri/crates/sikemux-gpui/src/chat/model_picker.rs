@@ -16,7 +16,7 @@ use gpui_kit::{
 use serde_json::{json, Value};
 use sikemux_wire::protocol::ConfigPicker;
 
-use crate::agent_setup::Installing;
+use crate::agents::setup::Installing;
 use crate::core;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
@@ -477,7 +477,7 @@ impl Menu {
 fn install_agent(bench: &WeakEntity<Workbench>, provider: &str, cx: &mut App) {
     if let Some(bench) = bench.upgrade() {
         bench.update(cx, |bench, cx| {
-            crate::agent_setup::install_behind(bench, provider, cx)
+            crate::agents::setup::install_behind(bench, provider, cx)
         });
     }
 }
@@ -643,7 +643,7 @@ impl Render for Menu {
                                     let bench = menu.read(cx).bench.upgrade();
                                     if let Some(bench) = bench {
                                         bench.update(cx, |bench, cx| {
-                                            crate::agent_setup::show_install(
+                                            crate::agents::setup::show_install(
                                                 bench, &provider, window, cx,
                                             )
                                         });

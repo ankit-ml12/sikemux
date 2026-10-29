@@ -7,7 +7,7 @@ use gpui_kit::{
 };
 use sikemux_core::agent_accounts::status::AgentStatus;
 
-use crate::agent_setup::{installing, run, signing_in, status_label, Setup, Sheet};
+use crate::agents::setup::{installing, run, signing_in, status_label, Setup, Sheet};
 use crate::settings::rows;
 use crate::ui;
 use crate::workbench::Workbench;

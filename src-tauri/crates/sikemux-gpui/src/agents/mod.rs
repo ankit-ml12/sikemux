@@ -13,7 +13,7 @@ use serde_json::Value;
 use sikemux_core::agent_accounts::Profile;
 use sikemux_wire::protocol::{LauncherInfo, PaneKind, RecentInfo};
 
-use crate::agent_menu::AgentMenu;
+use crate::agents::menu::AgentMenu;
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens};
@@ -26,6 +26,12 @@ pub const TAB_RAIL: RailWidth = RailWidth {
     max: 560.,
     initial: 288.,
 };
+
+pub mod card;
+pub mod menu;
+pub mod palette;
+pub mod review;
+pub mod setup;
 
 pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let frame = bench.rail_frame.clone();
@@ -834,7 +840,7 @@ fn agent_row(
             .child(
                 div()
                     .group_hover(ui::ROW, |mark| mark.opacity(0.))
-                    .child(ui::agent_mark(agent, 20., cx)),
+                    .child(agent.mark(20., cx)),
             )
             .child(
                 div()
@@ -861,7 +867,7 @@ fn agent_row(
                     )),
             )
             .into_any_element(),
-        None => ui::agent_mark(agent, 20., cx),
+        None => agent.mark(20., cx),
     };
     let status = ui::status_mark(&agent.id, agent.status, cx);
     let fades = status.is_none();
@@ -937,7 +943,7 @@ fn agent_row(
         false => counts.into_any_element(),
     }));
     let lines = team_lines(team, matches!(fold, Some(Fold { open: true, .. })), cx);
-    let card = crate::agent_card::view(bench, agent, project.as_deref(), cx);
+    let card = crate::agents::card::view(bench, agent, project.as_deref(), cx);
     let close = agent.id.clone();
     let actions = ui::hover_actions(AGENT_ROW)
         .top_0()
@@ -981,7 +987,7 @@ fn agent_row(
         .child(actions)
         .children(lines)
         .when(card.is_some(), |wrap| {
-            wrap.child(crate::agent_card::follow_row(cx.entity()))
+            wrap.child(crate::agents::card::follow_row(cx.entity()))
         })
         .children(card.map(|card| div().absolute().top_0().left_0().child(card)))
         .context_menu(ui::menu(move |popup, _, _| match &menu {

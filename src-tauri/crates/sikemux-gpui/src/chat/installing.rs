@@ -7,8 +7,8 @@ use std::rc::Rc;
 use gpui_kit::{Context, WeakEntity};
 
 use super::Composing;
-use crate::agent_setup::{self, Installing};
-use crate::composer::Notice;
+use crate::agents::setup::{self, Installing};
+use crate::chat::composer::Notice;
 use crate::hosts::Place;
 use crate::workbench::Workbench;
 
@@ -96,7 +96,7 @@ pub(super) fn notice(
                     "Show the installer's output".into(),
                     Rc::new(move |window, cx| {
                         this.update(cx, |bench, cx| {
-                            agent_setup::show_install(bench, &kind, window, cx)
+                            setup::show_install(bench, &kind, window, cx)
                         })
                         .ok();
                     }),

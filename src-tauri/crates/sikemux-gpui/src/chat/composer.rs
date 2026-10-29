@@ -16,8 +16,8 @@ use gpui_kit::{
 use sikemux_wire::chat::ContextUsage;
 use sikemux_wire::protocol::ConfigPicker;
 
+use crate::chat::model_picker::Picked;
 use crate::icons::Icon;
-use crate::model_picker::Picked;
 use crate::motion::{Curve, Ease};
 use crate::theme::{self, Tokens};
 use crate::ui::{self, DockMenu, IconButton};
@@ -312,7 +312,7 @@ impl RenderOnce for Composer {
                 room,
                 cx,
             );
-            crate::model_picker::around(trigger, &self.provider, picked, &bench)
+            crate::chat::model_picker::around(trigger, &self.provider, picked, &bench)
                 .min_w_0()
                 .flex()
         });

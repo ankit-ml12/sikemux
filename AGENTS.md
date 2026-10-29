@@ -147,7 +147,7 @@
   root (`python3 -m http.server`) and opening `/src-tauri/notch/design/screens.html`.
 - Its icons come from `shared/ui/Icons.tsx`, the agent marks and `brand/`. After changing one it
   uses, run `node scripts/generate-notch-icons.mjs`; the release checks fail on a stale copy.
-- Its agent rows are laid out like the app's tab rail rows (`sikemux-gpui/src/agents.rs`):
+- Its agent rows are laid out like the app's tab rail rows (`sikemux-gpui/src/agents/mod.rs`):
   the task with how long ago, the project, then the name, counts and state together at the end.
   When the rail's row changes, change the island's and its design to match.
 - `swift run --package-path src-tauri/notch notch-snapshots <dir>` renders every state to PNGs,

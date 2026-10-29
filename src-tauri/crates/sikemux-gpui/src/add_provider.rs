@@ -15,11 +15,11 @@ use gpui_kit::{
 };
 use serde_json::{json, Value};
 
-use crate::agent_setup::{self, Installing};
+use crate::agents::setup::{self, Installing};
+use crate::chat::model_picker::{Move, Moving};
 use crate::core::Target;
 use crate::hosts::Place;
 use crate::icons::Icon;
-use crate::model_picker::{Move, Moving};
 use crate::theme::Tokens;
 use crate::toast;
 use crate::ui::{self, dialog};
@@ -212,7 +212,7 @@ fn settle(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench
             let here = matches!(adding.target.place(), Place::This);
             adding.read = Some((asked, read));
             if let Some(agent) = agent.filter(|agent| works && here && !bench.has_agent(agent)) {
-                agent_setup::install_behind(bench, &agent, cx);
+                setup::install_behind(bench, &agent, cx);
             }
             cx.notify();
         });
@@ -419,7 +419,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 move |_: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut gpui_kit::App| {
                     this.update(cx, |bench, cx| {
                         bench.overlays.adding_provider = None;
-                        agent_setup::show_install(bench, &agent, window, cx)
+                        setup::show_install(bench, &agent, window, cx)
                     })
                 }
             };

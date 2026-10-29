@@ -24,6 +24,8 @@ use crate::toast;
 use crate::ui::{self, Button, Field, IconButton, Segmented, Variant};
 use crate::workbench::Workbench;
 
+pub mod panels;
+
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Card {
@@ -588,7 +590,7 @@ impl Render for BoardPane {
             }
         }
         let t = Tokens::get(cx).clone();
-        let panel = crate::board_panels::panel(self, cx);
+        let panel = crate::board::panels::panel(self, cx);
         div()
             .id("board")
             .key_context("AgentBoard")

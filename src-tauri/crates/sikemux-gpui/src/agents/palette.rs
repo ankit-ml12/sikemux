@@ -234,9 +234,9 @@ fn sign_in(
         .iter()
         .flatten()
         .find(|found| found.kind == provider)
-        .and_then(|found| crate::agent_setup::signing_in(found, folder.as_deref()));
+        .and_then(|found| crate::agents::setup::signing_in(found, folder.as_deref()));
     if let Some(sheet) = sheet {
-        crate::agent_setup::run(bench, sheet, cx);
+        crate::agents::setup::run(bench, sheet, cx);
     }
 }
 
@@ -258,9 +258,9 @@ fn install(
     let Some(command) = command else {
         return;
     };
-    let sheet = crate::agent_setup::installer(&launcher.provider, &launcher.label, command);
+    let sheet = crate::agents::setup::installer(&launcher.provider, &launcher.label, command);
     bench.open_settings(crate::settings::Page::Installed, window, cx);
-    crate::agent_setup::run(bench, sheet, cx);
+    crate::agents::setup::run(bench, sheet, cx);
 }
 
 pub(crate) fn status_word(status: AgentStatus) -> &'static str {

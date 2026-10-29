@@ -35,7 +35,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
     if let Some(settings) = bench.settings.as_mut() {
         settings.pages.agents = Some(fields);
     }
-    crate::agent_setup::read(bench, cx);
+    crate::agents::setup::read(bench, cx);
     sessions::read_names(bench, window, cx);
     device::read_simulator(bench, cx);
     providers::read(bench, cx);
@@ -108,6 +108,6 @@ pub fn dialogs(
 ) -> Vec<AnyElement> {
     let mut open = Vec::new();
     open.extend(accounts::dialog(bench, this, cx));
-    open.extend(crate::agent_setup::sheet(bench, this, window, cx));
+    open.extend(crate::agents::setup::sheet(bench, this, window, cx));
     open
 }

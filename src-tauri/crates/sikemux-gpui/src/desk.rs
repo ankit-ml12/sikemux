@@ -1788,7 +1788,7 @@ pub fn pane(
         let at_work = acting
             .as_ref()
             .filter(|_| page.acting)
-            .map(|(tint, row)| (*tint, ui::agent_mark(row, 16., cx)));
+            .map(|(tint, row)| (*tint, row.mark(16., cx)));
         pills = pills.child(
             pill(
                 SharedString::from(format!("desk-tab-{}", page.id)),
@@ -2431,12 +2431,12 @@ fn simulator_desk(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -
         .gap(px(4.))
         .pl(px(SWITCH_W + GAP - 1. + 6.))
         .pr(px(6.))
-        .children(crate::sim_pane::picker(bench, agent, cx))
+        .children(crate::sim::pane::picker(bench, agent, cx))
         .when(bench.sims.acting(agent), |head| {
             head.child(ui::icon(Icon::Pointer, 11.).text_color(t.accent))
         })
         .child(div().flex_1())
-        .child(crate::sim_pane::tools(bench, agent, cx));
+        .child(crate::sim::pane::tools(bench, agent, cx));
     frame(
         bench,
         agent,
@@ -2445,7 +2445,7 @@ fn simulator_desk(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -
             div()
                 .flex_1()
                 .min_h_0()
-                .child(crate::sim_pane::body(bench, agent, cx)),
+                .child(crate::sim::pane::body(bench, agent, cx)),
         ),
         cx,
     )

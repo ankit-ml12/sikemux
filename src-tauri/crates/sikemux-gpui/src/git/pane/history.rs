@@ -748,7 +748,7 @@ fn commit_agents(pane: &GitPane, hash: &str, compact: bool, cx: &App) -> Option<
     let chips = owners.iter().enumerate().map(|(index, owner)| {
         let shown = owner.open.as_ref().unwrap_or(&owner.chat);
         let mark = match rows.iter().find(|row| &row.id == shown) {
-            Some(row) => ui::agent_mark(row, 11., cx),
+            Some(row) => row.mark(11., cx),
             None => ui::mark(&owner.cli, 11.),
         };
         let label = match &owner.title {

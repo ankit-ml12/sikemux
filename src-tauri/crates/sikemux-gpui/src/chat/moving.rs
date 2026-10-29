@@ -5,7 +5,7 @@ use super::*;
 impl Workbench {
     /// Moves a chat that has not started to another agent, account or provider. The model and
     /// effort it offered belong to the agent it leaves, so they go until the core says the new ones.
-    pub fn move_chat(&mut self, agent: &str, to: crate::model_picker::Moving) {
+    pub fn move_chat(&mut self, agent: &str, to: crate::chat::model_picker::Moving) {
         if let Some(chat) = self.chats.get_mut(agent) {
             chat.forget_choices();
         }
@@ -58,7 +58,7 @@ impl Workbench {
         let Some(agent) = self.agent().map(|agent| agent.id) else {
             return;
         };
-        let to = crate::model_picker::Moving {
+        let to = crate::chat::model_picker::Moving {
             provider: provider.to_owned(),
             profile: self
                 .accounts

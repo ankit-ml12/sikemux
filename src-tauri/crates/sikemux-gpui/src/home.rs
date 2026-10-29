@@ -15,7 +15,7 @@ use gpui_kit::{
 };
 use serde_json::Value;
 
-use crate::agent_menu::AgentMenu;
+use crate::agents::menu::AgentMenu;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, IconButton, PaneHeader, Segmented, Toggle, Variant};
@@ -230,7 +230,7 @@ fn greeting(
         .justify_center()
         .gap(px(12.))
         .child(div().flex().child(match agent {
-            Some(agent) => ui::agent_mark(agent, 32., cx),
+            Some(agent) => agent.mark(32., cx),
             None => ui::mark("claude", 32.),
         }))
         .child(
@@ -404,7 +404,7 @@ fn pane_header(
                     .id("agent-buddy")
                     .cursor_pointer()
                     .tooltip(ui::tooltip("Change buddy"))
-                    .child(ui::agent_mark(agent, 16., cx))
+                    .child(agent.mark(16., cx))
                     .on_click(
                         cx.listener(move |bench, _, _, cx| bench.open_buddy_picker(&picked, cx)),
                     )

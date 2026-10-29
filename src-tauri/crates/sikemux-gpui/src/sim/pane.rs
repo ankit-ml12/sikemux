@@ -25,8 +25,8 @@ use sikemux_simulator::{tools, Host, SimulatorManager, WATCH_ENDED_EVENT};
 use tokio::sync::mpsc;
 
 use crate::icons::Icon;
-use crate::sim_frame::{self, Chrome, Rect};
-use crate::sim_screen::{Decoder, Picture, Turn};
+use crate::sim::frame::{self, Chrome, Rect};
+use crate::sim::screen::{Decoder, Picture, Turn};
 use crate::ui::{self, IconButton};
 use crate::workbench::Workbench;
 
@@ -689,7 +689,7 @@ impl Workbench {
                         Some(measured).filter(|(width, height)| *width > 0. && *height > 0.);
                     screen
                         .turn
-                        .store(sim_frame::turn_degrees(&orientation), Ordering::Relaxed);
+                        .store(frame::turn_degrees(&orientation), Ordering::Relaxed);
                     screen.orientation = orientation;
                 }
                 bench.parts.redraw(&bench.parts.stage, cx);
@@ -1280,7 +1280,7 @@ pub fn body(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyE
     let frame = framed
         .then(|| screen.chrome.as_ref().zip(screen.size))
         .flatten()
-        .map(|(chrome, size)| chrome.turned(sim_frame::turn_degrees(&screen.orientation), size));
+        .map(|(chrome, size)| chrome.turned(frame::turn_degrees(&screen.orientation), size));
     let device = match frame {
         Some(frame) => framed_device(
             agent,
@@ -1323,7 +1323,7 @@ fn place<E: Styled>(element: E, rect: Rect, size: (f32, f32)) -> E {
 fn framed_device(
     agent: &str,
     live: gpui::Stateful<gpui::Div>,
-    frame: &sim_frame::Turned,
+    frame: &frame::Turned,
     held: Option<&str>,
     acting: bool,
     cx: &mut Context<Workbench>,

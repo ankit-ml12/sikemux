@@ -18,7 +18,6 @@ use gpui::{
 use sikemux_wire::protocol::{PaneColours, PaneCoverage, PanePattern, Preferences};
 
 use crate::theme::{self, Tokens, RADIUS_3};
-use crate::workbench::Workbench;
 
 macro_rules! program {
     ($name:literal) => {
@@ -424,8 +423,8 @@ fn clock(speed: f32, cx: &App) -> (f32, f32) {
 }
 
 /// Moves what the shaders show on while the window is in front and can be seen, at the rate
-/// the power allows.
-pub fn animate(window: &mut Window, cx: &mut Context<Workbench>) {
+/// the power allows, which `on_battery` answers from the view.
+pub fn animate<V: 'static>(window: &mut Window, cx: &mut Context<V>, on_battery: fn(&V) -> bool) {
     follow_reduced_motion(cx);
     #[cfg(target_os = "linux")]
     cx.spawn(async move |bench, cx| {
@@ -439,11 +438,11 @@ pub fn animate(window: &mut Window, cx: &mut Context<Workbench>) {
     .detach();
     let ticking = Rc::new(RefCell::new(None));
     let restart = |ticking: Rc<RefCell<Option<Task<()>>>>| {
-        move |_: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>| {
+        move |_: &mut V, window: &mut Window, cx: &mut Context<V>| {
             if window.is_window_active() {
                 follow_reduced_motion(cx);
             }
-            *ticking.borrow_mut() = tick(window, cx);
+            *ticking.borrow_mut() = tick(window, cx, on_battery);
         }
     };
     cx.observe_window_activation(window, restart(ticking.clone()))
@@ -457,7 +456,11 @@ pub fn animate(window: &mut Window, cx: &mut Context<Workbench>) {
         .detach();
 }
 
-fn tick(window: &Window, cx: &mut Context<Workbench>) -> Option<Task<()>> {
+fn tick<V: 'static>(
+    window: &Window,
+    cx: &mut Context<V>,
+    on_battery: fn(&V) -> bool,
+) -> Option<Task<()>> {
     let moving = window.is_window_active()
         && window.is_visible()
         && !cx.reduce_motion()
@@ -476,8 +479,7 @@ fn tick(window: &Window, cx: &mut Context<Workbench>) -> Option<Task<()>> {
                     }
                     false => window.present_ground(),
                 }
-                let on_battery = bench.battery.is_some_and(|battery| !battery.charging);
-                let rate = match on_battery {
+                let rate = match on_battery(bench) {
                     true => BATTERY_FRAMES_PER_SECOND,
                     false => FRAMES_PER_SECOND,
                 };

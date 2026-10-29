@@ -97,7 +97,7 @@ fn mark_of(id: &str, tint: Hsla, named: Option<AgentRow>, cx: &App) -> gpui_kit:
         .into_any_element();
     }
     if let Some(agent) = named {
-        return ui::agent_mark(&agent, 14., cx);
+        return agent.mark(14., cx);
     }
     if id.starts_with("agent:") {
         return ui::icon(Icon::Agent, 13.)

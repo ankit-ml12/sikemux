@@ -1059,7 +1059,7 @@ fn square(bench: &Workbench, item: &Value, said: &Said, t: &Tokens, cx: &App) ->
         });
     let named = said.agent.as_deref().and_then(|id| bench.agent_by_id(id));
     let mark = |cx: &App| match &named {
-        Some(agent) => ui::agent_mark(agent, 20., cx),
+        Some(agent) => agent.mark(20., cx),
         None => glyph(item, 20., cx),
     };
     let tile = div()

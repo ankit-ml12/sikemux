@@ -256,7 +256,7 @@ pub fn view(
                     .tooltip(ui::tooltip("Review its work"))
                     .on_click(cx.listener(move |bench, _, _, cx| {
                         bench.close_card(cx);
-                        crate::agent_review::open(bench, &reviewed, cx);
+                        crate::agents::review::open(bench, &reviewed, cx);
                     }))
                     .into_any_element(),
             )
@@ -324,7 +324,7 @@ pub fn view(
                 .items_center()
                 .gap(px(10.))
                 .min_w_0()
-                .child(ui::agent_mark(agent, 22., cx))
+                .child(agent.mark(22., cx))
                 .child(
                     div()
                         .flex_1()

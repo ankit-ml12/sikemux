@@ -7,7 +7,7 @@
 
 The window has two side columns: the side rail
 (`src-tauri/crates/sikemux-gpui/src/rail.rs`) lists sessions, and the tab rail
-(`src-tauri/crates/sikemux-gpui/src/agents.rs`) lists agent chats.
+(`src-tauri/crates/sikemux-gpui/src/agents/mod.rs`) lists agent chats.
 Together they take about 546 px, which prompted attempts to merge them.
 
 About fifteen single-rail layouts were mocked up on 2026-09-20 and all were

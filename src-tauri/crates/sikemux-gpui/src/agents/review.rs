@@ -290,7 +290,7 @@ impl Render for AgentReview {
                     )
                     .when_some(agent, |head, agent| {
                         head.child(ui::meta(
-                            crate::agent_palette::status_word(agent.status),
+                            crate::agents::palette::status_word(agent.status),
                             cx,
                         ))
                     }),

@@ -34,8 +34,8 @@ use sikemux_wire::protocol::{
 };
 use sikemux_wire::questions::{AgentQuestion, QuestionState};
 
-use crate::agent_setup::Installing;
-use crate::composer::{Act, Composer, Notice, Strip};
+use crate::agents::setup::Installing;
+use crate::chat::composer::{Act, Composer, Notice, Strip};
 use crate::core::{Ask, ChatAsk, Target};
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
@@ -58,6 +58,7 @@ use tokio::sync::mpsc::UnboundedSender;
 mod attach;
 mod cards;
 pub mod changes;
+pub mod composer;
 mod composing;
 mod content;
 pub(crate) mod draft;
@@ -74,6 +75,7 @@ mod moving;
 pub(crate) use attach::{named, named_agents, pill, site_icon, Mention};
 pub use mention::Tray;
 mod meta;
+pub mod model_picker;
 mod page;
 mod questions;
 mod rows;

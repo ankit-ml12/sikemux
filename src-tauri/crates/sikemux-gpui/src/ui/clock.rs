@@ -11,8 +11,6 @@ use gpui::{
     GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, Render, Task, Window,
 };
 
-use crate::workbench::Workbench;
-
 const FRAMES_PER_SECOND: u64 = 30;
 
 static STARTED: LazyLock<Instant> = LazyLock::new(Instant::now);
@@ -23,7 +21,7 @@ pub fn seconds() -> f32 {
 }
 
 /// Starts what moves again when the window comes back to the front or into sight.
-pub fn follow(window: &mut Window, cx: &mut Context<Workbench>) {
+pub fn follow<V: 'static>(window: &mut Window, cx: &mut Context<V>) {
     cx.observe_window_activation(window, |_, _, cx| wake(cx))
         .detach();
     cx.observe_window_visibility(window, |_, _, _, cx| wake(cx))

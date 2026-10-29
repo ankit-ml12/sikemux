@@ -12,7 +12,7 @@ use gpui_kit::{
 use serde_json::json;
 use sikemux_core::agent_accounts::status::AgentStatus;
 
-use crate::agent_setup::{self, Found};
+use crate::agents::setup::{self, Found};
 use crate::core;
 use crate::experience::{self, Experience};
 use crate::icons::Icon;
@@ -78,7 +78,7 @@ fn welcome_of(bench: &mut Workbench) -> Option<&mut Welcome> {
 
 /// Looks for the agents here, and whether git is.
 pub fn opened(bench: &mut Workbench, cx: &mut Context<Workbench>) {
-    agent_setup::read(bench, cx);
+    setup::read(bench, cx);
     let asks = bench.asks.clone();
     cx.spawn(async move |bench, cx| {
         let tools = core::request(&asks, "hostTools", json!({})).await;
@@ -386,7 +386,7 @@ pub fn render(
                 })
                 .child(skip),
         )
-        .children(agent_setup::sheet(bench, &cx.entity(), window, cx))
+        .children(setup::sheet(bench, &cx.entity(), window, cx))
         .into_any_element()
 }
 
@@ -448,18 +448,16 @@ fn chip(bench: &Workbench, agent: &Found, this: &Entity<Workbench>, cx: &App) ->
     let missing = matches!(agent.status, AgentStatus::Missing);
     let broken = matches!(agent.status, AgentStatus::Broken { .. });
     let signed_out = matches!(agent.status, AgentStatus::SignedOut);
-    let status = (!matches!(agent.status, AgentStatus::Unknown))
-        .then(|| agent_setup::status_label(&agent.status));
+    let status =
+        (!matches!(agent.status, AgentStatus::Unknown)).then(|| setup::status_label(&agent.status));
     let folder = bench
         .accounts
         .current(&agent.kind)
         .and_then(|profile| profile.config_path.clone());
     let sheet = match (missing || broken, signed_out) {
-        (true, _) => agent_setup::installing(agent)
+        (true, _) => setup::installing(agent)
             .map(|sheet| (if broken { "Reinstall" } else { "Install" }, sheet)),
-        (_, true) => {
-            agent_setup::signing_in(agent, folder.as_deref()).map(|sheet| ("Sign in", sheet))
-        }
+        (_, true) => setup::signing_in(agent, folder.as_deref()).map(|sheet| ("Sign in", sheet)),
         _ => None,
     };
     div()
@@ -519,7 +517,7 @@ fn chip(bench: &Workbench, agent: &Found, this: &Entity<Workbench>, cx: &App) ->
                 .on_mouse_down(MouseButton::Left, keep_press)
                 .on_click(move |_, _, cx| {
                     let sheet = sheet.clone();
-                    this.update(cx, |bench, cx| agent_setup::run(bench, sheet, cx))
+                    this.update(cx, |bench, cx| setup::run(bench, sheet, cx))
                 })
                 .child(label)
         }))

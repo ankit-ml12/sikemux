@@ -396,7 +396,7 @@ pub(super) fn composer(
         .running(chat.running())
         .steers(bench.preferences().mid_turn_send == MidTurnSend::Steer)
         .usage(head.and_then(|head| head.usage.clone()));
-    let pick: crate::model_picker::Set = {
+    let pick: crate::chat::model_picker::Set = {
         let (this, agent) = (this.clone(), agent.id.clone());
         Rc::new(
             move |config: &str, value: &str, _: &mut Window, cx: &mut App| {
@@ -411,14 +411,14 @@ pub(super) fn composer(
     };
     let model = head.and_then(|head| head.model.clone());
     if let Some(saved) = saved.filter(|_| fresh || model.is_some()) {
-        let moving: crate::model_picker::Move = {
+        let moving: crate::chat::model_picker::Move = {
             let (this, agent) = (this.clone(), agent.id.clone());
-            Rc::new(move |to: crate::model_picker::Moving, _, cx| {
+            Rc::new(move |to: crate::chat::model_picker::Moving, _, cx| {
                 this.update(cx, |bench, _| bench.move_chat(&agent, to)).ok();
             })
         };
         let started = head.is_some_and(|head| head.connection == ChatConnection::Ready);
-        let picked = crate::model_picker::Picked {
+        let picked = crate::chat::model_picker::Picked {
             provider: agent.provider.clone(),
             profile: saved.profile_id.clone(),
             model: model.clone(),

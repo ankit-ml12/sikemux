@@ -3282,7 +3282,7 @@ fn faces(pane: &GitPane, path: &str, cx: &App) -> Option<AnyElement> {
         .iter()
         .take(MAX_FACES)
         .map(|(id, cli)| match rows.iter().find(|row| &row.id == id) {
-            Some(row) => ui::agent_mark(row, 14., cx),
+            Some(row) => row.mark(14., cx),
             None => ui::mark(cli, 14.),
         })
         .collect();

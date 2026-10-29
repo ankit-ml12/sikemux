@@ -45,9 +45,10 @@ use gpui_kit::{
     SharedString, Styled, StyledText, Svg, Window,
 };
 
+use sikemux_wire::protocol::{AgentFace, AgentGroup};
+
 use crate::icons::{self, Icon};
 use crate::theme::{self, Tokens};
-use crate::workbench::AgentRow;
 
 /// What a menu calls showing a file in the system's file manager.
 pub const REVEAL: &str = if cfg!(target_os = "macos") {
@@ -153,17 +154,22 @@ impl Render for Spin {
     }
 }
 
-/// An agent's face, or its agent's mark while it wears none.
-pub fn agent_mark(agent: &AgentRow, size: f32, cx: &App) -> AnyElement {
-    let Some((face, image)) = agent
-        .face
-        .as_ref()
-        .and_then(|face| crate::faces::image(face, agent.group, cx).map(|image| (face, image)))
+/// The face agent `id` wears, or the mark of its kind `provider` while it wears none.
+pub fn agent_mark(
+    id: &str,
+    provider: &str,
+    face: Option<&AgentFace>,
+    group: AgentGroup,
+    size: f32,
+    cx: &App,
+) -> AnyElement {
+    let Some((face, image)) =
+        face.and_then(|face| crate::faces::image(face, group, cx).map(|image| (face, image)))
     else {
-        return mark(&agent.provider, size);
+        return mark(provider, size);
     };
-    match moving_face::moves(agent.group, cx) {
-        true => moving_face::face(&agent.id, face, agent.group, image, size),
+    match moving_face::moves(group, cx) {
+        true => moving_face::face(id, face, group, image, size),
         false => gpui_kit::img(image)
             .size(px(size))
             .flex_none()

@@ -1019,10 +1019,10 @@ pub fn dock(
                 shown_project = project.as_deref();
                 let row = bench.agent_by_id(id);
                 DockRow::new(format!("@{name}"), choose)
-                    .mark(row.as_ref().map_or_else(
-                        || ui::mark(provider, 13.),
-                        |agent| ui::agent_mark(agent, 13., cx),
-                    ))
+                    .mark(
+                        row.as_ref()
+                            .map_or_else(|| ui::mark(provider, 13.), |agent| agent.mark(13., cx)),
+                    )
                     .detail(title.clone())
                     .state(row.and_then(|agent| ui::status_mark(&agent.id, agent.status, cx)))
                     .group(group)

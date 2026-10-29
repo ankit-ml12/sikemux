@@ -117,7 +117,7 @@ pub struct Workbench {
     /// The host whose core those watches went to.
     watched_place: crate::hosts::Place,
     pub battery: Option<Battery>,
-    pub agent_setup: crate::agent_setup::Setup,
+    pub agent_setup: crate::agents::setup::Setup,
     pub overlays: Overlays,
     /// The question over the window while a phone waits to connect.
     pub pairing: crate::pairing::Pairing,
@@ -169,7 +169,7 @@ pub struct Workbench {
     /// Where the rail's agent rows were drawn, for the chosen surface to glide between them.
     pub(crate) rail_glide: std::cell::RefCell<crate::motion::GlideTrack>,
     /// The card beside the agent row the pointer rests on.
-    pub agent_card: crate::agent_card::Card,
+    pub agent_card: crate::agents::card::Card,
     /// The task each project's Run button starts, when the person chose one, by project path.
     pub picked_tasks: HashMap<String, String>,
     /// Where the tab rail's frame was last drawn, left, top, width and height, for the driver.
@@ -298,7 +298,7 @@ pub struct Workbench {
     pub parts: Parts,
     pub panes: crate::panes::Panes,
     pub desks: crate::desk::Desks,
-    pub sims: crate::sim_pane::Simulators,
+    pub sims: crate::sim::pane::Simulators,
     _filtering: Option<Subscription>,
     pub(crate) _older: Option<Task<()>>,
 }
@@ -376,7 +376,7 @@ pub(crate) enum Asking {
         field: Option<Entity<InputState>>,
         then: Typed,
     },
-    Review(Entity<crate::agent_review::AgentReview>),
+    Review(Entity<crate::agents::review::AgentReview>),
 }
 
 /// An agent's title while it is edited in place, in a field holding it.
@@ -443,6 +443,20 @@ pub struct AgentRow {
 
 pub use sikemux_wire::inbox::TeamLink;
 
+impl AgentRow {
+    /// Its face, or its agent's mark while it wears none, `size` across.
+    pub fn mark(&self, size: f32, cx: &App) -> AnyElement {
+        crate::ui::agent_mark(
+            &self.id,
+            &self.provider,
+            self.face.as_ref(),
+            self.group,
+            size,
+            cx,
+        )
+    }
+}
+
 impl Workbench {
     pub fn new(link: Link, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let Link { mut updates, asks } = link;
@@ -474,9 +488,11 @@ impl Workbench {
         crate::search::install(cx);
         crate::settings::install(cx);
         crate::project_switcher::install(cx);
-        crate::model_picker::install(cx);
+        crate::chat::model_picker::install(cx);
         crate::hang_watch::start(window, cx);
-        crate::ui::grain::animate(window, cx);
+        crate::ui::grain::animate(window, cx, |bench| {
+            bench.battery.is_some_and(|battery| !battery.charging)
+        });
         crate::ui::clock::follow(window, cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
@@ -690,7 +706,7 @@ impl Workbench {
             rail_scroll: Default::default(),
             strip_scrolled_to: Default::default(),
             rail_glide: Default::default(),
-            agent_card: crate::agent_card::Card::default(),
+            agent_card: crate::agents::card::Card::default(),
             picked_tasks: HashMap::new(),
             rail_frame: Rc::default(),
             stage_frame: Rc::default(),
@@ -762,7 +778,7 @@ impl Workbench {
             parts: Parts::new(cx),
             panes: crate::panes::Panes::default(),
             desks: crate::desk::Desks::new(window, cx),
-            sims: crate::sim_pane::Simulators::new(cx),
+            sims: crate::sim::pane::Simulators::new(cx),
             _filtering: None,
             _older: None,
         };
@@ -896,7 +912,7 @@ impl Workbench {
                     &self.asks,
                 );
                 crate::editor::keep(self);
-                crate::agent_setup::settle(self, cx);
+                crate::agents::setup::settle(self, cx);
                 self.settle_open_waits();
                 crate::notifications::badge(self);
                 crate::notifications::kept_running(self, cx);
@@ -2839,7 +2855,7 @@ impl Workbench {
 
     pub(crate) fn show_review(
         &mut self,
-        review: Entity<crate::agent_review::AgentReview>,
+        review: Entity<crate::agents::review::AgentReview>,
         cx: &mut Context<Self>,
     ) {
         self.overlays.asking = Some(Asking::Review(review));
@@ -4995,16 +5011,14 @@ impl Render for Workbench {
                     bench.toggle_commands(window, cx);
                 }),
             )
-            .on_action(
-                cx.listener(
-                    |bench, _: &crate::agent_palette::ChooseAgent, window, cx| match bench
-                        .chosen_host()
-                    {
+            .on_action(cx.listener(
+                |bench, _: &crate::agents::palette::ChooseAgent, window, cx| {
+                    match bench.chosen_host() {
                         crate::hosts::HostChoice::Ssh(alias) => bench.open_install_pane(&alias),
                         _ => bench.toggle_agent_palette(window, cx),
-                    },
-                ),
-            )
+                    }
+                },
+            ))
             .on_action(
                 cx.listener(|bench, _: &crate::picker::OpenProject, window, cx| {
                     bench.toggle_picker(crate::picker::Picking::Projects, window, cx);
