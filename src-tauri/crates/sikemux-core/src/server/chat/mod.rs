@@ -942,7 +942,6 @@ impl Chat {
             model: self.launch.model.clone(),
             model_provider: self.launch.env.get(ROUTED_ENV).cloned(),
             effort: self.launch.effort.clone(),
-            asleep: false,
             unread: false,
             active_at: None,
             group: Default::default(),

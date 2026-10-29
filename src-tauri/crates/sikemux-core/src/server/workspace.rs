@@ -1676,7 +1676,11 @@ impl Workspaces {
                 title: named(agent),
                 cwd: agent.cwd.clone(),
                 session_id: None,
-                state: ChatState::Stopped,
+                state: if agent.asleep {
+                    ChatState::Asleep
+                } else {
+                    ChatState::Stopped
+                },
                 running: false,
                 pending_permissions: Vec::new(),
                 subagents: 0,
@@ -1688,7 +1692,6 @@ impl Workspaces {
                 model: None,
                 model_provider: None,
                 effort: None,
-                asleep: agent.asleep,
                 unread: false,
                 active_at: None,
                 group: Default::default(),
@@ -2697,7 +2700,6 @@ mod tests {
             model: None,
             model_provider: None,
             effort: None,
-            asleep: false,
             unread: false,
             active_at: None,
             group: Default::default(),

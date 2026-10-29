@@ -461,8 +461,6 @@ export interface ChatInfo {
     /** The provider its turns are paid with, in place of the agent's own account. */
     modelProvider?: string;
     effort: string | null;
-    /** The app stopped its agent while idle; `AcpWake` starts it again. */
-    asleep: boolean;
     /**
      * It finished a turn or asked for something while the person was not
      * looking at it in the app.
@@ -489,7 +487,7 @@ export interface ChatInfo {
     attentionRank: number;
 }
 
-export type ChatState = "starting" | "ready" | "stopped";
+export type ChatState = "starting" | "ready" | "asleep" | "stopped";
 
 /** Something an agent is waiting on a person for. */
 export interface Attention {

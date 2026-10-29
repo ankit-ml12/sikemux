@@ -220,7 +220,7 @@ export class ChatSession {
    * restarted is taken up again, and only the requests the host still waits on are shown.
    */
   hostSaw = (info: ChatInfo | undefined, waiting: string[] | undefined) => {
-    const up = info !== undefined && info.state === 'ready' && !info.asleep;
+    const up = info?.state === 'ready';
     const cameBack = this.hostUp === false && up;
     this.hostUp = up;
     const next = waiting ? new Set(waiting) : null;

@@ -353,7 +353,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     <View style={styles.attaching} accessibilityLiveRegion="polite">
       <Working />
       <Text style={type.meta}>
-        {live.status === 'connecting' ? `Reaching ${hostName}…` : info?.asleep ? 'Waking the chat…' : 'Opening the chat…'}
+        {live.status === 'connecting' ? `Reaching ${hostName}…` : info?.state === 'asleep' ? 'Waking the chat…' : 'Opening the chat…'}
       </Text>
     </View>
   ) : null;

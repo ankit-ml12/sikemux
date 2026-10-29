@@ -693,12 +693,10 @@ pub(crate) fn listed(core: &Core) -> Vec<Listed> {
         .into_iter()
         .map(|chat| {
             let (project, parent) = place(&chat.agent_id, Some(&chat.cwd));
-            let reach = if chat.asleep {
-                Reach::Asleep
-            } else if chat.state == ChatState::Stopped {
-                Reach::Stopped
-            } else {
-                Reach::Chat
+            let reach = match chat.state {
+                ChatState::Asleep => Reach::Asleep,
+                ChatState::Stopped => Reach::Stopped,
+                ChatState::Starting | ChatState::Ready => Reach::Chat,
             };
             Listed {
                 name: chat.name,

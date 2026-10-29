@@ -108,7 +108,7 @@ const picked = (name: string, kind: 'image' | 'file', size = 1000): Attachment =
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const texts = (session: ChatSession) =>
   session.snapshot().view.messages.flatMap((message) => message.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])));
-const info = (state: ChatState, asleep = false) => ({ agentId: 'agent', state, asleep }) as ChatInfo;
+const info = (state: ChatState) => ({ agentId: 'agent', state }) as ChatInfo;
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -423,7 +423,7 @@ describe('a chat session', () => {
     const { session } = harness();
     const connection = fakeConnection(live([], 0));
     session.hold(connection as unknown as ConnectionLike);
-    session.hostSaw(info('ready', true), []);
+    session.hostSaw(info('asleep'), []);
     await settle();
     session.hostSaw(info('ready'), []);
     expect(connection.attachChat).toHaveBeenCalledTimes(1);

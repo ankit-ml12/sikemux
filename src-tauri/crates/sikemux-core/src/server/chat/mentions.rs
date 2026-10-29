@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::protocol::ChatContext;
+use crate::protocol::{ChatContext, ChatState};
 use crate::server::connection::blocking;
 use crate::server::{display, launching, saved, Core, CoreError, CoreResult};
 
@@ -201,7 +201,7 @@ fn status(core: &Core, id: &str) -> &'static str {
         .into_iter()
         .find(|chat| chat.agent_id == id)
     {
-        return if chat.asleep {
+        return if chat.state == ChatState::Asleep {
             "Asleep"
         } else {
             display::group_label(chat.group)

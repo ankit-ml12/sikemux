@@ -18,11 +18,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const PROTOCOL: &str = "sikemux-core";
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 /// The oldest version a device may speak and still be served. A change a
 /// device from an older release can still read bumps only `PROTOCOL_VERSION`,
 /// so phones waiting on an app store review keep working.
-pub const OLDEST_PROTOCOL_VERSION: u32 = 12;
+pub const OLDEST_PROTOCOL_VERSION: u32 = 13;
 /// How long a core waits for a sleeping chat it was asked to wake to come
 /// back up, its agent's adapter and CLI with it. A device waits longer, so the
 /// core's reason for giving up reaches it.
@@ -537,8 +537,9 @@ pub enum ChatAttachment {
 pub enum ChatState {
     Starting,
     Ready,
-    /// The app has the chat open but its agent is not running: asleep, or it
-    /// failed to start.
+    /// The app stopped its agent while idle; `AcpWake` starts it again.
+    Asleep,
+    /// The app has the chat open but its agent is not running, as it ended or failed to start.
     Stopped,
 }
 
@@ -671,8 +672,6 @@ pub struct ChatInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_provider: Option<String>,
     pub effort: Option<String>,
-    /// The app stopped its agent while idle; `AcpWake` starts it again.
-    pub asleep: bool,
     /// It finished a turn or asked for something while the person was not
     /// looking at it in the app.
     pub unread: bool,

@@ -35,10 +35,9 @@ pub(crate) fn show_chat(chat: &mut ChatInfo, asking: bool) {
         AgentStatus::Working
     } else if chat.unread {
         AgentStatus::Done
-    } else if chat.asleep {
-        AgentStatus::Asleep
     } else {
         match chat.state {
+            ChatState::Asleep => AgentStatus::Asleep,
             ChatState::Stopped => AgentStatus::Stopped,
             ChatState::Starting => AgentStatus::Starting,
             ChatState::Ready => AgentStatus::Idle,

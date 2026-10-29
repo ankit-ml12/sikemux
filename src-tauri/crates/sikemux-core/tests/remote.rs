@@ -685,14 +685,13 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         titled(&agent_id).title.as_deref(),
         Some("Fix the replay test")
     );
-    assert!(!titled(&agent_id).asleep);
+    assert_ne!(titled(&agent_id).state, ChatState::Asleep);
     assert_eq!(
         titled("agent-sleepy").title.as_deref(),
         Some("Tidy the docs")
     );
-    assert!(titled("agent-sleepy").asleep);
+    assert_eq!(titled("agent-sleepy").state, ChatState::Asleep);
     assert_eq!(titled("agent-failed").state, ChatState::Stopped);
-    assert!(!titled("agent-failed").asleep);
 
     client
         .acp_wake("agent-sleepy".into())
@@ -703,7 +702,6 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         .iter()
         .find(|chat| chat.agent_id == "agent-sleepy")
         .expect("listed");
-    assert!(!sleepy.asleep);
     assert_eq!(
         sleepy.state,
         ChatState::Ready,
