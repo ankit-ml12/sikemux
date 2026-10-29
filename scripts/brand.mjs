@@ -17,7 +17,7 @@ const WORDMARK = join(ROOT, "src-tauri/icons/sikemux.icon/Assets/wordmark.svg");
 const FIGTREE = join(ROOT, "src-tauri/notch/Fonts/Figtree_600SemiBold.ttf");
 
 const shapes = readFileSync(WORDMARK, "utf8")
-  .match(/<g transform="translate\(0, 30\)">([\s\S]*?)<\/g>/)[1]
+  .match(/<g transform="translate\(-4\.5, 53\.5\)">([\s\S]*?)<\/g>/)[1]
   .replace(/ fill="#FFFFFF"/g, "")
   .replace(/\s+/g, " ")
   .trim();
@@ -38,7 +38,7 @@ const iconSvg = (ground, { rounded }) => {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
 <defs><linearGradient id="ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="0.55" stop-color="${middle}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs>
 <rect width="1024" height="1024"${corner} fill="url(#ground)"/>
-<svg x="176" y="176" width="672" height="672" viewBox="0 0 420 420"><g transform="translate(0, 30)" fill="#ffffff">${shapes}</g></svg>
+<svg x="176" y="176" width="672" height="672" viewBox="0 0 420 420"><g transform="translate(-4.5, 53.5)" fill="#ffffff">${shapes}</g></svg>
 </svg>
 `;
 };

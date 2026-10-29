@@ -52,7 +52,7 @@ const makeSvgIcon24 = (children: React.ReactNode) => makeSvgIcon(<g strokeWidth=
 
 export function Logo({ size = 16, className }: IconProps) {
     return (
-        <svg width={size} height={size} viewBox="0 -30 420 420" fill="currentColor" className={className} aria-hidden="true">
+        <svg width={size} height={size} viewBox="4.5 -53.5 420 420" fill="currentColor" className={className} aria-hidden="true">
             <polygon points="257,72 331,29 331,114" />
             <polygon points="98,199 172,241 98,284" />
             <path
