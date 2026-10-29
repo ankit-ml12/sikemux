@@ -21,6 +21,7 @@ const SOURCES = [
   `${WIRE}/theme.rs`,
   `${WIRE}/notch.rs`,
   `${WIRE}/inbox.rs`,
+  `${WIRE}/share.rs`,
   `${WIRE}/pty/shell_protocol.rs`,
   `${WIRE}/pty/task.rs`,
   `${WIRE}/accounts/protocol.rs`,
@@ -80,6 +81,10 @@ const RENAMES = {
 
 /** Fields the Rust keeps as JSON so phones read changes over the air, and the type that JSON has. */
 const JSON_FIELDS = {
+  "ChatAttachment.view": "ChatView",
+  "ChatAttachment.changes": "ChatChange[]",
+  "SharedEvent.changes": "ChatChange[]",
+  "ShareReply.page": "ChatPage",
   "DeviceView.updates": "UpdateStatus",
 };
 
@@ -113,6 +118,9 @@ const TS_ROOTS = [
   "DiffHunk",
   "Draft",
   "UpdateStatus",
+  "ShareFrame",
+  "ShareAsk",
+  "ShareReply",
 ];
 
 /** The fields the notch reads of each type. Swift's decoder ignores the rest. */
@@ -469,6 +477,21 @@ function parseFields(body, file, rule, where) {
   });
 }
 
+/** Gives the fields the Rust keeps as JSON the type that JSON has, as JSON_FIELDS names it. */
+function typeJson(name, fields) {
+  for (const field of fields) {
+    const json = JSON_FIELDS[`${name}.${field.name}`];
+    if (!json) continue;
+    const optional = field.type.kind === "option";
+    const inner = optional ? field.type.of : field.type;
+    if (inner.kind !== "json") fail(`${name}.${field.name} is not JSON`);
+    const named = json.endsWith("[]")
+      ? { kind: "list", of: { kind: "named", name: json.slice(0, -2) } }
+      : { kind: "named", name: json };
+    field.type = optional ? { kind: "option", of: named } : named;
+  }
+}
+
 /** A declaration as the clients see its JSON. */
 function parse(item) {
   const where = `${item.name} in ${item.file}`;
@@ -485,16 +508,7 @@ function parse(item) {
       settings.rename_all,
       where,
     );
-    for (const field of fields) {
-      const json = JSON_FIELDS[`${name}.${field.name}`];
-      if (json) {
-        const optional = field.type.kind === "option";
-        const inner = optional ? field.type.of : field.type;
-        if (inner.kind !== "json") fail(`${name}.${field.name} is not JSON`);
-        const named = { kind: "named", name: json };
-        field.type = optional ? { kind: "option", of: named } : named;
-      }
-    }
+    typeJson(name, fields);
     return { name, docs: item.docs, kind: "struct", fields };
   }
   if (item.kind !== "enum") fail(`${where} is a ${item.kind}`);
@@ -505,17 +519,19 @@ function parse(item) {
       if (!match) fail(`${where}::${rest} is not a unit or struct variant`);
       const variant = serde(attrs, `${where}::${match[1]}`);
       only(variant, KNOWN.variant, `${where}::${match[1]}`);
+      const fields = match[2]
+        ? parseFields(
+            match[2],
+            item.file,
+            settings.rename_all_fields,
+            `${where}::${match[1]}`,
+          )
+        : [];
+      typeJson(name, fields);
       return {
         name: variant.rename ?? renameAll(match[1], settings.rename_all, where),
         docs,
-        fields: match[2]
-          ? parseFields(
-              match[2],
-              item.file,
-              settings.rename_all_fields,
-              `${where}::${match[1]}`,
-            )
-          : [],
+        fields,
       };
     });
     return {

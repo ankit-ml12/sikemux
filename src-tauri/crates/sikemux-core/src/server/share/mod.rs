@@ -15,12 +15,14 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde::Serialize;
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
+use sikemux_wire::share::{ShareAsk, ShareFrame, ShareReply, SharedChat, SharedFile};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+
+use crate::protocol::ChatAttachment;
 
 use super::access::Peer;
 use super::changed::Topic;
@@ -344,21 +346,25 @@ pub(crate) fn restore(core: &Arc<Core>) {
     save(core, &inner);
 }
 
-/// The plain text of a snapshot: the chat as it stands, from its last turns.
-fn snapshot_text(core: &Core, agent_id: &str, title: Option<String>, attachment: &Value) -> Value {
+/// A snapshot: the chat as it stands, from its last turns.
+fn snapshot(
+    core: &Core,
+    agent_id: &str,
+    title: Option<String>,
+    attachment: ChatAttachment,
+) -> ShareFrame {
     let info = core.chats.get(agent_id).map(|chat| chat.info());
-    json!({
-        "type": "snapshot",
-        "chat": {
-            "agentId": agent_id,
-            "provider": info.as_ref().map(|info| info.provider.clone()),
-            "title": title.or_else(|| info.as_ref().and_then(|info| info.title.clone())),
-            "model": info.as_ref().and_then(|info| info.model.clone()),
-            "cwd": info.as_ref().map(|info| info.cwd.clone()),
-            "home": std::env::var_os("HOME").map(PathBuf::from),
+    ShareFrame::Snapshot {
+        chat: SharedChat {
+            agent_id: agent_id.to_owned(),
+            provider: info.as_ref().map(|info| info.provider.clone()),
+            title: title.or_else(|| info.as_ref().and_then(|info| info.title.clone())),
+            model: info.as_ref().and_then(|info| info.model.clone()),
+            cwd: info.as_ref().map(|info| info.cwd.clone()),
+            home: std::env::var_os("HOME").map(PathBuf::from),
         },
-        "attachment": attachment,
-    })
+        attachment,
+    }
 }
 
 /// How every chat event the core sends its clients begins. Such a frame is
@@ -382,18 +388,19 @@ fn published<'a>(core: &Core, id: &str, frame: &'a [u8]) -> Option<(Cow<'a, [u8]
             response: Response::ChatAttached { attachment },
             ..
         } => {
-            let attachment = serde_json::to_value(&attachment).ok()?;
             let mut inner = core.shares.inner.locked();
             let running = inner.running.get_mut(id)?;
-            running.feed = attachment
-                .pointer("/mark/feed")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
+            running.feed = match &attachment {
+                ChatAttachment::Live { mark, .. } | ChatAttachment::Resumed { mark, .. } => {
+                    Some(mark.feed.clone())
+                }
+                ChatAttachment::Missing => None,
+            };
             let agent_id = running.stored.agent_id.clone();
             let title = running.stored.title.clone();
             drop(inner);
-            let text = snapshot_text(core, &agent_id, title, &attachment);
-            Some((Cow::Owned(serde_json::to_vec(&text).ok()?), true))
+            let frame = snapshot(core, &agent_id, title, attachment);
+            Some((Cow::Owned(serde_json::to_vec(&frame).ok()?), true))
         }
         ServerMessage::Event {
             event: Event::Chat { .. },
@@ -431,55 +438,45 @@ fn take_snapshot(core: &Arc<Core>, id: &str) {
 /// A viewer's sealed question and the core's sealed answer, or nothing for a
 /// question it cannot read.
 async fn answer(core: Arc<Core>, id: String, viewer: String, sealed: String) -> Option<ToLink> {
-    #[derive(Deserialize)]
-    #[serde(tag = "type", rename_all = "camelCase")]
-    enum Ask {
-        Page {
-            feed: String,
-            before: u64,
-        },
-        #[serde(rename_all = "camelCase")]
-        ToolDetail {
-            tool_call_id: String,
-        },
-        File {
-            path: PathBuf,
-        },
-    }
-    #[derive(Deserialize)]
-    struct Question {
-        id: u64,
-        #[serde(flatten)]
-        ask: Ask,
-    }
-
     let (seal, agent_id) = {
         let inner = core.shares.inner.locked();
         let running = inner.running.get(&id)?;
         (running.seal.clone(), running.stored.agent_id.clone())
     };
-    let question: Question = serde_json::from_slice(&seal.open(&sealed)?).ok()?;
-    let reply = match question.ask {
-        Ask::Page { feed, before } => {
+    let ask: ShareAsk = serde_json::from_slice(&seal.open(&sealed)?).ok()?;
+    let mut reply = ShareReply {
+        id: ask.id(),
+        ..ShareReply::default()
+    };
+    let failed = match ask {
+        ShareAsk::Page { feed, before, .. } => {
             match chat::history(&core, &agent_id, &feed, before, PAGE_TURNS) {
-                Ok(crate::protocol::Response::ChatHistory { page }) => json!({ "page": page }),
-                Ok(_) => json!({ "error": "the host answered something else" }),
-                Err(error) => json!({ "error": error.to_string() }),
+                Ok(crate::protocol::Response::ChatHistory { page }) => {
+                    reply.page = Some(page);
+                    None
+                }
+                Ok(_) => Some("the host answered something else".to_owned()),
+                Err(error) => Some(error.to_string()),
             }
         }
-        Ask::ToolDetail { tool_call_id } => {
+        ShareAsk::ToolDetail { tool_call_id, .. } => {
             match chat::tool_detail(&core, &agent_id, &tool_call_id) {
-                Ok(detail) => json!({ "toolDetail": detail }),
-                Err(error) => json!({ "error": error.to_string() }),
+                Ok(detail) => {
+                    reply.tool_detail = Some(detail);
+                    None
+                }
+                Err(error) => Some(error.to_string()),
             }
         }
-        Ask::File { path } => match pasted_picture(&core, path).await {
-            Ok(data) => json!({ "file": { "data": data } }),
-            Err(error) => json!({ "error": error.to_string() }),
+        ShareAsk::File { path, .. } => match pasted_picture(&core, path).await {
+            Ok(data) => {
+                reply.file = Some(SharedFile { data });
+                None
+            }
+            Err(error) => Some(error.to_string()),
         },
     };
-    let mut reply = reply;
-    reply["id"] = json!(question.id);
+    reply.error = failed;
     let sealed = seal.seal(&serde_json::to_vec(&reply).ok()?)?;
     Some(ToLink::Send(
         crate::accounts::share::ShareClientMessage::Answer(crate::accounts::share::ShareAnswer {

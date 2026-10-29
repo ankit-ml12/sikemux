@@ -2541,3 +2541,109 @@ export interface Draft {
   /** Moves on with every change, so an app saving the draft says which one it last read. */
   rev?: number;
 }
+
+/**
+ * What a share sends its viewers, a frame at a time: the chat as it stands, then each
+ * change to it.
+ */
+export type ShareFrame =
+  /** Starts a viewer over. */
+  | {
+      type: 'snapshot';
+      chat: SharedChat;
+      attachment: ChatAttachment;
+    }
+  /** The chat's changes, as the core sends them to its own clients. */
+  | {
+      type: 'event';
+      event: SharedEvent;
+    };
+
+/** The shared chat, as a viewer names it. */
+export interface SharedChat {
+  agentId: string;
+  provider?: string;
+  title?: string;
+  model?: string;
+  cwd?: string;
+  /** The home folder on the host, so a viewer can shorten its paths. */
+  home?: string;
+}
+
+export type ChatAttachment =
+  /**
+   * The chat as it stands, a [`crate::chat::ChatView`] as JSON. Changes
+   * follow, numbered from `mark.seq + 1`.
+   */
+  | {
+      status: 'live';
+      view: ChatView;
+      mark: ChatMark;
+    }
+  /**
+   * What changed since the mark the client attached with, as a list of
+   * [`crate::chat::ChatChange`] JSON. Changes follow `mark`.
+   */
+  | {
+      status: 'resumed';
+      changes: ChatChange[];
+      mark: ChatMark;
+    }
+  | {
+      status: 'missing';
+    };
+
+/**
+ * The last of a chat's changes a client heard. `feed` changes whenever the
+ * chat's agent starts again, which starts `seq` over.
+ */
+export interface ChatMark {
+  feed: string;
+  seq: number;
+}
+
+/** The one event of the core's that a share passes on. */
+export type SharedEvent =
+  /** A list of [`crate::chat::ChatChange`] as JSON, numbered by `seq`. */
+  {
+    kind: 'chat';
+    agentId: string;
+    seq: number;
+    changes: ChatChange[];
+  };
+
+/** What a viewer asks the host, numbered by `id` so its answer finds it. */
+export type ShareAsk =
+  /** The turns before `before` in the chat run `feed`. */
+  | {
+      type: 'page';
+      id: number;
+      feed: string;
+      before: number;
+    }
+  | {
+      type: 'toolDetail';
+      id: number;
+      toolCallId: string;
+    }
+  /** A picture pasted into the chat. */
+  | {
+      type: 'file';
+      id: number;
+      path: string;
+    };
+
+/** The host's answer to the question numbered `id`: one of the rest, or `error`. */
+export interface ShareReply {
+  id: number;
+  /** A [`crate::chat::ChatPage`] as JSON. */
+  page?: ChatPage;
+  toolDetail?: ToolDetail;
+  file?: SharedFile;
+  error?: string;
+}
+
+export interface SharedFile {
+  /** The file's bytes in base64. */
+  data: string;
+}

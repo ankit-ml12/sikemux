@@ -1,20 +1,15 @@
 import type { ShareClientMessage, ShareServerMessage } from "../../server/protocol/generated/types";
 import { ShareCloseCode } from "../../server/protocol/generated/types";
-import { recordOf } from "../lib/guards";
 import { applyChanges, emptyChat, fromView, withPage } from "../chat/rows";
-import type { ChatChange, ChatPage, ChatRows, ChatView, ToolDetail } from "../chat/types";
+import type { ChatChange, ChatRows, ToolDetail } from "../chat/types";
+import type { ShareAsk, SharedChat, ShareFrame, ShareReply } from "../wire.generated";
 import type { ShareCipher } from "./cipher";
 import type { ShareLink } from "./link";
 
-/** What a share says of its chat, from its latest snapshot. */
-export interface SharedChat {
-    readonly agentId: string;
-    readonly provider: string | null;
-    readonly title: string | null;
-    readonly model: string | null;
-    readonly cwd: string | null;
-    readonly home: string | null;
-}
+export type { SharedChat };
+
+/** What a viewer asks the host, before it is numbered. */
+type Question = { [Type in ShareAsk["type"]]: Omit<Extract<ShareAsk, { type: Type }>, "id"> }[ShareAsk["type"]];
 
 export type ShareStatus =
     /** Reaching the server, or waiting for the chat's first snapshot. */
@@ -76,8 +71,6 @@ export interface ShareSessionOptions {
     now?: () => number;
 }
 
-type Answer = { page?: ChatPage; toolDetail?: ToolDetail; file?: { data: string }; error?: string };
-
 const BACKOFF_BASE_MS = 1_000;
 const BACKOFF_CAP_MS = 60_000;
 /** A question the host has not answered in this long gets no answer. */
@@ -114,10 +107,6 @@ function expiresAt(token: string): number {
     }
 }
 
-function text(value: unknown): string | null {
-    return typeof value === "string" ? value : null;
-}
-
 /**
  * One shared chat, watched read-only through the accounts server. It holds the rows the host's
  * snapshot sends and makes the changes that follow, and asks the host, sealed, for the turns
@@ -150,7 +139,7 @@ export class ShareSession {
     private pending: ChatChange[] = [];
     private cancelFrame: (() => void) | undefined;
     private asked = 0;
-    private answers = new Map<number, (answer: Answer | null) => void>();
+    private answers = new Map<number, (answer: ShareReply | null) => void>();
     private images = new Map<string, Promise<string | null>>();
 
     private readonly options: ShareSessionOptions;
@@ -333,9 +322,8 @@ export class ShareSession {
                 return;
             case "answer": {
                 const plain = await this.options.cipher.open(message.sealed);
-                const answer = plain === null ? null : (recordOf(JSON.parse(plain)) as (Answer & { id?: number }) | null);
-                if (typeof answer?.id !== "number") return;
-                this.answers.get(answer.id)?.(answer);
+                const answer = plain === null ? null : (JSON.parse(plain) as ShareReply);
+                if (answer) this.answers.get(answer.id)?.(answer);
                 return;
             }
             case "host":
@@ -382,15 +370,13 @@ export class ShareSession {
 
     /** One unsealed frame: a snapshot starts the chat over, the rest change it. */
     private take(plain: string) {
-        const frame = recordOf(JSON.parse(plain));
-        if (frame?.type === "snapshot") return this.replace(frame);
-        // The core's own message, as its clients hear it: the chat's changes are inside.
-        const event = frame?.type === "event" ? recordOf(frame.event) : null;
-        if (event?.kind !== "chat" || event.agentId !== this.chat?.agentId) return;
-        const seq = typeof event.seq === "number" ? event.seq : 0;
-        if (seq <= this.chatSeq || !Array.isArray(event.changes)) return;
-        this.chatSeq = seq;
-        this.pending.push(...(event.changes as ChatChange[]));
+        const frame = JSON.parse(plain) as ShareFrame;
+        if (frame.type === "snapshot") return this.replace(frame);
+        if (frame.type !== "event") return;
+        const { event } = frame;
+        if (event.kind !== "chat" || event.agentId !== this.chat?.agentId || event.seq <= this.chatSeq) return;
+        this.chatSeq = event.seq;
+        this.pending.push(...event.changes);
         this.cancelFrame ??= (this.options.frame ?? animationFrame)(this.flush);
     }
 
@@ -403,39 +389,28 @@ export class ShareSession {
         this.emit();
     };
 
-    private replace(frame: Record<string, unknown>) {
+    private replace({ chat, attachment }: Extract<ShareFrame, { type: "snapshot" }>) {
         this.cancelFrame?.();
         this.cancelFrame = undefined;
         this.pending = [];
-        const chat = recordOf(frame.chat);
-        this.chat = {
-            agentId: text(chat?.agentId) ?? "",
-            provider: text(chat?.provider),
-            title: text(chat?.title),
-            model: text(chat?.model),
-            cwd: text(chat?.cwd),
-            home: text(chat?.home),
-        };
-        const attachment = recordOf(frame.attachment);
-        const view = recordOf(attachment?.view);
-        const mark = recordOf(attachment?.mark);
-        if (attachment?.status !== "live" || !view) {
+        this.chat = chat;
+        if (attachment.status !== "live") {
             this.status = "missing";
             this.feed = null;
             this.agent = this.agent.messages.length ? { ...this.agent, running: false } : emptyChat;
             this.emit();
             return;
         }
-        this.agent = fromView(view as unknown as ChatView);
-        this.feed = text(mark?.feed);
-        this.chatSeq = typeof mark?.seq === "number" ? mark.seq : 0;
+        this.agent = fromView(attachment.view);
+        this.feed = attachment.mark.feed;
+        this.chatSeq = attachment.mark.seq;
         this.earlier = "idle";
         this.status = "live";
         this.emit();
     }
 
     /** Asks the host something, sealed. Answers null when the host is away or will not say. */
-    private async ask(question: Record<string, unknown>): Promise<Answer | null> {
+    private async ask(question: Question): Promise<ShareReply | null> {
         const socket = this.socket;
         if (!socket || !this.hostOnline) return null;
         const id = (this.asked += 1);
