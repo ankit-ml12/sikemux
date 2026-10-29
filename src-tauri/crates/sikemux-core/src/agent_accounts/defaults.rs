@@ -130,18 +130,9 @@ fn clean_model(value: &str) -> Option<String> {
 
 fn clean_effort(kind: &str, value: &str) -> Option<String> {
     let value = value.trim().to_ascii_lowercase();
-    let allowed: &[&str] = match kind {
-        "claude" => &["low", "medium", "high", "xhigh", "max"],
-        "codex" => &["minimal", "low", "medium", "high", "xhigh", "max"],
-        "hermes" => &[
-            "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
-        ],
-        "pi" | "omp" => &["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-        "grok" => &["none", "minimal", "low", "medium", "high", "xhigh", "max"],
-        "muse" => &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
-        _ => &[],
-    };
-    allowed.contains(&value.as_str()).then_some(value)
+    crate::agent_catalog::agent(kind)
+        .is_some_and(|agent| agent.efforts.contains(&value.as_str()))
+        .then_some(value)
 }
 
 fn json_model(path: &Path, key: &str) -> Option<String> {
