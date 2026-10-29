@@ -415,7 +415,11 @@ fn file_name(path: &Path) -> String {
 }
 
 fn project_path(bench: &Workbench) -> String {
-    bench.watched_project.as_deref().unwrap_or_default().to_owned()
+    bench
+        .watched_project
+        .as_deref()
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn relative(project: &str, path: &str) -> String {
