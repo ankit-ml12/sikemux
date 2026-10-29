@@ -211,8 +211,11 @@ pub(crate) async fn find(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SearchParams {
     query: String,
+    #[serde(default)]
     projects: Option<Vec<PathBuf>>,
+    #[serde(default)]
     limit: Option<usize>,
+    #[serde(default)]
     budget_ms: Option<u64>,
 }
 

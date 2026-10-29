@@ -2655,6 +2655,20 @@ export interface ChatContext {
     text: string;
 }
 
+export interface ClosedAgentsParams {
+    cwd: string;
+}
+
+/** A closed agent the person named, which can be opened again under its name. */
+export interface ClosedAgent {
+    agentId: string;
+    name: string;
+    provider: string;
+    sessionId: string;
+    title: string | null;
+    buddy: AgentBuddy | null;
+}
+
 /** What a call that takes nothing is sent; whatever a client sends reads as nothing. */
 export interface NoParams {}
 
@@ -2681,9 +2695,79 @@ export interface EditParams {
     paths?: string[];
 }
 
+export interface FindParams {
+    agentId: string;
+    feed: string;
+    query: string;
+    matchCase?: boolean;
+    wholeWord?: boolean;
+    from?: FindAt | null;
+    direction?: FindDirection;
+    limit?: number | null;
+    countOnly?: boolean;
+}
+
+/**
+ * Where a find goes on from: a place in a row's text, and how many it had counted to there.
+ * An empty `part` stands before or after every part of its row, as the direction goes.
+ */
+export interface FindAt {
+    event: number;
+    part?: string;
+    offset?: number;
+    counted?: number;
+}
+
+export type FindDirection = "older" | "newer";
+
+export interface FindAnswer {
+    hits: FindHit[];
+    /** Where to go on from; none once the chat's start, or end, is reached. */
+    next: FindAt | null;
+    scanned: FindScanned;
+    counted: FindCounted;
+}
+
+export interface FindHit {
+    row: string;
+    fromEvent: number;
+    part: string;
+    /** UTF-16 offsets in the part's searchable text. */
+    range: [number, number];
+    preview: string;
+}
+
+export interface FindScanned {
+    fromEvent: number | null;
+    toEvent: number | null;
+}
+
+export interface FindCounted {
+    matches: number;
+    complete: boolean;
+}
+
 export interface ToolDetailParams {
     agentId: string;
     toolCallId: string;
+}
+
+export interface SessionSearchParams {
+    query: string;
+    projects?: string[] | null;
+    limit?: number | null;
+    budgetMs?: number | null;
+}
+
+export interface SessionMatch {
+    cli: string;
+    sessionId: string;
+    title: string;
+    project: string;
+    /** When it was last written to, in Unix milliseconds. */
+    activeAt: number;
+    /** Lines of the conversation the words were found in. */
+    snippets: string[];
 }
 
 export interface AgentParams {
@@ -2735,6 +2819,18 @@ export interface DeviceChange {
     id: string;
     /** None unpairs the device. */
     access?: DeviceAccess | null;
+}
+
+export interface ProjectEntriesParams {
+    project: string;
+    query?: string;
+    limit?: number;
+}
+
+/** A project's file or folder, as `rank_entries` finds it. */
+export interface ProjectEntry {
+    path: string;
+    folder: boolean;
 }
 
 export interface StashPromptParams {
@@ -2837,11 +2933,14 @@ export interface BoardParams {
 /** The core's calls that name what they take and answer, by method. */
 export interface CoreCalls {
     promptChat: { params: PromptChatParams; answer: null };
+    closedAgents: { params: ClosedAgentsParams; answer: ClosedAgent[] };
     agentCatalog: { params: NoParams; answer: CatalogAgent[] };
     steerQueued: { params: QueuedParams; answer: null };
     editMessage: { params: EditParams; answer: null };
+    chatFind: { params: FindParams; answer: FindAnswer };
     chatToolDetail: { params: ToolDetailParams; answer: ToolDetail };
     dropQueued: { params: QueuedParams; answer: null };
+    agentSessions: { params: SessionSearchParams; answer: SessionMatch[] };
     closeChat: { params: AgentParams; answer: null };
     createAgentWorktree: { params: AgentWorktreeParams; answer: MadeAgentWorktree };
     cancelResume: { params: ChatAccountsParams; answer: null };
@@ -2852,6 +2951,7 @@ export interface CoreCalls {
     pairing: { params: NoParams; answer: RemotePairing };
     answerPairing: { params: PairingAnswer; answer: RemotePairing };
     changeDevice: { params: DeviceChange; answer: RemotePairing };
+    projectEntries: { params: ProjectEntriesParams; answer: ProjectEntry[] };
     preferences: { params: NoParams; answer: Preferences };
     stashPrompt: { params: StashPromptParams; answer: StashedPrompt };
     attachStash: { params: AttachStashParams; answer: AttachedStash };

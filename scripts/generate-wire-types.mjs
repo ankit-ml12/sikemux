@@ -35,6 +35,12 @@ const SOURCES = [
   `${CORE}/server/messages/log.rs`,
   `${CORE}/server/stash.rs`,
   `${CORE}/server/worktree/agent.rs`,
+  `${CORE}/server/names/mod.rs`,
+  `${CORE}/server/project_files.rs`,
+  `${CORE}/fuzzy.rs`,
+  `${CORE}/server/saved.rs`,
+  `${CORE}/server/chat/find.rs`,
+  `${CORE}/sessions/search.rs`,
   `${WIRE}/changed.rs`,
   `${CORE}/server/board.rs`,
   `${CORE}/server/board/auto.rs`,
@@ -88,6 +94,14 @@ const RENAMES = {
   [`${CORE}/server/worktree/agent.rs`]: {
     ForAgentParams: "AgentWorktreeParams",
     ForAgent: "MadeAgentWorktree",
+  },
+  [`${CORE}/fuzzy.rs`]: { Entry: "ProjectEntry" },
+  [`${CORE}/server/saved.rs`]: { SearchParams: "SessionSearchParams" },
+  [`${CORE}/server/chat/find.rs`]: {
+    Direction: "FindDirection",
+    Hit: "FindHit",
+    Scanned: "FindScanned",
+    Counted: "FindCounted",
   },
   [`${WIRE}/changed.rs`]: { Topic: "CoreChangeTopic" },
   [`${CORE}/server/board.rs`]: {
@@ -383,15 +397,28 @@ function clientName(file, name) {
   return RENAMES[file]?.[name] ?? name;
 }
 
-function lookup(file, name) {
+/**
+ * The item `name` names in `file`: its own, else the one source that declares it. `modules`,
+ * the path the Rust wrote before the name, such as `crate::fuzzy`, picks among several.
+ */
+function lookup(file, name, modules = []) {
   const own = sources[SOURCES.indexOf(file)].get(name);
-  if (own) return own;
-  const all = sources.flatMap((source) =>
+  if (own && !modules.length) return own;
+  let all = sources.flatMap((source) =>
     source.has(name) ? [source.get(name)] : [],
   );
+  const path = modules
+    .filter((part) => !["crate", "super", "self"].includes(part))
+    .join("/");
+  if (all.length > 1 && path)
+    all = all.filter(
+      (item) =>
+        item.file.endsWith(`/${path}.rs`) ||
+        item.file.endsWith(`/${path}/mod.rs`),
+    );
   if (all.length > 1)
     fail(`${name} in ${file} could be any of ${all.map((i) => i.file)}`);
-  return all[0];
+  return all[0] ?? own;
 }
 
 const declared = new Map();
@@ -429,13 +456,22 @@ const PRIMITIVES = {
 function parseType(text, file) {
   text = text.trim().replace(/^&(?:'\w+\s+)?/, "");
   if (text === "()") return { kind: "null" };
+  const array = /^\[(.+);\s*(\d+)\]$/s.exec(text);
+  if (array)
+    return {
+      kind: "tuple",
+      of: Array.from({ length: Number(array[2]) }, () =>
+        parseType(array[1], file),
+      ),
+    };
   if (/^\(.*\)$/s.test(text))
     return {
       kind: "tuple",
       of: splitTop(text.slice(1, -1)).map((part) => parseType(part, file)),
     };
   const generic = /^([\w:]+)\s*<(.*)>$/s.exec(text);
-  const path = (generic?.[1] ?? text).split("::").at(-1);
+  const segments = (generic?.[1] ?? text).split("::");
+  const path = segments.at(-1);
   const args = generic ? splitTop(generic[2]) : [];
   const one = () => {
     if (args.length !== 1) fail(`${text} needs one type argument`);
@@ -451,7 +487,7 @@ function parseType(text, file) {
   }
   if (generic) fail(`${text} is generic`);
   if (PRIMITIVES[path]) return { kind: PRIMITIVES[path] };
-  const item = lookup(file, path);
+  const item = lookup(file, path, segments.slice(0, -1));
   if (!item) fail(`${text} in ${file} is not declared in any source`);
   if (item.kind === "type") {
     const alias = /^=\s*(.*);$/s.exec(item.body);

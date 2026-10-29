@@ -50,9 +50,11 @@ pub(crate) struct FindParams {
     pub match_case: bool,
     #[serde(default)]
     pub whole_word: bool,
+    #[serde(default)]
     pub from: Option<FindAt>,
     #[serde(default)]
     pub direction: Direction,
+    #[serde(default)]
     pub limit: Option<usize>,
     #[serde(default)]
     pub count_only: bool,

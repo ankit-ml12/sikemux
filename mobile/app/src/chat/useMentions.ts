@@ -2,7 +2,9 @@ import { useContext, useEffect, useMemo, useState } from 'react';
 import type { ConnectionLike } from '@sikemux/native';
 
 import { formatAge } from '@shared/lib/format';
+import type { ClosedAgent, ProjectEntry, SessionMatch } from '@shared/wire.generated';
 import type { AgentGroup, ProjectInfo } from '@/core/protocol';
+import { callHost } from '@/core/hostCalls';
 import { problem as problemOf } from '@/core/problem';
 import { connectionOf, useLive } from '@/devices/hub';
 import type { IconName } from '@/ui/icons.generated';
@@ -25,7 +27,7 @@ export type MentionRow = {
   title: string;
   /** The title is words, such as a chat's, rather than a handle to type. */
   plain?: boolean;
-  detail?: string;
+  detail?: string | null;
   aside?: string;
   /** The heading it starts, where the rows above it belong to another. */
   group?: string;
@@ -43,18 +45,12 @@ export type MentionMenuView = {
 
 type Item = { kind: 'issue' | 'pull'; number: number; title: string; url: string };
 type Tracked = { items: Item[] } | { failed: string };
-type Closed = { name: string; provider: string; sessionId: string; title?: string };
-type Found = { cli: string; sessionId: string; title: string; activeAt?: number };
-type Entry = { path: string; folder: boolean };
-
-const HOSTS: Record<string, string> = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
-
 async function ask<T>(connection: ConnectionLike, method: string, params: unknown): Promise<T> {
   return JSON.parse(await connection.call(method, JSON.stringify(params))) as T;
 }
 
 function read(answer: { failed?: { category?: string; message?: string }; value?: unknown }, host: string): Tracked {
-  if (answer.failed?.category === 'auth') return { failed: `Sign in to ${HOSTS[host] ?? host} in the Git pane to pick from its issues` };
+  if (answer.failed?.category === 'auth') return { failed: `Sign in to ${host} in the Git pane to pick from its issues` };
   if (answer.failed) return { failed: answer.failed.message ?? 'The code host did not answer' };
   const items = answer.value ?? answer;
   return { items: Array.isArray(items) ? (items as Item[]) : [] };
@@ -91,11 +87,11 @@ export function useMentions(session: ChatSession, typed: Typed | undefined): Men
   const cwd = project?.path;
   const namesAgents = trigger === '@';
 
-  const [closed, setClosed] = useState<{ cwd: string; list: Closed[] }>();
+  const [closed, setClosed] = useState<{ cwd: string; list: ClosedAgent[] }>();
   useEffect(() => {
     if (!namesAgents || !connection || !cwd) return;
     let current = true;
-    ask<Closed[]>(connection, 'closedAgents', { cwd }).then(
+    callHost(connection, 'closedAgents', { cwd }).then(
       (list) => current && setClosed({ cwd, list }),
       () => current && setClosed({ cwd, list: [] }),
     );
@@ -104,13 +100,13 @@ export function useMentions(session: ChatSession, typed: Typed | undefined): Men
     };
   }, [namesAgents, connection, cwd]);
 
-  const [found, setFound] = useState<{ query: string; list: Found[] }>();
+  const [found, setFound] = useState<{ query: string; list: SessionMatch[] }>();
   useEffect(() => {
     const query = needle.trim().toLowerCase();
     if (trigger !== '@' || !connection || !cwd || !query) return;
     let current = true;
     const settle = setTimeout(() => {
-      ask<Found[]>(connection, 'agentSessions', { query, projects: [cwd], limit: EARLIER_SHOWN, budgetMs: EARLIER_BUDGET_MS }).then(
+      callHost(connection, 'agentSessions', { query, projects: [cwd], limit: EARLIER_SHOWN, budgetMs: EARLIER_BUDGET_MS }).then(
         (list) => current && setFound({ query, list }),
         () => current && setFound({ query, list: [] }),
       );
@@ -121,11 +117,11 @@ export function useMentions(session: ChatSession, typed: Typed | undefined): Men
     };
   }, [trigger, needle, connection, cwd]);
 
-  const [entries, setEntries] = useState<{ query: string; list: Entry[] } | { query: string; failed: string }>();
+  const [entries, setEntries] = useState<{ query: string; list: ProjectEntry[] } | { query: string; failed: string }>();
   useEffect(() => {
     if (trigger !== '+' || !connection || !cwd) return;
     let current = true;
-    ask<Entry[]>(connection, 'projectEntries', { project: cwd, query: needle, limit: SHOWN }).then(
+    callHost(connection, 'projectEntries', { project: cwd, query: needle, limit: SHOWN }).then(
       (list) => current && setEntries({ query: needle, list }),
       (error: unknown) => current && setEntries({ query: needle, failed: problemOf(error) }),
     );
@@ -134,7 +130,7 @@ export function useMentions(session: ChatSession, typed: Typed | undefined): Men
     };
   }, [trigger, needle, connection, cwd]);
 
-  const host = project?.codeHost?.host;
+  const host = project?.codeHost?.label;
   const [tracked, setTracked] = useState<{ cwd: string; read: Tracked }>();
   const listsTracked = trigger === '#' || trigger === '!';
   useEffect(() => {

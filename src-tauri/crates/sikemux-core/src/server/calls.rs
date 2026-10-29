@@ -94,7 +94,9 @@ calls! { core, client, params;
     "nameAgent": Local => answer(name_agent(&core, parse(params)?).await?),
     "renameAgent": Full => answer(rename_agent(&core, parse(params)?).await?),
     "promptChat" (PromptChatParams) -> (): Full => prompt_chat(&core, params).await?,
-    "closedAgents": Full => answer(closed_agents(&core, parse(params)?).await?),
+    "closedAgents" (ClosedAgentsParams) -> Vec<super::names::ClosedAgent>: Full => {
+        closed_agents(&core, params).await?
+    },
     "agentNames": Watch, any_program => answer(agent_names(&core).await?),
     "agentCatalog" (NoParams) -> Vec<CatalogAgent>: Watch, any_program => super::catalog::view(),
     "agentNameTheme": Full => answer(NameThemeParams { theme: core.names.theme() }),
@@ -151,10 +153,9 @@ calls! { core, client, params;
         let reading = core.clone();
         answer(blocking(move || super::chat::page(&reading, params)).await?)
     },
-    "chatFind": Watch, any_program => {
-        let params: super::chat::find::FindParams = parse(params)?;
+    "chatFind" (super::chat::find::FindParams) -> super::chat::find::FindAnswer: Watch, any_program => {
         let (reading, client) = (core.clone(), client.id);
-        answer(blocking(move || super::chat::find(&reading, client, params)).await?)
+        blocking(move || super::chat::find(&reading, client, params)).await?
     },
     "chatToolDetail" (ToolDetailParams) -> ToolDetail: Watch, any_program => {
         super::chat::tool_detail(&core, &params.agent_id, &params.tool_call_id)?
@@ -162,7 +163,9 @@ calls! { core, client, params;
     "dropQueued" (QueuedParams) -> (): Full => {
         super::chat::queue::remove(&core, &params.agent_id, &params.ids)?
     },
-    "agentSessions": Full, any_program => answer(saved::call(&core, parse(params)?).await?),
+    "agentSessions" (saved::SearchParams) -> Vec<crate::sessions::search::SessionMatch>: Full, any_program => {
+        saved::call(&core, params).await?
+    },
     "workspace": Watch, any_program => answer(core.workspace_view()),
     "runCommand": Local => answer(super::custom_command::run(parse(params)?).await?),
     "updateStatus": Watch, any_program => answer(core.updates.status()),
@@ -350,9 +353,8 @@ calls! { core, client, params;
         let params = parse(params)?;
         answer(blocking(move || super::project_files::read(params).map_err(CoreError::from)).await?)
     },
-    "projectEntries": Full => {
-        let params = parse(params)?;
-        answer(blocking(move || super::project_files::entries(params).map_err(CoreError::from)).await?)
+    "projectEntries" (super::project_files::ProjectEntriesParams) -> Vec<crate::fuzzy::Entry>: Full => {
+        blocking(move || super::project_files::entries(params).map_err(CoreError::from)).await?
     },
     "searchStream": Full => answer(search_stream(&core, client, parse(params)?)?),
     "searchReplace": Full => {

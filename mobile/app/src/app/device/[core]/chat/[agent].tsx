@@ -13,7 +13,8 @@ import { sentPrompts } from '@shared/chat/promptHistory';
 import { activeToolLabel } from '@shared/chat/toolLabels';
 import type { ChatMessage } from '@shared/chat/types';
 import { ChatMenu } from '@/chat/ChatMenu';
-import { ChatFind, type Hit } from '@/chat/chatFind';
+import { ChatFind } from '@/chat/chatFind';
+import type { FindHit } from '@shared/wire.generated';
 import { FindBar } from '@/chat/FindBar';
 import { FindingContext } from '@/chat/found';
 import { ChatTitle } from '@/chat/ChatTitle';
@@ -254,7 +255,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     },
     editing !== undefined || find !== null,
   );
-  const showHit = (hit: Hit) => {
+  const showHit = (hit: FindHit) => {
     const row = session.snapshot().view.messages.find((message) => message.id === hit.row);
     if (!row) return;
     const { hidden, from } = rowFold(row, workOpen);

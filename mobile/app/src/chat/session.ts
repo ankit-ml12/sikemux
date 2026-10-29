@@ -4,6 +4,7 @@ import { File } from 'expo-file-system';
 import { answerText } from '@shared/chat/answerText';
 import { applyChanges, type ChatRows } from '@shared/chat/rows';
 import type { ChatChange, ChatView, PermissionAsk, ToolDetail } from '@shared/chat/types';
+import type { FindAnswer, FindParams } from '@shared/wire.generated';
 
 import { callHost } from '@/core/hostCalls';
 import { problem as problemOf } from '@/core/problem';
@@ -490,10 +491,10 @@ export class ChatSession {
   };
 
   /** Asks the host to find words across the whole chat, held here or not, from where `params` says. */
-  find = async (params: Record<string, unknown>): Promise<unknown> => {
+  find = async (params: Omit<FindParams, 'agentId' | 'feed'>): Promise<FindAnswer> => {
     const feed = this.feed.mark?.feed;
     if (feed === undefined) throw new Error('the chat is not open');
-    return JSON.parse(await this.openConnection().call('chatFind', JSON.stringify({ ...params, agentId: this.agentId, feed })));
+    return callHost(this.openConnection(), 'chatFind', { ...params, agentId: this.agentId, feed });
   };
 
   /** A call's whole change and what it printed, which rows carry only counts of. `done` calls are read once. */

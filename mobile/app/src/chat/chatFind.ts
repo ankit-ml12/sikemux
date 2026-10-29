@@ -1,10 +1,7 @@
+import type { FindAnswer, FindAt, FindHit } from '@shared/wire.generated';
+
 import type { Finding, Range } from './found';
 import type { ChatSession } from './session';
-
-/** A place the host found, in the row and text part it is in. */
-export type Hit = { row: string; fromEvent: number; part: string; range: Range };
-
-type Found = { hits?: Hit[]; next?: unknown; counted: { matches: number; complete: boolean } };
 
 export type FindState = {
   text: string;
@@ -34,9 +31,9 @@ export class ChatFind {
   private wholeWord = false;
   /** The number of the last ask, so an answer to an older query is let go. */
   private asked = 0;
-  private hits: Hit[] = [];
+  private hits: FindHit[] = [];
   /** Where the host goes on from for older places; null once it has sent them all. */
-  private next: unknown = null;
+  private next: FindAt | null = null;
   /** The place among `hits` the reader is on. */
   private at: number | null = null;
   /** Stepping older went past `hits`, and waits for more. */
@@ -51,7 +48,7 @@ export class ChatFind {
   constructor(
     private readonly session: ChatSession,
     /** Brings a place into view once its row is held. */
-    private readonly show: (hit: Hit) => void,
+    private readonly show: (hit: FindHit) => void,
   ) {
     this.state = this.build();
   }
@@ -118,11 +115,11 @@ export class ChatFind {
     this.counted = 0;
     this.complete = false;
     this.asked += 1;
-    if (this.text) this.ask(undefined, false);
+    if (this.text) this.ask(null, false);
     this.emit();
   };
 
-  private ask(from: unknown, countOnly: boolean) {
+  private ask(from: FindAt | null, countOnly: boolean) {
     const asked = (this.asked += 1);
     this.counting = countOnly;
     this.session
@@ -132,10 +129,10 @@ export class ChatFind {
         wholeWord: this.wholeWord,
         direction: 'older',
         limit: HITS,
-        ...(from === undefined ? {} : { from, countOnly }),
+        ...(from === null ? {} : { from, countOnly }),
       })
       .then(
-        (found) => this.found(asked, found as Found),
+        (found) => this.found(asked, found),
         () => {
           if (asked !== this.asked) return;
           this.complete = true;
@@ -145,10 +142,10 @@ export class ChatFind {
   }
 
   /** Takes what the host found, asks it to go on counting until the count is whole or large, and goes on a step that waited for more. */
-  private found(asked: number, found: Found) {
+  private found(asked: number, found: FindAnswer) {
     if (asked !== this.asked) return;
     if (!this.counting) {
-      this.hits = [...this.hits, ...(found.hits ?? [])];
+      this.hits = [...this.hits, ...found.hits];
       this.next = found.next ?? null;
     }
     this.counting = false;
@@ -187,7 +184,7 @@ export class ChatFind {
     return `${place}/${this.counted}${this.complete ? '' : '…'}`;
   }
 
-  private markedFrom: Hit[] | undefined;
+  private markedFrom: FindHit[] | undefined;
   private byPart: Finding['byPart'] = new Map();
 
   private build(): FindState {
