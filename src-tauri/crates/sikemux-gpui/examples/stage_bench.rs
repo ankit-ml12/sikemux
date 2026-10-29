@@ -447,9 +447,8 @@ fn main() -> anyhow::Result<()> {
     {
         for _ in 0..times {
             run.after(|run| {
-                run.bench.update(&mut run.cx, |bench, cx| {
-                    bench.parts.redraw(&bench.parts.stage, cx)
-                })
+                run.bench
+                    .update(&mut run.cx, |bench, cx| bench.parts.redraw_stage(cx))
             });
         }
         run.report(&format!(
@@ -477,9 +476,8 @@ fn main() -> anyhow::Result<()> {
 
     for _ in 0..20 {
         run.after(|run| {
-            run.bench.update(&mut run.cx, |bench, cx| {
-                bench.parts.redraw(&bench.parts.stage, cx)
-            })
+            run.bench
+                .update(&mut run.cx, |bench, cx| bench.parts.redraw_stage(cx))
         });
         for _ in 0..3 {
             run.frame();
@@ -504,9 +502,8 @@ fn main() -> anyhow::Result<()> {
     run.report("the whole window drawn again from scratch");
 
     let redraw_stage = |run: &mut Bench| {
-        run.bench.update(&mut run.cx, |bench, cx| {
-            bench.parts.redraw(&bench.parts.stage, cx)
-        })
+        run.bench
+            .update(&mut run.cx, |bench, cx| bench.parts.redraw_stage(cx))
     };
     run.spaced(60, 20, redraw_stage);
     run.report("the stage drawn again after half a second idle");
