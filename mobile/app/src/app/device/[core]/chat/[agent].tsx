@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { AccessibilityInfo, type ScrollViewProps, type TextInput, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Keyboard, type ScrollViewProps, type TextInput, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import MaskedView from '@react-native-masked-view/masked-view';
@@ -189,6 +189,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     const owner = stripOwner(messages.current, message.id);
     setOpen((shown) => (shown === owner ? undefined : owner));
   };
+  const [editing, setEditing] = useState<string>();
   // The list redraws its rows when a summary opens or closes, and only then, so it watches those folds alone.
   const openWork = useSyncExternalStore(session.folds.subscribe, () => session.folds.openUnder('work/'));
   const workOpen = (id: string) => session.folds.isOpen(`work/${id}`, false);
@@ -197,9 +198,19 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     const opened = new Set(openWork.split('\n'));
     return shownRows(state.messages, (id) => opened.has(`work/${id}`));
   }, [state.messages, openWork]);
+  const watchOnly = access === 'watch';
+  const canEdit =
+    !watchOnly &&
+    recordOf(state.capabilities)?.editing === true &&
+    state.connection === 'ready' &&
+    !state.running &&
+    chat.attached === 'live';
+  if (editing !== undefined && !canEdit) setEditing(undefined);
+  const editable = (message: ChatMessage) =>
+    canEdit && message.role === 'user' && message.promptId !== undefined && !message.context?.length && !chat.unsent.has(message.id);
   const marks = useMemo(
-    () => [chat.unsent, chat.sentFiles, liveId, open, openStrip, openWork],
-    [chat.unsent, chat.sentFiles, liveId, open, openStrip, openWork],
+    () => [chat.unsent, chat.sentFiles, liveId, open, openStrip, openWork, canEdit, editing],
+    [chat.unsent, chat.sentFiles, liveId, open, openStrip, openWork, canEdit, editing],
   );
   const subagents = useMemo(() => subagentsOf(state.messages, state.subagentRows), [state.messages, state.subagentRows]);
   const { plan, runningSubagents, tasks, queued } = state;
@@ -231,14 +242,42 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const list = useRef<FlashListRef<ChatMessage>>(null);
   const bottom = useBottomGap();
   const homeBar = useSafeAreaInsets().bottom;
-  const scroll = useTranscriptScroll(list, {
-    has: chat.hasEarlier,
-    idle: chat.earlier === 'idle',
-    load: session.loadEarlier,
-  });
+  const scroll = useTranscriptScroll(
+    list,
+    {
+      has: chat.hasEarlier,
+      idle: chat.earlier === 'idle',
+      load: session.loadEarlier,
+    },
+    editing !== undefined,
+  );
+  const startEdit = (message: ChatMessage) => {
+    setOpen(undefined);
+    setEditing(message.id);
+  };
+  const editingIndex = editing === undefined ? -1 : rows.findIndex((row) => row.id === editing);
+  useEffect(() => {
+    if (editingIndex < 0) return;
+    // The editor sits just above the keyboard once it is up.
+    const shown = Keyboard.addListener('keyboardDidShow', () => scroll.reveal(editingIndex, 1));
+    return () => shown.remove();
+  }, [editingIndex, scroll]);
+  const editingRow = useMemo(
+    () =>
+      editing === undefined
+        ? undefined
+        : {
+            onCancel: () => setEditing(undefined),
+            onSend: (text: string) => {
+              session.edit(editing, text);
+              setEditing(undefined);
+              scroll.toEnd();
+            },
+          },
+    [editing, session, scroll],
+  );
   const activity = chat.stoppingTurn ? 'Stopping…' : activityText({ ...state, permissions: chat.permissions }, activeToolLabel(state));
   const title = state.title ?? live.snapshot?.inbox.agents.find((shown) => shown.agentId === agentId)?.title ?? agentLabel(provider);
-  const watchOnly = access === 'watch';
   const steerable = recordOf(state.capabilities)?.steering === true && state.running && !watchOnly;
   // The person may change how sending mid-turn goes between turns, so each turn reads it afresh.
   const preferences = useHostCall<Preferences>(connection, 'preferences', null, String(state.running)).data;
@@ -338,6 +377,8 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                                     strip={item.id === open ? openStrip : undefined}
                                     sentFiles={chat.sentFiles}
                                     from={from}
+                                    onEdit={editable(item) ? startEdit : undefined}
+                                    editing={item.id === editing ? editingRow : undefined}
                                   />
                                 </>
                               );
@@ -403,6 +444,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                             {...scroll.listProps}
                             renderScrollComponent={renderScrollComponent}
                             keyboardDismissMode="interactive"
+                            keyboardShouldPersistTaps={editing === undefined ? 'never' : 'handled'}
                           />
                         </MaskedView>
                         {scroll.away ? (

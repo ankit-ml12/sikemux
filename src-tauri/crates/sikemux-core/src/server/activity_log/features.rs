@@ -23,6 +23,7 @@ const CALLS: &[&str] = &[
     "createAgent",
     "resumeSession",
     "steerQueued",
+    "editMessage",
     "chatFind",
     "sleepAgent",
     "renameAgent",

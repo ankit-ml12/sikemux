@@ -878,6 +878,12 @@
   .msg-strip { display: flex; align-items: center; gap: 8px; height: 24px; margin-top: 6px; color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
   .msg-strip .cp { width: 24px; height: 24px; display: grid; place-items: center; }
   .msg-strip .rate { margin-left: auto; font-family: var(--mono); font-style: italic; }
+  .msg-strip.mine { justify-content: flex-end; }
+  .msg-edit { align-self: flex-end; width: 84%; margin: 12px 0 8px; padding: 9px 13px 8px; border-radius: 12px; border: 1px solid var(--border-selected); background: color-mix(in oklab, var(--rail-2) 72%, transparent); display: flex; flex-direction: column; gap: 8px; }
+  .msg-edit .ta { color: var(--ink); font-size: 14px; line-height: 1.57; }
+  .msg-edit .acts { display: flex; justify-content: flex-end; gap: 6px; }
+  .msg-edit .acts span { height: 30px; padding: 0 12px; border-radius: 8px; display: inline-flex; align-items: center; font-size: 13px; font-weight: 600; border: 1px solid var(--border-strong); color: var(--ink); }
+  .msg-edit .acts span.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
   .sources > span.danger { color: var(--danger); }
   .recent-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 8px; font-size: 14.5px; line-height: 20px; color: var(--text-secondary); }
   .recent-row .ico { margin-top: 2px; color: var(--ink-faint); }
@@ -3220,6 +3226,44 @@ expected 1 write, got 2</div>
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Tapping a message</b><div class="note">A tap on a message, yours or the agent's answer, shows the strip the Mac shows under it on hover: Copy, when it was sent or finished and how long the turn took, and roughly how fast it wrote. Another tap, or a tap on another message, hides it. An answer is all of its prose across the tool calls in between, so its strip sits under its last part. The text itself is selectable where it stands: a long press selects it. Code blocks wear the Mac's title bar, with the file or language the fence names and a copy button, and a patch in a fence is tinted by sign with the changed words marked. A path in the prose reads as the Mac's file ref; the phone cannot ask the host whether it is there, so only a name with a folder and an extension counts. A picture it names on the host opens over the whole screen, and one it links to is drawn in place.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="prose">Done. The size comes from the latest release's DMG at build time.</div>
+          <div class="msg-edit">
+            <div class="ta">Show the download size next to the button, in MB with one decimal<span class="caret"></span></div>
+            <div class="acts"><span>Cancel</span><span class="primary">Send</span></div>
+          </div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
+          <div class="prose" style="margin-top:0">Done. It reads the size from the latest release at build time.</div>
+        </div>
+        <div class="composer-wrap" style="padding-bottom:8px">
+          <div class="composer">
+            <div class="ta ph">Ask about this project</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo">{{IconShield:13}}<b style="font-weight:560">safe</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Opus 4.6<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">High<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx claude" style="--p:42"></i></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+        <div class="kb" style="padding-bottom:26px">
+          <div class="r"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+          <div class="r"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+          <div class="r"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+          <div class="r"><span class="k w">123</span><span class="k sp">space</span><span class="k w">return</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Editing a message</b><div class="note">The strip under a message of yours carries the Mac's pencil beside Copy, while the chat can take a message back: its agent can edit, it is up and not mid-turn, the message went out as a prompt, and it carried no issue or other context. A watching phone has no pencil. A tap turns the bubble into its editor in place, edged in the selection colour, with the keyboard up and the bubble kept in view above it. Send takes the chat back to before that message, so it and everything after it leave the transcript at once, and the host sends the new words with the same files in its place; Cancel puts the bubble back as it was. If the host refuses, the reason shows over the composer and the chat is read again whole.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

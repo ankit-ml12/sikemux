@@ -621,6 +621,26 @@ export class ChatSession {
     this.emit();
   };
 
+  /**
+   * Takes the chat back to before the person's message `rowId` and sends `text` in its place with the files it
+   * carried. The message and everything after it leave at once; if the host refuses, the chat is read again whole.
+   */
+  edit = (rowId: string, text: string) => {
+    const row = this.chat.messages.find((message) => message.id === rowId);
+    const messageId = row?.promptId;
+    if (!row || !messageId || !text) return;
+    this.notice = null;
+    this.apply((chat) => applyChanges(chat, [{ op: 'drop', from: rowId }]));
+    this.emit();
+    void this.ask(
+      (connection) =>
+        connection.call('editMessage', JSON.stringify({ agentId: this.agentId, messageId, text, paths: row.attachments ?? [] })),
+      'Could not edit the message',
+      undefined,
+      this.retry,
+    );
+  };
+
   /** Fetches the rows before the first one shown, unless that is already under way. */
   loadEarlier = () => {
     const connection = this.connection;

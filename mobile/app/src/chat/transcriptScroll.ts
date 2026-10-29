@@ -1,4 +1,4 @@
-import { useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import type { FlashListRef } from '@shopify/flash-list';
 
@@ -13,12 +13,17 @@ type Earlier = { has: boolean; idle: boolean; load: () => void };
  * How a transcript scrolls: it stays at its end while the reader is there, whatever grows or shrinks it,
  * shows the way back once they scroll away, and fetches earlier turns well before they reach the top.
  */
-export function useTranscriptScroll<T>(list: RefObject<FlashListRef<T> | null>, earlier: Earlier) {
+export function useTranscriptScroll<T>(list: RefObject<FlashListRef<T> | null>, earlier: Earlier, holding: boolean) {
   const [away, setAway] = useState(false);
   const awayRef = useRef(false);
   const metrics = useRef({ offset: 0, content: 0, viewport: 0 });
   // Only the reader's own scrolling takes them away from the end.
   const touching = useRef(false);
+  // While the reader works on one row, such as one being edited, growth elsewhere leaves the scroll alone.
+  const held = useRef(holding);
+  useEffect(() => {
+    held.current = holding;
+  }, [holding]);
 
   const measureAway = () => {
     const { offset, content, viewport } = metrics.current;
@@ -40,7 +45,7 @@ export function useTranscriptScroll<T>(list: RefObject<FlashListRef<T> | null>, 
   // The answer being written grows smoothly itself, so the end is followed exactly, keeping the activity line still.
   const keepAtEnd = () => {
     if (awayRef.current) return measureAway();
-    if (touching.current) return;
+    if (touching.current || held.current) return;
     list.current?.scrollToEnd({ animated: false });
   };
   const startTouching = () => {
@@ -59,9 +64,15 @@ export function useTranscriptScroll<T>(list: RefObject<FlashListRef<T> | null>, 
     requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
   };
 
+  /** Brings row `index` into view, `at` 0 at the top of the transcript and 1 at its bottom. */
+  const reveal = (index: number, at: number) => {
+    requestAnimationFrame(() => list.current?.scrollToIndex({ index, animated: true, viewPosition: at }));
+  };
+
   return {
     away,
     toEnd,
+    reveal,
     listProps: {
       maintainVisibleContentPosition: { startRenderingFromBottom: true },
       scrollEventThrottle: 16,

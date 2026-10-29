@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Animated, Easing, Image, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from 'react-native';
 
 import { durationLabel } from '@shared/chat/durationLabel';
 import { recordOf } from '@shared/lib/guards';
@@ -393,12 +393,23 @@ function Content({ block: given }: { block: unknown }) {
   return <ResourceChip name={name} image={Boolean(mimeType?.startsWith('image/'))} />;
 }
 
-/** What the Mac shows under a message on hover: Copy, when it was sent or finished and how long it took, and how fast it was written. */
-function Strip({ meta, mine }: { meta: StripMeta; mine: boolean }) {
+/** What the Mac shows under a message on hover: Copy, Edit on a message that can be written again, when it was sent or finished and how long it took, and how fast it was written. */
+function Strip({ meta, mine, onEdit }: { meta: StripMeta; mine: boolean; onEdit?: () => void }) {
+  const colors = useColors();
   const styles = useStyles(makeStyles);
   return (
     <View style={[styles.strip, mine && styles.stripMine]}>
       <CopyButton value={meta.text} label={mine ? 'message' : 'reply'} size={15} style={styles.stripCopy} />
+      {onEdit ? (
+        <Pressable
+          onPress={onEdit}
+          hitSlop={10}
+          style={({ pressed }) => [styles.stripCopy, styles.stripButton, pressed && { backgroundColor: colors.active }]}
+          accessibilityRole="button"
+          accessibilityLabel="Edit message">
+          <Icon name="IconPencil" size={15} color={colors.inkFaint} />
+        </Pressable>
+      ) : null}
       {meta.at !== undefined ? (
         <Text style={styles.stripTime}>
           {meta.took === undefined ? sentLabel(meta.at) : `${sentLabel(meta.at)} · took ${durationLabel(meta.took)}`}
@@ -418,6 +429,47 @@ function useNamesIn(core: string): string[] {
   return useMemo(() => (names ? names.split('\n') : []), [names]);
 }
 
+/** Writing a sent message again where its bubble was. */
+export type Editing = { onCancel: () => void; onSend: (text: string) => void };
+
+function MessageEditor({ text, editing }: { text: string; editing: Editing }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const [draft, setDraft] = useState(text);
+  const words = draft.trim();
+  return (
+    <View style={styles.editor}>
+      <TextInput
+        value={draft}
+        onChangeText={setDraft}
+        multiline
+        autoFocus
+        style={styles.editorText}
+        selectionColor={colors.ink}
+        accessibilityLabel="Edit message"
+      />
+      <View style={styles.editorActs}>
+        <Pressable
+          onPress={editing.onCancel}
+          hitSlop={6}
+          style={({ pressed }) => [styles.editorButton, pressed && { backgroundColor: colors.active }]}
+          accessibilityRole="button">
+          <Text style={styles.editorButtonText}>Cancel</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => editing.onSend(words)}
+          disabled={!words}
+          hitSlop={6}
+          style={({ pressed }) => [styles.editorButton, styles.editorSend, (pressed || !words) && { opacity: 0.6 }]}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !words }}>
+          <Text style={[styles.editorButtonText, styles.editorSendText]}>Send</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function Message({
   message,
   live = false,
@@ -427,6 +479,8 @@ export function Message({
   strip,
   sentFiles,
   from = 0,
+  onEdit,
+  editing,
 }: {
   message: ChatMessage;
   live?: boolean;
@@ -439,6 +493,10 @@ export function Message({
   sentFiles: ReadonlyMap<string, Attachment>;
   /** Where the shown parts start, when the work before them is folded away. */
   from?: number;
+  /** Writes this message again; absent when the chat cannot take it back. */
+  onEdit?: (message: ChatMessage) => void;
+  /** This message is being written again. */
+  editing?: Editing;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
@@ -495,7 +553,9 @@ export function Message({
       <View style={styles.userRow}>
         {message.attachments?.length ? <SentAttachments paths={message.attachments} sentFiles={sentFiles} /> : null}
         {context.length ? <ContextChips items={context} /> : null}
-        {text || (!message.attachments?.length && !context.length) ? (
+        {editing ? (
+          <MessageEditor key={message.id} text={text} editing={editing} />
+        ) : text || (!message.attachments?.length && !context.length) ? (
           <Pressable
             onPress={tap}
             onLongPress={keepLongPress}
@@ -528,8 +588,8 @@ export function Message({
           </Pressable>
         ) : unsent?.state === 'sending' ? (
           <Text style={styles.queuedLabel}>Sending…</Text>
-        ) : strip ? (
-          <Strip meta={strip} mine />
+        ) : strip && !editing ? (
+          <Strip meta={strip} mine onEdit={onEdit && (() => onEdit(message))} />
         ) : null}
       </View>
     );
@@ -788,6 +848,32 @@ const makeStyles = (colors: Palette) => {
     strip: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 24, marginTop: 6 },
     stripMine: { justifyContent: 'flex-end' },
     stripCopy: { width: 24, height: 24 },
+    stripButton: { borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+    editor: {
+      width: '84%',
+      gap: 8,
+      paddingTop: 9,
+      paddingBottom: 8,
+      paddingHorizontal: 13,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.borderSelected,
+      backgroundColor: colors.raised,
+    },
+    editorText: { fontFamily: fonts.ui, fontSize: 14, lineHeight: 22, color: colors.ink, maxHeight: 264, padding: 0 },
+    editorActs: { flexDirection: 'row', justifyContent: 'flex-end', gap: 6 },
+    editorButton: {
+      height: 30,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    editorButtonText: { fontFamily: fonts.uiSemibold, fontSize: 13, color: colors.ink },
+    editorSend: { backgroundColor: colors.ink, borderColor: colors.ink },
+    editorSendText: { color: colors.sunken },
     stripTime: { fontFamily: fonts.ui, fontSize: 11, fontVariant: ['tabular-nums'], color: colors.inkDim },
     stripRate: { marginLeft: 'auto', fontFamily: fonts.mono, fontSize: 11, fontStyle: 'italic', color: colors.inkDim },
     prose: { fontFamily: fonts.ui, fontSize: 14.5, lineHeight: 23, color: colors.ink },

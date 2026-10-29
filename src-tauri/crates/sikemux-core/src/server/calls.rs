@@ -136,6 +136,7 @@ calls! { core, client, params;
                 .await?,
         )
     },
+    "editMessage": Full => answer(edit_message(&core, parse(params)?).await?),
     "chatPage": Watch, any_program => {
         let params: ChatPageParams = parse(params)?;
         let reading = core.clone();
@@ -1048,6 +1049,30 @@ struct AccountPictureParams {
 }
 
 /// Messages waiting behind an agent's turn, by id.
+/// A person's message `message_id` written again as `text`, sent with the files at `paths`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EditParams {
+    agent_id: String,
+    message_id: String,
+    text: String,
+    #[serde(default)]
+    paths: Vec<String>,
+}
+
+/// Takes the chat back to before the message and sends the new text in its place, as the
+/// window's own edit does, starting the chat first when it was stopped.
+async fn edit_message(core: &Arc<Core>, params: EditParams) -> CoreResult<()> {
+    super::chat::wake_for_message(core, &params.agent_id, &mut []).await?;
+    let EditParams {
+        agent_id,
+        message_id,
+        text,
+        paths,
+    } = params;
+    super::chat::edit(core, &agent_id, message_id, text, paths, Vec::new()).await
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QueuedParams {
