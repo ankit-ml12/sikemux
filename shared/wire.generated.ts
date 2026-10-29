@@ -1352,11 +1352,11 @@ export type ChatPart =
           /** How many bytes of the text were left off the end, for a row too big to send whole. */
           cutBytes?: number;
       }
-    /** A picture or a file the agent put in its reply, as its protocol gave it. */
+    /** A picture or a file the agent put in its reply, or the person sent. */
     | {
           kind: "content";
           id: string;
-          content: unknown;
+          content: ContentBlock;
       }
     | {
           kind: "tool";
@@ -1397,6 +1397,49 @@ export type ChatPart =
 export interface PartTree {
     blocks: unknown;
     n: number;
+}
+
+/** Something besides text in a message, as the agent's protocol (ACP) gives it. */
+export type ContentBlock =
+    | {
+          type: "text";
+          text: string;
+      }
+    /** `data` is the picture in base64; a picture too big to keep is kept without it. */
+    | {
+          type: "image";
+          mimeType: string;
+          data?: string;
+          uri?: string;
+      }
+    | {
+          type: "audio";
+          mimeType: string;
+          data?: string;
+      }
+    /** A file or page the block points at. */
+    | {
+          type: "resource_link";
+          uri: string;
+          name: string;
+          title?: string;
+          mimeType?: string;
+      }
+    /** A file handed over whole, such as an issue or a letter. */
+    | {
+          type: "resource";
+          resource: EmbeddedResource;
+      }
+    /** A block of a kind this build does not know, as it came. */
+    | {
+          type: "other";
+          block: unknown;
+      };
+
+export interface EmbeddedResource {
+    uri: string;
+    text?: string;
+    mimeType?: string;
 }
 
 /** What a command or MCP call printed, counted. `chatToolDetail` sends it. */

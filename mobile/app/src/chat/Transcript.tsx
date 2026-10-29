@@ -2,7 +2,6 @@ import { createContext, Fragment, useContext, useEffect, useMemo, useState, type
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from 'react-native';
 
 import { durationLabel } from '@shared/chat/durationLabel';
-import { recordOf } from '@shared/lib/guards';
 import { basename } from '@shared/lib/paths';
 import { rateLabel, sentLabel } from '@shared/chat/messageMeta';
 import { cutLongBlocks, showRestLabel } from '@shared/chat/longText';
@@ -26,6 +25,7 @@ import type {
   AgentNotice,
   ChatMessage,
   ChatPart,
+  ContentBlock,
   PartTree,
   SentContext,
   SubagentCard,
@@ -377,24 +377,21 @@ function HostPicture({ path, name }: { path: string; name: string }) {
   return uri ? <Picture uri={uri} name={name} /> : <ResourceChip name={name} image />;
 }
 
-const textOf = (value: unknown) => (typeof value === 'string' ? value : undefined);
-
-/** An image or file the agent put in its answer, as its protocol gave it. */
-function Content({ block: given }: { block: unknown }) {
+/** An image or file the agent put in its answer. */
+function Content({ block }: { block: ContentBlock }) {
   const styles = useStyles(makeStyles);
-  const block = recordOf(given) ?? {};
-  const text = textOf(block.text);
-  const mimeType = textOf(block.mimeType);
-  const data = textOf(block.data);
-  if (block.type === 'text' && text?.trim()) return <Markdown blocks={plainBlocks(text)} style={styles.prose} />;
-  if (block.type === 'image' && data && mimeType?.startsWith('image/')) {
-    return <Picture uri={`data:${mimeType};base64,${data}`} name={attachmentName(mimeType)} />;
+  if (block.type === 'text' && block.text.trim()) return <Markdown blocks={plainBlocks(block.text)} style={styles.prose} />;
+  if (block.type === 'image' && block.data && block.mimeType.startsWith('image/')) {
+    return <Picture uri={`data:${block.mimeType};base64,${block.data}`} name={attachmentName(block.mimeType)} />;
   }
-  const uri = textOf(block.uri) ?? textOf(recordOf(block.resource)?.uri);
-  const name = textOf(block.title) ?? textOf(block.name) ?? (uri ? basename(uri) : undefined);
+  const uri =
+    block.type === 'image' || block.type === 'resource_link' ? block.uri : block.type === 'resource' ? block.resource.uri : undefined;
+  const titled = block.type === 'resource_link' ? (block.title ?? block.name) : undefined;
+  const name = titled ?? (uri ? basename(uri) : undefined);
   if (!name) return null;
   const image = uri ? hostImagePath(uri) : null;
   if (image) return <HostPicture path={image} name={name} />;
+  const mimeType = block.type === 'image' || block.type === 'audio' || block.type === 'resource_link' ? block.mimeType : undefined;
   return <ResourceChip name={name} image={Boolean(mimeType?.startsWith('image/'))} />;
 }
 

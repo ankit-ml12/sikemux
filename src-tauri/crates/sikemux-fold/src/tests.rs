@@ -564,9 +564,12 @@ mod reducer {
             "content": { "type": "image", "mimeType": "image/png", "data": "A".repeat(3 * 1024 * 1024), "uri": "file:///tmp/shot.png" },
         }));
         match &chat.rows()[0].parts[0] {
-            ChatPart::Content { content, .. } => {
-                assert!(content.get("data").is_none());
-                assert_eq!(content["uri"], json!("file:///tmp/shot.png"));
+            ChatPart::Content {
+                content: ContentBlock::Image { data, uri, .. },
+                ..
+            } => {
+                assert!(data.is_none());
+                assert_eq!(uri.as_deref(), Some("file:///tmp/shot.png"));
             }
             other => panic!("expected a content part, got {other:?}"),
         }
@@ -901,7 +904,7 @@ mod reducer {
                 text("m0.1", "Answer"),
                 ChatPart::Content {
                     id: "m0.2".into(),
-                    content: image
+                    content: ContentBlock::read(&image)
                 },
                 text("m0.3", "After"),
             ]
@@ -919,7 +922,7 @@ mod reducer {
             chat.rows()[0].parts,
             vec![ChatPart::Content {
                 id: "m0.0".into(),
-                content: image
+                content: ContentBlock::read(&image)
             }]
         );
     }

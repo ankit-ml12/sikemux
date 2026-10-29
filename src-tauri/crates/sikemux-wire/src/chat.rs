@@ -685,6 +685,68 @@ pub struct PartTree {
     pub n: u64,
 }
 
+/// Something besides text in a message, as the agent's protocol (ACP) gives it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum ContentBlock {
+    Text {
+        text: String,
+    },
+    /// `data` is the picture in base64; a picture too big to keep is kept without it.
+    Image {
+        mime_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        uri: Option<String>,
+    },
+    Audio {
+        mime_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data: Option<String>,
+    },
+    /// A file or page the block points at.
+    ResourceLink {
+        uri: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mime_type: Option<String>,
+    },
+    /// A file handed over whole, such as an issue or a letter.
+    Resource {
+        resource: EmbeddedResource,
+    },
+    /// A block of a kind this build does not know, as it came.
+    Other {
+        block: Value,
+    },
+}
+
+impl ContentBlock {
+    /// A block as the agent sent it, kept whole under `Other` when it is not one this build reads.
+    pub fn read(block: &Value) -> Self {
+        serde_json::from_value(block.clone()).unwrap_or_else(|_| Self::Other {
+            block: block.clone(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddedResource {
+    pub uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -710,10 +772,10 @@ pub enum ChatPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cut_bytes: Option<u64>,
     },
-    /// A picture or a file the agent put in its reply, as its protocol gave it.
+    /// A picture or a file the agent put in its reply, or the person sent.
     Content {
         id: String,
-        content: Value,
+        content: ContentBlock,
     },
     Tool {
         id: String,

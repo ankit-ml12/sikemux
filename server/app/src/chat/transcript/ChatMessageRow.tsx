@@ -57,13 +57,20 @@ import type { MdElement } from "@shared/markdown/types";
 import { Shimmer } from "../ui/Shimmer";
 import { MessageEditor } from "./MessageEditor";
 
-function ResourceLinkPart({ content }: { content: ContentBlock }) {
-  const uri = typeof content.uri === "string" ? content.uri : undefined;
+function ResourceLinkPart({
+  content,
+}: {
+  content: Extract<ContentBlock, { type: "resource_link" | "image" }>;
+}) {
+  const uri = content.uri;
   const imagePath = localImagePath(uri);
   const preview = useImagePreview(imagePath);
   const file = useFileRef(uri);
   if (preview && imagePath) return <ChatImage src={preview} path={imagePath} />;
-  const label = content.title || content.name || uri || "Resource";
+  const label =
+    (content.type === "resource_link" && (content.title || content.name)) ||
+    uri ||
+    "Resource";
   return (
     <div className="chat-resource">
       {file ? (
@@ -88,13 +95,12 @@ function ContentPart({
 }: {
   part: Extract<ChatPart, { kind: "content" }>;
 }) {
-  const content = part.content as ContentBlock;
+  const content = part.content;
   if (content.type === "resource_link")
     return <ResourceLinkPart content={content} />;
   /* A picture too big to keep was kept by name, so the row says what it was. */
   if (content.type === "image") {
-    return typeof content.data === "string" &&
-      typeof content.mimeType === "string" ? (
+    return content.data ? (
       <ChatImage
         src={`data:${content.mimeType};base64,${content.data}`}
         name={attachmentName(content.mimeType)}
@@ -103,7 +109,11 @@ function ContentPart({
       <ResourceLinkPart content={content} />
     );
   }
-  return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
+  return (
+    <pre className="chat-unknown-part">
+      {formatDetail(content.type === "other" ? content.block : content)}
+    </pre>
+  );
 }
 
 const warmed = new WeakSet<ChatMessage>();

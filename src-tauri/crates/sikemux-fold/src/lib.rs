@@ -28,11 +28,11 @@ use sikemux_wire::protocol::PermissionMode;
 
 use sikemux_wire::chat::{
     AccountMove, AgentNotice, AsyncTask, ChatCapabilities, ChatCommandInfo, ChatConnection,
-    ChatDraft, ChatFailure, ChatHead, ChatMessage, ChatPart, ChatRole, ChatTrigger, ContextUsage,
-    FailureKind, MoveReason, NoticeSeverity, NoticeState, PermissionAsk, PermissionKind,
-    PermissionOption, PlanEntry, QueuedMessage, Retrying, SentContext, SessionEnded, StopReason,
-    SubagentCard, SubagentState, TaskNotice, TaskState, TaskUsage, ToolDetail, ToolStatus,
-    TurnStart, UsageCost, WorkflowAgent,
+    ChatDraft, ChatFailure, ChatHead, ChatMessage, ChatPart, ChatRole, ChatTrigger, ContentBlock,
+    ContextUsage, FailureKind, MoveReason, NoticeSeverity, NoticeState, PermissionAsk,
+    PermissionKind, PermissionOption, PlanEntry, QueuedMessage, Retrying, SentContext,
+    SessionEnded, StopReason, SubagentCard, SubagentState, TaskNotice, TaskState, TaskUsage,
+    ToolDetail, ToolStatus, TurnStart, UsageCost, WorkflowAgent,
 };
 use tools::WithRow;
 
@@ -335,17 +335,17 @@ fn units(text: &str) -> u64 {
     text.encode_utf16().count() as u64
 }
 
-fn bound_content(content: &Value) -> Value {
-    let oversized = content.get("type") == Some(&Value::from("image"))
-        && text_of(content.get("data")).is_some_and(|data| data.len() > MAX_IMAGE_DATA_CHARS);
-    if !oversized {
-        return content.clone();
+fn bound_content(content: &Value) -> ContentBlock {
+    let mut block = ContentBlock::read(content);
+    if let ContentBlock::Image { data, .. } = &mut block {
+        if data
+            .as_ref()
+            .is_some_and(|data| data.len() > MAX_IMAGE_DATA_CHARS)
+        {
+            *data = None;
+        }
     }
-    let mut kept = content.clone();
-    if let Some(fields) = kept.as_object_mut() {
-        fields.remove("data");
-    }
-    kept
+    block
 }
 
 fn notice_state(state: &str) -> Option<NoticeState> {
@@ -2142,23 +2142,20 @@ fn read_sent(row: &mut Row) {
     let mut parts = Vec::new();
     for part in &row.raw {
         match part {
-            ChatPart::Content { content, .. }
-                if text_of(content.get("type")) == Some("resource") =>
-            {
-                if let Some(uri) = content.pointer("/resource/uri").and_then(Value::as_str) {
-                    let first = content
-                        .pointer("/resource/text")
-                        .and_then(Value::as_str)
-                        .and_then(|text| text.split('\n').next())
-                        .filter(|line| !line.is_empty())
-                        .unwrap_or(uri);
-                    context.push(SentContext {
-                        uri: uri.to_owned(),
-                        title: first.to_owned(),
-                    });
-                } else {
-                    parts.push(part.clone());
-                }
+            ChatPart::Content {
+                content: ContentBlock::Resource { resource },
+                ..
+            } => {
+                let first = resource
+                    .text
+                    .as_deref()
+                    .and_then(|text| text.split('\n').next())
+                    .filter(|line| !line.is_empty())
+                    .unwrap_or(&resource.uri);
+                context.push(SentContext {
+                    uri: resource.uri.clone(),
+                    title: first.to_owned(),
+                });
             }
             ChatPart::Text { text, .. } => {
                 let (rest, found) = prompt::split_sent_context(text);

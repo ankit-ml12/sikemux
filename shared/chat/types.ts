@@ -11,6 +11,7 @@ export type {
     ChatPage,
     ChatPart,
     ChatView,
+    ContentBlock,
     ContextUsage,
     DiffLine,
     PartTree,
@@ -27,18 +28,6 @@ export type {
     WorkflowAgent,
 } from "../wire.generated";
 export type { ChatRows } from "./rows";
-
-/** A picture, file or resource an agent put in a message, as its protocol gives it and the core passes it on. */
-export interface ContentBlock {
-    type: string;
-    text?: string;
-    data?: string;
-    mimeType?: string;
-    name?: string;
-    title?: string;
-    uri?: string;
-    resource?: unknown;
-}
 
 /* One run of a code fence that reads as one colour, and the lines they make up.
    A run with nothing set is plain text, which keeps the colour the stylesheet

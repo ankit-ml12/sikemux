@@ -7,7 +7,7 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement, Styled, WeakEntity,
 };
 use gpui_transcript::FilePress;
-use serde_json::Value;
+use sikemux_wire::chat::ContentBlock;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{link, Drawn};
@@ -44,15 +44,35 @@ pub fn image(
     .into_any_element()
 }
 
-pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &mut App) -> AnyElement {
-    let field = |name: &str| content[name].as_str().filter(|value| !value.is_empty());
+fn filled(text: &str) -> Option<&str> {
+    Some(text).filter(|text| !text.is_empty())
+}
+
+pub fn content(
+    id: SharedString,
+    content: &ContentBlock,
+    looks: &Drawn,
+    cx: &mut App,
+) -> AnyElement {
+    let (uri, label) = match content {
+        ContentBlock::Image { uri, .. } => (uri.as_deref().and_then(filled), None),
+        ContentBlock::ResourceLink {
+            uri, name, title, ..
+        } => (
+            filled(uri),
+            title.as_deref().and_then(filled).or(filled(name)),
+        ),
+        _ => (None, None),
+    };
     let picture = looks
         .pictures
         .borrow_mut()
         .entry(id.clone())
-        .or_insert_with(|| match field("type") {
-            Some("image") => Picture::sent(field("mimeType")?, field("data")?),
-            _ => link::local_path(field("uri")?)
+        .or_insert_with(|| match content {
+            ContentBlock::Image {
+                mime_type, data, ..
+            } => Picture::sent(filled(mime_type)?, data.as_deref().and_then(filled)?),
+            _ => link::local_path(uri?)
                 .filter(|path| super::attach::is_image(path))
                 .map(Picture::File),
         })
@@ -70,20 +90,22 @@ pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &mut App) -
             ))
             .into_any_element();
     }
-    if !matches!(field("type"), Some("image" | "resource_link")) {
-        let shown = serde_json::to_string_pretty(content).unwrap_or_default();
-        return ui::mono(shown, 11., cx)
+    if !matches!(
+        content,
+        ContentBlock::Image { .. } | ContentBlock::ResourceLink { .. }
+    ) {
+        let shown = match content {
+            ContentBlock::Other { block } => serde_json::to_string_pretty(block),
+            block => serde_json::to_string_pretty(block),
+        };
+        return ui::mono(shown.unwrap_or_default(), 11., cx)
             .text_color(looks.quiet)
             .whitespace_normal()
             .into_any_element();
     }
-    let (uri, ink) = (field("uri").map(str::to_owned), looks.ink);
+    let (uri, ink) = (uri.map(str::to_owned), looks.ink);
     let (bench, agent) = (looks.bench.clone(), looks.agent.clone());
-    let label = field("title")
-        .or(field("name"))
-        .or(uri.as_deref())
-        .unwrap_or("Resource")
-        .to_owned();
+    let label = label.or(uri.as_deref()).unwrap_or("Resource").to_owned();
     let file = uri
         .as_deref()
         .is_some_and(|uri| super::files::Files::kind_of(&looks.files, uri, cx).is_some());
