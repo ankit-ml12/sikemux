@@ -26,6 +26,7 @@ mod connection;
 mod custom_command;
 mod data_format;
 mod display;
+mod diagrams;
 mod drafts;
 mod edits;
 mod entry;
@@ -430,6 +431,8 @@ pub(crate) struct Core {
     pub(crate) preferences: preferences::Prefs,
     /// What the person has typed and not sent yet, by what it is for.
     pub(crate) drafts: drafts::Drafts,
+    /// Where the person moved each diagram's tables, by what it is a diagram of.
+    pub(crate) diagrams: diagrams::Diagrams,
     /// Answers in parts on the connections that asked for them.
     pub(crate) streams: streams::Streams,
     /// The view paired devices were last sent, as sent.
@@ -538,6 +541,7 @@ impl Core {
             faces: faces::Faces::new(data_dir),
             preferences: preferences::Prefs::new(data_dir),
             drafts: drafts::Drafts::new(data_dir),
+            diagrams: diagrams::Diagrams::new(data_dir),
             streams: streams::Streams::default(),
             device_view: Mutex::default(),
             shown_load: Mutex::default(),

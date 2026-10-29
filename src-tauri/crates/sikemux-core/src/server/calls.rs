@@ -402,6 +402,15 @@ calls! { core, client, params;
         super::drafts::changed(&core, vec![params.key]);
         answer(json!({}))
     },
+    "diagramLayout": Person => {
+        let params: DiagramParams = parse(params)?;
+        answer(json!({ "layout": core.diagrams.get(&params.key) }))
+    },
+    "setDiagramLayout": Person => {
+        let params: DiagramParams = parse(params)?;
+        core.diagrams.set(&params.key, params.layout)?;
+        answer(json!({}))
+    },
     "setPreference": Person => {
         let params: SetPreferenceParams = parse(params)?;
         core.preferences.set(&params.key, params.value)?;
@@ -792,6 +801,14 @@ struct ThemeFromColoursParams {
 #[derive(Deserialize, Default)]
 struct DraftsParams {
     keys: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct DiagramParams {
+    key: String,
+    /// The arrangement to keep; without one the kept arrangement is forgotten.
+    #[serde(default)]
+    layout: Option<Value>,
 }
 
 #[derive(Deserialize)]
