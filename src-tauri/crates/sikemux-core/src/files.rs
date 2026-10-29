@@ -63,15 +63,30 @@ type Result<T> = std::result::Result<T, Error>;
 
 /// Runs `files.<method>` with `params`, reading at most `piece` bytes of a
 /// file at once. Blocks on the disk.
-pub fn run(method: &str, params: Value, piece: u64) -> Result<Value> {
+/// What a `files.*` method answered, and the file it saved when it saved one whole.
+pub struct Ran {
+    pub answer: Value,
+    pub saved: Option<PathBuf>,
+}
+
+pub fn run(method: &str, params: Value, piece: u64) -> Result<Ran> {
     fn answer(value: impl Serialize) -> Result<Value> {
         serde_json::to_value(value).map_err(|error| format!("json: {error}").into())
     }
-    match method {
+    if method == "files.write" {
+        let params: WriteParams = parse(params)?;
+        let path = PathBuf::from(&params.path);
+        let written = write(params)?;
+        let saved = written.version.is_some().then_some(path);
+        return Ok(Ran {
+            answer: answer(written)?,
+            saved,
+        });
+    }
+    let answer = match method {
         "files.list" => answer(list(parse(params)?)?),
         "files.kinds" => answer(kinds(parse(params)?)?),
         "files.read" => answer(read(parse(params)?, piece)?),
-        "files.write" => answer(write(parse(params)?)?),
         "files.create" => answer(create(parse(params)?)?),
         "files.rename" => answer(rename(parse(params)?)?),
         "files.delete" => answer(delete(parse(params)?)?),
@@ -81,12 +96,11 @@ pub fn run(method: &str, params: Value, piece: u64) -> Result<Value> {
         "files.preview" => answer(preview(parse(params)?)?),
         "files.bytes" => answer(bytes(parse(params)?)?),
         _ => Err(format!("this host does not know {method}").into()),
-    }
-}
-
-/// Whether `answer`, to `method`, is a save that landed.
-pub fn saved(method: &str, answer: &Value) -> bool {
-    method == "files.write" && answer.get("version").is_some()
+    }?;
+    Ok(Ran {
+        answer,
+        saved: None,
+    })
 }
 
 fn parse<T: for<'de> Deserialize<'de>>(params: Value) -> Result<T> {
@@ -904,7 +918,7 @@ mod tests {
     }
 
     fn call(method: &str, params: Value) -> Result<Value> {
-        run(method, params, MAX_TEXT_BYTES)
+        run(method, params, MAX_TEXT_BYTES).map(|ran| ran.answer)
     }
 
     #[test]

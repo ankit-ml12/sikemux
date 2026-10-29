@@ -47,12 +47,12 @@ macro_rules! calls {
         ) -> CoreResult<Value> {
             match method {
                 $($name => calls!(@run $params, $run $(, $takes, $gives)?),)*
-                method if method.starts_with("git.") => {
-                    super::git::call(&$core, &$client.peer, method, $params).await
-                }
-                method if method.starts_with("files.") => files(&$core, method, $params).await,
-                method if method.starts_with("lsp.") => super::lsp::call(&$core, $client.id, method, $params).await,
-                _ => Err(format!("this host does not know {method}").into()),
+                method => match Routed::of(method) {
+                    Some(Routed::Git) => super::git::call(&$core, &$client.peer, method, $params).await,
+                    Some(Routed::Files) => files(&$core, method, $params).await,
+                    Some(Routed::Lsp) => super::lsp::call(&$core, $client.id, method, $params).await,
+                    None => Err(format!("this host does not know {method}").into()),
+                },
             }
         }
     };
@@ -67,24 +67,44 @@ macro_rules! calls {
     }};
 }
 
+/// The methods other modules route among themselves, known by their name's prefix.
+#[derive(Clone, Copy)]
+enum Routed {
+    Git,
+    Files,
+    Lsp,
+}
+
+impl Routed {
+    fn of(method: &str) -> Option<Self> {
+        let (namespace, _) = method.split_once('.')?;
+        match namespace {
+            "git" => Some(Routed::Git),
+            "files" => Some(Routed::Files),
+            "lsp" => Some(Routed::Lsp),
+            _ => None,
+        }
+    }
+}
+
 pub(crate) fn needs(method: &str) -> Needs {
-    if method.starts_with("git.") {
-        return super::git::needs(method);
+    match (rule(method), Routed::of(method)) {
+        (Some((needs, _)), _) => needs,
+        (None, Some(Routed::Git)) => super::git::needs(method),
+        (None, Some(Routed::Files | Routed::Lsp)) => Needs::Full,
+        (None, None) => Needs::Local,
     }
-    if method.starts_with("files.") || method.starts_with("lsp.") {
-        return Needs::Full;
-    }
-    rule(method).map_or(Needs::Local, |(needs, _)| needs)
 }
 
 /// Whether only Sikemux's own window or notch may call `method` from this
 /// host; another program here may only read, or start a plugin's browser
 /// sign-in, which only the person can finish in their browser.
 pub(crate) fn for_person(method: &str) -> bool {
-    if method.starts_with("git.") {
-        return super::git::for_person(method);
+    match (rule(method), Routed::of(method)) {
+        (Some((_, any_program)), _) => !any_program,
+        (None, Some(Routed::Git)) => super::git::for_person(method),
+        (None, Some(Routed::Files | Routed::Lsp) | None) => true,
     }
-    rule(method).is_none_or(|(_, any_program)| !any_program)
 }
 
 calls! { core, client, params;
@@ -653,21 +673,16 @@ calls! { core, client, params;
 /// The file tree's and the editor's methods on this host's disk, each read
 /// answering with at most a piece of a file so other replies keep moving.
 async fn files(core: &Core, method: &str, params: Value) -> CoreResult<Value> {
-    let path = params
-        .get("path")
-        .and_then(Value::as_str)
-        .map(PathBuf::from);
     let method = method.to_owned();
-    let (method, answer) = blocking(move || {
-        let answer = crate::files::run(&method, params, crate::files::PIECE_BYTES)
-            .map_err(|error| CoreError::from(error.to_string()))?;
-        Ok((method, answer))
+    let ran = blocking(move || {
+        crate::files::run(&method, params, crate::files::PIECE_BYTES)
+            .map_err(|error| CoreError::from(error.to_string()))
     })
     .await?;
-    if let Some(path) = path.filter(|_| crate::files::saved(&method, &answer)) {
+    if let Some(path) = ran.saved {
         core.edits.saved(path);
     }
-    Ok(answer)
+    Ok(ran.answer)
 }
 
 /// Refuses a program an agent started: it could sign the person's plugin in

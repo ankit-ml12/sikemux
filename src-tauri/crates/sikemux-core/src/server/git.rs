@@ -41,10 +41,11 @@ pub(crate) fn for_person(method: &str) -> bool {
     !reads(method) && method != PULL_REQUEST_URL
 }
 
-/// Each method's parameters by the names clients send them under, the git
-/// function it runs, and `read` for one that only reads.
+/// Each method's parameters by the names clients send them under, the first of
+/// them the repository it works in, the git function it runs, `read` for one
+/// that only reads, and `core` for one that runs with the core as well.
 macro_rules! methods {
-    ($($name:literal $($read:ident)? => $run:path { $($arg:ident: $ty:ty),* $(,)? }),* $(,)?) => {
+    ($($name:literal $($read:ident)? $(, $with:ident)? => $run:path { $repo:ident: String $(, $arg:ident: $ty:ty)* $(,)? }),* $(,)?) => {
         fn reads(method: &str) -> bool {
             match method {
                 $($name => methods!(@read $($read)?),)*
@@ -52,14 +53,15 @@ macro_rules! methods {
             }
         }
 
-        async fn run(method: &str, params: Value) -> CoreResult<Value> {
+        async fn run(core: &Core, peer: &Peer, method: &str, params: Value) -> CoreResult<Value> {
             match method {
                 $($name => {
                     #[derive(Deserialize)]
                     #[serde(rename_all = "camelCase")]
-                    struct Params { $($arg: $ty),* }
-                    let Params { $($arg),* } = serde_json::from_value(params).map_err(unfit)?;
-                    Ok(serde_json::to_value($run($($arg),*).await?)?)
+                    struct Params { $repo: String $(, $arg: $ty)* }
+                    let Params { $repo $(, $arg)* } = serde_json::from_value(params).map_err(unfit)?;
+                    confine(core, peer, &$repo).await?;
+                    Ok(serde_json::to_value(methods!(@call $run, core, ($($with)?), $repo $(, $arg)*).await?)?)
                 })*
                 _ => Err(format!("this host does not know {method}").into()),
             }
@@ -67,6 +69,20 @@ macro_rules! methods {
     };
     (@read read) => { true };
     (@read) => { false };
+    (@call $run:path, $core:ident, (core), $($arg:ident),*) => { $run($core, $($arg),*) };
+    (@call $run:path, $core:ident, (), $($arg:ident),*) => { $run($($arg),*) };
+}
+
+/// Refuses a device a repository outside the workspace's projects.
+async fn confine(core: &Core, peer: &Peer, repo: &str) -> CoreResult<()> {
+    if !matches!(peer, Peer::Device { .. }) {
+        return Ok(());
+    }
+    let (asked, projects) = (PathBuf::from(repo), core.workspaces.project_paths());
+    if !blocking(move || Ok(of_a_project(&asked, &projects))).await? {
+        return Err("a device may only look at the workspace's projects".into());
+    }
+    Ok(())
 }
 
 /// Whether a project or an agent here works inside `path`.
@@ -87,59 +103,48 @@ pub(crate) async fn call(
     method: &str,
     params: Value,
 ) -> CoreResult<Value> {
-    if matches!(peer, Peer::Device { .. }) {
-        let asked = ["repo", "root", "project"]
-            .into_iter()
-            .find_map(|key| params.get(key).and_then(Value::as_str))
-            .map(PathBuf::from)
-            .ok_or("the call names no repository")?;
-        let projects = core.workspaces.project_paths();
-        if !super::connection::blocking(move || Ok(of_a_project(&asked, &projects))).await? {
-            return Err("a device may only look at the workspace's projects".into());
-        }
-    }
-    if method == "git.worktreeRemove" {
-        let path = params
-            .get("path")
-            .and_then(Value::as_str)
-            .map(PathBuf::from);
-        if path.is_some_and(|path| lived_in(core, &path)) {
-            return Err(
-                "close the worktree's Sikemux project and agents before removing it".into(),
-            );
-        }
-    }
     if method == PULL_REQUEST_URL {
         #[derive(Deserialize)]
         struct Asked {
             repo: String,
         }
         let Asked { repo } = serde_json::from_value(params).map_err(unfit)?;
+        confine(core, peer, &repo).await?;
         let (origin, branch) = remote::origin_and_branch(repo).await?;
         let url = codehost::compare_url(core, &origin, &branch).await?;
         return Ok(Value::String(url));
     }
-    let mut params = params;
-    if method == "git.projectRepo" {
-        let chosen = params
-            .get("project")
-            .and_then(Value::as_str)
-            .and_then(|project| {
-                core.preferences
-                    .get()
-                    .default_git_repos
-                    .get(project)
-                    .cloned()
-            });
-        params["chosen"] = serde_json::json!(chosen);
+    run(core, peer, method, params).await
+}
+
+/// The repository of `project`, preferring the one the person picked for it.
+async fn project_repo(core: &Core, project: String) -> Result<status::ProjectRepo, String> {
+    let chosen = core
+        .preferences
+        .get()
+        .default_git_repos
+        .get(&project)
+        .cloned();
+    status::git_project_repo(project, chosen).await
+}
+
+/// Removes a worktree no project or agent here still works in.
+async fn remove_worktree(
+    core: &Core,
+    repo: String,
+    path: String,
+    force: bool,
+) -> Result<worktree::GitWorktree, String> {
+    if lived_in(core, Path::new(&path)) {
+        return Err("close the worktree's Sikemux project and agents before removing it".into());
     }
-    run(method, params).await
+    worktree::git_worktree_remove(repo, path, force).await
 }
 
 methods!(
     "git.status" read => status::git_status { repo: String },
     "git.discoverRepos" read => status::git_discover_repos { root: String },
-    "git.projectRepo" read => status::git_project_repo { project: String, chosen: Option<String> },
+    "git.projectRepo" read, core => project_repo { project: String },
     "git.overview" read => log::git_overview { repo: String },
     "git.log" read => log::git_log { repo: String },
     "git.diff" read => changes::git_diff { repo: String, path: String, staged: bool },
@@ -162,7 +167,7 @@ methods!(
     "git.revert" => branches::git_revert { repo: String, rev: String },
     "git.worktrees" read => worktree::git_worktree_list { repo: String },
     "git.worktreeCreate" => worktree::git_worktree_create { repo: String, path: String, branch: String, create_branch: bool, start_point: Option<String> },
-    "git.worktreeRemove" => worktree::git_worktree_remove { repo: String, path: String, force: bool },
+    "git.worktreeRemove", core => remove_worktree { repo: String, path: String, force: bool },
     "git.show" read => revisions::git_show { repo: String, rev: String },
     "git.fileAt" read => revisions::git_file_at { repo: String, rev: String, path: String },
     "git.fileDiff" read => revisions::git_file_diff { repo: String, path: String, base_rev: String, head_rev: Option<String>, full: bool },
