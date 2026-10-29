@@ -213,7 +213,7 @@ impl Sink {
 
     /// Whether a turn this side prompted is being answered.
     pub fn running(&self) -> bool {
-        self.chat.running.load(Ordering::Acquire)
+        self.chat.prompted()
     }
 
     /// The agent's CLI said which version it is.
@@ -236,7 +236,7 @@ impl Sink {
     /// the chat's loop to decide on, with the turn still running.
     pub fn end_turn(&self, turn: u64, end: TurnEnd) {
         let chat = &self.chat;
-        chat.unprompted.store(false, Ordering::Release);
+        chat.end_unprompted();
         chat.cancel_permissions();
         let settle = || {
             chat.stop_running();
@@ -254,7 +254,7 @@ impl Sink {
         match end {
             TurnEnd::Completed(payload) => {
                 settle();
-                chat.answered.store(true, Ordering::Release);
+                chat.note_answered();
                 chat.emit(ChatEventKind::TurnCompleted, payload);
             }
             TurnEnd::Failed { failure, response } if failure.kind != FailureKind::Other => {
@@ -598,7 +598,7 @@ pub(crate) async fn run<B: Backend>(
             let replay = replay.or_else(|| reset::take_due(&chat));
             // Running before it reads as ready, so no client sees a turn about to go on as over.
             if replay.is_some() {
-                chat.running.store(true, Ordering::Release);
+                chat.start_prompted();
             }
             chat.note_agent(backend.pid());
             let start = state.start();
@@ -640,7 +640,7 @@ pub(crate) async fn run<B: Backend>(
 
     let (stalled_tx, mut stalled_rx) = mpsc::unbounded_channel::<u64>();
     if let Some(turn) = state.stopping.filter(|turn| *turn == state.turn) {
-        if chat.running.load(Ordering::Acquire) {
+        if chat.prompted() {
             stall_later(turn, &stalled_tx);
         }
     }
@@ -664,7 +664,7 @@ pub(crate) async fn run<B: Backend>(
     let mut letter_turn = false;
     let end = loop {
         chat.keep(state.progress());
-        if !chat.running.load(Ordering::Acquire) {
+        if !chat.prompted() {
             if let Some(reach) = backend.reach() {
                 chat.feed.reached(&state.session_id, reach);
             }
@@ -768,7 +768,7 @@ pub(crate) async fn run<B: Backend>(
                 continue;
             }
             Woke::Stalled(stalled) => {
-                if chat.running.load(Ordering::Acquire) && state.turn == stalled {
+                if chat.prompted() && state.turn == stalled {
                     if let Some(switching) = state.switching.take() {
                         chat.stop_running();
                         chat.emit(
@@ -802,7 +802,7 @@ pub(crate) async fn run<B: Backend>(
         };
         let mut by_letter = false;
         let command = match command {
-            ChatCommand::Letter { text, reply } if !chat.running.load(Ordering::Acquire) => {
+            ChatCommand::Letter { text, reply } if !chat.prompted() => {
                 let _ = reply.send(Delivery::NewTurn);
                 by_letter = true;
                 ChatCommand::Prompt {
@@ -846,7 +846,7 @@ pub(crate) async fn run<B: Backend>(
                 context,
                 shown,
             } => {
-                if chat.running.swap(true, Ordering::AcqRel) {
+                if chat.start_prompted() {
                     // Another agent's message can start a turn just as the
                     // person sends one, so theirs goes next rather than lost.
                     if letter_turn || shown {
@@ -917,7 +917,7 @@ pub(crate) async fn run<B: Backend>(
                 context,
                 reply,
             } => {
-                if chat.running.load(Ordering::Acquire) {
+                if chat.prompted() {
                     let _ =
                         reply.send(Err("Stop the current turn before editing a message".into()));
                     continue;
@@ -951,7 +951,7 @@ pub(crate) async fn run<B: Backend>(
                     &replay.paths,
                     &replay.context,
                 );
-                chat.running.store(true, Ordering::Release);
+                chat.start_prompted();
                 letter_turn = false;
                 state.turn += 1;
                 begin(&chat, &mut backend, state.turn, Prompt::from(&replay)).await;
@@ -965,7 +965,7 @@ pub(crate) async fn run<B: Backend>(
                     );
                     continue;
                 }
-                if chat.running.load(Ordering::Acquire) {
+                if chat.prompted() {
                     let moves = launch
                         .account
                         .as_ref()
@@ -981,17 +981,16 @@ pub(crate) async fn run<B: Backend>(
                     }
                     continue;
                 }
-                let replay = state.failed_prompt.take().or_else(|| {
-                    chat.unprompted
-                        .load(Ordering::Acquire)
-                        .then(Switching::carry_on_prompt)
-                });
+                let replay = state
+                    .failed_prompt
+                    .take()
+                    .or_else(|| chat.unprompted().then(Switching::carry_on_prompt));
                 if let Some(outcome) = switch_to(&chat, &provider, &launch, &account, replay) {
                     break outcome;
                 }
             }
             ChatCommand::SetPermissionMode { mode, reply } => {
-                let result = if chat.running.load(Ordering::Acquire) {
+                let result = if chat.prompted() {
                     Err("Stop the current turn before changing permissions".into())
                 } else {
                     backend.set_permission_mode(mode).await
@@ -1006,7 +1005,7 @@ pub(crate) async fn run<B: Backend>(
                 value,
                 reply,
             } => {
-                let result = if chat.running.load(Ordering::Acquire) {
+                let result = if chat.prompted() {
                     Err("Stop the current turn before changing the model".into())
                 } else {
                     backend.set_config(&config_id, &value).await
@@ -1023,7 +1022,7 @@ pub(crate) async fn run<B: Backend>(
                 context,
                 reply,
             } => {
-                if !chat.running.load(Ordering::Acquire) {
+                if !chat.prompted() {
                     let _ = reply.send(Ok("promptRequired".to_owned()));
                     continue;
                 }
@@ -1052,7 +1051,7 @@ pub(crate) async fn run<B: Backend>(
                 }
             }
             ChatCommand::Resume { prompt } => {
-                if chat.running.swap(true, Ordering::AcqRel) {
+                if chat.start_prompted() {
                     continue;
                 }
                 letter_turn = false;
@@ -1065,7 +1064,7 @@ pub(crate) async fn run<B: Backend>(
                 let Some(prompt) = state.failed_prompt.take() else {
                     continue;
                 };
-                if chat.running.swap(true, Ordering::AcqRel) {
+                if chat.start_prompted() {
                     state.failed_prompt = Some(prompt);
                     continue;
                 }
@@ -1086,7 +1085,7 @@ pub(crate) async fn run<B: Backend>(
                 if let Some(switching) = state.switching.as_mut() {
                     switching.carry_on = false;
                 }
-                if chat.running.load(Ordering::Acquire) {
+                if chat.prompted() {
                     state.stopping = Some(state.turn);
                 }
                 let sent = backend.cancel().await;
@@ -1149,7 +1148,7 @@ fn switch_to(
     let moved = on_account(provider, launch, account);
     let launch = chat.relaunch(&moved)?;
     if replay.is_some() {
-        chat.running.store(true, Ordering::Release);
+        chat.start_prompted();
     }
     Some(Outcome::Rebind(Box::new(Rebind {
         launch,
@@ -1222,7 +1221,7 @@ async fn stopped(
     broke: bool,
     reason: String,
 ) -> Outcome {
-    let working = !broke && (chat.turn_running() || chat.held.load(Ordering::Acquire));
+    let working = !broke && chat.working();
     let title = match (broke, working) {
         (true, _) => "This agent's session broke, and it was started again",
         (false, true) => "This agent stopped while it was working, and was started again",
@@ -1231,7 +1230,7 @@ async fn stopped(
     if let Some(rebind) = restart(chat, launch, state, working, title, &reason).await {
         return Outcome::Rebind(rebind);
     }
-    if broke || chat.running.load(Ordering::Acquire) {
+    if broke || chat.prompted() {
         let failure = error_message(&reason);
         chat.turn_failing(&failure);
         chat.emit(ChatEventKind::Error, failure);
@@ -1275,7 +1274,6 @@ async fn restart(
 
 /// Starts turn `turn`, or says why it could not start.
 async fn begin<B: Backend>(chat: &Arc<Chat>, backend: &mut B, turn: u64, prompt: Prompt) {
-    chat.unprompted.store(false, Ordering::Release);
     chat.emit(ChatEventKind::TurnStarted, json!({}));
     if let Err(error) = backend.prompt(turn, prompt).await {
         chat.stop_running();

@@ -13,6 +13,7 @@ pub(crate) mod queue;
 mod rebind;
 pub(crate) mod reset;
 mod states;
+mod turn;
 mod usage;
 
 use std::collections::HashMap;
@@ -43,6 +44,7 @@ pub(crate) use native::kill_and_reap;
 use native::Begin;
 pub(crate) use sikemux_fold::ChatEventKind;
 use sikemux_process::clock::epoch_ms;
+use turn::{Turn, TurnState};
 
 const MAX_AGENT_ID: usize = 200;
 const START_TIMEOUT: Duration = Duration::from_secs(150);
@@ -199,27 +201,15 @@ pub(crate) struct Chat {
     pub feed: Arc<Feed>,
     permissions: Mutex<HashMap<String, PendingPermission>>,
     readiness: watch::Sender<Readiness>,
-    /// A prompt this side sent is being answered.
-    pub running: AtomicBool,
+    turn: Mutex<TurnState>,
     /// Wakes whatever waits for the running turn to end.
     turn_over: tokio::sync::Notify,
-    /// The agent is working on a turn nobody here prompted.
-    pub unprompted: AtomicBool,
-    turned: AtomicBool,
-    /// A turn ended with subagents still at work, so it is not finished yet.
-    held: AtomicBool,
-    /// A turn of this chat was answered, so its provider has it saved.
-    pub answered: AtomicBool,
     /// The chat's loop waits for its next command, so it can let go of its
     /// agent at once.
     pub at_rest: AtomicBool,
     /// The chat is letting go of its agent, so the person's answers wait for
     /// the core that takes it over.
     releasing: AtomicBool,
-    /// A turn has started that the agent's lead has not yet heard the end of.
-    unreported: AtomicBool,
-    /// Why the turn in progress failed, said before the turn or the chat ends.
-    failure: Mutex<Option<String>>,
     /// The last turn failed for want of the network, and its prompt goes
     /// again once the network is back.
     pub(crate) offline_failed: AtomicBool,
@@ -266,10 +256,13 @@ impl Chat {
 
     pub(crate) fn emit(&self, kind: ChatEventKind, payload: Value) {
         if kind == ChatEventKind::TurnStarted {
-            self.turned.store(true, Ordering::Release);
-            self.held.store(false, Ordering::Release);
-            self.unreported.store(true, Ordering::Release);
-            self.set_failure(None);
+            let mut state = self.turn.locked();
+            state.turned = true;
+            state.unreported = true;
+            state.failure = None;
+            if state.turn == Turn::Held {
+                state.turn = Turn::Idle;
+            }
         }
         if let Some(core) = self.core.upgrade() {
             let activity = match kind {
@@ -278,7 +271,7 @@ impl Chat {
                     let cancelled =
                         payload.get("stopReason").and_then(Value::as_str) == Some("cancelled");
                     if !cancelled && self.feed.running_subagents() > 0 {
-                        self.held.store(true, Ordering::Release);
+                        self.hold_for_subagents();
                         core.agents_changed();
                         None
                     } else {
@@ -371,10 +364,7 @@ impl Chat {
     pub(crate) fn state_now(&self) -> AgentState {
         if !self.permissions.locked().is_empty() {
             AgentState::Blocked
-        } else if self.turn_running()
-            || self.held.load(Ordering::Acquire)
-            || self.feed.running_subagents() > 0
-        {
+        } else if self.working() || self.feed.running_subagents() > 0 {
             AgentState::Working
         } else if self.feed.start().is_some() {
             AgentState::Idle
@@ -419,10 +409,7 @@ impl Chat {
     /// Finishes a held turn once its last subagent has ended, unless the agent
     /// starts a turn of its own to answer it first.
     pub(crate) fn finish_held(&self) {
-        if !self.held.load(Ordering::Acquire)
-            || self.feed.running_subagents() > 0
-            || self.turn_running()
-        {
+        if self.turn.locked().turn != Turn::Held || self.feed.running_subagents() > 0 {
             return;
         }
         let core = self.core.clone();
@@ -434,12 +421,15 @@ impl Chat {
             let Some(chat) = core.chats.get(&agent_id) else {
                 return;
             };
-            if chat.generation != generation
-                || chat.turn_running()
-                || chat.feed.running_subagents() > 0
-                || !chat.held.swap(false, Ordering::AcqRel)
-            {
+            if chat.generation != generation || chat.feed.running_subagents() > 0 {
                 return;
+            }
+            {
+                let mut state = chat.turn.locked();
+                if state.turn != Turn::Held {
+                    return;
+                }
+                state.turn = Turn::Idle;
             }
             core.note_activity(&agent_id, Activity::Finished { cancelled: false });
             chat.report_turn(&core, Ending::Finished);
@@ -450,9 +440,8 @@ impl Chat {
     /// An error that arrives once nothing is at work on the turn any more
     /// ended it.
     fn turn_failed(&self, message: &str) -> Option<Ending> {
-        let over = !self.turn_running() && !self.held.load(Ordering::Acquire);
-        (over && self.unreported.load(Ordering::Acquire))
-            .then(|| Ending::Failed(message.to_owned()))
+        let state = self.turn.locked();
+        (state.turn == Turn::Idle && state.unreported).then(|| Ending::Failed(message.to_owned()))
     }
 
     /// The turn in progress failed, which the lead hears in place of its end,
@@ -462,21 +451,21 @@ impl Chat {
             .get("message")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        self.set_failure(Some(message.to_owned()));
-    }
-
-    fn set_failure(&self, failure: Option<String>) {
-        let mut slot = self.failure.locked();
-        *slot = failure;
+        self.turn.locked().failure = Some(message.to_owned());
     }
 
     fn take_failure(&self) -> Option<String> {
-        self.failure.locked().take()
+        self.turn.locked().failure.take()
+    }
+
+    /// Takes whether the lead has yet to hear how the turn that started went.
+    fn take_unreported(&self) -> bool {
+        std::mem::take(&mut self.turn.locked().unreported)
     }
 
     /// Tells the agent's lead how its turn ended, once per turn.
     fn report_turn(&self, core: &Arc<Core>, ending: Ending) {
-        if self.unreported.swap(false, Ordering::AcqRel) {
+        if self.take_unreported() {
             super::spawn::turn_ended(core, self.agent_id(), ending);
         }
     }
@@ -484,7 +473,7 @@ impl Chat {
     /// Tells the agent's lead the chat has ended, when that cut a turn short
     /// or the agent went away by itself after it had started.
     fn report_end(&self, core: &Arc<Core>, result: &Result<SessionEnd, String>) {
-        let mid_turn = self.unreported.swap(false, Ordering::AcqRel);
+        let mid_turn = self.take_unreported();
         let went_away = self.is_ready() && !matches!(result, Ok(SessionEnd::Requested));
         if !mid_turn && !went_away {
             return;
@@ -536,7 +525,10 @@ impl Chat {
 
     /// Writes down where the chat stands, with how its loop says its turns go.
     pub(crate) fn keep(&self, progress: kept::Progress<'_>) {
-        let running = self.running.load(Ordering::Acquire);
+        let (running, working) = {
+            let state = self.turn.locked();
+            (state.turn == Turn::Prompted, state.turn != Turn::Idle)
+        };
         self.keeper.keep(KeptChat {
             launch: self.current_now(),
             from_shell: Vec::new(),
@@ -544,7 +536,7 @@ impl Chat {
             origin: self.origin.clone(),
             feed: self.feed.id().to_owned(),
             agent: *self.agent.locked(),
-            working: self.turn_running() || self.held.load(Ordering::Acquire),
+            working,
             prompt: progress.prompt.filter(|_| running).cloned(),
             offline: progress
                 .failed
@@ -560,14 +552,22 @@ impl Chat {
     }
 
     pub(crate) fn work_started(&self) {
-        if !self.running.load(Ordering::Acquire) && !self.unprompted.swap(true, Ordering::AcqRel) {
+        let starts = {
+            let mut state = self.turn.locked();
+            let starts = matches!(state.turn, Turn::Idle | Turn::Held);
+            if starts {
+                state.turn = Turn::Unprompted;
+            }
+            starts
+        };
+        if starts {
             self.emit(ChatEventKind::TurnStarted, serde_json::json!({}));
         }
     }
 
     /// The work nobody here asked for is over.
     pub(crate) fn work_ended(&self, stop_reason: &str) {
-        if self.unprompted.swap(false, Ordering::AcqRel) {
+        if self.end_unprompted() {
             self.emit(
                 ChatEventKind::TurnCompleted,
                 serde_json::json!({ "stopReason": stop_reason }),
@@ -587,7 +587,7 @@ impl Chat {
         if let Err(error) = sent {
             self.emit(ChatEventKind::Error, rebind::error_message(error));
         }
-        if self.running.load(Ordering::Acquire) {
+        if self.prompted() {
             stall_later(turn, stalled);
         } else {
             self.work_ended("cancelled");
@@ -613,10 +613,8 @@ impl Chat {
     /// Only while the agent works, its turn or the subagents and background
     /// tasks that outlive it, so history read back again is not counted twice.
     pub(crate) fn note_edits(&self, update: &Value) {
-        let working = self.turn_running()
-            || self.held.load(Ordering::Acquire)
-            || self.feed.running_subagents() > 0
-            || self.feed.running_tasks() > 0;
+        let working =
+            self.working() || self.feed.running_subagents() > 0 || self.feed.running_tasks() > 0;
         if !working {
             return;
         }
@@ -636,7 +634,14 @@ impl Chat {
 
     /// The running turn is over. Answers whether one was running.
     pub(crate) fn stop_running(&self) -> bool {
-        let was = self.running.swap(false, Ordering::AcqRel);
+        let was = {
+            let mut state = self.turn.locked();
+            let was = state.turn == Turn::Prompted;
+            if was {
+                state.turn = Turn::Idle;
+            }
+            was
+        };
         self.turn_over.notify_waiters();
         was
     }
@@ -645,15 +650,60 @@ impl Chat {
     pub(crate) async fn turn_ended(&self) {
         loop {
             let over = self.turn_over.notified();
-            if !self.running.load(Ordering::Acquire) {
+            if !self.prompted() {
                 return;
             }
             over.await;
         }
     }
 
+    /// Whether a prompt this side sent is being answered.
+    pub(crate) fn prompted(&self) -> bool {
+        self.turn.locked().turn == Turn::Prompted
+    }
+
+    /// A prompt this side sent is being answered from now. Answers whether one already was.
+    pub(crate) fn start_prompted(&self) -> bool {
+        let mut state = self.turn.locked();
+        let was = state.turn == Turn::Prompted;
+        state.turn = Turn::Prompted;
+        was
+    }
+
+    /// Whether the agent works on a turn nobody here prompted.
+    pub(crate) fn unprompted(&self) -> bool {
+        self.turn.locked().turn == Turn::Unprompted
+    }
+
+    /// The turn nobody here prompted is over. Answers whether one was running.
+    pub(crate) fn end_unprompted(&self) -> bool {
+        let mut state = self.turn.locked();
+        let was = state.turn == Turn::Unprompted;
+        if was {
+            state.turn = Turn::Idle;
+        }
+        was
+    }
+
     pub(crate) fn turn_running(&self) -> bool {
-        self.running.load(Ordering::Acquire) || self.unprompted.load(Ordering::Acquire)
+        self.turn.locked().running()
+    }
+
+    /// Whether the agent is at work on a turn, or on subagents a turn that ended left going.
+    pub(crate) fn working(&self) -> bool {
+        self.turn.locked().turn != Turn::Idle
+    }
+
+    fn hold_for_subagents(&self) {
+        let mut state = self.turn.locked();
+        if state.turn == Turn::Idle {
+            state.turn = Turn::Held;
+        }
+    }
+
+    /// A turn of this chat was answered, so its provider has it saved.
+    pub(crate) fn note_answered(&self) {
+        self.turn.locked().answered = true;
     }
 
     /// Every agent still asks before some actions in its most open mode, such as
@@ -951,11 +1001,11 @@ impl Chat {
     /// Whether the provider has a saved session to load: one a turn answered,
     /// or one the chat was resumed from.
     pub(crate) fn has_answered(&self) -> bool {
-        self.answered.load(Ordering::Acquire) || self.launch.resume_id.is_some()
+        self.turn.locked().answered || self.launch.resume_id.is_some()
     }
 
     fn kept_by_provider(&self) -> bool {
-        self.turned.load(Ordering::Acquire) || self.launch.resume_id.is_some()
+        self.turn.locked().turned || self.launch.resume_id.is_some()
     }
 
     /// The launch the agent runs with now, in the mode, model and effort
@@ -1016,16 +1066,6 @@ impl Chat {
         self.unstarted() || (self.is_ready() && self.at_rest.load(Ordering::Acquire))
     }
 
-    fn flags(&self) -> Flags {
-        Flags {
-            running: self.running.load(Ordering::Acquire),
-            unprompted: self.unprompted.load(Ordering::Acquire),
-            turned: self.turned.load(Ordering::Acquire),
-            held: self.held.load(Ordering::Acquire),
-            answered: self.answered.load(Ordering::Acquire),
-        }
-    }
-
     /// Lets go of the agent, still running, for a core that replaces this
     /// one. Answers with how to start the chat again instead, and why, when
     /// it cannot.
@@ -1081,7 +1121,7 @@ impl Chat {
                 launch: self.launch.clone(),
                 current: self.current_launch(),
                 origin: self.origin.clone(),
-                flags: self.flags(),
+                flags: self.turn.locked().clone(),
                 feed,
                 asked: self.asked(),
                 session: handed.session,
@@ -1095,18 +1135,6 @@ impl Chat {
     }
 }
 
-/// What said whether a chat was at work, carried to the core that takes it
-/// over.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Flags {
-    running: bool,
-    unprompted: bool,
-    turned: bool,
-    held: bool,
-    answered: bool,
-}
-
 /// A chat handed whole to a core that replaces this one: the agent goes on
 /// running, and the new core reads on where this one stopped.
 #[derive(Serialize, Deserialize)]
@@ -1117,7 +1145,7 @@ pub(crate) struct LiveChat {
     launch: ChatLaunch,
     current: ChatLaunch,
     origin: Origin,
-    flags: Flags,
+    flags: TurnState,
     feed: FeedState,
     asked: Vec<Asked>,
     session: native::SessionState,
@@ -1477,7 +1505,7 @@ impl Chats {
         core: &Arc<Core>,
         launch: ChatLaunch,
         origin: Origin,
-        kept: Option<(Arc<Feed>, Flags)>,
+        kept: Option<(Arc<Feed>, TurnState)>,
     ) -> CoreResult<(Arc<Chat>, mpsc::UnboundedReceiver<ChatCommand>)> {
         let mut chats = self.chats.locked();
         if chats.contains_key(&launch.agent_id) {
@@ -1499,14 +1527,7 @@ impl Chats {
                     self.history.as_deref(),
                 )
             });
-            let flags = Flags {
-                running: false,
-                unprompted: false,
-                turned: false,
-                held: false,
-                answered: false,
-            };
-            (feed, flags)
+            (feed, TurnState::default())
         });
         let offers_effort = crate::agent_catalog::agent(&launch.provider)
             .and_then(|agent| agent.chat.as_ref())
@@ -1530,16 +1551,10 @@ impl Chats {
             feed,
             permissions: Mutex::new(HashMap::new()),
             readiness: watch::channel(Readiness::Starting).0,
-            running: AtomicBool::new(flags.running),
+            turn: Mutex::new(flags),
             turn_over: tokio::sync::Notify::new(),
-            unprompted: AtomicBool::new(flags.unprompted),
-            turned: AtomicBool::new(flags.turned),
-            held: AtomicBool::new(flags.held),
-            answered: AtomicBool::new(flags.answered),
             at_rest: AtomicBool::new(false),
             releasing: AtomicBool::new(false),
-            unreported: AtomicBool::new(flags.running || flags.unprompted || flags.held),
-            failure: Mutex::new(None),
             offline_failed: AtomicBool::new(false),
             edits: Default::default(),
             cli_version: Mutex::new(None),
@@ -1901,13 +1916,7 @@ fn take_up(core: &Arc<Core>, dir: &std::path::Path, kept: KeptChat) -> CoreResul
     );
     kept::moved(dir, &kept, feed.id());
     let saved = launch_spec.resume_id.is_some();
-    let flags = Flags {
-        running: false,
-        unprompted: false,
-        turned: saved,
-        held: false,
-        answered: saved,
-    };
+    let flags = TurnState::saved(saved);
     let (chat, queue) = core.chats.insert(
         core,
         launch_spec.clone(),
@@ -2144,7 +2153,7 @@ pub(crate) async fn attach(
         request_id,
         Standing {
             running: chat.turn_running(),
-            turned: chat.turned.load(Ordering::Acquire),
+            turned: chat.turn.locked().turned,
             draft: core.drafts.chat_draft(agent_id),
         },
         since,
