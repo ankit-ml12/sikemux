@@ -2651,3 +2651,70 @@ export interface SharedFile {
   /** The file's bytes in base64. */
   data: string;
 }
+
+/** What a call that takes nothing is sent; whatever a client sends reads as nothing. */
+export interface NoParams {}
+
+export interface QueuedParams {
+  agentId: string;
+  ids: string[];
+  /** A message sent with them, after them. */
+  message?: QueuedMessageParams;
+}
+
+/** A message as the person wrote it. */
+export interface QueuedMessageParams {
+  text: string;
+  paths?: string[];
+  context?: ChatContext[];
+}
+
+/** Something read elsewhere and handed to the agent whole, such as an issue. */
+export interface ChatContext {
+  uri: string;
+  title: string;
+  text: string;
+}
+
+export interface ToolDetailParams {
+  agentId: string;
+  toolCallId: string;
+}
+
+export interface AgentParams {
+  agentId: string;
+}
+
+export interface ChatAccountsParams {
+  agentId: string;
+}
+
+/** The account a chat runs on and those it may move to, as a client offers them. */
+export interface ChatAccounts {
+  account?: NamedAccount;
+  others: NamedAccount[];
+}
+
+export interface NamedAccount {
+  id: string;
+  label: string;
+}
+
+export interface MoveChatParams {
+  agentId: string;
+  accountId: string;
+}
+
+/** The core's calls that name what they take and answer, by method. */
+export interface CoreCalls {
+  agentCatalog: { params: NoParams; answer: CatalogAgent[] };
+  steerQueued: { params: QueuedParams; answer: null };
+  chatToolDetail: { params: ToolDetailParams; answer: ToolDetail };
+  dropQueued: { params: QueuedParams; answer: null };
+  closeChat: { params: AgentParams; answer: null };
+  chatAccounts: { params: ChatAccountsParams; answer: ChatAccounts };
+  moveChatAccount: { params: MoveChatParams; answer: null };
+  preferences: { params: NoParams; answer: Preferences };
+  questions: { params: NoParams; answer: AgentQuestion[] };
+  boards: { params: NoParams; answer: ProjectBoard[] };
+}

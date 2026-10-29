@@ -5,6 +5,7 @@ import { answerText } from '@shared/chat/answerText';
 import { applyChanges, type ChatRows } from '@shared/chat/rows';
 import type { ChatChange, ChatView, PermissionAsk, ToolDetail } from '@shared/chat/types';
 
+import { callHost } from '@/core/hostCalls';
 import { problem as problemOf } from '@/core/problem';
 import type { ChatInfo } from '@/core/protocol';
 import type { ChatDelivery } from '@/devices/hub';
@@ -323,7 +324,7 @@ export class ChatSession {
   steer = (ids: readonly string[]) => {
     ids = this.outbox.onHostQueue(ids);
     if (!ids.length) return;
-    void this.ask((connection) => connection.call('steerQueued', JSON.stringify({ agentId: this.agentId, ids })), 'Could not steer');
+    void this.ask((connection) => callHost(connection, 'steerQueued', { agentId: this.agentId, ids: [...ids] }), 'Could not steer');
   };
 
   /** Acts on the turn that failed: sends it again, lets it go, or keeps it from resuming once a usage limit resets. */
@@ -333,18 +334,12 @@ export class ChatSession {
 
   /** Carries the chat on in another of the person's accounts, a turn that failed sent again there. */
   moveToAccount = (accountId: string) => {
-    void this.ask(
-      (connection) => connection.call('moveChatAccount', JSON.stringify({ agentId: this.agentId, accountId })),
-      'Could not move the chat',
-    );
+    void this.ask((connection) => callHost(connection, 'moveChatAccount', { agentId: this.agentId, accountId }), 'Could not move the chat');
   };
 
   dropQueued = (id: string) => {
     if (!this.outbox.onHostQueue([id]).length) return;
-    void this.ask(
-      (connection) => connection.call('dropQueued', JSON.stringify({ agentId: this.agentId, ids: [id] })),
-      'Could not take it back',
-    );
+    void this.ask((connection) => callHost(connection, 'dropQueued', { agentId: this.agentId, ids: [id] }), 'Could not take it back');
   };
 
   /** Stops the running turn. Messages waiting behind it go back to the composer rather than out. */
@@ -424,7 +419,7 @@ export class ChatSession {
   stopChat = async (): Promise<boolean> => {
     let stopped = false;
     await this.ask(
-      (connection) => connection.call('closeChat', JSON.stringify({ agentId: this.agentId })),
+      (connection) => callHost(connection, 'closeChat', { agentId: this.agentId }),
       'Could not stop the chat',
       () => {
         stopped = true;

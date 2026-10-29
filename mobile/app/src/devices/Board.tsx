@@ -16,7 +16,7 @@ import type { ChatTrigger } from '@shared/wire.generated';
 import { kindLabel, outcomeLabel, rowKeys, whoLabel, type AgentMessageRows } from '@shared/agents/agentMessages';
 import { formatAge } from '@shared/lib/format';
 import type { AgentQuestion, ProjectInfo, Snapshot } from '@/core/protocol';
-import { useHostCall } from '@/core/hostCalls';
+import { useHostCall, type HostRead } from '@/core/hostCalls';
 import { projectAt, projectName } from '@/devices/words';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Row, Rows, SectionLabel } from '@/ui/list';
@@ -50,7 +50,7 @@ export function Board({
   onScope: (project: string) => void;
 }) {
   const seen = seenOf(snapshot);
-  const read = useHostCall<AgentQuestion[]>(connection, 'questions', null, seen);
+  const read = useHostCall(connection, 'questions', {}, seen) as HostRead<AgentQuestion[]>;
   const questions = read.data ?? NO_QUESTIONS;
   return (
     <>
@@ -83,7 +83,7 @@ function OneBoard({
   questions: readonly AgentQuestion[];
   seen: string;
 }) {
-  const read = useHostCall<ProjectBoard>(connection, 'board', { project: scope.path }, seen);
+  const read = useHostCall(connection, 'board', { project: scope.path }, seen) as HostRead<ProjectBoard>;
   if (read.problem) return <Problem what="the board" text={read.problem} />;
   if (!read.data) return null;
   const cards = [...read.data.cards].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -165,7 +165,7 @@ function BetweenAgents({ connection, snapshot, project }: { connection: Connecti
   const styles = useStyles(makeStyles);
   const [logged, setLogged] = useState(project);
   const latest = snapshot.inbox.agentMessages[logged] ?? 0;
-  const read = useHostCall<AgentMessageRows>(connection, 'agentMessageRows', { project }, String(latest));
+  const read = useHostCall(connection, 'agentMessageRows', { project }, String(latest)) as HostRead<AgentMessageRows>;
   const answered = read.data?.project;
   if (answered && answered !== logged) setLogged(answered);
   if (read.problem) return <Problem what="the messages between agents" text={read.problem} />;
@@ -303,7 +303,7 @@ function AllBoards({
   onScope: (project: string) => void;
 }) {
   const colors = useColors();
-  const read = useHostCall<ProjectBoard[]>(connection, 'boards', null, seen);
+  const read = useHostCall(connection, 'boards', {}, seen);
   if (read.problem) return <Problem what="the boards" text={read.problem} />;
   if (!read.data) return null;
   const boards = read.data.filter((board) => board.cards.length > 0);

@@ -43,7 +43,6 @@ import {
 } from '@/chat/Transcript';
 import { useChat } from '@/chat/useChat';
 import { useHostCall } from '@/core/hostCalls';
-import type { Preferences } from '@/core/protocol';
 import { retry as reconnect, useDevices, useLive, type Live } from '@/devices/hub';
 import { dismissCardsFor } from '@/notify/cards';
 import { deviceName } from '@/devices/paired';
@@ -313,7 +312,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const title = state.title ?? live.snapshot?.inbox.agents.find((shown) => shown.agentId === agentId)?.title ?? agentLabel(provider);
   const steerable = state.capabilities.steering && state.running && !watchOnly;
   // The person may change how sending mid-turn goes between turns, so each turn reads it afresh.
-  const preferences = useHostCall<Preferences>(connection, 'preferences', null, String(state.running)).data;
+  const preferences = useHostCall(connection, 'preferences', {}, String(state.running)).data;
   const steers = steerable && preferences?.midTurnSend !== 'queue';
   const saved = live.snapshot?.workspace.agents?.find((shown) => shown.id === agentId);
   const worktree = worktreeOf(saved?.worktree);

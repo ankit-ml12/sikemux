@@ -2,8 +2,9 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { CoreEvent, MobileError, type ConnectionLike, type CoreListener } from '@sikemux/native';
 
+import { callHost } from '@/core/hostCalls';
 import { problem } from '@/core/problem';
-import { forgetAgentCatalog, setAgentCatalog, type CatalogAgent } from '@shared/agents/catalog';
+import { forgetAgentCatalog, setAgentCatalog } from '@shared/agents/catalog';
 import { externalValue, useExternalValue } from '@shared/lib/externalValue';
 import { keepUnchanged, readHost, readView, type HostInfo, type Snapshot } from '@/core/protocol';
 import { goOffline, thisDevice } from '@/phone/identity';
@@ -297,9 +298,9 @@ async function connect(core: string, found: Entry) {
 
 /** Takes the agents the host can run, which every screen names and draws agents from, then shows the view that waited on them. */
 function readCatalog(core: string, found: Entry, connection: ConnectionLike) {
-  connection
-    .call('agentCatalog', '{}')
-    .then((json) => setAgentCatalog(core, JSON.parse(json) as CatalogAgent[]))
+  connection;
+  callHost(connection, 'agentCatalog', {})
+    .then((catalog) => setAgentCatalog(core, catalog))
     .catch((error: unknown) => console.warn("sikemux: could not read the host's agents", error))
     .finally(() => {
       found.catalogRead = true;

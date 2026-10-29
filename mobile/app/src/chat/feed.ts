@@ -3,6 +3,7 @@ import { MobileError, type ChatMark, type ConnectionLike } from '@sikemux/native
 import { applyChanges, emptyChat, fromView, withPage, type ChatRows } from '@shared/chat/rows';
 import type { ChatChange, ChatPage, ChatView, ToolDetail } from '@shared/chat/types';
 
+import { callHost } from '@/core/hostCalls';
 import type { ChatDelivery } from '@/devices/hub';
 import type { ChatStore, Kept } from './kept';
 
@@ -183,12 +184,10 @@ export class Feed {
   toolDetail(connection: ConnectionLike | undefined, agentId: string, toolCallId: string, done: boolean): Promise<ToolDetail> {
     const kept = this.details.get(toolCallId);
     if (kept) return kept;
-    const reading = Promise.resolve()
-      .then(() => {
-        if (!connection?.isOpen()) throw new Error('the host is not connected');
-        return connection.call('chatToolDetail', JSON.stringify({ agentId, toolCallId }));
-      })
-      .then((json) => JSON.parse(json) as ToolDetail);
+    const reading = Promise.resolve().then(() => {
+      if (!connection?.isOpen()) throw new Error('the host is not connected');
+      return callHost(connection, 'chatToolDetail', { agentId, toolCallId });
+    });
     if (!done) return reading;
     this.details.set(toolCallId, reading);
     reading.catch(() => this.details.delete(toolCallId));

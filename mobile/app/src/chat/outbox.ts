@@ -4,6 +4,7 @@ import { randomUUID } from 'expo-crypto';
 import type { ChatRows } from '@shared/chat/rows';
 import type { ChatMessage, QueuedMessage } from '@shared/chat/types';
 
+import { callHost } from '@/core/hostCalls';
 import { problem as problemOf } from '@/core/problem';
 import type { ContextChip } from '@/stash/words';
 import type { Named } from './draft';
@@ -173,7 +174,7 @@ export class Outbox {
       if (!steers) return this.prompt(connection, id, text, paths, named.context);
       const ids = this.onHostQueue(this.host.chat().queued.map((held) => held.id));
       const message = { text, paths, context: named.context };
-      await connection.call('steerQueued', JSON.stringify({ agentId: this.agentId, ids, message }));
+      await callHost(connection, 'steerQueued', { agentId: this.agentId, ids, message });
     })
       .then(() => {
         const held = this.holding.find((holding) => holding.id === id);

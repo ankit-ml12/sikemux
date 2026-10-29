@@ -10,7 +10,6 @@ import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import type { ChatSession } from './session';
 
 /** The account a chat runs on and the signed-in ones that keep its chats too, as the host's `chatAccounts` answers. */
-type ChatAccounts = { account?: { id: string; label: string }; others: { id: string; label: string }[] };
 
 /** Whose servers a provider's turns go to, for saying which the network lost. */
 function servedBy(provider: string) {
@@ -67,7 +66,7 @@ export function Trouble({
   const styles = useStyles(makeStyles);
   const failure = state.failure;
   const accountsNeeded = canAct && (failure?.kind === 'signIn' || failure?.kind === 'limit');
-  const accounts = useHostCall<ChatAccounts>(
+  const accounts = useHostCall(
     accountsNeeded ? connection : undefined,
     'chatAccounts',
     { agentId: session.agentId },

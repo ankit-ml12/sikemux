@@ -19,14 +19,19 @@ use super::{
     agent_accounts, agent_sign_in, board, inbox, messages, model_providers, plugins, questions,
     remote, saved, saved_sessions, share, skill_library, who_wrote, Core, CoreError, CoreResult,
 };
-use crate::protocol::AgentBuddy;
+use crate::protocol::{AgentBuddy, Preferences};
+use sikemux_wire::catalog::CatalogAgent;
+use sikemux_wire::chat::ToolDetail;
+use sikemux_wire::questions::AgentQuestion;
 
 /// Each method once: what a client must be allowed, `any_program` when any
 /// program on this host may call it rather than only Sikemux's own window or
-/// notch, and what it runs.
+/// notch, and what it runs. A method whose params and answer are named, as
+/// `"m" (Params) -> Answer`, runs on its params read as that type and answers that
+/// type, which clients are generated to call it with.
 macro_rules! calls {
     ($core:ident, $client:ident, $params:ident;
-     $($name:literal: $needs:ident $(, $any:ident)? => $run:expr,)*) => {
+     $($name:literal $(($takes:ty) -> $gives:ty)?: $needs:ident $(, $any:ident)? => $run:expr,)*) => {
         fn rule(method: &str) -> Option<(Needs, bool)> {
             match method {
                 $($name => Some((Needs::$needs, calls!(@any $($any)?))),)*
@@ -41,7 +46,7 @@ macro_rules! calls {
             $params: Value,
         ) -> CoreResult<Value> {
             match method {
-                $($name => $run,)*
+                $($name => calls!(@run $params, $run $(, $takes, $gives)?),)*
                 method if method.starts_with("git.") => {
                     super::git::call(&$core, &$client.peer, method, $params).await
                 }
@@ -53,6 +58,13 @@ macro_rules! calls {
     };
     (@any any_program) => { true };
     (@any) => { false };
+    (@run $params:ident, $run:expr) => { $run };
+    (@run $params:ident, $run:expr, $takes:ty, $gives:ty) => {{
+        #[allow(unused_variables)]
+        let $params: $takes = parse($params)?;
+        let gives: $gives = $run;
+        answer(gives)
+    }};
 }
 
 pub(crate) fn needs(method: &str) -> Needs {
@@ -84,7 +96,7 @@ calls! { core, client, params;
     "promptChat": Full => answer(prompt_chat(&core, parse(params)?).await?),
     "closedAgents": Full => answer(closed_agents(&core, parse(params)?).await?),
     "agentNames": Watch, any_program => answer(agent_names(&core).await?),
-    "agentCatalog": Watch, any_program => answer(super::catalog::view()),
+    "agentCatalog" (NoParams) -> Vec<CatalogAgent>: Watch, any_program => super::catalog::view(),
     "agentNameTheme": Full => answer(NameThemeParams { theme: core.names.theme() }),
     "setAgentNameTheme": Person => {
         let params: NameThemeParams = parse(params)?;
@@ -130,12 +142,8 @@ calls! { core, client, params;
         core.changes.changed(Topic::Activity, None, None);
         answer(())
     },
-    "steerQueued": Full => {
-        let params: QueuedParams = parse(params)?;
-        answer(
-            super::chat::queue::steer(&core, &params.agent_id, params.ids, params.message)
-                .await?,
-        )
+    "steerQueued" (QueuedParams) -> (): Full => {
+        super::chat::queue::steer(&core, &params.agent_id, params.ids, params.message).await?
     },
     "editMessage": Full => answer(edit_message(&core, parse(params)?).await?),
     "chatPage": Watch, any_program => {
@@ -148,13 +156,11 @@ calls! { core, client, params;
         let (reading, client) = (core.clone(), client.id);
         answer(blocking(move || super::chat::find(&reading, client, params)).await?)
     },
-    "chatToolDetail": Watch, any_program => {
-        let params: ToolDetailParams = parse(params)?;
-        answer(super::chat::tool_detail(&core, &params.agent_id, &params.tool_call_id)?)
+    "chatToolDetail" (ToolDetailParams) -> ToolDetail: Watch, any_program => {
+        super::chat::tool_detail(&core, &params.agent_id, &params.tool_call_id)?
     },
-    "dropQueued": Full => {
-        let params: QueuedParams = parse(params)?;
-        answer(super::chat::queue::remove(&core, &params.agent_id, &params.ids)?)
+    "dropQueued" (QueuedParams) -> (): Full => {
+        super::chat::queue::remove(&core, &params.agent_id, &params.ids)?
     },
     "agentSessions": Full, any_program => answer(saved::call(&core, parse(params)?).await?),
     "workspace": Watch, any_program => answer(core.workspace_view()),
@@ -180,10 +186,7 @@ calls! { core, client, params;
     "moveAgentToProject": Person => answer(super::move_agent::move_agent(&core, parse(params)?).await?),
     "moveAgentToFolder": Person => answer(super::move_agent::move_to_folder(&core, parse(params)?).await?),
     "closeAgents": Person => answer(workspace::close_agents(&core, parse(params)?)?),
-    "closeChat": Full => {
-        let params: AgentParams = parse(params)?;
-        answer(workspace::close_agent(&core, params.agent_id)?)
-    },
+    "closeChat" (AgentParams) -> (): Full => workspace::close_agent(&core, params.agent_id)?,
     "createAgentWorktree": Person => answer(super::worktree::agent::for_agent(&core, parse(params)?).await?),
     "agentReview": Watch => answer(super::worktree::removal::review(&core, parse(params)?).await?),
     "worktreeMerged": Watch => answer(super::worktree::removal::merged(&core, parse(params)?).await?),
@@ -304,8 +307,10 @@ calls! { core, client, params;
     },
     "retryFailed": Full => answer(agent_accounts::retry_failed(&core, parse(params)?)?),
     "discardFailed": Full => answer(agent_accounts::discard_failed(&core, parse(params)?)?),
-    "chatAccounts": Full => answer(agent_accounts::chat_accounts(&core, parse(params)?)?),
-    "moveChatAccount": Full => answer(agent_accounts::move_chat(&core, parse(params)?)?),
+    "chatAccounts" (agent_accounts::Resuming) -> agent_accounts::ChatAccounts: Full => {
+        agent_accounts::chat_accounts(&core, params)?
+    },
+    "moveChatAccount" (agent_accounts::Moving) -> (): Full => agent_accounts::move_chat(&core, params)?,
     "authenticateChat": Local => {
         agent_accounts::authenticate(&core, parse(params)?).await?;
         answer(())
@@ -379,7 +384,7 @@ calls! { core, client, params;
         core.view_changed();
         answer(style)
     },
-    "preferences": Watch => answer(core.preferences.get()),
+    "preferences" (NoParams) -> Preferences: Watch => core.preferences.get(),
     "stash": Person => {
         let params = serde_json::from_value(params).unwrap_or_default();
         answer(super::stash::list(&core, params).await?)
@@ -528,12 +533,12 @@ calls! { core, client, params;
     "sendSession": Person => answer(super::hosts::transfer::send_session(&core, parse(params)?).await?),
     "requireApproval": Person => answer(json!({ "requireApproval": core.remote.requires_approval() })),
     "setRequireApproval": Person => answer(remote::set_require_approval(&core, parse(params)?)?),
-    "questions": Watch, any_program => answer(questions::views(&core)),
+    "questions" (NoParams) -> Vec<AgentQuestion>: Watch, any_program => questions::views(&core),
     "answerQuestion": Full => answer(questions::answer(&core, parse(params)?).await?),
     "answerQuestions": Full => answer(questions::answer_all(&core, parse(params)?).await?),
     "agentMessages": Watch, any_program => answer(agent_messages(&core, parse(params)?).await?),
     "agentMessageRows": Watch, any_program => answer(agent_message_rows(&core, parse(params)?).await?),
-    "boards": Watch, any_program => answer(board::boards(&core)),
+    "boards" (NoParams) -> Vec<board::BoardView>: Watch, any_program => board::boards(&core),
     "board": Watch, any_program => answer(board::board(&core, params).await?),
     "boardAdd": Full => answer(board::person_add(&core, params).await?),
     "boardAddTicket": Full => answer(board::person_add_ticket(&core, params).await?),
@@ -1109,7 +1114,18 @@ struct QueuedParams {
     agent_id: String,
     ids: Vec<String>,
     /// A message sent with them, after them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     message: Option<super::chat::queue::Message>,
+}
+
+/// What a call that takes nothing is sent; whatever a client sends reads as nothing.
+struct NoParams {}
+
+impl<'de> Deserialize<'de> for NoParams {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        serde::de::IgnoredAny::deserialize(deserializer)?;
+        Ok(NoParams {})
+    }
 }
 
 #[derive(Deserialize)]
