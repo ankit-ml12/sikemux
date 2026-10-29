@@ -50,7 +50,7 @@ import { hostImagePath } from './FileRef';
 import { HostContext, useHostFile } from './hostFiles';
 import { ImageViewer } from './ImageViewer';
 import type { Strip as StripMeta } from './messageMeta';
-import type { Held, Unsent } from './session';
+import type { Held, Unsent } from './outbox';
 import type { Attachment } from './uploads';
 import { ToolGroup } from './Tools';
 import { AnsweredQuestion } from './Question';

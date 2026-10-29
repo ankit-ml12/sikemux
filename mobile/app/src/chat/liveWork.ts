@@ -3,7 +3,7 @@ import type { ChatRows } from '@shared/chat/rows';
 import { groupTasks, subagentActivity, taskDetail, workflowAgentDetail } from '@shared/chat/transcript';
 import type { AsyncTask, SubagentCard } from '@shared/chat/types';
 import { counted } from '@/devices/words';
-import type { Held } from './session';
+import type { Held } from './outbox';
 
 export type PlanEntry = { content: string; status: 'pending' | 'in_progress' | 'completed' };
 
