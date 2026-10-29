@@ -37,18 +37,8 @@ function readCore<T>(json: string): T {
   return JSON.parse(json, (_key, value) => (value === null ? undefined : value)) as T;
 }
 
-/** The view as the phone's client passes it on, which always fills in `recent`. */
-type SentView = Omit<Snapshot, 'inbox'> & { inbox?: Omit<Inbox, 'agents' | 'projects'> & Partial<Pick<Inbox, 'agents' | 'projects'>> };
-
-/** Hosts before 0.5.3-nightly.2 send no inbox, and before 0.5.4-nightly.1 no `agents` in it; each reads as empty. */
 export function readView(json: string): Snapshot {
-  const { inbox, ...view } = readCore<SentView>(json);
-  return {
-    ...view,
-    inbox: inbox
-      ? { ...inbox, agents: inbox.agents ?? [], projects: inbox.projects ?? {} }
-      : { items: [], working: 0, away: false, agentMessages: {}, remoteAgents: [], agents: [], projects: {} },
-  };
+  return readCore<Snapshot>(json);
 }
 
 function same(a: unknown, b: unknown): boolean {
