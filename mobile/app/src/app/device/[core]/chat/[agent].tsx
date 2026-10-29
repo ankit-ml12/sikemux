@@ -319,7 +319,6 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                             ListFooterComponent={
                               <>
                                 {queued.length ? <Queued held={queued} sentFiles={chat.sentFiles} /> : null}
-                                {activity ? <Activity provider={provider} label={activity} since={chat.turnSince} /> : null}
                                 {state.error ? <Text style={styles.error}>{state.error}</Text> : null}
                                 {questions.answered.map((question) => (
                                   <AnsweredQuestion
@@ -360,7 +359,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                                 ))}
                               </>
                             }
-                            contentContainerStyle={styles.content}
+                            contentContainerStyle={[styles.content, activity && styles.contentDocked]}
                             {...scroll.listProps}
                             keyboardDismissMode="interactive"
                           />
@@ -376,6 +375,11 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                           </Pressable>
                         ) : null}
                       </View>
+                      {activity ? (
+                        <View style={styles.activityDock}>
+                          <Activity provider={provider} label={activity} since={chat.turnSince} />
+                        </View>
+                      ) : null}
                     </ToolDetailContext>
                   </SubagentsContext>
                 </FoldsContext>
@@ -485,6 +489,9 @@ const makeStyles = (colors: Palette) => {
     transcript: { flex: 1 },
     alone: { justifyContent: 'flex-end' },
     content: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 28 },
+    contentDocked: { paddingBottom: 0 },
+    // Under the list rather than at its end, so the transcript gliding up to each new line never moves it.
+    activityDock: { paddingHorizontal: 18, paddingBottom: 28 },
     jump: {
       position: 'absolute',
       bottom: 8,
