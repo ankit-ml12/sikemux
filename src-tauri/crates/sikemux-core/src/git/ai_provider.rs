@@ -6,8 +6,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::ai::{AI_COMMAND_TIMEOUT, AI_RESPONSE_LIMIT};
-use super::{kill_and_reap_process, read_bounded_pipe};
+use super::read_bounded_pipe;
 use crate::agent_catalog::AgentKind;
+use sikemux_process::kill_and_reap;
 
 /// The agent that writes a commit message, and its model for one when the
 /// person names none.
@@ -385,21 +386,21 @@ fn run_codex_app_server_candidate(
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
-            kill_and_reap_process(&mut child);
+            kill_and_reap(&mut child);
             return Err("codex stdout unavailable".into());
         }
     };
     let stderr = match child.stderr.take() {
         Some(stderr) => stderr,
         None => {
-            kill_and_reap_process(&mut child);
+            kill_and_reap(&mut child);
             return Err("codex stderr unavailable".into());
         }
     };
     let mut stdin = match child.stdin.take() {
         Some(stdin) => stdin,
         None => {
-            kill_and_reap_process(&mut child);
+            kill_and_reap(&mut child);
             return Err("codex stdin unavailable".into());
         }
     };
@@ -510,7 +511,7 @@ fn run_codex_app_server_candidate(
     })();
 
     drop(stdin);
-    kill_and_reap_process(&mut child);
+    kill_and_reap(&mut child);
     let _ = stdout_reader.join();
     let stderr = stderr_reader
         .join()
@@ -590,14 +591,14 @@ where
         let stdout = match child.stdout.take() {
             Some(stdout) => stdout,
             None => {
-                kill_and_reap_process(&mut child);
+                kill_and_reap(&mut child);
                 return Err(format!("{} stdout unavailable", provider.bin()));
             }
         };
         let stderr = match child.stderr.take() {
             Some(stderr) => stderr,
             None => {
-                kill_and_reap_process(&mut child);
+                kill_and_reap(&mut child);
                 return Err(format!("{} stderr unavailable", provider.bin()));
             }
         };
@@ -620,7 +621,7 @@ where
         let deadline = Instant::now() + AI_COMMAND_TIMEOUT;
         let status = loop {
             if output_exceeded.load(Ordering::Acquire) {
-                kill_and_reap_process(&mut child);
+                kill_and_reap(&mut child);
                 if let Some(writer) = stdin_writer {
                     let _ = writer.join();
                 }
@@ -634,7 +635,7 @@ where
                     std::thread::sleep(Duration::from_millis(20));
                 }
                 Ok(None) => {
-                    kill_and_reap_process(&mut child);
+                    kill_and_reap(&mut child);
                     if let Some(writer) = stdin_writer {
                         let _ = writer.join();
                     }
@@ -647,7 +648,7 @@ where
                     ));
                 }
                 Err(error) => {
-                    kill_and_reap_process(&mut child);
+                    kill_and_reap(&mut child);
                     return Err(format!("{} failed: {error}", provider.bin()));
                 }
             }

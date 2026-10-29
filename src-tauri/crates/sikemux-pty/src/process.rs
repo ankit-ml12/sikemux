@@ -13,47 +13,13 @@ pub fn child_process_id(child: &mut Box<dyn Child + Send + Sync>) -> Option<u32>
     child.process_id()
 }
 
-#[cfg(unix)]
-fn signal_process_group(pid: u32, signal: libc::c_int) {
-    if pid == 0 {
-        return;
-    }
-    // Negative pid targets the process group. portable_pty/forkpty makes the
-    // shell the session/group leader on Unix; if that assumption ever fails,
-    // Child::kill below still targets the direct child as a fallback.
-    // SAFETY: kill only takes integers and touches no memory. pid is non-zero,
-    // so this never becomes kill(0), which would signal our own process group.
-    unsafe {
-        libc::kill(-(pid as i32), signal);
-    }
-}
-
-#[cfg(unix)]
-pub fn terminate_process_tree(pid: u32, force: bool) {
-    signal_process_group(pid, if force { libc::SIGKILL } else { libc::SIGTERM });
-}
-
-#[cfg(windows)]
-pub fn terminate_process_tree(pid: u32, force: bool) {
-    // ConPTY's portable child handle terminates only the direct shell. Use
-    // taskkill's tree mode so foreground commands and agent subprocesses do
-    // not survive an app close. Child::kill remains the fallback below.
-    let mut command = sikemux_process::user_environment::command("taskkill");
-    let pid = pid.to_string();
-    command.args(["/PID", &pid, "/T"]);
-    if force {
-        command.arg("/F");
-    }
-    let _ = command.status();
-}
-
 pub fn kill_and_reap_child(
     child: &mut Box<dyn Child + Send + Sync>,
     pid: Option<u32>,
 ) -> Option<portable_pty::ExitStatus> {
     let _ = child.kill();
     if let Some(pid) = pid {
-        terminate_process_tree(pid, true);
+        sikemux_process::terminate_tree(pid, true);
     }
     child.wait().ok()
 }
@@ -72,12 +38,12 @@ pub fn terminate_and_reap_child(
     }
     let pid = child_process_id(child);
     if let Some(pid) = pid {
-        terminate_process_tree(pid, false);
+        sikemux_process::terminate_tree(pid, false);
     }
     if force_process_tree_after_grace {
         std::thread::sleep(DRAIN_GRACE);
         if let Some(pid) = pid {
-            terminate_process_tree(pid, true);
+            sikemux_process::terminate_tree(pid, true);
         }
         if let Ok(Some(status)) = child.try_wait() {
             return Some(status);

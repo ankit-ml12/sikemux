@@ -67,25 +67,43 @@ impl ProcessCancellation {
     }
 }
 
-/// Kill the child and everything it started. The waiter thread owns the child
-/// and reaps it once this lands.
-fn kill_group(pid: u32) {
+/// Asks the process `pid` and everything it started to stop, or makes them when `force`.
+/// The process must lead its own group, as children started with `process_group(0)` and
+/// terminals do, and must not be reaped yet, so its pid and group still belong to it.
+pub fn terminate_tree(pid: u32, force: bool) {
     #[cfg(unix)]
-    // SAFETY: `kill` takes only integers. The child is not reaped yet, so its pid and
-    // the process group it leads (see `process_group(0)`) still belong to it.
-    unsafe {
-        libc::kill(-(pid as i32), libc::SIGKILL);
-        libc::kill(pid as i32, libc::SIGKILL);
+    {
+        let Ok(pid) = i32::try_from(pid) else {
+            return;
+        };
+        if pid == 0 {
+            return;
+        }
+        let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
+        // SAFETY: `kill` takes only integers. pid is non-zero, so this never becomes
+        // kill(0), which would signal our own process group.
+        unsafe {
+            libc::kill(-pid, signal);
+            libc::kill(pid, signal);
+        }
     }
     #[cfg(windows)]
     {
-        let _ = crate::user_environment::command("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .status();
+        let mut command = crate::user_environment::command("taskkill");
+        command.args(["/PID", &pid.to_string(), "/T"]);
+        if force {
+            command.arg("/F");
+        }
+        let _ = command.status();
     }
 }
 
-fn kill_and_reap(child: &mut std::process::Child) {
+fn kill_group(pid: u32) {
+    terminate_tree(pid, true);
+}
+
+/// Kills the child and everything it started, then reaps it.
+pub fn kill_and_reap(child: &mut std::process::Child) {
     kill_group(child.id());
     let _ = child.kill();
     let _ = child.wait();

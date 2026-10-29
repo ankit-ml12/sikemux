@@ -169,12 +169,7 @@ fn end_stuck(pid: u32, socket: &Path) -> Result<(), String> {
 }
 
 fn terminate(pid: u32, socket: &Path) -> Result<(), String> {
-    let id = libc::pid_t::try_from(pid).map_err(|_| "the core gave an impossible process id")?;
-    // SAFETY: kill only sends a signal; it reads and writes no memory of ours.
-    if unsafe { libc::kill(id, libc::SIGTERM) } != 0 {
-        return Err(std::io::Error::last_os_error().to_string());
-    }
-    if !stopped(socket) {
+    if !core_start::end(socket, pid) {
         return Err(format!("the core, pid {pid}, is still running"));
     }
     style::done("Stopped the core", &format!("pid {pid}"));

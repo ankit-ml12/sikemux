@@ -361,13 +361,7 @@ pub(crate) fn kill_and_reap(pid: u32) {
 /// The agent leads its own process group, so this reaches the tools and
 /// helpers it started as well as the agent itself.
 pub(crate) fn kill_group(pid: u32) {
-    if let Ok(pid) = i32::try_from(pid) {
-        // SAFETY: killpg only sends a signal; a group that is already gone
-        // makes it fail harmlessly.
-        unsafe {
-            libc::killpg(pid, libc::SIGKILL);
-        }
-    }
+    sikemux_process::terminate_tree(pid, true);
 }
 
 async fn write_lines(mut pipe: pipe::Sender, mut queue: mpsc::UnboundedReceiver<Input>) {

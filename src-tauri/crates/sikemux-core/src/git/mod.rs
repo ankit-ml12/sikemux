@@ -81,16 +81,6 @@ const SLOW: Duration = Duration::from_secs(5 * 60);
 /// How much of a failure's output its error carries.
 const TAIL_CHARS: usize = 3000;
 
-fn kill_and_reap_process(child: &mut std::process::Child) {
-    // SAFETY: kill only takes integers and touches no memory. A spawned child's id is
-    // never zero, so this never becomes kill(0), which would signal our own process group.
-    unsafe {
-        libc::kill(-(child.id() as i32), libc::SIGKILL);
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
 fn read_bounded_pipe(mut pipe: impl Read, exceeded: Arc<AtomicBool>) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 16 * 1024];

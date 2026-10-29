@@ -1374,14 +1374,14 @@ pub(crate) fn signal_for_drain(session: &Session) {
         session.exited_at_ms.load(Ordering::Acquire),
     ) {
         if let Some(pid) = child.process_id() {
-            sikemux_pty::process::terminate_process_tree(pid, false);
+            sikemux_process::terminate_tree(pid, false);
         }
     }
 }
 
 /// Second half, after the shared grace: force whatever is left and reap it.
 pub(crate) fn finish_drain(core: &Core, session: &Session) {
-    use sikemux_pty::process::{child_process_id, kill_and_reap_child, terminate_process_tree};
+    use sikemux_pty::process::{child_process_id, kill_and_reap_child};
     use sikemux_pty::task::{should_signal_process_on_drain, task_process_needs_force_backstop};
     let status = {
         let mut child = session.child.locked();
@@ -1392,7 +1392,7 @@ pub(crate) fn finish_drain(core: &Core, session: &Session) {
         } else if task_process_needs_force_backstop(is_task, exited_at) {
             let pid = child_process_id(&mut child);
             if let Some(pid) = pid {
-                terminate_process_tree(pid, true);
+                sikemux_process::terminate_tree(pid, true);
             }
             match child.try_wait() {
                 Ok(Some(status)) => Some(status),

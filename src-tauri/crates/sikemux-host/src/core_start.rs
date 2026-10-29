@@ -21,9 +21,6 @@ const RETURN_TIMEOUT: Duration = Duration::from_secs(20);
 /// A core with chat turns running updates once they end, which it gives two
 /// minutes.
 const DEFERRED_RETURN_TIMEOUT: Duration = Duration::from_secs(150);
-/// Long enough for the core's shared kill grace plus reaping a few hundred
-/// sessions.
-const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long a core that holds its lock gets to answer before it counts as stuck.
 const STUCK_PROBE: Duration = Duration::from_secs(3);
 /// How long a stuck core gets to exit after it is asked to by signal, before it is forced.
@@ -129,18 +126,6 @@ pub async fn upgrade(
         upgraded.build.version, upgraded.build.commit
     );
     Ok(Upgrade::Done)
-}
-
-/// Ends a core this app cannot talk to, with everything running in it.
-pub fn stop(socket: &Path, pid: u32) {
-    let stopped = frozen_request(socket, &FrozenRequest::StopEverything, STOP_TIMEOUT);
-    if !matches!(stopped, Ok(FrozenReply::Accepted)) && pid > 1 {
-        // SAFETY: kill only takes integers; the pid is a single process above
-        // init, so this never signals a group or every process.
-        unsafe {
-            libc::kill(pid as libc::pid_t, libc::SIGTERM);
-        }
-    }
 }
 
 /// The core that holds the lock at `socket` but does not answer there, by its process id.
