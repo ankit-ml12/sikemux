@@ -185,8 +185,9 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         .problem
         .clone()
         .or_else(|| bench.refusal_of(&sharing.agent));
-    let label =
-        |words: &'static str| ui::text(words, 12., FontWeight::MEDIUM).text_color(t.text_tertiary);
+    let label = |words: &'static str| {
+        ui::text(words, TEXT_XS, FontWeight::MEDIUM).text_color(t.text_tertiary)
+    };
     let field = match &share {
         Some(share) => {
             let url = share.url.clone();
@@ -214,7 +215,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                                 .bg(t.surface_sunken)
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .child(ui::mono(share.url.clone(), 12., cx)),
+                                .child(ui::mono(share.url.clone(), TEXT_XS, cx)),
                         )
                         .child(
                             Button::new("share-copy", "Copy", Variant::Outline)
@@ -232,7 +233,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                             share.watching(),
                             crate::ui::time::left(share.expires_at)
                         ),
-                        12.,
+                        TEXT_XS,
                         FontWeight::NORMAL,
                     )
                     .text_color(t.text_tertiary),

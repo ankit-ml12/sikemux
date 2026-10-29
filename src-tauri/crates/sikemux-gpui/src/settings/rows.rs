@@ -82,7 +82,7 @@ pub fn section_with(
                             .gap(SPACE_2)
                             .when(named, |line| {
                                 line.child(
-                                    ui::text(title, 13., FontWeight::SEMIBOLD)
+                                    ui::text(title, TEXT_SM, FontWeight::SEMIBOLD)
                                         .text_color(t.text_primary),
                                 )
                             })

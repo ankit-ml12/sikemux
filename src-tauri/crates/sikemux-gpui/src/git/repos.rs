@@ -45,7 +45,7 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             .items_center()
             .justify_center()
             .gap(SPACE_1H)
-            .child(ui::text("Not a repository", 12.5, FontWeight::MEDIUM).text_color(t.danger))
+            .child(ui::text("Not a repository", TEXT_XS_H, FontWeight::MEDIUM).text_color(t.danger))
             .child(ui::meta(
                 format!("No repository at {folder}, and none in the folders directly inside it."),
                 cx,
@@ -94,7 +94,7 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                     .child(repo["name"].as_str().unwrap_or_default().to_owned()),
             )
             .child(
-                ui::mono(branch.unwrap_or("no commits").to_owned(), 11., cx)
+                ui::mono(branch.unwrap_or("no commits").to_owned(), TEXT_2XS, cx)
                     .text_color(t.text_secondary),
             )
             .when(ahead > 0, |row| {
@@ -152,7 +152,7 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 .border_b_1()
                 .border_color(t.border)
                 .child(ui::icon(Icon::Git, 13.).text_color(t.text_tertiary))
-                .child(ui::text(name, 12.5, FontWeight::MEDIUM).text_color(t.text_primary))
+                .child(ui::text(name, TEXT_XS_H, FontWeight::MEDIUM).text_color(t.text_primary))
                 .child(ui::meta(count, cx)),
         )
         .child(

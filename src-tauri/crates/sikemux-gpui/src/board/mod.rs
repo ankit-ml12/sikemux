@@ -20,7 +20,8 @@ use crate::core::{self, Ask};
 use crate::drag::{ghost, DraggedCard};
 use crate::icons::Icon;
 use crate::theme::{
-    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, TEXT_3XS,
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, TEXT_2XS,
+    TEXT_2XS_H, TEXT_3XS, TEXT_SM, TEXT_XS_H,
 };
 use crate::toast;
 use crate::ui::{self, Button, Field, IconButton, Segmented, Variant};
@@ -804,7 +805,9 @@ fn body(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
             .gap(SPACE_1H)
             .text_color(t.text_tertiary)
             .when_some(title, |empty, title| {
-                empty.child(ui::text(title, 13., FontWeight::MEDIUM).text_color(t.text_secondary))
+                empty.child(
+                    ui::text(title, TEXT_SM, FontWeight::MEDIUM).text_color(t.text_secondary),
+                )
             })
             .child(ui::meta(message, cx))
             .into_any_element()
@@ -931,7 +934,8 @@ fn lane_view(pane: &BoardPane, lane: Lane, cx: &mut Context<BoardPane>) -> AnyEl
                             ))
                         })
                         .child(
-                            ui::text(title, 13., FontWeight::SEMIBOLD).text_color(t.text_primary),
+                            ui::text(title, TEXT_SM, FontWeight::SEMIBOLD)
+                                .text_color(t.text_primary),
                         )
                         .child(ui::meta(meta, cx)),
                 )
@@ -1054,7 +1058,7 @@ fn card_view(pane: &BoardPane, card: &Card, cx: &mut Context<BoardPane>) -> AnyE
             cx.listener(move |pane, _, window, cx| pane.select(Some(Open::Card(id)), window, cx)),
         )
         .child(
-            ui::text(label, 12.5, FontWeight::MEDIUM)
+            ui::text(label, TEXT_XS_H, FontWeight::MEDIUM)
                 .whitespace_normal()
                 .text_color(t.text_primary),
         )
@@ -1091,7 +1095,7 @@ fn card_view(pane: &BoardPane, card: &Card, cx: &mut Context<BoardPane>) -> AnyE
                     .items_center()
                     .gap(SPACE_1H)
                     .when_some(card.ticket.as_ref(), |foot, ticket| {
-                        foot.child(ui::mono(ticket.key.clone(), 11., cx))
+                        foot.child(ui::mono(ticket.key.clone(), TEXT_2XS, cx))
                             .when_some(ticket.source.clone(), |foot, source| {
                                 foot.child(ui::meta(source, cx))
                             })
@@ -1116,7 +1120,7 @@ pub(crate) fn owner(card: &Card, cx: &gpui_kit::App) -> AnyElement {
         .child(
             ui::text(
                 card.owner_name.clone().unwrap_or_else(|| "An agent".into()),
-                11.5,
+                TEXT_2XS_H,
                 FontWeight::MEDIUM,
             )
             .text_color(t.text_secondary),

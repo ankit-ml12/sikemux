@@ -487,7 +487,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         .child(dialog::field("API key", &adding.key, false, cx))
         .child(dialog::field("Name", &adding.name, false, cx))
         .children(check.map(|(words, ink)| {
-            ui::text(words, 12., FontWeight::NORMAL)
+            ui::text(words, TEXT_XS, FontWeight::NORMAL)
                 .text_color(ink)
                 .whitespace_normal()
         }))

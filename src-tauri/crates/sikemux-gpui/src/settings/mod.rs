@@ -17,7 +17,7 @@ use crate::core::Ask;
 use crate::icons::Icon;
 use crate::theme::{
     self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TEXT_2XS_H,
-    TEXT_XS_H,
+    TEXT_3XS, TEXT_XL, TEXT_XS_H,
 };
 use crate::ui;
 use crate::workbench::{Strip, Workbench};
@@ -422,7 +422,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
         .child(me)
         .children(index::FOOT.map(|page| {
             page_row(page).when(page == Page::About && !release.is_empty(), |row| {
-                row.child(ui::mono(format!("v{release}"), 10., cx))
+                row.child(ui::mono(format!("v{release}"), TEXT_3XS, cx))
             })
         }));
 
@@ -513,7 +513,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
             .flex()
             .flex_col()
             .gap(SPACE_1)
-            .child(ui::text(title, 20., FontWeight::SEMIBOLD).text_color(t.text_primary))
+            .child(ui::text(title, TEXT_XL, FontWeight::SEMIBOLD).text_color(t.text_primary))
             .child(
                 div()
                     .text_size(crate::theme::ui_text(TEXT_XS_H))

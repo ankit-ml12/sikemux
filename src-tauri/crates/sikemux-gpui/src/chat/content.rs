@@ -14,7 +14,7 @@ use super::{link, Drawn};
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::picture::{self, Picture, Remote};
-use crate::theme::{SPACE_2, TEXT_XS_H};
+use crate::theme::{SPACE_2, TEXT_2XS, TEXT_XS_H};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -98,7 +98,7 @@ pub fn content(
             ContentBlock::Other { block } => serde_json::to_string_pretty(block),
             block => serde_json::to_string_pretty(block),
         };
-        return ui::mono(shown.unwrap_or_default(), 11., cx)
+        return ui::mono(shown.unwrap_or_default(), TEXT_2XS, cx)
             .text_color(looks.quiet)
             .whitespace_normal()
             .into_any_element();

@@ -9,7 +9,7 @@ use sikemux_wire::chat::{ChatMessage, GifRef};
 
 use super::Drawn;
 use crate::picture::{Picture, Remote};
-use crate::theme::{self, Tokens, SPACE_1, SPACE_2H};
+use crate::theme::{self, Tokens, SPACE_1, SPACE_2H, TEXT_3XS, TEXT_XS};
 use crate::ui;
 
 /// The longest side a GIF is drawn at, in points.
@@ -42,7 +42,9 @@ pub fn reactions(message: &ChatMessage, looks: &Drawn) -> Option<AnyElement> {
                     .border_1()
                     .border_color(looks.line)
                     .bg(looks.bubble)
-                    .child(ui::text(emoji.clone(), 12., FontWeight::NORMAL).line_height(px(12.)))
+                    .child(
+                        ui::text(emoji.clone(), TEXT_XS, FontWeight::NORMAL).line_height(px(12.)),
+                    )
             }))
             .into_any_element(),
     )
@@ -79,7 +81,7 @@ pub fn gif(id: &str, gif: &GifRef, looks: &Drawn, cx: &App) -> AnyElement {
                 .children(shown),
         )
         .child(
-            ui::text("Powered by KLIPY", 10., FontWeight::NORMAL)
+            ui::text("Powered by KLIPY", TEXT_3XS, FontWeight::NORMAL)
                 .text_color(Tokens::get(cx).text_tertiary),
         )
         .into_any_element()

@@ -6,7 +6,7 @@ use gpui_kit::{
 };
 
 use crate::icons::Icon;
-use crate::theme::{Tokens, SPACE_2H, TEXT_XS};
+use crate::theme::{Tokens, SPACE_2H, TEXT_MD, TEXT_XS};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -135,29 +135,28 @@ impl Workbench {
 /// The pane for the SSH host `alias`.
 pub fn pane(bench: &Workbench, alias: &str, cx: &mut Context<Workbench>) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let note =
-        |icon: Icon, title: Option<String>, message: String| {
-            div()
-                .size_full()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .gap(SPACE_2H)
-                .px(px(40.))
-                .child(ui::icon(icon, 22.).text_color(t.text_tertiary))
-                .children(title.map(|title| {
-                    ui::text(title, 14., FontWeight::SEMIBOLD).text_color(t.text_primary)
-                }))
-                .child(
-                    div()
-                        .max_w(px(460.))
-                        .text_center()
-                        .text_size(crate::theme::ui_text(TEXT_XS))
-                        .text_color(t.text_secondary)
-                        .child(message),
-                )
-        };
+    let note = |icon: Icon, title: Option<String>, message: String| {
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(SPACE_2H)
+            .px(px(40.))
+            .child(ui::icon(icon, 22.).text_color(t.text_tertiary))
+            .children(title.map(|title| {
+                ui::text(title, TEXT_MD, FontWeight::SEMIBOLD).text_color(t.text_primary)
+            }))
+            .child(
+                div()
+                    .max_w(px(460.))
+                    .text_center()
+                    .text_size(crate::theme::ui_text(TEXT_XS))
+                    .text_color(t.text_secondary)
+                    .child(message),
+            )
+    };
     let Some(set_up) = bench.set_up_of(alias) else {
         return ui::pane(cx)
             .child(note(

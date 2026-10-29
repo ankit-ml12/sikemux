@@ -12,7 +12,7 @@ use gpui_kit::{
 use serde_json::{json, Value};
 
 use crate::icons::Icon;
-use crate::theme::{Tokens, SPACE_1H, SPACE_3, TEXT_2XS};
+use crate::theme::{Tokens, SPACE_1H, SPACE_3, TEXT_2XS, TEXT_XS};
 use crate::toast;
 use crate::ui::{self, dialog, Segmented};
 use crate::workbench::Workbench;
@@ -105,7 +105,9 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 .flex()
                 .flex_col()
                 .gap(SPACE_1H)
-                .child(ui::text("Save it", 12., FontWeight::MEDIUM).text_color(t.text_secondary))
+                .child(
+                    ui::text("Save it", TEXT_XS, FontWeight::MEDIUM).text_color(t.text_secondary),
+                )
                 .child(
                     Segmented::new("task-scope", scope, usize::from(!adding.team)).on_select(
                         cx.listener(|bench, picked: &usize, _, cx| {

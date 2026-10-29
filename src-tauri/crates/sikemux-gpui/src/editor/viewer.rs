@@ -472,7 +472,7 @@ fn card(viewer: &Viewer, key: &FileKey, t: &Tokens) -> AnyElement {
         .gap(SPACE_1H)
         .child(ui::icon(Icon::File, 28.).text_color(t.text_tertiary))
         .child(
-            ui::text(name_of(&key.path), 13., FontWeight::MEDIUM)
+            ui::text(name_of(&key.path), TEXT_SM, FontWeight::MEDIUM)
                 .mt(SPACE_1)
                 .text_color(t.text_primary),
         )

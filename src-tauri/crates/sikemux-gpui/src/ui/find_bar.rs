@@ -12,7 +12,7 @@ use gpui_kit::{
 
 use super::{mono, Field, IconButton, Toggle};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{self, Tokens, TEXT_3XS};
 
 actions!(find_bar, [FindNext, FindPrevious, CloseFind]);
 
@@ -124,7 +124,7 @@ impl RenderOnce for FindBar {
                     .min_w(px(52.))
                     .flex()
                     .justify_center()
-                    .child(mono(self.found, 10., cx)),
+                    .child(mono(self.found, TEXT_3XS, cx)),
             )
             .child(
                 Toggle::new("find-case", "Aa", self.match_case)

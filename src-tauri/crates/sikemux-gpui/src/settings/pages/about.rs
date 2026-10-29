@@ -9,7 +9,7 @@ use sikemux_wire::protocol::UpdateChannel;
 
 use crate::icons::Icon;
 use crate::settings::rows;
-use crate::theme::{SPACE_2, SPACE_3H, SPACE_4};
+use crate::theme::{SPACE_2, SPACE_3H, SPACE_4, TEXT_2XS_H};
 use crate::toast;
 use crate::ui;
 use crate::whats_new::RELEASES;
@@ -195,7 +195,7 @@ pub fn render(
                     ui::text("Sikemux", 17., gpui_kit::FontWeight::SEMIBOLD)
                         .text_color(t.text_primary),
                 )
-                .child(ui::mono(version, 11.5, cx)),
+                .child(ui::mono(version, TEXT_2XS_H, cx)),
         );
     vec![
         rows::card(lit("Sikemux"), app, cx),

@@ -231,7 +231,7 @@ pub fn text(value: impl Into<SharedString>, size: f32, weight: FontWeight) -> Di
 
 /// What a row says about itself after its title: 11px in the tertiary ink.
 pub fn meta(value: impl Into<SharedString>, cx: &App) -> Div {
-    text(value, 11., FontWeight::NORMAL).text_color(Tokens::get(cx).text_tertiary)
+    text(value, TEXT_2XS, FontWeight::NORMAL).text_color(Tokens::get(cx).text_tertiary)
 }
 
 /// What the machine says: the mono face, with tabular figures and its icon glyphs.
@@ -262,7 +262,7 @@ pub fn rainbow(word: &str, size: f32, cx: &App) -> Div {
 
 /// A group's spaced capitals.
 pub fn caps(value: &str, cx: &App) -> Div {
-    text(value.to_uppercase(), 11., FontWeight::MEDIUM)
+    text(value.to_uppercase(), TEXT_2XS, FontWeight::MEDIUM)
         .letter_spacing(0.2)
         .line_height(crate::theme::ui_text(TEXT_LG))
         .text_color(Tokens::get(cx).text_tertiary)
@@ -295,7 +295,7 @@ pub fn found_with(value: impl Into<SharedString>, query: &str, mark: HighlightSt
 
 /// A shortcut as the system draws key names.
 pub fn kbd(keys: impl Into<SharedString>, cx: &App) -> Div {
-    text(keys, 11., FontWeight::MEDIUM)
+    text(keys, TEXT_2XS, FontWeight::MEDIUM)
         .font_family(theme::KBD)
         .line_height(crate::theme::ui_text(TEXT_2XS))
         .text_color(Tokens::get(cx).text_tertiary)

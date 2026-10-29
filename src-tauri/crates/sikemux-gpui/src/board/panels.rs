@@ -15,8 +15,8 @@ use crate::board::{owner, short_title, waits_on_person, BoardPane, Card, Message
 use crate::chat::model_picker;
 use crate::icons::Icon;
 use crate::theme::{
-    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, TEXT_XS,
-    TEXT_XS_H,
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, TEXT_2XS_H,
+    TEXT_SM, TEXT_XS, TEXT_XS_H,
 };
 use crate::ui::{self, select, Button, IconButton, Pick, Toggle, Variant};
 
@@ -326,7 +326,7 @@ fn card_panel(pane: &BoardPane, card: Card, cx: &mut Context<BoardPane>) -> AnyE
                 .flex()
                 .items_center()
                 .gap(SPACE_1H)
-                .child(ui::mono(ticket.key.clone(), 11.5, cx))
+                .child(ui::mono(ticket.key.clone(), TEXT_2XS_H, cx))
                 .when_some(ticket.source.clone(), |head, source| {
                     head.child(ui::meta(source, cx))
                 })
@@ -411,14 +411,15 @@ fn card_panel(pane: &BoardPane, card: Card, cx: &mut Context<BoardPane>) -> AnyE
     let mut rest = text_fields(pane, cx).into_iter().skip(1);
     view = view.children(rest.next()).children(rest.next());
     if let Some(result) = &card.result {
-        view = view.child(
-            section("Result", cx)
-                .child(ui::text(result.clone(), 12.5, FontWeight::NORMAL).whitespace_normal()),
-        );
+        view = view
+            .child(section("Result", cx).child(
+                ui::text(result.clone(), TEXT_XS_H, FontWeight::NORMAL).whitespace_normal(),
+            ));
     }
     if let Some(run) = card.auto.clone() {
         let mut auto = section("Auto", cx).child(
-            ui::text(stage_label(&run.stage), 12.5, FontWeight::MEDIUM).text_color(t.text_primary),
+            ui::text(stage_label(&run.stage), TEXT_XS_H, FontWeight::MEDIUM)
+                .text_color(t.text_primary),
         );
         if let Some(note) = run.note.clone() {
             auto = auto.child(ui::meta(note, cx).whitespace_normal());
@@ -715,7 +716,7 @@ fn auto_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
     let mut view = div()
         .flex()
         .flex_col()
-        .child(head(ui::text("Auto", 13., FontWeight::SEMIBOLD).into_any_element(), cx))
+        .child(head(ui::text("Auto", TEXT_SM, FontWeight::SEMIBOLD).into_any_element(), cx))
         .child(
             div()
                 .flex()
@@ -882,7 +883,7 @@ fn messages_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
         .flex()
         .items_center()
         .gap(SPACE_2)
-        .child(ui::text("Messages", 13., FontWeight::SEMIBOLD))
+        .child(ui::text("Messages", TEXT_SM, FontWeight::SEMIBOLD))
         .child(ui::meta(summary, cx))
         .into_any_element();
     let mut view = div().flex().flex_col().child(head(title, cx)).child(
@@ -926,13 +927,13 @@ fn messages_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
                             .text_size(crate::theme::ui_text(TEXT_XS))
                             .child(ui::text(
                                 sender(row.from.as_deref(), row.from_name.as_ref()),
-                                12.,
+                                TEXT_XS,
                                 FontWeight::SEMIBOLD,
                             ))
                             .child(ui::meta("to", cx))
                             .child(ui::text(
                                 sender(Some(&row.to), row.to_name.as_ref()),
-                                12.,
+                                TEXT_XS,
                                 FontWeight::SEMIBOLD,
                             ))
                             .child(div().flex_1())

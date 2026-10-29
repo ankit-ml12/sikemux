@@ -18,7 +18,7 @@ use crate::icons::Icon;
 use crate::picture::{Picture, Remote};
 use crate::theme::{
     self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4,
-    SPACE_5, SPACE_6, TEXT_2XS_H, TEXT_XS, TEXT_XS_H,
+    SPACE_5, SPACE_6, TEXT_2XS, TEXT_2XS_H, TEXT_3XS_H, TEXT_MD, TEXT_XS, TEXT_XS_H,
 };
 use crate::ui::{self, IconButton};
 use crate::workbench::Workbench;
@@ -508,13 +508,13 @@ pub fn tray(
         .gap(SPACE_2)
         .child(ui::icon(Icon::Stack, 13.).text_color(t.text_tertiary))
         .child(
-            ui::text("STASH", 10.5, FontWeight::SEMIBOLD)
+            ui::text("STASH", TEXT_3XS_H, FontWeight::SEMIBOLD)
                 .letter_spacing(0.1)
                 .text_color(t.text_tertiary),
         )
         .when(!tray.items.is_empty(), |head| {
             head.child(
-                ui::text(tray.items.len().to_string(), 10.5, FontWeight::NORMAL)
+                ui::text(tray.items.len().to_string(), TEXT_3XS_H, FontWeight::NORMAL)
                     .text_color(t.text_tertiary),
             )
         })
@@ -522,7 +522,7 @@ pub fn tray(
             head.child(
                 ui::text(
                     format!("matching “{}”", tray.needle),
-                    11.5,
+                    TEXT_2XS_H,
                     FontWeight::NORMAL,
                 )
                 .text_color(t.text_tertiary),
@@ -810,7 +810,7 @@ fn tray_row(
                     .child(
                         ui::text(
                             if said_more { page.title() } else { page.site() },
-                            11.5,
+                            TEXT_2XS_H,
                             FontWeight::NORMAL,
                         )
                         .text_color(t.text_tertiary)
@@ -820,7 +820,7 @@ fn tray_row(
         }
         (None, Some("file" | "video")) => item["size"].as_u64().map(|size| {
             div().child(
-                ui::text(crate::codehost::bytes(size), 11.5, FontWeight::NORMAL)
+                ui::text(crate::codehost::bytes(size), TEXT_2XS_H, FontWeight::NORMAL)
                     .text_color(t.text_tertiary),
             )
         }),
@@ -884,11 +884,9 @@ fn tray_row(
                             .child("NEW"),
                     )
                 })
-                .children(
-                    ago.map(|ago| {
-                        ui::text(ago, 11., FontWeight::NORMAL).text_color(t.text_tertiary)
-                    }),
-                ),
+                .children(ago.map(|ago| {
+                    ui::text(ago, TEXT_2XS, FontWeight::NORMAL).text_color(t.text_tertiary)
+                })),
         )
         .into_any_element()
 }
@@ -1266,7 +1264,7 @@ pub fn pane(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 .child(ui::text("Stash", 15., FontWeight::SEMIBOLD).text_color(t.text_primary))
                 .when(stash.signed_in && count > 0, |head| {
                     head.child(
-                        ui::text(count.to_string(), 12., FontWeight::MEDIUM)
+                        ui::text(count.to_string(), TEXT_XS, FontWeight::MEDIUM)
                             .text_color(t.text_tertiary),
                     )
                 }),
@@ -1274,7 +1272,7 @@ pub fn pane(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .child(
             ui::text(
                 "What you share to Sikemux from your phone. Add it to a chat, or drag it onto one.",
-                12.,
+                TEXT_XS,
                 FontWeight::NORMAL,
             )
             .text_color(t.text_tertiary),
@@ -1406,7 +1404,7 @@ fn empty(signed_in: bool, t: &Tokens) -> Div {
                 .border_color(t.line)
                 .child(ui::icon(Icon::Stack, 18.).text_color(t.text_tertiary)),
         )
-        .child(ui::text(head, 14., FontWeight::MEDIUM).text_color(t.text_primary))
+        .child(ui::text(head, TEXT_MD, FontWeight::MEDIUM).text_color(t.text_primary))
         .child(
             div()
                 .max_w(px(340.))
@@ -1441,14 +1439,14 @@ fn card(bench: &Workbench, at: usize, item: &Value, cx: &mut Context<Workbench>)
             !matches!(item["kind"].as_str(), Some("text" | "prompt")),
             |words| {
                 words.child(
-                    ui::text(label, 12.5, FontWeight::MEDIUM)
+                    ui::text(label, TEXT_XS_H, FontWeight::MEDIUM)
                         .text_color(t.text_primary)
                         .truncate(),
                 )
             },
         )
         .child(
-            ui::text(place(item), 10.5, FontWeight::NORMAL)
+            ui::text(place(item), TEXT_3XS_H, FontWeight::NORMAL)
                 .text_color(t.text_tertiary)
                 .truncate(),
         );
@@ -1461,14 +1459,14 @@ fn card(bench: &Workbench, at: usize, item: &Value, cx: &mut Context<Workbench>)
             .gap(SPACE_2H)
             .child(favicon(bench, item, &t, cx))
             .child(words.children(note.map(|note| {
-                ui::text(note, 11.5, FontWeight::NORMAL)
+                ui::text(note, TEXT_2XS_H, FontWeight::NORMAL)
                     .pt(px(3.))
                     .text_color(t.text_secondary)
                     .truncate()
             }))),
         false => div().px(SPACE_3).pt(SPACE_2H).child(
             words.child(
-                ui::text(note.unwrap_or_default(), 11.5, FontWeight::NORMAL)
+                ui::text(note.unwrap_or_default(), TEXT_2XS_H, FontWeight::NORMAL)
                     .h(px(19.))
                     .pt(px(3.))
                     .text_color(t.text_secondary)
@@ -1568,7 +1566,7 @@ fn preview(bench: &Workbench, item: &Value, t: &Tokens, cx: &App) -> AnyElement 
             .gap(SPACE_2)
             .child(glyph(item, 26., cx))
             .children(site.map(|site| {
-                ui::text(site, 10.5, FontWeight::MEDIUM)
+                ui::text(site, TEXT_3XS_H, FontWeight::MEDIUM)
                     .letter_spacing(0.04)
                     .text_color(Tokens::get(cx).text_tertiary)
             }))

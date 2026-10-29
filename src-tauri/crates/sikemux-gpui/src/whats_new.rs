@@ -20,7 +20,7 @@ use crate::experience::{self, Experience};
 use crate::icons::Icon;
 use crate::theme::{
     self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_5, SPACE_6,
-    TEXT_2XS, TEXT_3XS, TEXT_SM, TEXT_XS,
+    TEXT_2XS, TEXT_3XS, TEXT_SM, TEXT_XL, TEXT_XS,
 };
 use crate::ui;
 use crate::workbench::Workbench;
@@ -547,7 +547,7 @@ fn side(
                     .mb(SPACE_0)
                     .text_color(t.text_primary),
             )
-            .child(ui::text(name, 12., FontWeight::NORMAL).text_color(t.text_tertiary))
+            .child(ui::text(name, TEXT_XS, FontWeight::NORMAL).text_color(t.text_tertiary))
     };
     div()
         .id("whats-new-side")
@@ -585,7 +585,7 @@ fn side(
                 .text_color(t.live)
                 .child(div().size(px(5.)).rounded_full().bg(t.live))
                 .child(
-                    ui::text(channel.to_uppercase(), 10., FontWeight::SEMIBOLD)
+                    ui::text(channel.to_uppercase(), TEXT_3XS, FontWeight::SEMIBOLD)
                         .letter_spacing(0.08),
                 ),
         )
@@ -606,7 +606,7 @@ fn side(
                 }),
         )
         .children(build.map(|build| {
-            ui::text(build, 20., FontWeight::SEMIBOLD)
+            ui::text(build, TEXT_XL, FontWeight::SEMIBOLD)
                 .mt(SPACE_2)
                 .letter_spacing(-0.02)
                 .text_color(t.text_secondary)
@@ -616,7 +616,7 @@ fn side(
                 .and_then(|notes| notes.date.as_deref())
                 .and_then(release_date)
                 .map(|date| {
-                    ui::text(date, 12., FontWeight::NORMAL)
+                    ui::text(date, TEXT_XS, FontWeight::NORMAL)
                         .mt(SPACE_2H)
                         .text_color(t.text_tertiary)
                 }),
@@ -699,7 +699,7 @@ fn contributors(
         .flex_col()
         .gap(SPACE_1H)
         .child(
-            ui::text("CONTRIBUTORS", 10., FontWeight::SEMIBOLD)
+            ui::text("CONTRIBUTORS", TEXT_3XS, FontWeight::SEMIBOLD)
                 .mb(SPACE_1H)
                 .letter_spacing(0.14)
                 .text_color(t.text_tertiary),
@@ -728,7 +728,7 @@ fn contributors(
                         .flex_col()
                         .min_w_0()
                         .child(
-                            ui::text(person.name.clone(), 13., FontWeight::SEMIBOLD)
+                            ui::text(person.name.clone(), TEXT_SM, FontWeight::SEMIBOLD)
                                 .overflow_hidden()
                                 .text_ellipsis()
                                 .text_color(t.text_primary),
@@ -736,7 +736,7 @@ fn contributors(
                         .child(
                             ui::text(
                                 format!("@{} · {}", person.login, plural(person.commits, "commit")),
-                                11.,
+                                TEXT_2XS,
                                 FontWeight::NORMAL,
                             )
                             .text_color(t.text_tertiary)
@@ -746,9 +746,13 @@ fn contributors(
         }))
         .when(!rest.is_empty(), |list| {
             list.child(
-                ui::text(format!("and {} more", rest.len()), 12., FontWeight::NORMAL)
-                    .mt(SPACE_2H)
-                    .text_color(t.text_tertiary),
+                ui::text(
+                    format!("and {} more", rest.len()),
+                    TEXT_XS,
+                    FontWeight::NORMAL,
+                )
+                .mt(SPACE_2H)
+                .text_color(t.text_tertiary),
             )
             .child(
                 div()

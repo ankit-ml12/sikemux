@@ -11,7 +11,7 @@ use sikemux_wire::chat::{ChatMessage, ChatPart, ChatRole};
 
 use super::{ChatRow, Drawn};
 use crate::icons::Icon;
-use crate::theme::{Tokens, SPACE_1, SPACE_2};
+use crate::theme::{Tokens, SPACE_1, SPACE_2, TEXT_3XS_H};
 use crate::ui::{self, IconButton};
 
 /// What a reader means by copying a message: its prose, the reasoning it showed, and the
@@ -145,8 +145,10 @@ pub fn line(
             .group_hover(group.clone(), |line| line.visible())
             .children(edit)
             .children(copy)
-            .children(when.map(|when| ui::mono(when, 10.5, cx).text_color(t.text_disabled)))
-            .children(speed.map(|speed| ui::mono(speed, 10.5, cx).text_color(t.text_disabled)))
+            .children(when.map(|when| ui::mono(when, TEXT_3XS_H, cx).text_color(t.text_disabled)))
+            .children(
+                speed.map(|speed| ui::mono(speed, TEXT_3XS_H, cx).text_color(t.text_disabled)),
+            )
             .into_any_element(),
     )
 }

@@ -20,8 +20,8 @@ use crate::chat::model_picker::Picked;
 use crate::icons::Icon;
 use crate::motion::{Curve, Ease};
 use crate::theme::{
-    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_4, TEXT_2XS, TEXT_3XS_H,
-    TEXT_XS, TEXT_XS_H,
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_4, TEXT_2XS, TEXT_2XS_H,
+    TEXT_3XS_H, TEXT_XS, TEXT_XS_H,
 };
 use crate::ui::{self, DockMenu, IconButton};
 use crate::workbench::Workbench;
@@ -551,7 +551,7 @@ fn project_strip(strip: Strip, covered: bool, fill: Hsla, cx: &App) -> impl Into
                 .child(
                     ui::text(
                         strip.host.clone().unwrap_or_else(|| "This host".into()),
-                        12.,
+                        TEXT_XS,
                         FontWeight::NORMAL,
                     )
                     .min_w_0()
@@ -585,7 +585,7 @@ fn project_strip(strip: Strip, covered: bool, fill: Hsla, cx: &App) -> impl Into
                 .gap(px(5.))
                 .child(ui::icon(Icon::Git, 11.).text_color(t.text_tertiary))
                 .child(
-                    ui::mono(branch, 10.5, cx)
+                    ui::mono(branch, TEXT_3XS_H, cx)
                         .text_color(t.text_tertiary)
                         .overflow_hidden()
                         .text_ellipsis()
@@ -753,7 +753,7 @@ fn yolo(
         .when(room >= Room::Compact, |toggle| {
             toggle.child(match on {
                 true => ui::rainbow("YOLO", 10.5, cx).into_any_element(),
-                false => ui::text("SAFE", 10.5, FontWeight::SEMIBOLD)
+                false => ui::text("SAFE", TEXT_3XS_H, FontWeight::SEMIBOLD)
                     .letter_spacing(0.08)
                     .text_color(t.text_tertiary)
                     .into_any_element(),
@@ -969,7 +969,10 @@ fn context_card(
             .flex()
             .items_center()
             .justify_between()
-            .child(ui::text(label.to_owned(), 11.5, FontWeight::NORMAL).text_color(t.text_tertiary))
+            .child(
+                ui::text(label.to_owned(), TEXT_2XS_H, FontWeight::NORMAL)
+                    .text_color(t.text_tertiary),
+            )
             .child(value)
     };
     let tokens = div()
@@ -977,13 +980,17 @@ fn context_card(
         .gap(px(3.))
         .font_features(theme::tabular())
         .child(
-            ui::text(crate::home::compact(usage.used), 11.5, FontWeight::NORMAL)
-                .text_color(t.text_primary),
+            ui::text(
+                crate::home::compact(usage.used),
+                TEXT_2XS_H,
+                FontWeight::NORMAL,
+            )
+            .text_color(t.text_primary),
         )
         .child(
             ui::text(
                 format!("/ {}", crate::home::compact(usage.size)),
-                11.5,
+                TEXT_2XS_H,
                 FontWeight::NORMAL,
             )
             .text_color(t.text_tertiary),
@@ -997,13 +1004,17 @@ fn context_card(
                 .items_center()
                 .justify_between()
                 .child(
-                    ui::text("Context window", 12., FontWeight::NORMAL)
+                    ui::text("Context window", TEXT_XS, FontWeight::NORMAL)
                         .text_color(t.text_secondary),
                 )
                 .child(
-                    ui::text(format!("{}%", percent.round()), 12., FontWeight::SEMIBOLD)
-                        .font_features(theme::tabular())
-                        .text_color(percent_ink),
+                    ui::text(
+                        format!("{}%", percent.round()),
+                        TEXT_XS,
+                        FontWeight::SEMIBOLD,
+                    )
+                    .font_features(theme::tabular())
+                    .text_color(percent_ink),
                 ),
         )
         .child(div().mt(px(9.)).mb(SPACE_2).flex().gap(SPACE_0).children(
@@ -1024,10 +1035,14 @@ fn context_card(
                 .children(usage.cost.map(|cost| {
                     row(
                         "Session cost",
-                        ui::text(crate::home::money(cost.amount), 11.5, FontWeight::NORMAL)
-                            .font_features(theme::tabular())
-                            .text_color(t.text_primary)
-                            .into_any_element(),
+                        ui::text(
+                            crate::home::money(cost.amount),
+                            TEXT_2XS_H,
+                            FontWeight::NORMAL,
+                        )
+                        .font_features(theme::tabular())
+                        .text_color(t.text_primary)
+                        .into_any_element(),
                     )
                 })),
         )

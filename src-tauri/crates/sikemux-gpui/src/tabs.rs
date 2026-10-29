@@ -22,7 +22,9 @@ use crate::agents::menu::AgentMenu;
 use crate::icons::Icon;
 use crate::motion;
 use crate::ports::PortRow;
-use crate::theme::{Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_4, TEXT_2XS, TEXT_XS};
+use crate::theme::{
+    Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_4, TEXT_2XS, TEXT_3XS, TEXT_XS,
+};
 use crate::toast;
 use crate::ui::{self, IconButton, Tab};
 use crate::workbench::{Strip, Workbench};
@@ -195,8 +197,9 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     about.extend((git.ahead > 0).then(|| format!("ahead {}", git.ahead)));
     about.extend((git.behind > 0).then(|| format!("behind {}", git.behind)));
     let count = |arrow: &str, count: u32, color| {
-        (count > 0)
-            .then(|| ui::text(format!("{arrow}{count}"), 10., FontWeight::NORMAL).text_color(color))
+        (count > 0).then(|| {
+            ui::text(format!("{arrow}{count}"), TEXT_3XS, FontWeight::NORMAL).text_color(color)
+        })
     };
     Some(
         div()
@@ -366,7 +369,7 @@ fn battery_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             .tooltip(ui::tooltip(about))
             .child(icon)
             .child(
-                ui::text(format!("{percent}%"), 11., FontWeight::SEMIBOLD)
+                ui::text(format!("{percent}%"), TEXT_2XS, FontWeight::SEMIBOLD)
                     .font_features(crate::theme::tabular())
                     .text_color(tint),
             )
@@ -1332,11 +1335,15 @@ fn clock(cx: &App) -> impl IntoElement {
         .items_baseline()
         .font_features(crate::theme::tabular())
         .child(
-            ui::text(now.format("%-I:%M").to_string(), 12., FontWeight::SEMIBOLD)
-                .text_color(t.text_secondary),
+            ui::text(
+                now.format("%-I:%M").to_string(),
+                TEXT_XS,
+                FontWeight::SEMIBOLD,
+            )
+            .text_color(t.text_secondary),
         )
         .child(
-            ui::text(now.format("%p").to_string(), 10., FontWeight::SEMIBOLD)
+            ui::text(now.format("%p").to_string(), TEXT_3XS, FontWeight::SEMIBOLD)
                 .letter_spacing(0.06)
                 .ml(SPACE_1)
                 .text_color(t.text_tertiary),

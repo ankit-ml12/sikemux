@@ -21,7 +21,7 @@ use crate::keymap;
 use crate::tabs;
 use crate::theme::{
     Tokens, RADIUS_1, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_4, TEXT_2XS,
-    TEXT_XS,
+    TEXT_3XS, TEXT_SM, TEXT_XS, TEXT_XS_H,
 };
 use crate::ui::{self, Button, Group, IconButton, Row, Tone, Variant};
 use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, Workbench};
@@ -613,7 +613,7 @@ fn masthead(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
         .border_color(t.border)
         .child(ui::icon(Icon::Logo, 14.).text_color(t.accent))
         .child(
-            ui::text("Sikemux", 13., FontWeight::SEMIBOLD)
+            ui::text("Sikemux", TEXT_SM, FontWeight::SEMIBOLD)
                 .text_color(t.text_primary)
                 .ml(px(1.)),
         )
@@ -625,9 +625,9 @@ fn masthead(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 .items_center()
                 .gap(SPACE_1)
                 .pt(px(1.))
-                .child(ui::mono(format!("v{release}"), 10., cx))
+                .child(ui::mono(format!("v{release}"), TEXT_3XS, cx))
                 .children(channel.map(|channel| {
-                    ui::text(channel, 10., FontWeight::MEDIUM)
+                    ui::text(channel, TEXT_3XS, FontWeight::MEDIUM)
                         .px(SPACE_1)
                         .py(px(1.))
                         .line_height(crate::theme::ui_text(TEXT_XS))
@@ -888,7 +888,7 @@ fn faces(agents: &[AgentRow], cx: &App) -> impl IntoElement {
         )
         .when(more > 0, |faces| {
             faces.child(
-                ui::text(format!("+{more}"), 10., FontWeight::MEDIUM)
+                ui::text(format!("+{more}"), TEXT_3XS, FontWeight::MEDIUM)
                     .font_features(crate::theme::tabular())
                     .text_color(t.text_tertiary),
             )
@@ -1012,7 +1012,7 @@ fn surfaces(
                         16.,
                         ui::icon(glyph, 13.).text_color(if lit { t.live } else { t.text_tertiary }),
                     ))
-                    .child(ui::text(label, 12.5, FontWeight::MEDIUM).letter_spacing(0.01))
+                    .child(ui::text(label, TEXT_XS_H, FontWeight::MEDIUM).letter_spacing(0.01))
                     .when_some(keymap::hint(command, cx), |row, keys| {
                         let keys = ui::kbd(keys, cx).when(lit, |keys| keys.text_color(t.accent));
                         row.child(

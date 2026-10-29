@@ -20,7 +20,8 @@ use sikemux_wire::protocol::{AllowedDevice, DeviceAccess, PendingDevice};
 use crate::core::{Ask, RemoteAsk};
 use crate::icons::Icon;
 use crate::theme::{
-    self, Tokens, SPACE_0, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4, TEXT_2XS_H, TEXT_XS,
+    self, Tokens, SPACE_0, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4, TEXT_2XS, TEXT_2XS_H,
+    TEXT_SM, TEXT_XS,
 };
 use crate::ui::{self, Button, Variant};
 use crate::workbench::Workbench;
@@ -383,8 +384,11 @@ pub fn overlay(
                     .flex()
                     .flex_col()
                     .gap(SPACE_0)
-                    .child(ui::text(label, 13., FontWeight::MEDIUM).text_color(t.text_primary))
-                    .child(ui::text(detail, 11.5, FontWeight::NORMAL).text_color(t.text_tertiary)),
+                    .child(ui::text(label, TEXT_SM, FontWeight::MEDIUM).text_color(t.text_primary))
+                    .child(
+                        ui::text(detail, TEXT_2XS_H, FontWeight::NORMAL)
+                            .text_color(t.text_tertiary),
+                    ),
             )
             .on_click(cx.listener(move |bench, _, _, cx| {
                 bench.pairing.access = access;
@@ -397,7 +401,7 @@ pub fn overlay(
             .items_center()
             .gap(px(5.))
             .child(ui::kbd(keys, cx))
-            .child(ui::text(what, 11., FontWeight::NORMAL).text_color(t.text_tertiary))
+            .child(ui::text(what, TEXT_2XS, FontWeight::NORMAL).text_color(t.text_tertiary))
     };
     let column = div()
         .flex()
@@ -449,7 +453,7 @@ pub fn overlay(
                 .flex()
                 .items_center()
                 .gap(SPACE_2H)
-                .children(waits_for.map(|left| ui::mono(format!("waits {left}"), 11., cx)))
+                .children(waits_for.map(|left| ui::mono(format!("waits {left}"), TEXT_2XS, cx)))
                 .child(
                     Button::new("pairing-decline", decline, Variant::Outline)
                         .on_click(cx.listener(|bench, _, _, cx| bench.answer_pairing(false, cx))),

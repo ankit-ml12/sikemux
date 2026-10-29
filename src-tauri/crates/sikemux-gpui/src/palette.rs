@@ -17,7 +17,8 @@ use gpui_kit::{
 use crate::icons::Icon;
 use crate::plugin_pane::Failure;
 use crate::theme::{
-    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_5, TEXT_MD, TEXT_SM, TEXT_XL,
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_5, TEXT_3XS, TEXT_3XS_H,
+    TEXT_MD, TEXT_SM, TEXT_XL,
 };
 use crate::ui;
 use crate::workbench::Workbench;
@@ -962,12 +963,14 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                 Some(state) => element.child(div().flex_none().child(state)),
                 None if meta.is_empty() => element,
                 None if palette.spec.deck => element.child(
-                    ui::text(meta.to_uppercase(), 10., FontWeight::SEMIBOLD)
+                    ui::text(meta.to_uppercase(), TEXT_3XS, FontWeight::SEMIBOLD)
                         .letter_spacing(0.08)
                         .text_color(t.text_tertiary)
                         .flex_none(),
                 ),
-                None if row.meta_is_path => element.child(ui::mono(meta, 10.5, cx).flex_none()),
+                None if row.meta_is_path => {
+                    element.child(ui::mono(meta, TEXT_3XS_H, cx).flex_none())
+                }
                 None => element.child(ui::meta(meta, cx).flex_none()),
             }
         })
@@ -1056,8 +1059,10 @@ fn mode_switch(choice: Choice, cx: &mut Context<Workbench>) -> impl IntoElement 
                         .child(
                             match armed {
                                 true => ui::rainbow(&word.to_uppercase(), 10., cx),
-                                false => ui::text(word.to_uppercase(), 10., FontWeight::SEMIBOLD)
-                                    .letter_spacing(0.08),
+                                false => {
+                                    ui::text(word.to_uppercase(), TEXT_3XS, FontWeight::SEMIBOLD)
+                                        .letter_spacing(0.08)
+                                }
                             }
                             .font_family(theme::MONO),
                         )

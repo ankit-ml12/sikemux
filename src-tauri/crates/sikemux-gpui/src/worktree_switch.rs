@@ -157,7 +157,7 @@ pub fn note(switch: &Switch, cx: &App) -> Option<AnyElement> {
                                 .child("Working in a worktree on\u{a0}"),
                         )
                         .child(
-                            ui::mono(branch.clone(), 11., cx)
+                            ui::mono(branch.clone(), TEXT_2XS, cx)
                                 .min_w_0()
                                 .truncate()
                                 .font_weight(gpui_kit::FontWeight::MEDIUM)
@@ -169,7 +169,7 @@ pub fn note(switch: &Switch, cx: &App) -> Option<AnyElement> {
                         .id("worktree-note-path")
                         .min_w_0()
                         .tooltip(ui::tooltip(shown.clone()))
-                        .child(ui::mono(shown.clone(), 11., cx).truncate()),
+                        .child(ui::mono(shown.clone(), TEXT_2XS, cx).truncate()),
                 );
             Some(
                 note.flex()

@@ -15,7 +15,7 @@ use crate::faces::{self, Pack};
 use crate::icons::Icon;
 use crate::theme::{
     self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_3H, SPACE_5, TEXT_2XS,
-    TEXT_XS,
+    TEXT_SM, TEXT_XS,
 };
 use crate::ui::{self, dialog};
 use crate::workbench::Workbench;
@@ -184,7 +184,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 .child(
                     ui::text(
                         agent.name.clone().unwrap_or_else(|| "Buddy".into()),
-                        13.,
+                        TEXT_SM,
                         FontWeight::SEMIBOLD,
                     )
                     .text_color(t.text_primary),

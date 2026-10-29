@@ -769,7 +769,7 @@ fn branch_row(
             ))
             .child(ui::icon(icon, 13.).text_color(t.text_tertiary))
             .child(
-                ui::text(name, 12., FontWeight::MEDIUM)
+                ui::text(name, TEXT_XS, FontWeight::MEDIUM)
                     .flex_1()
                     .min_w_0()
                     .truncate()

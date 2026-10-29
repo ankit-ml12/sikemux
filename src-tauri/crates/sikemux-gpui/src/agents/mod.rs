@@ -17,8 +17,8 @@ use crate::agents::menu::AgentMenu;
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{
-    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_6, TEXT_3XS,
-    TEXT_MD, TEXT_XS,
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_6, TEXT_2XS,
+    TEXT_3XS, TEXT_3XS_H, TEXT_MD, TEXT_SM, TEXT_XS,
 };
 use crate::ui::{self, Field, Group, IconButton, Row, Segmented};
 use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, TeamLink, Workbench};
@@ -324,12 +324,12 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             harness_label(bench, launcher),
         ),
         None => {
-            return ui::text("Agents", 13., FontWeight::SEMIBOLD)
+            return ui::text("Agents", TEXT_SM, FontWeight::SEMIBOLD)
                 .text_color(t.text_primary)
                 .into_any_element()
         }
     };
-    let name = ui::text(label, 13., FontWeight::SEMIBOLD)
+    let name = ui::text(label, TEXT_SM, FontWeight::SEMIBOLD)
         .letter_spacing(-0.015)
         .text_color(t.text_primary);
     let mut options: Vec<(String, String, Option<f64>)> = Vec::new();
@@ -432,7 +432,7 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
             ui::icon(Icon::Pin, 11.).text_color(t.text_tertiary),
         )
         .into_any_element(),
-        false => ui::mono(ui::time::age(recent.active_at), 11., cx).into_any_element(),
+        false => ui::mono(ui::time::age(recent.active_at), TEXT_2XS, cx).into_any_element(),
     };
     let row = Row::new(
         SharedString::from(format!("recent-{}", recent.id)),
@@ -1074,7 +1074,7 @@ pub fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
                 .gap(px(3.))
                 .child(ui::icon(glyph, size).text_color(color))
                 .child(
-                    ui::text(value.to_string(), 11., FontWeight::MEDIUM)
+                    ui::text(value.to_string(), TEXT_2XS, FontWeight::MEDIUM)
                         .font_features(crate::theme::tabular()),
                 )
         };
@@ -1095,7 +1095,7 @@ pub fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
                     .gap(px(3.))
                     .child(ui::icon(Icon::Timer, 11.).text_color(t.cmd))
                     .child(
-                        ui::text(ui::time::until(at), 11., FontWeight::MEDIUM)
+                        ui::text(ui::time::until(at), TEXT_2XS, FontWeight::MEDIUM)
                             .font_features(crate::theme::tabular()),
                     )
             }))
@@ -1165,7 +1165,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
         limit_rows(&top, compact, cx)
     };
     let top_name = (!top_signed_out).then(|| {
-        ui::text(top_label.clone(), 11., FontWeight::MEDIUM)
+        ui::text(top_label.clone(), TEXT_2XS, FontWeight::MEDIUM)
             .px(px(3.))
             .truncate()
             .text_color(t.text_primary)
@@ -1228,7 +1228,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
         .items_center()
         .gap(SPACE_2)
         .child(
-            ui::text("LIMITS", 11., FontWeight::MEDIUM)
+            ui::text("LIMITS", TEXT_2XS, FontWeight::MEDIUM)
                 .letter_spacing(0.08)
                 .text_color(t.text_tertiary),
         )
@@ -1343,7 +1343,7 @@ fn limit_rows(shown: &Shown, compact: bool, cx: &App) -> AnyElement {
     let usage = &shown.usage;
     let windows = shown.windows();
     let quiet = |text: String| {
-        ui::text(text, 10.5, FontWeight::NORMAL)
+        ui::text(text, TEXT_3XS_H, FontWeight::NORMAL)
             .h(px(LIMIT_ROW))
             .px(SPACE_2)
             .truncate()
@@ -1391,13 +1391,13 @@ fn account_block(
             .flex()
             .items_center()
             .child(
-                ui::text(shown.name.clone(), 11., FontWeight::MEDIUM)
+                ui::text(shown.name.clone(), TEXT_2XS, FontWeight::MEDIUM)
                     .flex_1()
                     .truncate()
                     .text_color(t.text_tertiary),
             )
             .child(
-                ui::text("Sign in", 10.5, FontWeight::NORMAL)
+                ui::text("Sign in", TEXT_3XS_H, FontWeight::NORMAL)
                     .id(SharedString::from(format!("limits-sign-in-{key}")))
                     .cursor_pointer()
                     .text_color(t.text_secondary)
@@ -1423,7 +1423,7 @@ fn account_block(
         .items_center()
         .gap(SPACE_2)
         .child(
-            ui::text(shown.name.clone(), 11., FontWeight::MEDIUM)
+            ui::text(shown.name.clone(), TEXT_2XS, FontWeight::MEDIUM)
                 .flex_1()
                 .min_w_0()
                 .truncate()
@@ -1434,13 +1434,13 @@ fn account_block(
                 .relative()
                 .flex_none()
                 .children(shown.back().map(|back| {
-                    ui::text(back, 10., FontWeight::NORMAL)
+                    ui::text(back, TEXT_3XS, FontWeight::NORMAL)
                         .font_features(theme::tabular())
                         .text_color(t.danger)
                         .group_hover(group.clone(), |note| note.opacity(0.))
                 }))
                 .child(
-                    ui::text("Use for new chats", 10., FontWeight::NORMAL)
+                    ui::text("Use for new chats", TEXT_3XS, FontWeight::NORMAL)
                         .absolute()
                         .top_0()
                         .right_0()
@@ -1506,19 +1506,23 @@ fn limit_row(window: &Value, key: &str, cx: &App) -> impl IntoElement {
         )
         .child(ticks(percent, signal, &t).flex_1().h(px(10.)))
         .child(
-            ui::text(format!("{}%", percent.round()), 11., FontWeight::NORMAL)
-                .w(px(28.))
-                .flex_none()
-                .text_right()
-                .font_features(theme::tabular())
-                .text_color(if percent < 70. {
-                    t.text_primary
-                } else {
-                    signal
-                }),
+            ui::text(
+                format!("{}%", percent.round()),
+                TEXT_2XS,
+                FontWeight::NORMAL,
+            )
+            .w(px(28.))
+            .flex_none()
+            .text_right()
+            .font_features(theme::tabular())
+            .text_color(if percent < 70. {
+                t.text_primary
+            } else {
+                signal
+            }),
         )
         .child(
-            ui::text(ui::time::countdown(reset), 10., FontWeight::NORMAL)
+            ui::text(ui::time::countdown(reset), TEXT_3XS, FontWeight::NORMAL)
                 .w(px(42.))
                 .flex_none()
                 .text_right()
@@ -1615,18 +1619,18 @@ fn sign_in_card(
                 .flex_col()
                 .gap(SPACE_0)
                 .child(
-                    ui::text(title, 12., FontWeight::SEMIBOLD)
+                    ui::text(title, TEXT_XS, FontWeight::SEMIBOLD)
                         .truncate()
                         .text_color(t.text_primary),
                 )
                 .child(
-                    ui::text(line, 10.5, FontWeight::NORMAL)
+                    ui::text(line, TEXT_3XS_H, FontWeight::NORMAL)
                         .truncate()
                         .text_color(t.text_tertiary),
                 ),
         )
         .child(
-            ui::text("Sign in", 11., FontWeight::SEMIBOLD)
+            ui::text("Sign in", TEXT_2XS, FontWeight::SEMIBOLD)
                 .flex_none()
                 .h(px(24.))
                 .px(px(11.))
@@ -1720,7 +1724,7 @@ fn page_header(
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let title = ui::text(title, 12., FontWeight::MEDIUM).text_color(t.text_primary);
+    let title = ui::text(title, TEXT_XS, FontWeight::MEDIUM).text_color(t.text_primary);
     header_frame(title, [], bench, cx)
 }
 
@@ -1762,7 +1766,7 @@ fn rail_empty(
         .pt(px(40.))
         .pb(SPACE_6)
         .child(ui::icon(glyph, 20.).text_color(t.text_tertiary))
-        .child(ui::text(title, 13., FontWeight::MEDIUM).text_color(t.text_secondary))
+        .child(ui::text(title, TEXT_SM, FontWeight::MEDIUM).text_color(t.text_secondary))
         .children(press)
         .into_any_element()
 }

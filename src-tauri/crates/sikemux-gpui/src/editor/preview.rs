@@ -476,7 +476,7 @@ fn picture(
     };
     let alt = SharedString::from(alt.to_owned());
     let unloaded = move || {
-        ui::text(alt.clone(), 12., FontWeight::NORMAL)
+        ui::text(alt.clone(), TEXT_XS, FontWeight::NORMAL)
             .text_color(quiet)
             .into_any_element()
     };

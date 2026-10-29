@@ -165,7 +165,7 @@ pub fn badges(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
                 .text_color(color)
                 .tooltip(ui::tooltip(format!("#{number} {title}")))
                 .child(ui::icon(Icon::PullRequest, 12.).text_color(color))
-                .child(ui::mono(format!("#{number}"), 12., cx))
+                .child(ui::mono(format!("#{number}"), TEXT_XS, cx))
                 .child(state)
                 .on_click(cx.listener(move |bench, _, _, _| {
                     bench.open_on_desk(&opened, &url);

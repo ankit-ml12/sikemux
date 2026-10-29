@@ -5,7 +5,7 @@ use super::*;
 
 use crate::theme::{
     SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, TEXT_2XS, TEXT_2XS_H,
-    TEXT_3XS_H, TEXT_XS_H,
+    TEXT_3XS_H, TEXT_XS, TEXT_XS_H,
 };
 
 /// The chat's looks with what the reader has open, for drawing its rows once.
@@ -144,7 +144,7 @@ pub(super) fn row(
             .child(
                 ui::text(
                     "Earlier messages are no longer kept.",
-                    12.,
+                    TEXT_XS,
                     FontWeight::NORMAL,
                 )
                 .text_color(Tokens::get(cx).text_tertiary),

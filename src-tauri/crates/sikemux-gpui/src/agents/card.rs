@@ -13,7 +13,7 @@ use serde_json::json;
 use sikemux_wire::protocol::WorkspaceAgent;
 
 use crate::icons::Icon;
-use crate::theme::{Tokens, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_SM, TEXT_XS};
+use crate::theme::{Tokens, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_SM, TEXT_XS};
 use crate::ui;
 use crate::workbench::{AgentRow, Workbench};
 
@@ -248,7 +248,7 @@ pub fn view(
         facts.push(
             fact(
                 Some(Icon::Git),
-                ui::mono(branch, 11., cx)
+                ui::mono(branch, TEXT_2XS, cx)
                     .id("card-branch")
                     .text_color(t.text_primary)
                     .cursor_pointer()
@@ -267,7 +267,7 @@ pub fn view(
         facts.push(
             fact(
                 None,
-                ui::mono(folder, 11., cx)
+                ui::mono(folder, TEXT_2XS, cx)
                     .text_color(t.text_tertiary)
                     .into_any_element(),
             )
@@ -280,7 +280,7 @@ pub fn view(
             .gap(SPACE_2)
             .children(bench.agent_card.pulls.iter().map(|pull| {
                 let (agent, url) = (agent.id.clone(), pull.url.clone());
-                ui::mono(format!("#{}", pull.number), 11., cx)
+                ui::mono(format!("#{}", pull.number), TEXT_2XS, cx)
                     .id(SharedString::from(format!("card-pull-{}", pull.number)))
                     .text_color(t.text_primary)
                     .cursor_pointer()

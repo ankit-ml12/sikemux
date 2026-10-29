@@ -23,7 +23,9 @@ use crate::core::Target;
 use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, TEXT_XS};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, TEXT_3XS, TEXT_XS,
+};
 use crate::toast;
 use crate::ui::{self, IconButton};
 use crate::workbench::{Strip, Workbench};
@@ -339,7 +341,7 @@ impl FileTree {
             return None;
         };
         Some(
-            ui::text(letter.to_string(), 10., FontWeight::BOLD)
+            ui::text(letter.to_string(), TEXT_3XS, FontWeight::BOLD)
                 .opacity(0.8)
                 .text_color(mark.colour(Tokens::get(cx))),
         )
@@ -518,7 +520,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 .justify_between()
                 .gap(SPACE_2)
                 .child(
-                    ui::text(name.to_uppercase(), 10., FontWeight::SEMIBOLD)
+                    ui::text(name.to_uppercase(), TEXT_3XS, FontWeight::SEMIBOLD)
                         .letter_spacing(0.08)
                         .text_color(t.text_tertiary),
                 )

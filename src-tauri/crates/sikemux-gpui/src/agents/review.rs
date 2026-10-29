@@ -17,7 +17,8 @@ use crate::core::Target;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::theme::{
-    self, Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_XS,
+    self, Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_2XS_H, TEXT_SM,
+    TEXT_XS,
 };
 use crate::ui::{self, Button, Variant};
 use crate::workbench::Workbench;
@@ -159,7 +160,9 @@ impl Render for AgentReview {
             }
             Some(Ok(found)) => {
                 body = body
-                    .child(ui::mono(found.branch.clone(), 11.5, cx).text_color(t.text_secondary))
+                    .child(
+                        ui::mono(found.branch.clone(), TEXT_2XS_H, cx).text_color(t.text_secondary),
+                    )
                     .children(found.summary.clone().map(|summary| {
                         div()
                             .text_size(crate::theme::ui_text(TEXT_XS))
@@ -228,7 +231,7 @@ impl Render for AgentReview {
                 body = body.child(
                     row("Running").child(match &found.url {
                         Some(url) => {
-                            ui::mono(url.trim_start_matches("http://").to_owned(), 11.5, cx)
+                            ui::mono(url.trim_start_matches("http://").to_owned(), TEXT_2XS_H, cx)
                                 .text_color(t.text_primary)
                         }
                         None => ui::meta("Nothing running", cx),
@@ -284,7 +287,7 @@ impl Render for AgentReview {
                     .items_center()
                     .gap(SPACE_2)
                     .child(
-                        ui::text(title, 13., FontWeight::SEMIBOLD)
+                        ui::text(title, TEXT_SM, FontWeight::SEMIBOLD)
                             .flex_1()
                             .min_w_0()
                             .truncate()

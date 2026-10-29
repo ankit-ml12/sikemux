@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::theme::{
-    Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_XS,
+    Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_2XS_H, TEXT_XS,
 };
 use crate::toast;
 use crate::ui::{self, IconButton, Variant};
@@ -219,14 +219,14 @@ fn tests_card(
                         .child(
                             ui::text(
                                 format!("{} › {name}", short_class(class)),
-                                12.,
+                                TEXT_XS,
                                 FontWeight::NORMAL,
                             )
                             .text_color(t.text_primary),
                         )
                         .when(!message.is_empty(), |item| {
                             item.child(
-                                ui::mono(message, 11., cx)
+                                ui::mono(message, TEXT_2XS, cx)
                                     .text_color(t.text_tertiary)
                                     .line_clamp(3),
                             )
@@ -306,11 +306,11 @@ fn failure_card(
                 .flex()
                 .flex_col()
                 .gap(SPACE_1)
-                .child(ui::mono(command, 11., cx).text_color(t.text_secondary))
+                .child(ui::mono(command, TEXT_2XS, cx).text_color(t.text_secondary))
                 .child(
                     ui::text(
                         "The reason is in its output, usually near the first error.",
-                        11.5,
+                        TEXT_2XS_H,
                         FontWeight::NORMAL,
                     )
                     .text_color(t.text_tertiary),

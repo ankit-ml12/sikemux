@@ -27,7 +27,7 @@ use crate::core::ChatAsk;
 use crate::drag::DraggedPath;
 use crate::hosts::Place;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2H};
+use crate::theme::{self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2H, TEXT_SM};
 use crate::ui;
 use crate::workbench::{AgentRow, Workbench};
 
@@ -551,7 +551,7 @@ pub fn drop_hint(cx: &App) -> Div {
         .child(
             ui::text(
                 "Drop files or folders into this session",
-                13.,
+                TEXT_SM,
                 FontWeight::MEDIUM,
             )
             .text_color(t.text_primary),

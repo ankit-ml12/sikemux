@@ -19,7 +19,7 @@ use crate::agents::menu::AgentMenu;
 use crate::icons::Icon;
 use crate::theme::{
     self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TEXT_2XS,
-    TEXT_3XS, TEXT_XL, TEXT_XS,
+    TEXT_3XS, TEXT_XL, TEXT_XS, TEXT_XS_H,
 };
 use crate::ui::{self, Button, IconButton, PaneHeader, Segmented, Toggle, Variant};
 use crate::workbench::{AgentRow, Workbench};
@@ -148,8 +148,12 @@ fn empty_stage(cx: &mut Context<Workbench>) -> impl IntoElement {
         .gap(SPACE_3)
         .text_color(t.text_tertiary)
         .child(
-            ui::text("Nothing open in this project", 12.5, FontWeight::NORMAL)
-                .text_color(t.text_secondary),
+            ui::text(
+                "Nothing open in this project",
+                TEXT_XS_H,
+                FontWeight::NORMAL,
+            )
+            .text_color(t.text_secondary),
         )
         .child(
             div()
@@ -189,7 +193,7 @@ fn asleep_in_terminal(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Work
         .justify_center()
         .gap(SPACE_3)
         .child(
-            ui::text(format!("{label} is asleep"), 12.5, FontWeight::NORMAL)
+            ui::text(format!("{label} is asleep"), TEXT_XS_H, FontWeight::NORMAL)
                 .text_color(t.text_secondary),
         )
         .child(
@@ -541,16 +545,16 @@ pub(crate) fn overview(totals: &Value, cx: &App) -> impl IntoElement {
                         .items_center()
                         .gap(SPACE_1H)
                         .text_color(t.text_tertiary)
-                        .child(ui::text(label, 12., FontWeight::MEDIUM))
-                        .children(badge.map(|badge| ui::text(badge, 10., FontWeight::MEDIUM))),
+                        .child(ui::text(label, TEXT_XS, FontWeight::MEDIUM))
+                        .children(badge.map(|badge| ui::text(badge, TEXT_3XS, FontWeight::MEDIUM))),
                 )
                 .child(
-                    ui::text(value, 20., FontWeight::SEMIBOLD)
+                    ui::text(value, TEXT_XL, FontWeight::SEMIBOLD)
                         .line_height(crate::theme::ui_text(22.))
                         .font_features(theme::tabular())
                         .text_color(t.text_primary),
                 )
-                .child(ui::mono(detail, 11., cx).whitespace_normal())
+                .child(ui::mono(detail, TEXT_2XS, cx).whitespace_normal())
         },
     ))
 }
@@ -710,7 +714,7 @@ pub(crate) fn calendar(
                                 ),
                                 None => readout(streaks),
                             },
-                            12.,
+                            TEXT_XS,
                             FontWeight::NORMAL,
                         )
                         .text_color(t.text_secondary),
@@ -803,7 +807,7 @@ fn day_at(bounds: Bounds<Pixels>, position: Point<Pixels>) -> Option<i64> {
 }
 
 fn small(label: String, t: &Tokens) -> Div {
-    ui::text(label, 10., FontWeight::NORMAL)
+    ui::text(label, TEXT_3XS, FontWeight::NORMAL)
         .line_height(crate::theme::ui_text(TEXT_3XS))
         .text_color(t.text_tertiary)
 }

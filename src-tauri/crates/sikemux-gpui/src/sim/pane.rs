@@ -27,7 +27,7 @@ use tokio::sync::mpsc;
 use crate::icons::Icon;
 use crate::sim::frame::{self, Chrome, Rect};
 use crate::sim::screen::{Decoder, Picture, Turn};
-use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2H, SPACE_4};
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2H, SPACE_4, TEXT_XS, TEXT_XS_H};
 use crate::ui::{self, IconButton};
 use crate::workbench::Workbench;
 
@@ -1005,7 +1005,7 @@ pub fn picker(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
         .h(px(24.))
         .px(SPACE_1H)
         .gap(SPACE_1)
-        .child(ui::text(name, 12., FontWeight::MEDIUM).text_color(t.text_secondary))
+        .child(ui::text(name, TEXT_XS, FontWeight::MEDIUM).text_color(t.text_secondary))
         .child(ui::icon(Icon::Chevron, 10.).text_color(t.text_tertiary));
     let Some(devices) = bench.sims.devices.clone() else {
         return Some(trigger.into_any_element());
@@ -1180,7 +1180,7 @@ pub fn body(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyE
             .items_center()
             .justify_center()
             .text_color(t.text_tertiary)
-            .child(ui::text(message, 12.5, FontWeight::NORMAL))
+            .child(ui::text(message, TEXT_XS_H, FontWeight::NORMAL))
     };
     if let Some(fraction) = bench.sims.progress {
         let percent = (fraction * 100.).round();

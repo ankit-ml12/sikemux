@@ -14,7 +14,8 @@ use super::{icon, kbd, text};
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{
-    Tokens, RADIUS_2, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, TEXT_2XS, TEXT_2XS_H, TEXT_SM, TEXT_XS,
+    Tokens, RADIUS_2, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, TEXT_2XS, TEXT_2XS_H, TEXT_3XS, TEXT_SM,
+    TEXT_XS,
 };
 
 pub type OnClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -588,7 +589,7 @@ impl Segmented {
                                     })
                                 })
                             }))
-                            .child(text(label, 11., FontWeight::NORMAL))
+                            .child(text(label, TEXT_2XS, FontWeight::NORMAL))
                     }),
             )
     }
@@ -656,12 +657,12 @@ impl RenderOnce for Segmented {
                                     })
                             }))
                             .child(
-                                text(label, 11., FontWeight::NORMAL)
+                                text(label, TEXT_2XS, FontWeight::NORMAL)
                                     .overflow_hidden()
                                     .text_ellipsis(),
                             )
                             .children(count.map(|count| {
-                                text(count.to_string(), 10., FontWeight::NORMAL)
+                                text(count.to_string(), TEXT_3XS, FontWeight::NORMAL)
                                     .font_features(crate::theme::tabular())
                                     .text_color(t.text_tertiary)
                             }))
@@ -677,7 +678,7 @@ impl RenderOnce for Segmented {
                                     .rounded(px(8.))
                                     .bg(t.warn.opacity(0.2))
                                     .child(
-                                        text(count.to_string(), 10., FontWeight::MEDIUM)
+                                        text(count.to_string(), TEXT_3XS, FontWeight::MEDIUM)
                                             .font_features(crate::theme::tabular())
                                             .text_color(t.warn),
                                     )

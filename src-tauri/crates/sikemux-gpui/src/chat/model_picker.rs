@@ -20,7 +20,8 @@ use crate::agents::setup::Installing;
 use crate::core;
 use crate::icons::Icon;
 use crate::theme::{
-    self, Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, TEXT_2XS_H, TEXT_3XS_H, TEXT_XS, TEXT_XS_H,
+    self, Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, TEXT_2XS_H, TEXT_3XS, TEXT_3XS_H, TEXT_XS,
+    TEXT_XS_H,
 };
 use crate::ui;
 use crate::workbench::Workbench;
@@ -702,7 +703,7 @@ impl Render for Menu {
                     .my(px(5.))
                     .bg(t.line)
                     .into_any_element(),
-                false => ui::text(heading.to_uppercase(), 10., FontWeight::MEDIUM)
+                false => ui::text(heading.to_uppercase(), TEXT_3XS, FontWeight::MEDIUM)
                     .letter_spacing(0.08)
                     .text_color(t.text_tertiary)
                     .px(SPACE_2H)

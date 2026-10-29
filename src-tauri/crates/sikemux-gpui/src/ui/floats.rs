@@ -17,7 +17,7 @@ use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{
     Tokens, RADIUS_2, RADIUS_3, RADIUS_4, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS_H,
-    TEXT_LG, TEXT_SM,
+    TEXT_3XS_H, TEXT_LG, TEXT_SM,
 };
 
 /// How far rows sit inside a float, so a chosen row's corners run parallel to the float's:
@@ -181,10 +181,9 @@ impl MenuRow {
                             .when_some(ink, |label, ink| label.text_color(ink))
                             .child(label.clone()),
                     )
-                    .children(
-                        hint.clone()
-                            .map(|hint| text(hint, 10.5, FontWeight::NORMAL).text_color(hint_ink)),
-                    )
+                    .children(hint.clone().map(|hint| {
+                        text(hint, TEXT_3XS_H, FontWeight::NORMAL).text_color(hint_ink)
+                    }))
             })
         };
         match icon {

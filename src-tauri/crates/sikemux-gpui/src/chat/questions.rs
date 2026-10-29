@@ -484,12 +484,12 @@ pub(super) fn asking(
                 .items_center()
                 .gap_x(SPACE_2)
                 .child(
-                    ui::text(choice.label.clone(), 13., FontWeight::MEDIUM)
+                    ui::text(choice.label.clone(), TEXT_SM, FontWeight::MEDIUM)
                         .line_height(crate::theme::ui_text(19.)),
                 )
                 .when(choice.recommended, |label| {
                     label.child(
-                        ui::text("recommended", 11., FontWeight::NORMAL)
+                        ui::text("recommended", TEXT_2XS, FontWeight::NORMAL)
                             .text_color(t.text_disabled),
                     )
                 });
@@ -523,7 +523,7 @@ pub(super) fn asking(
     }) = picked.filter(|_| !current.secret)
     {
         let key = ui::icon(Icon::Pencil, 11.).mt(SPACE_1).into_any_element();
-        let typed = ui::text(shown.clone(), 13., FontWeight::MEDIUM)
+        let typed = ui::text(shown.clone(), TEXT_SM, FontWeight::MEDIUM)
             .line_height(crate::theme::ui_text(19.));
         choices.push(
             answer_row(

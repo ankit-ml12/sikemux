@@ -14,8 +14,8 @@ use super::{icon, text};
 use crate::icons::Icon;
 use crate::theme::{
     self, Tokens, RADIUS_2, RADIUS_4, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3,
-    SPACE_3H, SPACE_4, SPACE_5, TEXT_2XS, TEXT_2XS_H, TEXT_3XS, TEXT_3XS_H, TEXT_SM, TEXT_XL,
-    TEXT_XS,
+    SPACE_3H, SPACE_4, SPACE_5, TEXT_2XS, TEXT_2XS_H, TEXT_3XS, TEXT_3XS_H, TEXT_MD, TEXT_SM,
+    TEXT_XL, TEXT_XS,
 };
 
 pub(crate) type Answer = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -132,7 +132,7 @@ pub(crate) fn field(name: &'static str, input: &Entity<InputState>, mono: bool, 
         .flex()
         .flex_col()
         .gap(SPACE_1H)
-        .child(text(name, 12., FontWeight::MEDIUM).text_color(t.text_secondary))
+        .child(text(name, TEXT_XS, FontWeight::MEDIUM).text_color(t.text_secondary))
         .child(
             div()
                 .h(px(32.))
@@ -205,7 +205,7 @@ fn head(tile: Option<Tile>, title: SharedString, cx: &App) -> Div {
                 .bg(ground)
                 .child(icon(tile.icon, 15.).text_color(ink))
         }))
-        .child(text(title, 14., FontWeight::SEMIBOLD).text_color(t.text_primary))
+        .child(text(title, TEXT_MD, FontWeight::SEMIBOLD).text_color(t.text_primary))
 }
 
 fn framed(

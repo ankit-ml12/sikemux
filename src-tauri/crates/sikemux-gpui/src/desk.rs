@@ -32,7 +32,9 @@ use tokio::sync::mpsc;
 use crate::codehost::HostArea;
 use crate::core::Ask;
 use crate::icons::Icon;
-use crate::theme::{Tokens, RADIUS_2, RADIUS_3, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_6};
+use crate::theme::{
+    Tokens, RADIUS_2, RADIUS_3, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_6, TEXT_XS, TEXT_XS_H,
+};
 use crate::toast;
 use crate::ui::{self, IconButton};
 use crate::workbench::{shows, Strip, Workbench};
@@ -2060,7 +2062,7 @@ pub fn pane(
                     .items_center()
                     .justify_center()
                     .text_color(t.text_tertiary)
-                    .child(ui::text("No pages yet", 12.5, FontWeight::NORMAL)),
+                    .child(ui::text("No pages yet", TEXT_XS_H, FontWeight::NORMAL)),
             )
         })
         .children(address::overlay(bench, agent, cx));
@@ -2228,7 +2230,7 @@ fn pill(
         })
         .child(mark)
         .child(
-            ui::text(label, 12., FontWeight::NORMAL)
+            ui::text(label, TEXT_XS, FontWeight::NORMAL)
                 .flex_1()
                 .min_w_0()
                 .overflow_hidden()

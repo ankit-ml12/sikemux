@@ -3633,7 +3633,7 @@ fn group_row(
                         .child(
                             ui::text(
                                 if staged { "Staged Changes" } else { "Changes" },
-                                12.,
+                                TEXT_XS,
                                 FontWeight::MEDIUM,
                             )
                             .text_color(t.text_primary),

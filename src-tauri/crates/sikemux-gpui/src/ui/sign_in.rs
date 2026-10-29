@@ -230,7 +230,7 @@ impl RenderOnce for Field {
 
 /// What a box in the form is for, over it.
 pub fn label(words: impl Into<SharedString>, cx: &App) -> Div {
-    text(words, 11., FontWeight::MEDIUM).text_color(Tokens::get(cx).text_tertiary)
+    text(words, TEXT_2XS, FontWeight::MEDIUM).text_color(Tokens::get(cx).text_tertiary)
 }
 
 /// `control` under its label, across the column, for a pick that is not typed.
@@ -266,14 +266,14 @@ pub fn address(
         .bg(tint(t))
         .text_left()
         .child(
-            text(shown, 12., FontWeight::NORMAL)
+            text(shown, TEXT_XS, FontWeight::NORMAL)
                 .min_w_0()
                 .truncate()
                 .font_family(theme::MONO)
                 .text_color(t.text_primary),
         )
         .children(meta.map(|meta| {
-            text(meta, 11., FontWeight::NORMAL)
+            text(meta, TEXT_2XS, FontWeight::NORMAL)
                 .flex_none()
                 .font_family(theme::MONO)
                 .text_color(t.live)
@@ -432,7 +432,7 @@ pub fn choice(
         .text_size(theme::ui_text(TEXT_SM))
         .child(mark)
         .child(div().flex_1().min_w_0().truncate().child(name.into()))
-        .child(text(meta, 11., FontWeight::NORMAL).text_color(t.text_tertiary))
+        .child(text(meta, TEXT_2XS, FontWeight::NORMAL).text_color(t.text_tertiary))
 }
 
 /// A square beside a choice for what it holds that is not picking it, such as removing it.

@@ -8,7 +8,7 @@ use gpui_kit::{
 use smallvec::SmallVec;
 
 use super::{mark_box, meta, text};
-use crate::theme::{Tokens, RADIUS_3, SPACE_0, SPACE_2, SPACE_3H, TEXT_XS};
+use crate::theme::{Tokens, RADIUS_3, SPACE_0, SPACE_2, SPACE_3H, TEXT_SM, TEXT_XS};
 
 /// How far an agent pane's contents sit inside its frame, as on the Mac.
 pub const AGENT_INSET: f32 = 6.;
@@ -126,7 +126,7 @@ impl RenderOnce for PaneHeader {
             .children(self.title_view.or_else(|| {
                 let double_click = self.on_title_double_click;
                 (!self.title.is_empty()).then(|| {
-                    text(self.title, 13., FontWeight::MEDIUM)
+                    text(self.title, TEXT_SM, FontWeight::MEDIUM)
                         .id("pane-title")
                         .min_w_0()
                         .overflow_hidden()

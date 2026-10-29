@@ -17,7 +17,7 @@ use super::Chat;
 use crate::core::ChatAsk;
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{Tokens, SPACE_1H, SPACE_2, SPACE_3, TEXT_2XS, TEXT_SM};
+use crate::theme::{Tokens, SPACE_1H, SPACE_2, SPACE_3, TEXT_2XS, TEXT_3XS_H, TEXT_SM};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
 
@@ -122,7 +122,7 @@ impl Render for Activity {
                 .child(words)
                 .when(seconds > 0, |line| {
                     line.child(
-                        ui::mono(crate::ui::time::elapsed(seconds), 10.5, cx)
+                        ui::mono(crate::ui::time::elapsed(seconds), TEXT_3XS_H, cx)
                             .text_color(t.text_disabled),
                     )
                 }),
@@ -377,7 +377,7 @@ pub(super) fn trouble(
         .filter(|_| network);
     let details = details.map(|details| {
         div().px(px(44.)).pb(SPACE_1H).child(
-            ui::mono(details, 10.5, cx)
+            ui::mono(details, TEXT_3XS_H, cx)
                 .whitespace_normal()
                 .text_color(t.text_tertiary),
         )
@@ -680,7 +680,7 @@ pub(super) fn plan(
             .border_color(t.line_soft)
             .rounded(crate::theme::RADIUS_2)
             .child(
-                ui::mono(text, 11., cx)
+                ui::mono(text, TEXT_2XS, cx)
                     .whitespace_normal()
                     .text_color(t.text_tertiary),
             )

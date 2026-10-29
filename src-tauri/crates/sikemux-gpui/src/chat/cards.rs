@@ -76,13 +76,13 @@ pub(super) fn permission(
         .flex_col()
         .gap(SPACE_0)
         .child(
-            ui::text(ask.tool_call.title.clone(), 12., FontWeight::SEMIBOLD)
+            ui::text(ask.tool_call.title.clone(), TEXT_XS, FontWeight::SEMIBOLD)
                 .text_color(t.text_primary),
         )
         .child(
             ui::text(
                 "Agent needs permission before this tool can continue.",
-                11.,
+                TEXT_2XS,
                 FontWeight::NORMAL,
             )
             .text_color(t.text_tertiary),

@@ -19,7 +19,7 @@ use crate::motion;
 use crate::settings::{self, rows};
 use crate::theme::{
     self, Tokens, SPACE_0, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_6, TEXT_2XS_H,
-    TEXT_SM, TEXT_XS, TEXT_XS_H,
+    TEXT_3XS, TEXT_SM, TEXT_XS, TEXT_XS_H,
 };
 use crate::toast;
 use crate::ui::{self, Button, Field, IconButton, Variant};
@@ -419,7 +419,7 @@ pub fn pane(
                 .child(
                     ui::mono(
                         crate::ui::path::tilde(folder, bench.home_at(&bench.place()).as_deref()),
-                        10.,
+                        TEXT_3XS,
                         cx,
                     )
                     .truncate(),

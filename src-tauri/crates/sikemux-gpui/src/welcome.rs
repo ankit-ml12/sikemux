@@ -19,7 +19,7 @@ use crate::icons::Icon;
 use crate::keymap;
 use crate::theme::{
     self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_3H, SPACE_4, SPACE_6,
-    TEXT_2XS, TEXT_LG, TEXT_XS,
+    TEXT_2XS, TEXT_LG, TEXT_MD, TEXT_XS,
 };
 use crate::ui;
 use crate::workbench::Workbench;
@@ -235,9 +235,11 @@ pub fn render(
                         .flex()
                         .flex_col()
                         .gap(px(3.))
-                        .child(ui::text(label, 14., FontWeight::MEDIUM).text_color(t.text_primary))
                         .child(
-                            ui::text(detail, 12., FontWeight::NORMAL)
+                            ui::text(label, TEXT_MD, FontWeight::MEDIUM).text_color(t.text_primary),
+                        )
+                        .child(
+                            ui::text(detail, TEXT_XS, FontWeight::NORMAL)
                                 .overflow_hidden()
                                 .text_ellipsis()
                                 .text_color(t.text_tertiary),

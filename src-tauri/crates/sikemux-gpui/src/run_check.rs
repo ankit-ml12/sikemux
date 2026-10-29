@@ -10,7 +10,7 @@ use gpui_kit::{
 use serde_json::{json, Value};
 
 use crate::icons::Icon;
-use crate::theme::{Tokens, SPACE_0, SPACE_1H, SPACE_2};
+use crate::theme::{Tokens, SPACE_0, SPACE_1H, SPACE_2, TEXT_2XS_H, TEXT_XS};
 use crate::toast;
 use crate::ui::{self, Variant};
 use crate::workbench::Workbench;
@@ -209,7 +209,7 @@ pub fn card(bench: &Workbench, project: &str, cx: &mut Context<Workbench>) -> Op
             .any(|item| item["kind"] == "port" && !item["freePort"].is_null());
     let title = ui::text(
         format!("{} can't start yet", check.label),
-        12.,
+        TEXT_XS,
         FontWeight::SEMIBOLD,
     )
     .text_color(t.text_primary)
@@ -237,7 +237,7 @@ pub fn card(bench: &Workbench, project: &str, cx: &mut Context<Workbench>) -> Op
                     .child(
                         ui::text(
                             item["title"].as_str().unwrap_or_default().to_owned(),
-                            12.,
+                            TEXT_XS,
                             FontWeight::NORMAL,
                         )
                         .whitespace_normal()
@@ -246,7 +246,7 @@ pub fn card(bench: &Workbench, project: &str, cx: &mut Context<Workbench>) -> Op
                     .child(
                         ui::text(
                             item["detail"].as_str().unwrap_or_default().to_owned(),
-                            11.5,
+                            TEXT_2XS_H,
                             FontWeight::NORMAL,
                         )
                         .whitespace_normal()

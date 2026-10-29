@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::theme;
-use crate::theme::{SPACE_2, SPACE_3, SPACE_4, SPACE_6};
+use crate::theme::{SPACE_2, SPACE_3, SPACE_4, SPACE_6, TEXT_SM, TEXT_XS};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::Workbench;
 
@@ -378,7 +378,7 @@ pub fn thumb(
                 .max_h(height)
                 .object_fit(ObjectFit::Contain)
                 .with_fallback(move || {
-                    ui::text("Couldn't load the picture", 12., FontWeight::NORMAL)
+                    ui::text("Couldn't load the picture", TEXT_XS, FontWeight::NORMAL)
                         .text_color(quiet)
                         .into_any_element()
                 }),
@@ -440,7 +440,7 @@ impl Workbench {
                                 .pr(SPACE_6)
                                 .flex()
                                 .items_center()
-                                .child(ui::text(name.clone(), 13., FontWeight::SEMIBOLD)),
+                                .child(ui::text(name.clone(), TEXT_SM, FontWeight::SEMIBOLD)),
                         )
                         .child(
                             div().flex().justify_center().child(

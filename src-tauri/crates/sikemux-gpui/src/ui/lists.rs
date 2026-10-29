@@ -13,7 +13,9 @@ use super::controls::OnClick;
 use super::{caps, icon, mark_box, meta, text};
 use crate::icons::Icon;
 use crate::motion;
-use crate::theme::{Tokens, RADIUS_2, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, TEXT_SM};
+use crate::theme::{
+    Tokens, RADIUS_2, SPACE_1, SPACE_1H, SPACE_2, SPACE_3, SPACE_4, TEXT_SM, TEXT_XS,
+};
 
 /// The hover group a row puts itself in, for a glyph in it that follows its text.
 pub const ROW: &str = "row";
@@ -388,7 +390,7 @@ impl RenderOnce for Group {
             .when(empty, |group| {
                 group.child(
                     div().p(SPACE_3).child(
-                        text(self.empty, 12., FontWeight::NORMAL)
+                        text(self.empty, TEXT_XS, FontWeight::NORMAL)
                             .text_color(Tokens::get(cx).text_tertiary),
                     ),
                 )
@@ -564,7 +566,7 @@ impl RenderOnce for Tab {
                     })
                     .children(self.mark.map(|mark| mark_box(22., mark)))
                     .child(
-                        text(self.label, 12., FontWeight::MEDIUM)
+                        text(self.label, TEXT_XS, FontWeight::MEDIUM)
                             .max_w(px(160.))
                             .overflow_hidden()
                             .text_ellipsis()
