@@ -3,7 +3,7 @@
  * core adds reaches the phone with an over-the-air update. The types are generated from the core's Rust.
  */
 
-import type { DeviceView, HostInfo, Inbox, RecentInfo, RemotePairing } from './wire.generated';
+import type { DeviceView, HostInfo, Inbox, RemotePairing } from './wire.generated';
 
 export type {
   AgentFace,
@@ -30,7 +30,7 @@ export type {
 } from './wire.generated';
 
 /** Everything the phone shows of one host, as it last sent it. */
-export type Snapshot = Omit<DeviceView, 'recent' | 'inbox'> & { recent: RecentInfo[]; inbox: Inbox };
+export type Snapshot = DeviceView;
 
 /** The core's JSON with its nulls left out, so an absent value reads as undefined, like any optional field. */
 function readCore<T>(json: string): T {

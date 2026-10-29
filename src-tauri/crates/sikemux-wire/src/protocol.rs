@@ -2160,18 +2160,13 @@ pub struct DeviceView {
     pub chats: Vec<ChatInfo>,
     pub attentions: Vec<Attention>,
     /// The newest saved chats in this host's projects, none of them open.
-    #[serde(default)]
     pub recent: Vec<RecentInfo>,
     /// What waits on the person, ranked.
-    #[serde(default)]
     pub inbox: crate::inbox::Inbox,
     /// Which project is in front, and each project's tabs.
-    #[serde(default)]
     pub layout: Box<Layout>,
     /// Who this host is signed in to Sikemux as; none while nobody is.
-    #[serde(default)]
     pub account: Option<Box<AccountInfo>>,
-    #[serde(default)]
     pub face_style: Box<FaceStyle>,
     /// How busy this host is, while a client that shows it is attached.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2567,27 +2562,6 @@ pub async fn read_frame_within<R: tokio::io::AsyncRead + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_device_reads_the_view_of_a_core_from_before_recent_chats() {
-        let mut view = serde_json::to_value(DeviceView {
-            workspace: Workspace::default(),
-            sessions: Vec::new(),
-            chats: Vec::new(),
-            attentions: Vec::new(),
-            recent: Vec::new(),
-            inbox: Default::default(),
-            layout: Box::default(),
-            account: None,
-            face_style: Box::default(),
-            load: None,
-            updates: None,
-        })
-        .unwrap();
-        view.as_object_mut().unwrap().remove("recent");
-        let read: DeviceView = serde_json::from_value(view).unwrap();
-        assert!(read.recent.is_empty());
-    }
 
     #[test]
     fn frames_carry_a_big_endian_length_that_counts_the_kind_byte() {

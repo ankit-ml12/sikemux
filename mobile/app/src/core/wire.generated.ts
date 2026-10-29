@@ -16,14 +16,14 @@ export interface DeviceView {
   chats: ChatInfo[];
   attentions: Attention[];
   /** The newest saved chats in this host's projects, none of them open. */
-  recent?: RecentInfo[];
+  recent: RecentInfo[];
   /** What waits on the person, ranked. */
-  inbox?: Inbox;
+  inbox: Inbox;
   /** Which project is in front, and each project's tabs. */
-  layout?: Layout;
+  layout: Layout;
   /** Who this host is signed in to Sikemux as; none while nobody is. */
   account?: AccountInfo;
-  faceStyle?: FaceStyle;
+  faceStyle: FaceStyle;
   /** How busy this host is, while a client that shows it is attached. */
   load?: HostLoad;
   /**
