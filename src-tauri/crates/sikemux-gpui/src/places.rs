@@ -226,7 +226,7 @@ impl Workbench {
         let tab_id = tab.id.clone();
         let close = move |bench: &mut Workbench| match split {
             true => bench.close_pane(&strip, &tab_id, &pane),
-            false => bench.close_tab(&strip, &tab_id),
+            false => bench.close_tabs(&strip, &[tab_id.clone()]),
         };
         if kind == PaneKind::Agent {
             let title = format!(

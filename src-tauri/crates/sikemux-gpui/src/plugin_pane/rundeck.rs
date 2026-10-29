@@ -3009,7 +3009,7 @@ fn plan_card(
 /// The front project, when the job is named after its folder: the checkout a deploy pushes.
 fn repo_of(host: &Host, job: &str, cx: &App) -> Option<String> {
     let bench = host.bench().upgrade()?;
-    let project = bench.read(cx).watched_project()?.to_owned();
+    let project = bench.read(cx).watched_project.as_deref()?.to_owned();
     let folder = project.trim_end_matches('/').rsplit('/').next()?;
     (folder == job).then_some(project)
 }

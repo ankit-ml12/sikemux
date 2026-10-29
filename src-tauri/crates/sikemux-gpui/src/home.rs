@@ -82,17 +82,11 @@ pub fn agent_view(
         .as_ref()
         .filter(|_| project.is_some())
         .map(|agent| pane_header(bench, agent, tab, view, cx));
-    if let Some(session) = agent
+    if let Some((place, session)) = agent
         .as_ref()
         .and_then(|agent| bench.agent_terminal(&agent.id))
     {
-        let terminal = terminal::pane(
-            bench,
-            &cx.entity(),
-            &crate::hosts::Place::This,
-            &session.to_string(),
-            cx,
-        );
+        let terminal = terminal::pane(bench, &cx.entity(), &place, &session.to_string(), cx);
         return under_header(header, div().size_full().child(terminal), cx);
     }
     if let Some(agent) = agent.as_ref().filter(|agent| bench.in_terminal(&agent.id)) {

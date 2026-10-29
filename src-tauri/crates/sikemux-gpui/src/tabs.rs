@@ -387,7 +387,7 @@ fn host_label(host: &str) -> &str {
 fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let t = Tokens::get(cx).clone();
     let tasks = bench.reads.tasks.as_ref()?["tasks"].as_array()?;
-    let project = bench.watched_project()?;
+    let project = bench.watched_project.as_deref()?;
     let ports = bench
         .reads
         .ports

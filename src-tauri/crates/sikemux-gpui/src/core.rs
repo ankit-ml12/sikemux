@@ -881,10 +881,6 @@ impl Target {
 
     /// Sends `ask` to the place's core.
     pub fn ask(&self, ask: Ask) {
-        self.send(ask);
-    }
-
-    fn send(&self, ask: Ask) {
         let _ = self.asks.send(match &self.place {
             Place::This => ask,
             Place::Account(host) => Ask::On(host.clone(), Box::new(ask)),
@@ -906,7 +902,7 @@ impl Target {
     /// Keeps the core answering `watch` under `key`, here or on the place's host, wherever
     /// it was watched before.
     pub fn watch(&self, key: &'static str, watch: Watch) {
-        self.send(Ask::Watch(key, watch));
+        self.ask(Ask::Watch(key, watch));
     }
 
     /// Stops the core answering `key`, here or on any host.
@@ -916,7 +912,7 @@ impl Target {
 
     /// Tells the core something, with no answer waited for.
     pub fn call(&self, method: &'static str, params: Value) {
-        self.send(Ask::Call { method, params });
+        self.ask(Ask::Call { method, params });
     }
 
     /// Starts a chat with `launcher`'s agent in `project` there, in `mode` for this launch or
@@ -928,7 +924,7 @@ impl Target {
         mode: Option<PermissionMode>,
         started: Option<oneshot::Sender<String>>,
     ) {
-        self.send(Ask::StartChat {
+        self.ask(Ask::StartChat {
             launcher,
             project,
             mode,
@@ -938,7 +934,7 @@ impl Target {
 
     /// Asks once, the answer arriving as a read under `key`.
     pub fn answer(&self, key: &'static str, method: &'static str, params: Value) {
-        self.send(Ask::Answer {
+        self.ask(Ask::Answer {
             key,
             method,
             params,
@@ -953,7 +949,7 @@ impl Target {
             params.insert("stream".into(), stream.into());
         }
         let (sender, parts) = mpsc::unbounded_channel();
-        self.send(Ask::Stream {
+        self.ask(Ask::Stream {
             stream,
             method,
             params,

@@ -1573,8 +1573,8 @@ impl Workbench {
                 json!({ "project": project, "kind": "agent", "target": agent }),
             );
         }
-        if let Some(session) = self.agent_terminal(agent) {
-            let key = self.terminals.key(&Place::This, session);
+        if let Some((place, session)) = self.agent_terminal(agent) {
+            let key = self.terminals.key(&place, session);
             crate::terminal::hand_to(self, key, text, cx);
             if let Some(focus) = self.terminals.focus(key) {
                 window.focus(focus, cx);
@@ -2453,10 +2453,6 @@ impl Workbench {
         self.window
     }
 
-    pub fn watched_project(&self) -> Option<&str> {
-        self.watched_project.as_deref()
-    }
-
     pub fn stop_run(&self, execution: &str) {
         self.call_in_front("taskStop", json!({ "executionId": execution }));
     }
@@ -2520,7 +2516,7 @@ impl Workbench {
     }
 
     pub fn call(&self, method: &'static str, params: Value) {
-        let _ = self.asks.send(Ask::Call { method, params });
+        Target::here(&self.asks).call(method, params);
     }
 
     /// The view of the host in front: another host's own, while one on the account is chosen,
@@ -2532,13 +2528,17 @@ impl Workbench {
         }
     }
 
+    /// The view of the host at `place`, as its core sends it.
+    pub fn view_at(&self, place: &Place) -> Option<&DeviceView> {
+        match place {
+            Place::This => self.view.as_ref(),
+            Place::Account(host) => self.host_views.get(host),
+        }
+    }
+
     /// One of the core's methods on the host in front, for what the person did there.
     pub fn call_in_front(&self, method: &'static str, params: Value) {
-        let call = Ask::Call { method, params };
-        let _ = self.asks.send(match self.place() {
-            crate::hosts::Place::Account(host) => Ask::On(host, Box::new(call)),
-            crate::hosts::Place::This => call,
-        });
+        self.target().call(method, params);
     }
 
     pub fn projects(&self) -> &[ProjectInfo] {
@@ -3163,9 +3163,12 @@ impl Workbench {
         .detach();
     }
 
-    /// The terminal an agent runs in, while it runs in one rather than as a chat.
-    pub fn agent_terminal(&self, agent: &str) -> Option<SessionId> {
-        self.kept_agent(agent)?.pty_id
+    /// The terminal an agent runs in, and the host it is on, while it runs in one rather than
+    /// as a chat.
+    pub fn agent_terminal(&self, agent: &str) -> Option<(Place, SessionId)> {
+        let place = self.chat_target(agent).place().clone();
+        let session = self.kept_agent(agent)?.pty_id?;
+        Some((place, session))
     }
 
     /// Whether the agent runs in its CLI in a terminal, there now or starting again.
@@ -3180,9 +3183,9 @@ impl Workbench {
             .is_some_and(|kept| kept.terminal && kept.asleep && kept.pty_id.is_none())
     }
 
+    /// The agent as the core of the host it runs on keeps it.
     fn kept_agent(&self, agent: &str) -> Option<&sikemux_wire::protocol::WorkspaceAgent> {
-        self.view
-            .as_ref()?
+        self.view_at(self.chat_target(agent).place())?
             .workspace
             .agents
             .iter()
@@ -3193,7 +3196,8 @@ impl Workbench {
     /// typed and not sent.
     pub fn switch_view(&self, agent: &str, terminal: bool) {
         let to = if terminal { "terminal" } else { "chat" };
-        self.call("switchAgentView", json!({ "agentId": agent, "to": to }));
+        self.chat_target(agent)
+            .call("switchAgentView", json!({ "agentId": agent, "to": to }));
     }
 
     pub fn rail_width(&self, edge: Edge) -> f32 {
@@ -4295,10 +4299,6 @@ impl Workbench {
         if !self.closing(tab) {
             self.call_in_front("activateTab", strip.with(json!({ "tab": tab })));
         }
-    }
-
-    pub fn close_tab(&self, strip: &Strip, tab: &str) {
-        self.close_tabs(strip, &[tab.to_owned()]);
     }
 
     /// Moves a tab to `to` in its strip, counted as the strip is now.
