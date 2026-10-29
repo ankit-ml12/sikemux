@@ -497,11 +497,12 @@ async fn run_requests(
             client.respond(request_id, Err(upgrade::UPDATING.into()));
             continue;
         }
-        if let Err(refused) = core.permit(&client.peer, access::needs(&request)) {
+        let rule = access::rule(&request);
+        if let Err(refused) = core.permit(&client.peer, rule.needs) {
             client.respond(request_id, Err(refused));
             continue;
         }
-        if client.peer == Peer::Local && access::for_person(&request, core.remote.setup()) {
+        if client.peer == Peer::Local && rule.for_person(core.remote.setup()) {
             client.respond(request_id, Err(access::APP_ONLY.into()));
             continue;
         }

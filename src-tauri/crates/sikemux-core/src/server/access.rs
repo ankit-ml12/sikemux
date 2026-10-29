@@ -52,74 +52,6 @@ pub(crate) const UNPAIRED: &str = "this device is no longer paired with this hos
 pub(crate) const OWNER_ONLY: &str =
     "only a device on this host's account with full control can do that";
 
-pub(crate) fn needs(request: &Request) -> Needs {
-    match request {
-        Request::Call { method, .. } => super::calls::needs(method),
-        Request::List
-        | Request::Attach { .. }
-        | Request::Detach { .. }
-        | Request::TerminalLines { .. }
-        | Request::TerminalText { .. }
-        | Request::TerminalFind { .. }
-        | Request::TerminalWaitFor { .. }
-        | Request::TaskOutput { .. }
-        | Request::AcpList
-        | Request::AcpAttach { .. }
-        | Request::AcpHistory { .. }
-        | Request::AcpDetach { .. }
-        | Request::AcpWake { .. }
-        | Request::BackdropImage
-        | Request::Unpair
-        | Request::SetNotifications { .. }
-        | Request::ClearNotifications
-        | Request::SetForeground { .. }
-        | Request::AcpPermissionReply { .. }
-        | Request::Workspace
-        | Request::Attentions
-        | Request::Host => Needs::Watch,
-        Request::Spawn { .. }
-        | Request::Resize { .. }
-        | Request::Kill { .. }
-        | Request::ResetModes { .. }
-        | Request::TerminalInput { .. }
-        | Request::TerminalClear { .. }
-        | Request::ShellAtPrompt { .. }
-        | Request::AcpStart { .. }
-        | Request::AcpPrompt { .. }
-        | Request::AcpEdit { .. }
-        | Request::AcpSteer { .. }
-        | Request::AttachFile { .. }
-        | Request::AcpCancel { .. }
-        | Request::AcpStopTask { .. }
-        | Request::AcpStop { .. }
-        | Request::AcpSetPermissionMode { .. }
-        | Request::AcpSetConfig { .. }
-        | Request::StartChat { .. }
-        | Request::ResumeChat { .. }
-        | Request::AcpSwitchAccount { .. } => Needs::Full,
-        Request::Configure { .. }
-        | Request::ListManifests
-        | Request::ReloadManifests
-        | Request::ExplainAgentDetection { .. }
-        | Request::StopAll
-        | Request::RegisterWindow
-        | Request::PluginsChanged
-        | Request::Shutdown { .. }
-        | Request::RemoteStatus
-        | Request::SetRemoteAccess { .. }
-        | Request::SetDeviceAccess { .. }
-        | Request::RevokeDevice { .. }
-        | Request::AnswerPairing { .. }
-        | Request::AllowDevices { .. }
-        | Request::SignRegistration { .. }
-        | Request::SetOwner { .. }
-        | Request::PublishOnScreen { .. }
-        | Request::WatchView
-        | Request::FocusAgent { .. }
-        | Request::PublishBackdrop { .. } => Needs::Local,
-    }
-}
-
 /// What this host has set up, which decides what a program other than the app
 /// may still do to set it up.
 #[derive(Clone, Copy, Debug)]
@@ -131,24 +63,44 @@ pub(crate) struct Setup {
     pub app_signed: bool,
 }
 
-/// Whether only Sikemux's own window or notch may send `request` from this
-/// host. A host with no window is set up from a terminal, which cannot be told
-/// from an agent's shell: `sikemux login` while no account owns it,
-/// `logout`, and `pair` until its first device is in. A host signed in once
-/// stays its account's until the app, root or the account moves it.
-pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
-    match request {
-        Request::Call { method, .. } => super::calls::for_person(method),
-        Request::SetOwner { .. }
-        | Request::SignRegistration { .. }
-        | Request::AnswerPairing { .. }
-            if setup.app_signed =>
-        {
-            true
+/// Who may send a request: what a paired device needs for it, and whether
+/// only Sikemux's own window or notch may send it from this host.
+pub(crate) struct Rule {
+    pub needs: Needs,
+    person: Person,
+}
+
+enum Person {
+    Anyone,
+    AppOnly,
+    /// Only the app once this host is set up as far as the check asks.
+    AppOnlyWhen(fn(Setup) -> bool),
+}
+
+/// The rule for `request`. A host with no window is set up from a terminal,
+/// which cannot be told from an agent's shell: `sikemux login` while no account
+/// owns it, `logout`, and `pair` until its first device is in. A host signed in
+/// once stays its account's until the app, root or the account moves it.
+pub(crate) fn rule(request: &Request) -> Rule {
+    let (needs, person) = match request {
+        Request::Call { method, .. } => (
+            super::calls::needs(method),
+            match super::calls::for_person(method) {
+                true => Person::AppOnly,
+                false => Person::Anyone,
+            },
+        ),
+        Request::SetOwner { owner: None } => {
+            (Needs::Local, Person::AppOnlyWhen(|setup| setup.app_signed))
         }
-        Request::SetOwner { owner: None } => false,
-        Request::SetOwner { owner: Some(_) } | Request::SignRegistration { .. } => setup.signed_in,
-        Request::AnswerPairing { .. } => setup.paired,
+        Request::SetOwner { owner: Some(_) } | Request::SignRegistration { .. } => (
+            Needs::Local,
+            Person::AppOnlyWhen(|setup| setup.app_signed || setup.signed_in),
+        ),
+        Request::AnswerPairing { .. } => (
+            Needs::Local,
+            Person::AppOnlyWhen(|setup| setup.app_signed || setup.paired),
+        ),
         Request::List
         | Request::Attach { .. }
         | Request::Detach { .. }
@@ -157,25 +109,22 @@ pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
         | Request::TerminalFind { .. }
         | Request::TerminalWaitFor { .. }
         | Request::TaskOutput { .. }
-        | Request::ShellAtPrompt { .. }
         | Request::AcpList
         | Request::AcpAttach { .. }
         | Request::AcpHistory { .. }
         | Request::AcpDetach { .. }
         | Request::BackdropImage
-        | Request::Workspace
-        | Request::Attentions
-        | Request::Host
-        | Request::WatchView
-        | Request::RemoteStatus
-        | Request::ListManifests
-        | Request::ExplainAgentDetection { .. }
-        | Request::StopAll
-        | Request::Shutdown { .. }
         | Request::Unpair
         | Request::SetNotifications { .. }
         | Request::ClearNotifications
-        | Request::SetForeground { .. } => false,
+        | Request::SetForeground { .. }
+        | Request::Workspace
+        | Request::Attentions
+        | Request::Host => (Needs::Watch, Person::Anyone),
+        Request::AcpWake { .. } | Request::AcpPermissionReply { .. } => {
+            (Needs::Watch, Person::AppOnly)
+        }
+        Request::ShellAtPrompt { .. } => (Needs::Full, Person::Anyone),
         Request::Spawn { .. }
         | Request::Resize { .. }
         | Request::Kill { .. }
@@ -192,22 +141,38 @@ pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
         | Request::AcpStop { .. }
         | Request::AcpSetPermissionMode { .. }
         | Request::AcpSetConfig { .. }
-        | Request::AcpWake { .. }
-        | Request::AcpPermissionReply { .. }
-        | Request::AcpSwitchAccount { .. }
         | Request::StartChat { .. }
         | Request::ResumeChat { .. }
-        | Request::Configure { .. }
+        | Request::AcpSwitchAccount { .. } => (Needs::Full, Person::AppOnly),
+        Request::ListManifests
+        | Request::ExplainAgentDetection { .. }
+        | Request::StopAll
+        | Request::Shutdown { .. }
+        | Request::RemoteStatus
+        | Request::WatchView => (Needs::Local, Person::Anyone),
+        Request::Configure { .. }
         | Request::ReloadManifests
         | Request::RegisterWindow
         | Request::PluginsChanged
-        | Request::FocusAgent { .. }
         | Request::SetRemoteAccess { .. }
         | Request::SetDeviceAccess { .. }
         | Request::RevokeDevice { .. }
         | Request::AllowDevices { .. }
         | Request::PublishOnScreen { .. }
-        | Request::PublishBackdrop { .. } => true,
+        | Request::FocusAgent { .. }
+        | Request::PublishBackdrop { .. } => (Needs::Local, Person::AppOnly),
+    };
+    Rule { needs, person }
+}
+
+impl Rule {
+    /// Whether only the app may send the request from this host, set up as `setup` says.
+    pub(crate) fn for_person(&self, setup: Setup) -> bool {
+        match self.person {
+            Person::Anyone => false,
+            Person::AppOnly => true,
+            Person::AppOnlyWhen(set_up) => set_up(setup),
+        }
     }
 }
 
@@ -265,7 +230,7 @@ mod tests {
     }
 
     fn refusal(standing: Option<Standing>, request: &Request) -> String {
-        permit(&device(), standing, needs(request))
+        permit(&device(), standing, rule(request).needs)
             .unwrap_err()
             .to_string()
     }
@@ -277,7 +242,7 @@ mod tests {
             Request::RegisterWindow,
             Request::Kill { id: SESSION },
         ] {
-            assert!(permit(&Peer::App, None, needs(&request)).is_ok());
+            assert!(permit(&Peer::App, None, rule(&request).needs).is_ok());
         }
     }
 
@@ -327,8 +292,13 @@ mod tests {
             option_id: None,
         };
         let watch = standing(DeviceAccess::Watch);
-        assert!(permit(&device(), watch, needs(&permission)).is_ok());
-        assert!(permit(&device(), watch, needs(&Request::Attach { id: SESSION })).is_ok());
+        assert!(permit(&device(), watch, rule(&permission).needs).is_ok());
+        assert!(permit(
+            &device(),
+            watch,
+            rule(&Request::Attach { id: SESSION }).needs
+        )
+        .is_ok());
         for request in [
             Request::Kill { id: SESSION },
             Request::Resize {
@@ -359,7 +329,7 @@ mod tests {
     #[test]
     fn a_device_with_full_control_drives_sessions() {
         let full = standing(DeviceAccess::Full);
-        assert!(permit(&device(), full, needs(&Request::Kill { id: SESSION })).is_ok());
+        assert!(permit(&device(), full, rule(&Request::Kill { id: SESSION }).needs).is_ok());
     }
 
     #[test]
