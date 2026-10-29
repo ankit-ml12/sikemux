@@ -364,7 +364,7 @@ export interface Promoted {
 
 interface StoredUpdate {
   id: string;
-  platform: string;
+  platform: UpdatePlatform;
   runtime_version: string;
   created_at: Date;
 }
@@ -376,7 +376,7 @@ interface StoredUpdate {
 async function checkChannelTakes(
   trx: Transaction<Tables>,
   update: StoredUpdate,
-  channel: string,
+  channel: UpdateChannel,
 ) {
   const newer = await trx
     .selectFrom("updates")

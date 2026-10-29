@@ -5,9 +5,27 @@ import {
   type ColumnType,
   type Generated,
 } from "kysely";
+import type {
+  AccountEventType,
+  ApnsEnvironment,
+  Channel,
+  DeviceRole,
+  HookHeader,
+  HookMethod,
+  Platform,
+  PushApp,
+  PushPlatform,
+  RevokeReason,
+  ShareEndReason,
+  StashKind,
+  StashLink,
+  StashPreview,
+  StashTarget,
+} from "@sikemux/protocol";
 import pg from "pg";
 
 import type { Logger } from "./log.ts";
+import type { UpdateChannel, UpdatePlatform } from "./updates/update.ts";
 
 type CreatedAt = ColumnType<Date, never, never>;
 
@@ -27,17 +45,17 @@ export interface Tables {
   events: {
     id: Generated<string>;
     user_id: string;
-    type: string;
+    type: AccountEventType;
     subject: string | null;
-    subject_role: string | null;
-    reason: string | null;
+    subject_role: DeviceRole | null;
+    reason: RevokeReason | null;
     at: CreatedAt;
   };
   removed_devices: {
     key: string;
     user_id: string;
-    role: string;
-    reason: string;
+    role: DeviceRole;
+    reason: RevokeReason;
     acked_event_id: string | number;
     clerk_session_id: string | null;
     clerk_revoked_at: ColumnType<Date | null, never, Date | null>;
@@ -52,10 +70,10 @@ export interface Tables {
   devices: {
     key: string;
     user_id: string;
-    role: string;
+    role: DeviceRole;
     name: string;
-    platform: string;
-    channel: string | null;
+    platform: Platform;
+    channel: Channel | null;
     created_at: CreatedAt;
     updated_at: ColumnType<Date, never, Date>;
     last_seen_at: ColumnType<Date | null, never, Date | null>;
@@ -81,8 +99,8 @@ export interface Tables {
     user_code: string;
     key: string;
     name: string;
-    platform: string;
-    channel: string;
+    platform: Platform;
+    channel: Channel;
     approved_by: string | null;
     requested_from: string | null;
     created_at: CreatedAt;
@@ -90,9 +108,9 @@ export interface Tables {
   };
   push_tokens: {
     device_key: string;
-    platform: string;
-    app: string;
-    apns_environment: string | null;
+    platform: PushPlatform;
+    app: PushApp;
+    apns_environment: ApnsEnvironment | null;
     token: string;
     updated_at: ColumnType<Date, never, Date>;
     last_ok_at: ColumnType<Date | null, never, Date | null>;
@@ -100,7 +118,7 @@ export interface Tables {
   };
   updates: {
     id: string;
-    platform: string;
+    platform: UpdatePlatform;
     runtime_version: string;
     created_at: Date;
     manifest: Buffer;
@@ -111,16 +129,16 @@ export interface Tables {
   };
   update_channels: {
     update_id: string;
-    channel: string;
+    channel: UpdateChannel;
     assigned_at: CreatedAt;
     withdrawn_at: ColumnType<Date | null, never, Date | null>;
   };
   update_rollbacks: {
     id: Generated<string>;
     update_id: string;
-    platform: string;
+    platform: UpdatePlatform;
     runtime_version: string;
-    channel: string;
+    channel: UpdateChannel;
     directive: Buffer;
     signature: string;
     commit_time: Date;
@@ -133,23 +151,31 @@ export interface Tables {
     created_at: CreatedAt;
     expires_at: Date;
     ended_at: ColumnType<Date | null, never, Date | null>;
-    ended_reason: ColumnType<string | null, never, string | null>;
+    ended_reason: ColumnType<
+      ShareEndReason | null,
+      never,
+      ShareEndReason | null
+    >;
     viewer_check: string | null;
   };
   stash_items: {
     id: string;
     user_id: string;
-    kind: string;
+    kind: StashKind;
     url: string | null;
     text: string | null;
     note: string | null;
     name: string | null;
     mime: string | null;
     size: ColumnType<string | null, number | null, never>;
-    preview: ColumnType<unknown, string | null, string | null>;
+    preview: ColumnType<StashPreview | null, string | null, string | null>;
     /** On text and prompts, the links written in its words, each with its page's preview. */
-    links: ColumnType<unknown, string | null | undefined, string | null>;
-    target: ColumnType<unknown, string | null, never>;
+    links: ColumnType<
+      StashLink[] | null,
+      string | null | undefined,
+      string | null
+    >;
+    target: ColumnType<StashTarget | null, string | null, never>;
     from_device: string | null;
     created_at: CreatedAt;
     taken_at: ColumnType<Date | null, never, Date | null>;
@@ -170,8 +196,8 @@ export interface Tables {
     hook_id: string;
     host_key: string;
     received_at: CreatedAt;
-    method: string;
-    headers: ColumnType<unknown, string, never>;
+    method: HookMethod;
+    headers: ColumnType<HookHeader[], string, never>;
     query: string;
     body: Buffer;
     attempts: ColumnType<number, never, number>;

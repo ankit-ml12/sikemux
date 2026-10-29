@@ -5,7 +5,6 @@ import {
   type StashItem,
   type StashList,
   type StashSeen,
-  type StashTaken,
   type StashTarget,
 } from "@sikemux/protocol";
 import { Hono, type Context } from "hono";
@@ -23,6 +22,7 @@ import {
   badRequest,
   limitBody,
   notFound,
+  oneOf,
   readBody,
 } from "../http.ts";
 import { limit, type RateLimiter } from "../limits.ts";
@@ -412,9 +412,11 @@ export function stashRoutes(
     })
     .get("/", perUser("stash-list", 120), async (c) => {
       const { userId } = c.get("identity");
-      const taken = (c.req.query("taken") ?? "false") as StashTaken;
-      if (!stashTakenValues.includes(taken))
-        throw badRequest(`taken is one of ${stashTakenValues.join(", ")}.`);
+      const taken = oneOf(
+        "taken",
+        c.req.query("taken") ?? "false",
+        stashTakenValues,
+      );
       const cursor = c.req.query("cursor");
       let query = db
         .selectFrom("stash_items")

@@ -1,8 +1,4 @@
-import {
-  deviceRoleValues,
-  type DeviceList,
-  type DeviceRole,
-} from "@sikemux/protocol";
+import { deviceRoleValues, type DeviceList } from "@sikemux/protocol";
 import { Hono } from "hono";
 import { sql } from "kysely";
 
@@ -17,7 +13,7 @@ import {
 import { audit } from "../audit.ts";
 import type { Database } from "../db.ts";
 import { appendEvent } from "../events/log.ts";
-import { badRequest, readBody } from "../http.ts";
+import { badRequest, oneOf, readBody } from "../http.ts";
 import { joinRoutes } from "../join/routes.ts";
 import type { JoinSigner } from "../join/signer.ts";
 import { limit, type RateLimiter } from "../limits.ts";
@@ -134,7 +130,7 @@ export function deviceRoutes(
               userId,
               type: "device.changed",
               subject: key,
-              subjectRole: device.role as DeviceRole,
+              subjectRole: device.role,
             });
             await audit(trx, {
               userId,
@@ -159,13 +155,11 @@ export function deviceRoutes(
         perUser("list", 120),
         async (c) => {
           const { userId } = c.get("identity");
-          const role = c.req.query("role");
-          if (
-            role !== undefined &&
-            !deviceRoleValues.includes(role as DeviceRole)
-          ) {
-            throw badRequest(`role is one of ${deviceRoleValues.join(", ")}.`);
-          }
+          const asked = c.req.query("role");
+          const role =
+            asked === undefined
+              ? undefined
+              : oneOf("role", asked, deviceRoleValues);
           let query = db
             .selectFrom("devices")
             .selectAll()

@@ -1,10 +1,4 @@
-import type {
-  Channel,
-  Device,
-  DeviceRegistration,
-  DeviceRole,
-  Platform,
-} from "@sikemux/protocol";
+import type { Device, DeviceRegistration } from "@sikemux/protocol";
 import { sql, type Kysely, type Selectable } from "kysely";
 
 import { audit } from "../audit.ts";
@@ -18,13 +12,13 @@ import { registrationMessage } from "./signature.ts";
 export function toDevice(row: Selectable<Tables["devices"]>): Device {
   const device: Device = {
     key: row.key,
-    role: row.role as DeviceRole,
+    role: row.role,
     name: row.name,
-    platform: row.platform as Platform,
+    platform: row.platform,
     createdAt: row.created_at.toISOString(),
     lastSeenAt: row.last_seen_at?.toISOString() ?? null,
   };
-  if (row.channel) device.channel = row.channel as Channel;
+  if (row.channel) device.channel = row.channel;
   return device;
 }
 

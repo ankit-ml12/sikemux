@@ -296,7 +296,7 @@ export class LiveSocket extends ChallengedSocket<
       userId: gone.user_id,
       key: hello.key,
       cursor: Number(gone.acked_event_id),
-      gone: gone.reason as RevokeReason,
+      gone: gone.reason,
     };
   }
 
@@ -322,7 +322,7 @@ export class LiveSocket extends ChallengedSocket<
       .select("reason")
       .where("key", "=", who.key)
       .executeTakeFirst();
-    return (gone?.reason as RevokeReason | undefined) ?? "removed";
+    return gone?.reason ?? "removed";
   }
 
   /** The next frame of events after what was sent, or nothing when the device has them all. */

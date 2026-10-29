@@ -1,5 +1,10 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import type { Hook, HookAccepted, HookHeader } from "@sikemux/protocol";
+import {
+  hookMethodValues,
+  type Hook,
+  type HookAccepted,
+  type HookHeader,
+} from "@sikemux/protocol";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { sql } from "kysely";
@@ -12,6 +17,7 @@ import {
   errorResponse,
   limitBody,
   notFound,
+  oneOf,
   readBody,
   type Env,
 } from "../http.ts";
@@ -135,7 +141,7 @@ export function hookReceiveRoutes(
 ) {
   const receive = new Hono<Env>();
   receive.on(
-    ["POST", "PUT", "PATCH"],
+    hookMethodValues.map((method) => method.toUpperCase()),
     "/:hookId/:token",
     bodyLimit({
       maxSize: options.maxBodyBytes,
@@ -210,7 +216,11 @@ export function hookReceiveRoutes(
           .values({
             hook_id: id,
             host_key: hook.host_key,
-            method: c.req.method.toLowerCase(),
+            method: oneOf(
+              "method",
+              c.req.method.toLowerCase(),
+              hookMethodValues,
+            ),
             headers: JSON.stringify(headers),
             query,
             body,

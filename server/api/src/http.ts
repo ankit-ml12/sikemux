@@ -140,6 +140,18 @@ export function badRequest(message: string): ApiFailure {
   return new ApiFailure(400, "bad_request", message);
 }
 
+/** `value` as one of `values`, the protocol's list for what `name` may be, or a refusal saying so. */
+export function oneOf<T extends string>(
+  name: string,
+  value: string,
+  values: readonly T[],
+): T {
+  const known = values.find((each) => each === value);
+  if (known === undefined)
+    throw badRequest(`${name} is one of ${values.join(", ")}.`);
+  return known;
+}
+
 export function unauthorized(message: string): ApiFailure {
   return new ApiFailure(401, "unauthorized", message);
 }

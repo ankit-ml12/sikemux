@@ -74,7 +74,7 @@ export async function removeDevice(
     userId,
     type: "device.revoked",
     subject: key,
-    subjectRole: row.role as DeviceRole,
+    subjectRole: row.role,
     reason,
   });
   await audit(trx, {
@@ -91,7 +91,7 @@ export async function removeDevice(
   });
   return {
     key,
-    role: row.role as DeviceRole,
+    role: row.role,
     clerkSessionId: row.clerk_session_id,
   };
 }

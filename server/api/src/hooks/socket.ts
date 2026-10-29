@@ -1,9 +1,7 @@
 import type {
   HookClientMessage,
   HookDelivery,
-  HookHeader,
   HookHello,
-  HookMethod,
   HookServerMessage,
 } from "@sikemux/protocol";
 import { HookCloseCode } from "@sikemux/protocol";
@@ -220,8 +218,8 @@ export class HookSocket extends ChallengedSocket<
         id: row.id,
         hook: row.hook_id,
         receivedAt: row.received_at.toISOString(),
-        method: row.method as HookMethod,
-        headers: row.headers as HookHeader[],
+        method: row.method,
+        headers: row.headers,
         query: row.query,
         body: row.body.toString("base64"),
       };

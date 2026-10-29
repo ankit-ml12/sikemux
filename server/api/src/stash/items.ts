@@ -1,9 +1,6 @@
 import type {
   AccountEventType,
   StashItem,
-  StashKind,
-  StashLink,
-  StashPreview,
   StashTarget,
 } from "@sikemux/protocol";
 import type { Kysely, Selectable, Transaction } from "kysely";
@@ -26,16 +23,16 @@ export function toItem(
 ): StashItem {
   const item: StashItem = {
     id: row.id,
-    kind: row.kind as StashKind,
-    preview: (row.preview as StashPreview | null) ?? null,
-    target: (row.target as StashTarget | null) ?? null,
+    kind: row.kind,
+    preview: row.preview ?? null,
+    target: row.target ?? null,
     createdAt: row.created_at.toISOString(),
     takenAt: row.taken_at?.toISOString() ?? null,
     fromDevice: row.from_device,
   };
   if (row.url !== null) item.url = row.url;
   if (row.text !== null) item.text = row.text;
-  if (row.links !== null) item.links = row.links as StashLink[];
+  if (row.links !== null) item.links = row.links;
   if (row.note !== null) item.note = row.note;
   if (row.name !== null) item.name = row.name;
   if (row.mime !== null) item.mime = row.mime;

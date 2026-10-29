@@ -1,10 +1,8 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import type {
-  Channel,
   HostSignIn,
   HostSignInState,
   PendingHost,
-  Platform,
 } from "@sikemux/protocol";
 import { Hono } from "hono";
 import { sql } from "kysely";
@@ -146,8 +144,8 @@ export function hostSignInRoutes(
         const body: PendingHost = {
           key: row.key,
           name: row.name,
-          platform: row.platform as Platform,
-          channel: row.channel as Channel,
+          platform: row.platform,
+          channel: row.channel,
           expiresAt: row.expires_at.toISOString(),
           requestedAt: row.created_at.toISOString(),
           requestedFrom: row.requested_from,
@@ -265,8 +263,8 @@ export function hostSignInRoutes(
             key: row.key,
             role: "host",
             name: row.name,
-            platform: row.platform as Platform,
-            channel: row.channel as Channel,
+            platform: row.platform,
+            channel: row.channel,
             nonce: finish.nonce,
             signature: finish.signature,
           },

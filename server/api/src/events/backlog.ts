@@ -1,13 +1,15 @@
-import type {
-  AccountEvent,
-  AccountEventType,
-  DeviceRole,
-  LiveRole,
-  RevokeReason,
+import {
+  accountEventTypeValues,
+  type AccountEvent,
+  type LiveRole,
 } from "@sikemux/protocol";
 import type { ExpressionBuilder, Kysely, SqlBool, Expression } from "kysely";
 
 import type { Tables } from "../db.ts";
+
+const STASH_EVENTS = accountEventTypeValues.filter((type) =>
+  type.startsWith("stash."),
+);
 
 /**
  * Which of an account's events a connection may read. Hosts learn of phones only when one is
@@ -19,7 +21,7 @@ export function visibleTo(role: LiveRole, ownKey: string | null) {
     if (role === "web") return eb.lit(true);
     const own = ownKey === null ? eb.lit(false) : eb("subject", "=", ownKey);
     const accountDeleted = eb("type", "=", "account.deleted");
-    const stash = eb("type", "like", "stash.%");
+    const stash = eb("type", "in", STASH_EVENTS);
     if (role === "host")
       return eb.or([
         own,
@@ -59,14 +61,14 @@ export async function backlog(
   return rows.map((row) => {
     const event: AccountEvent = {
       id: Number(row.id),
-      type: row.type as AccountEventType,
+      type: row.type,
       at: row.at.toISOString(),
     };
     if (row.subject && row.type.startsWith("stash."))
       event.stashId = row.subject;
     else if (row.subject) event.key = row.subject;
-    if (row.subject_role) event.role = row.subject_role as DeviceRole;
-    if (row.reason) event.reason = row.reason as RevokeReason;
+    if (row.subject_role) event.role = row.subject_role;
+    if (row.reason) event.reason = row.reason;
     return event;
   });
 }

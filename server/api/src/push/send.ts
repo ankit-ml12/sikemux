@@ -1,9 +1,4 @@
-import type {
-  ApnsEnvironment,
-  LivePush,
-  PushPlatform,
-  PushResult,
-} from "@sikemux/protocol";
+import type { LivePush, PushResult } from "@sikemux/protocol";
 import { sql, type Kysely } from "kysely";
 
 import type { Tables } from "../db.ts";
@@ -97,8 +92,8 @@ export class Pusher {
 
     const target = await this.target(sender, push.to);
     if (!target) return finish("not_allowed");
-    if (!target.token) return finish("no_token");
-    const platform = target.platform as PushPlatform;
+    const { token, platform } = target;
+    if (!token || !platform) return finish("no_token");
 
     if (
       !this.limiter.allow(
@@ -117,13 +112,13 @@ export class Pusher {
     let attempt = 0;
     for (;;) {
       delivery = await provider.send({
-        token: target.token,
+        token,
         kind: push.kind,
         collapseId: push.collapseId,
         blob: push.blob,
         ttlSeconds: (expiresAt - this.now()) / 1000,
         ...(target.apns_environment
-          ? { apnsEnvironment: target.apns_environment as ApnsEnvironment }
+          ? { apnsEnvironment: target.apns_environment }
           : {}),
       });
       if (delivery.outcome !== "retry") break;
@@ -150,7 +145,7 @@ export class Pusher {
           .updateTable("push_tokens")
           .set({ last_ok_at: sql<Date>`now()`, failures: 0 })
           .where("device_key", "=", push.to)
-          .where("token", "=", target.token)
+          .where("token", "=", token)
           .execute();
         return finish("sent", detail);
       case "dead":
@@ -162,7 +157,7 @@ export class Pusher {
         return finish("no_token", { ...detail, forgot: true });
       case "retry":
       case "failed":
-        await this.countFailure(push.to, target.token);
+        await this.countFailure(push.to, token);
         return finish("failed", detail);
     }
   }
