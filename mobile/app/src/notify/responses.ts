@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { router, type Href } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 
+import type { NotificationKind } from '@shared/wire.generated';
+
 import { answerTask, type CardAnswer } from './cards';
 
 /** What the iPhone's notification extension keeps on a card it opened. */
@@ -9,7 +11,7 @@ type CardInfo = {
   host: string;
   hostName: string;
   agent: string;
-  kind: string;
+  kind: NotificationKind;
   url: string;
   request?: string;
   allow?: string;
@@ -66,7 +68,7 @@ function respond(response: Notifications.NotificationResponse) {
 }
 
 /** Calls `onArrive` when a card of `kind` from `host` arrives while the app is open. */
-export function useCardArrivals(host: string, kind: string, onArrive: () => void) {
+export function useCardArrivals(host: string, kind: NotificationKind, onArrive: () => void) {
   const latest = useRef(onArrive);
   useEffect(() => {
     latest.current = onArrive;

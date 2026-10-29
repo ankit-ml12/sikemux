@@ -13,7 +13,13 @@ const { withNotificationsAndroid } = require('expo-notifications/plugin/build/wi
 const SCHEME_META = 'com.nodelike.sikemux.scheme';
 const EXTENSION = 'SikemuxNotifications';
 const SOURCES = path.join(__dirname, '..', 'modules', 'notify', 'ios');
-const EXTENSION_SOURCES = ['Extension/NotificationService.swift', 'Shared/Envelope.swift', 'Shared/Card.swift', 'Shared/Keys.swift'];
+const EXTENSION_SOURCES = [
+  'Extension/NotificationService.swift',
+  'Shared/Envelope.swift',
+  'Shared/Card.swift',
+  'Shared/Card.generated.swift',
+  'Shared/Keys.swift',
+];
 
 function escape(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

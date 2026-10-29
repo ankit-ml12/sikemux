@@ -25,10 +25,10 @@ class MessagingService : ExpoFirebaseMessagingService() {
     val phone = keys.phone ?: return
     when (val opened = Envelope.open(blob, phone, keys.all())) {
       is Opened.Read -> {
-        val card = Card.parse(opened.plaintext, opened.host)
+        val card = parseCard(opened.plaintext, opened.host)
         when {
           card == null -> notifier.showGeneric(tag)
-          card.kind == "clear" -> notifier.cancel(card.collapseId)
+          card.kind == NotificationKind.CLEAR -> notifier.cancel(card.collapseId)
           else -> notifier.show(card)
         }
       }

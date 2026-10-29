@@ -34,9 +34,9 @@ class Notifier(private val context: Context) {
   }
 
   /** A card past its life shows nothing: it would be gone by now, and its request can no longer be answered. */
-  fun show(card: Card) {
+  fun show(card: NotificationCard) {
     val left = card.timeLeft(System.currentTimeMillis()) ?: return
-    val builder = base(channel(card.channel))
+    val builder = base(channel(card.channel?.wire))
       .setContentTitle(card.title)
       .setContentText(card.detail ?: card.body)
       .setStyle(NotificationCompat.BigTextStyle().bigText(text(card)))
@@ -132,7 +132,7 @@ class Notifier(private val context: Context) {
     manager.notify(tag, ID, builder.build())
   }
 
-  private fun text(card: Card): CharSequence {
+  private fun text(card: NotificationCard): CharSequence {
     val detail = card.detail ?: return card.body
     return SpannableStringBuilder(detail).apply {
       setSpan(monospace(), 0, detail.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -144,10 +144,10 @@ class Notifier(private val context: Context) {
   private fun monospace(): TypefaceSpan =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) TypefaceSpan(Typeface.MONOSPACE) else TypefaceSpan("monospace")
 
-  private fun extras(card: Card) = Bundle().apply {
-    putString(EXTRA_HOST, card.host)
+  private fun extras(card: NotificationCard) = Bundle().apply {
+    putString(EXTRA_HOST, card.hostKey)
     putString(EXTRA_AGENT, card.agentId)
-    putString(EXTRA_KIND, card.kind)
+    putString(EXTRA_KIND, card.kind.wire)
     card.requestId?.let { putString(EXTRA_REQUEST, it) }
   }
 
@@ -177,12 +177,12 @@ class Notifier(private val context: Context) {
     context.packageManager.getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
       .metaData?.getString(SCHEME_META) ?: "sikemux"
 
-  private fun answer(card: Card, option: String, title: String, authenticated: Boolean): NotificationCompat.Action {
+  private fun answer(card: NotificationCard, option: String, title: String, authenticated: Boolean): NotificationCompat.Action {
     val intent = Intent(context, AnswerReceiver::class.java).apply {
       action = AnswerReceiver.ACTION
       data = Uri.parse(answerData(card.collapseId, option))
       putExtra(AnswerReceiver.TAG, card.collapseId)
-      putExtra(AnswerReceiver.HOST, card.host)
+      putExtra(AnswerReceiver.HOST, card.hostKey)
       putExtra(AnswerReceiver.HOST_NAME, card.hostName)
       putExtra(AnswerReceiver.AGENT, card.agentId)
       putExtra(AnswerReceiver.REQUEST, card.requestId)

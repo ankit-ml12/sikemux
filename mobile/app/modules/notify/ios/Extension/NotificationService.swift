@@ -16,7 +16,7 @@ final class NotificationService: UNNotificationServiceExtension {
     guard let phone = keys.phone else { return nil }
     switch Envelope.open(blob, phone: phone, keys: keys.all()) {
     case let .read(host, plaintext):
-      guard let card = Card.parse(plaintext, host: host), card.kind != "clear" else { return nil }
+      guard let card = Card.parse(plaintext, host: host), card.kind != .clear else { return nil }
       return show(card, over: pushed)
     case let .unreadable(host):
       keys.unreadable(host: host)
