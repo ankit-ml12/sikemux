@@ -2,7 +2,7 @@
 //! prompt, which items are on screen, and its subagents. Each notification
 //! comes back as the effects it has on the chat.
 
-use sikemux_fold::update::{agent_text, text_content, thought};
+use sikemux_fold::update::{agent_text, notice, text_content, thought};
 use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 
@@ -12,9 +12,10 @@ use serde_json::{json, Value};
 use crate::acp::account::{Failure, FailureKind};
 
 use super::super::super::reset::{month_day, WallClock, Zone};
-use super::super::super::states::{self, Subagent};
+use super::super::super::states::{self, Outcome, Subagent};
 use super::super::json::text_or_empty as text;
 use super::super::session::TurnEnd;
+use super::super::turns::{self, Ended, Prompted, Started, Turns};
 use super::approvals::{self, Question};
 use super::items::{self, Items};
 use super::subagents::{Route, Subagents};
@@ -56,41 +57,22 @@ pub(super) fn user_input_told(params: &Value, told: &str) -> Value {
     json!({ "answers": answers })
 }
 
-/// The turn this side prompted.
-#[derive(Serialize, Deserialize)]
-struct Turn {
-    number: u64,
-    /// Codex's id for it, once Codex has said.
-    id: Option<String>,
-    cancelled: bool,
-    message_id: Option<String>,
-    /// Shown as the chat's title when Codex has named the thread nothing.
-    title: Option<String>,
-}
-
 #[derive(Serialize, Deserialize)]
 pub(super) struct Session {
     pub thread_id: String,
-    turn: Option<Turn>,
-    /// A turn Codex began on its own.
-    unprompted: Option<String>,
+    pub turns: Turns,
     /// The last turn that ended outside a prompt, should a prompt be told it.
     last_ended: Option<Value>,
     waiting: Option<(u64, Value)>,
-    /// Turns this side ended already, whose late notifications are dropped.
-    stale: HashSet<String>,
     errors: HashMap<String, Value>,
     /// How many times Codex has retried each turn's request.
     retries: HashMap<String, u64>,
-    /// The turn each of the app's message ids began.
-    pub message_turns: HashMap<String, String>,
     items: Items,
     edits: HashMap<String, Value>,
     #[serde(with = "super::super::json::pairs")]
     tool_calls: HashMap<(String, String), Vec<String>>,
     pub subagents: Subagents,
     pub token_usage: Option<Value>,
-    pub titled: bool,
     /// The newest turn of the thread the chat has been told of.
     pub latest_turn: Option<String>,
     /// The chat's own tool servers that have not reported starting yet.
@@ -98,15 +80,6 @@ pub(super) struct Session {
     questions: u64,
     /// Set once Codex's output closed.
     pub gone: bool,
-}
-
-fn notice(title: &str, description: Option<&str>) -> Value {
-    let mut update =
-        json!({ "sessionUpdate": UpdateKind::Notice, "severity": "warning", "title": title });
-    if let Some(description) = description.filter(|description| !description.is_empty()) {
-        update["description"] = json!(description);
-    }
-    update
 }
 
 /// What Codex's error info says a failed turn needs.
@@ -203,19 +176,15 @@ impl Session {
         Self {
             subagents: Subagents::new(thread_id.clone()),
             thread_id,
-            turn: None,
-            unprompted: None,
+            turns: Turns::default(),
             last_ended: None,
             waiting: None,
-            stale: HashSet::new(),
             errors: HashMap::new(),
             retries: HashMap::new(),
-            message_turns: HashMap::new(),
             items: Items::default(),
             edits: HashMap::new(),
             tool_calls: HashMap::new(),
             token_usage: None,
-            titled: false,
             latest_turn: None,
             starting_servers: HashSet::new(),
             questions: 0,
@@ -229,75 +198,32 @@ impl Session {
         self.waiting.as_ref().map(|(turn, _)| *turn)
     }
 
-    /// Turn `number` is being sent.
-    pub fn begin(&mut self, number: u64, message_id: Option<String>, title: Option<String>) {
-        self.turn = Some(Turn {
-            number,
-            id: None,
-            cancelled: false,
-            message_id,
-            title,
-        });
-    }
-
-    /// Codex could not take turn `number`.
-    pub fn abandon(&mut self, number: u64) {
-        if self.turn.as_ref().is_some_and(|turn| turn.number == number) {
-            self.turn = None;
-        }
-    }
-
     /// Codex answered turn `number` with its id for it.
     pub fn started(&mut self, number: u64, id: &str) -> Vec<Effect> {
-        if self.turn.as_ref().is_none_or(|turn| turn.number != number) {
+        let Some(cancelled) = self.turns.started(number, id) else {
             return Vec::new();
+        };
+        let mut effects = Vec::new();
+        if cancelled {
+            effects.push(Effect::Interrupt(id.to_owned()));
         }
-        let mut effects = self.adopt(id);
         if let Some(ended) = self.last_ended.take().filter(|turn| turn["id"] == id) {
-            effects.extend(self.finish_prompted(&ended));
+            if let Ended::Prompted(turn) = self.turns.completed(id) {
+                effects.extend(self.finish_prompted(turn, &ended));
+            }
         }
         effects
     }
 
-    fn adopt(&mut self, id: &str) -> Vec<Effect> {
-        let Some(turn) = self.turn.as_mut().filter(|turn| turn.id.is_none()) else {
-            return Vec::new();
-        };
-        turn.id = Some(id.to_owned());
-        if let Some(message_id) = &turn.message_id {
-            self.message_turns.insert(message_id.clone(), id.to_owned());
-        }
-        if self.unprompted.as_deref() == Some(id) {
-            self.unprompted = None;
-        }
-        if turn.cancelled {
-            vec![Effect::Interrupt(id.to_owned())]
-        } else {
-            Vec::new()
-        }
-    }
-
-    /// The turn running now, prompted or not.
-    pub fn active_turn(&self) -> Option<String> {
-        self.turn
-            .as_ref()
-            .and_then(|turn| turn.id.clone())
-            .or_else(|| self.unprompted.clone())
-    }
-
     pub fn cancel(&mut self) -> Vec<Effect> {
-        if let Some(turn) = &mut self.turn {
-            turn.cancelled = true;
-            return turn.id.clone().map(Effect::Interrupt).into_iter().collect();
-        }
         if let Some((number, mut payload)) = self.waiting.take() {
             let mut effects = self.finish_subagents(Subagent::Cancelled);
             payload["stopReason"] = json!("cancelled");
             effects.push(Effect::End(number, TurnEnd::Completed(payload)));
             return effects;
         }
-        self.unprompted
-            .clone()
+        self.turns
+            .cancel()
             .map(Effect::Interrupt)
             .into_iter()
             .collect()
@@ -306,22 +232,17 @@ impl Session {
     /// Codex took the interrupt of turn `id`. The turn is over for the chat
     /// now, and what Codex still says of it is dropped.
     pub fn interrupted(&mut self, id: &str) -> Vec<Effect> {
-        if self
-            .turn
-            .as_ref()
-            .is_some_and(|turn| turn.id.as_deref() == Some(id))
-        {
-            self.stale.insert(id.to_owned());
-            return self.finish_prompted(&json!({ "id": id, "status": "interrupted" }));
+        match self.turns.interrupted(id) {
+            Ended::Prompted(turn) => {
+                self.finish_prompted(turn, &json!({ "id": id, "status": "interrupted" }))
+            }
+            Ended::Unprompted => {
+                let mut effects = self.finish_subagents(Subagent::Cancelled);
+                effects.push(Effect::WorkEnded("cancelled"));
+                effects
+            }
+            Ended::Neither => Vec::new(),
         }
-        if self.unprompted.as_deref() == Some(id) {
-            self.stale.insert(id.to_owned());
-            self.unprompted = None;
-            let mut effects = self.finish_subagents(Subagent::Cancelled);
-            effects.push(Effect::WorkEnded("cancelled"));
-            return effects;
-        }
-        Vec::new()
     }
 
     /// The wait on turn `number`'s subagents is over.
@@ -341,11 +262,6 @@ impl Session {
         effects
     }
 
-    /// The conversation went back to before turn `turn_id`.
-    pub fn rewound(&mut self, turn_id: &str) {
-        self.message_turns.retain(|_, turn| turn != turn_id);
-    }
-
     fn finish_subagents(&mut self, state: Subagent) -> Vec<Effect> {
         let mut out = Vec::new();
         self.subagents.finish_outstanding(state, &mut out);
@@ -362,106 +278,54 @@ impl Session {
         payload
     }
 
-    fn finish_prompted(&mut self, ended: &Value) -> Vec<Effect> {
-        let Some(turn) = self.turn.take() else {
-            return Vec::new();
-        };
-        let id = text(ended, "id").to_owned();
-        let error = self.errors.remove(&id);
-        let mut effects = Vec::new();
-        if !self.titled {
-            if let Some(title) = turn.title {
-                self.titled = true;
-                effects.push(Effect::Update(
-                    self.thread_id.clone(),
-                    json!({ "sessionUpdate": UpdateKind::SessionInfoUpdate, "title": title }),
-                ));
-            }
+    fn finish_prompted(&mut self, mut turn: Prompted, ended: &Value) -> Vec<Effect> {
+        let error = self.errors.remove(text(ended, "id"));
+        let mut effects: Vec<Effect> = self
+            .turns
+            .title(&mut turn)
+            .map(|title| Effect::Update(self.thread_id.clone(), title))
+            .into_iter()
+            .collect();
+        let outcome = states::outcome(text(ended, "status")).unwrap_or(Outcome::Failed);
+        if outcome == Outcome::Completed && self.subagents.outstanding() {
+            self.waiting = Some((turn.number, self.payload("end_turn")));
+            effects.push(Effect::AwaitSubagents(turn.number));
+            return effects;
         }
-        match text(ended, "status") {
-            "completed" => {
-                let payload = self.payload("end_turn");
-                if self.subagents.outstanding() {
-                    self.waiting = Some((turn.number, payload));
-                    effects.push(Effect::AwaitSubagents(turn.number));
-                } else {
-                    effects.push(Effect::End(turn.number, TurnEnd::Completed(payload)));
-                }
-            }
-            "interrupted" => {
-                effects.extend(self.finish_subagents(Subagent::Cancelled));
-                effects.push(Effect::End(
-                    turn.number,
-                    TurnEnd::Completed(self.payload("cancelled")),
-                ));
-            }
-            _ => {
-                effects.extend(self.finish_subagents(Subagent::Failed));
-                let error = error
-                    .or_else(|| Some(ended["error"].clone()).filter(|error| !error.is_null()))
-                    .unwrap_or_else(|| json!({ "message": "Turn failed", "codexErrorInfo": null }));
-                effects.push(Effect::End(
-                    turn.number,
-                    TurnEnd::Failed {
-                        failure: failure(&error),
-                        response: Some(self.payload("end_turn")),
-                    },
-                ));
-            }
+        let (subagents, end) = turns::prompted_end(outcome, self.payload("end_turn"), || {
+            let error = error
+                .or_else(|| Some(ended["error"].clone()).filter(|error| !error.is_null()))
+                .unwrap_or_else(|| json!({ "message": "Turn failed", "codexErrorInfo": null }));
+            failure(&error)
+        });
+        if let Some(state) = subagents {
+            effects.extend(self.finish_subagents(state));
         }
+        effects.push(Effect::End(turn.number, end));
         effects
-    }
-
-    fn turn_started(&mut self, id: &str) -> Vec<Effect> {
-        if self.stale.contains(id) {
-            return Vec::new();
-        }
-        match &self.turn {
-            Some(turn) if turn.id.is_none() => self.adopt(id),
-            Some(_) => Vec::new(),
-            None => {
-                self.unprompted = Some(id.to_owned());
-                vec![Effect::WorkStarted]
-            }
-        }
     }
 
     fn turn_completed(&mut self, ended: &Value) -> Vec<Effect> {
         let id = text(ended, "id");
         self.retries.remove(id);
-        if self.stale.remove(id) {
-            return Vec::new();
-        }
-        if self.unprompted.as_deref() == Some(id) {
-            self.unprompted = None;
-            self.errors.remove(id);
-            let status = text(ended, "status");
-            let mut effects = Vec::new();
-            if status != "completed" {
-                let ended = states::outcome(status).unwrap_or(states::Outcome::Failed);
-                effects.extend(self.finish_subagents(Subagent::from(ended)));
+        let unnamed = self.turns.unnamed();
+        match self.turns.completed(id) {
+            Ended::Unprompted => {
+                self.errors.remove(id);
+                let outcome = states::outcome(text(ended, "status")).unwrap_or(Outcome::Failed);
+                let (subagents, reason) = turns::unprompted_end(outcome);
+                let mut effects = subagents
+                    .map(|state| self.finish_subagents(state))
+                    .unwrap_or_default();
+                if unnamed {
+                    self.last_ended = Some(ended.clone());
+                }
+                effects.push(Effect::WorkEnded(reason));
+                effects
             }
-            if self.turn.as_ref().is_some_and(|turn| turn.id.is_none()) {
-                self.last_ended = Some(ended.clone());
-            }
-            effects.push(Effect::WorkEnded(if status == "interrupted" {
-                "cancelled"
-            } else {
-                "end_turn"
-            }));
-            return effects;
+            Ended::Prompted(turn) => self.finish_prompted(turn, ended),
+            Ended::Neither => Vec::new(),
         }
-        let ours = self
-            .turn
-            .as_ref()
-            .is_some_and(|turn| turn.id.as_deref().is_none_or(|own| own == id));
-        if ours {
-            let mut effects = self.adopt(id);
-            effects.retain(|effect| !matches!(effect, Effect::Interrupt(_)));
-            effects.extend(self.finish_prompted(ended));
-            return effects;
-        }
-        Vec::new()
     }
 
     /// The effects of one notification from Codex.
@@ -485,7 +349,7 @@ impl Session {
                     .is_none_or(|thread| thread == self.thread_id);
                 let stale = params["turnId"]
                     .as_str()
-                    .is_some_and(|turn| self.stale.contains(turn));
+                    .is_some_and(|turn| self.turns.is_stale(turn));
                 if root {
                     effects.extend(self.root_notification(method, params));
                 }
@@ -511,12 +375,16 @@ impl Session {
             "turn/started" => {
                 let id = text(&params["turn"], "id");
                 self.latest_turn = Some(id.to_owned());
-                self.turn_started(id)
+                match self.turns.began(id) {
+                    Started::Prompted { cancelled: true } => vec![Effect::Interrupt(id.to_owned())],
+                    Started::Unprompted => vec![Effect::WorkStarted],
+                    Started::Prompted { .. } | Started::Neither => Vec::new(),
+                }
             }
             "turn/completed" => self.turn_completed(&params["turn"]),
             "error" if params["willRetry"] == true => {
                 let turn = params["turnId"].as_str().unwrap_or_default().to_owned();
-                if self.stale.contains(&turn) {
+                if self.turns.is_stale(&turn) {
                     return Vec::new();
                 }
                 let attempt = self.retries.entry(turn.clone()).or_default();
@@ -547,7 +415,7 @@ impl Session {
                 Vec::new()
             }
             "thread/name/updated" => {
-                self.titled = true;
+                self.turns.titled = true;
                 Vec::new()
             }
             "mcpServer/startupStatus/updated" => {
@@ -653,8 +521,12 @@ impl Session {
                 "*Context compacted to fit the model's context window.*\n\n",
                 None,
             )],
-            "warning" => vec![notice(text(params, "message"), None)],
-            "configWarning" => vec![notice(text(params, "summary"), params["details"].as_str())],
+            "warning" => vec![notice("warning", text(params, "message"), None)],
+            "configWarning" => vec![notice(
+                "warning",
+                text(params, "summary"),
+                params["details"].as_str(),
+            )],
             _ => Vec::new(),
         }
     }
@@ -668,7 +540,7 @@ impl Session {
         let session = self.subagents.session_of(&thread);
         let stale = params["turnId"]
             .as_str()
-            .is_some_and(|turn| self.stale.contains(turn));
+            .is_some_and(|turn| self.turns.is_stale(turn));
         match method {
             "item/commandExecution/requestApproval" => match approvals::command(&session, params) {
                 Some(question) if !stale => Reply::Ask(question),
@@ -758,8 +630,8 @@ mod tests {
     #[test]
     fn a_turn_the_stream_dropped_ends_as_the_networks_failure() {
         let mut session = session();
-        session.titled = true;
-        session.begin(2, None, None);
+        session.turns.titled = true;
+        session.turns.begin(2, None, None, None);
         session.started(2, "turn-n");
         let error = json!({ "message": "stream disconnected before completion", "codexErrorInfo": { "responseStreamDisconnected": {} } });
         let effects = notify(
@@ -802,9 +674,11 @@ mod tests {
     #[test]
     fn a_prompted_turn_ends_when_codex_completes_it() {
         let mut session = session();
-        session.begin(1, Some("msg-1".into()), Some("Fix it".into()));
+        session
+            .turns
+            .begin(1, None, Some("msg-1".into()), Some("Fix it".into()));
         assert!(session.started(1, "turn-a").is_empty());
-        assert_eq!(session.message_turns["msg-1"], "turn-a");
+        assert_eq!(session.turns.message_turns["msg-1"], "turn-a");
         assert!(notify(
             &mut session,
             "turn/started",
@@ -836,7 +710,7 @@ mod tests {
             }
             _ => panic!("the turn should have completed"),
         }
-        assert_eq!(session.active_turn(), None);
+        assert_eq!(session.turns.active(), None);
     }
 
     #[test]
@@ -859,8 +733,8 @@ mod tests {
     #[test]
     fn a_usage_limit_fails_the_turn_for_another_account() {
         let mut session = session();
-        session.titled = true;
-        session.begin(2, None, None);
+        session.turns.titled = true;
+        session.turns.begin(2, None, None, None);
         session.started(2, "turn-b");
         let error = json!({
             "message": "You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Oct 12th, 2026 2:46 AM.",
@@ -917,8 +791,8 @@ mod tests {
     #[test]
     fn a_failed_turn_without_an_error_notification_uses_the_turns_own() {
         let mut session = session();
-        session.titled = true;
-        session.begin(3, None, None);
+        session.turns.titled = true;
+        session.turns.begin(3, None, None, None);
         session.started(3, "turn-c");
         let effects = notify(
             &mut session,
@@ -941,8 +815,8 @@ mod tests {
     #[test]
     fn a_stop_interrupts_the_turn_once_codex_names_it() {
         let mut session = session();
-        session.titled = true;
-        session.begin(4, None, None);
+        session.turns.titled = true;
+        session.turns.begin(4, None, None, None);
         assert!(session.cancel().is_empty());
         let effects = session.started(4, "turn-d");
         assert!(matches!(effects.as_slice(), [Effect::Interrupt(id)] if id == "turn-d"));
@@ -978,7 +852,7 @@ mod tests {
             json!({ "threadId": "thread", "turn": { "id": "auto" } }),
         );
         assert!(matches!(effects.as_slice(), [Effect::WorkStarted]));
-        assert_eq!(session.active_turn().as_deref(), Some("auto"));
+        assert_eq!(session.turns.active().as_deref(), Some("auto"));
         let effects = notify(
             &mut session,
             "turn/completed",
@@ -993,8 +867,8 @@ mod tests {
     #[test]
     fn a_turn_ends_only_once_its_subagents_do() {
         let mut session = session();
-        session.titled = true;
-        session.begin(5, None, None);
+        session.turns.titled = true;
+        session.turns.begin(5, None, None, None);
         session.started(5, "turn-e");
         notify(
             &mut session,
@@ -1130,6 +1004,6 @@ mod tests {
             json!({ "threadId": "elsewhere", "turn": { "id": "x" } }),
         );
         assert!(effects.is_empty());
-        assert_eq!(session.active_turn(), None);
+        assert_eq!(session.turns.active(), None);
     }
 }

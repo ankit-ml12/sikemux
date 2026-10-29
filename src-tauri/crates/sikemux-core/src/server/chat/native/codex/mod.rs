@@ -336,7 +336,7 @@ impl Codex {
     /// Writes a steer to Codex now, so a stop sent after it reaches Codex
     /// after it too. None when no turn is running.
     fn send_steer(&self, prompt: &Prompt) -> Result<Option<Sent>, String> {
-        let Some(turn_id) = self.driver.session.locked().active_turn() else {
+        let Some(turn_id) = self.driver.session.locked().turns.active() else {
             return Ok(None);
         };
         let input = self.prompt_input(prompt)?;
@@ -383,8 +383,9 @@ impl Codex {
         method: &str,
         params: Value,
     ) -> Result<(), String> {
-        self.driver.session.locked().begin(
+        self.driver.session.locked().turns.begin(
             turn,
+            None,
             prompt.message_id.clone(),
             history::title(&prompt.text),
         );
@@ -397,7 +398,7 @@ impl Codex {
                 Ok(())
             }
             Err(error) => {
-                self.driver.session.locked().abandon(turn);
+                self.driver.session.locked().turns.abandon(turn);
                 Err(error)
             }
         }
@@ -467,7 +468,7 @@ impl Codex {
         let sink = &self.driver.sink;
         let thread_id = &self.kept.thread_id;
         let turns = if sink.reloading() {
-            self.driver.session.locked().titled = true;
+            self.driver.session.locked().turns.titled = true;
             let Some(Reach::Turn(latest)) = sink.reach(thread_id) else {
                 return Ok(());
             };
@@ -484,7 +485,7 @@ impl Codex {
                     thread_id,
                     json!({ "sessionUpdate": UpdateKind::SessionInfoUpdate, "title": title }),
                 );
-                self.driver.session.locked().titled = true;
+                self.driver.session.locked().turns.titled = true;
             }
             turns
         };
@@ -503,6 +504,7 @@ impl Codex {
         self.driver
             .session
             .locked()
+            .turns
             .message_turns
             .extend(history::message_turns(&turns));
         if let Some(latest) = turns.last().and_then(|turn| turn["id"].as_str()) {
@@ -514,7 +516,14 @@ impl Codex {
     /// The turn the app's message `message_id` began, looked for in the thread's history from
     /// its newest turn back when this run of Codex did not see it.
     async fn turn_of(&self, message_id: &str) -> Result<String, String> {
-        if let Some(turn) = self.driver.session.locked().message_turns.get(message_id) {
+        if let Some(turn) = self
+            .driver
+            .session
+            .locked()
+            .turns
+            .message_turns
+            .get(message_id)
+        {
             return Ok(turn.clone());
         }
         let mut cursor = Value::Null;
@@ -664,7 +673,7 @@ impl Backend for Codex {
         {
             let mut session = driver.session.locked();
             *session = Session::new(thread_id.clone());
-            session.titled = thread["name"].as_str().and_then(history::title).is_some();
+            session.turns.titled = thread["name"].as_str().and_then(history::title).is_some();
             session.starting_servers = servers.iter().cloned().collect();
         }
 
@@ -832,7 +841,7 @@ impl Backend for Codex {
                 json!({ "threadId": self.kept.thread_id, "beforeTurnId": turn_id }),
             )
             .await?;
-        self.driver.session.locked().rewound(&turn_id);
+        self.driver.session.locked().turns.rewound(&turn_id);
         Ok(None)
     }
 
