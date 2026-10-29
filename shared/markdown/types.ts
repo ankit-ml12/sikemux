@@ -52,4 +52,6 @@ export interface MarkdownOptions {
     readonly htmlImages?: boolean;
     /** Marks the words outside links and code blocks that name a file, as `path` nodes. */
     readonly filePaths?: boolean;
+    /** Writes a link that shows its own address, to a pull request or issue, as `owner/repo#12`. */
+    readonly references?: boolean;
 }

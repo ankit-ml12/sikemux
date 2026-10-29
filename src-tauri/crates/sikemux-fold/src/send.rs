@@ -21,6 +21,7 @@ const ANSWER: Options = Options {
     file_links: true,
     html_images: false,
     html_layout: false,
+    references: true,
     file_paths: true,
 };
 

@@ -231,6 +231,7 @@ const AGENT_MARKDOWN: MarkdownOptions = {
   htmlAsText: false,
   fileLinks: true,
   filePaths: true,
+  references: true,
 };
 /* What a person typed shows its markup as the characters they typed. */
 const TYPED_MARKDOWN: MarkdownOptions = {
@@ -238,6 +239,7 @@ const TYPED_MARKDOWN: MarkdownOptions = {
   htmlAsText: true,
   fileLinks: true,
   filePaths: true,
+  references: true,
 };
 
 /** Reads finished texts ahead of the transcript drawing them, in the folded form it first shows, in the order given. */

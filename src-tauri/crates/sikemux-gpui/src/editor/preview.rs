@@ -50,6 +50,7 @@ const OPTIONS: Options = Options {
     file_links: true,
     html_images: true,
     html_layout: true,
+    references: false,
     file_paths: false,
 };
 

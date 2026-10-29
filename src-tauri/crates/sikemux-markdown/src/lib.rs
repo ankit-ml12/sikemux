@@ -6,6 +6,7 @@ mod autolink;
 mod doc;
 mod mend;
 pub mod paths;
+mod reference;
 mod url;
 
 pub use doc::{diff, Doc, Op, Patch};
@@ -39,6 +40,10 @@ pub struct Options {
     /// check and draw as files when they are.
     #[serde(default)]
     pub file_paths: bool,
+    /// Writes a link that shows its own address, to a pull request or issue, as GitHub
+    /// writes a reference to one, such as `owner/repo#12`.
+    #[serde(default)]
+    pub references: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -435,11 +440,16 @@ impl Builder {
 
     fn children(&self, pieces: Vec<Piece>) -> Vec<Node> {
         let outside_links = self.links_open == 0;
-        Self::nodes(
+        let nodes = Self::nodes(
             pieces,
             self.options.gfm && outside_links,
             self.options.file_paths && outside_links,
-        )
+        );
+        if self.options.references {
+            nodes.into_iter().map(reference::fold).collect()
+        } else {
+            nodes
+        }
     }
 
     fn nodes(pieces: Vec<Piece>, link_addresses: bool, file_paths: bool) -> Vec<Node> {
