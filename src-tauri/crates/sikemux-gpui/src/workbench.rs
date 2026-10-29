@@ -148,11 +148,7 @@ pub struct Workbench {
     /// The project or host in front, and the one in front before it.
     pub place: Option<Strip>,
     pub last_place: Option<Strip>,
-    pub all_projects: bool,
-    /// The leads whose teams the agent rail folds away.
-    pub folded_teams: HashSet<String>,
-    /// The agent rows the rail drew last, for telling the rows that have just arrived.
-    pub(crate) rail_seen: std::cell::RefCell<crate::agents::RailSeen>,
+    pub rails: crate::rail::Rails,
     /// The strip's tabs as drawn last, for telling those that have just opened and closed.
     pub(crate) strip_seen:
         std::cell::RefCell<crate::motion::ListMemory<sikemux_wire::protocol::Tab>>,
@@ -160,20 +156,14 @@ pub struct Workbench {
     pub(crate) strip_glide: std::cell::RefCell<crate::motion::GlideTrack>,
     /// How far the strip's tabs are scrolled, and the tab last scrolled into view.
     pub(crate) strip_scroll: gpui_kit::ScrollHandle,
-    /// The tab rail's list of agents and chats, whose foot brings older chats into view.
-    pub(crate) rail_scroll: gpui_kit::ScrollHandle,
     pub(crate) strip_scrolled_to: std::cell::RefCell<Option<String>>,
     /// Tabs asked to close that the layout still lists, and when, so a second click or ⌘W
     /// before the core's answer does not ask for a tab it has already closed.
     closing_tabs: std::cell::RefCell<HashMap<String, std::time::Instant>>,
-    /// Where the rail's agent rows were drawn, for the chosen surface to glide between them.
-    pub(crate) rail_glide: std::cell::RefCell<crate::motion::GlideTrack>,
     /// The card beside the agent row the pointer rests on.
     pub agent_card: crate::agents::card::Card,
     /// The task each project's Run button starts, when the person chose one, by project path.
     pub picked_tasks: HashMap<String, String>,
-    /// Where the tab rail's frame was last drawn, left, top, width and height, for the driver.
-    pub rail_frame: Rc<Cell<[f32; 4]>>,
     /// Where the stage was last drawn, for what rises over the stage alone.
     pub stage_frame: Rc<Cell<Bounds<Pixels>>>,
     /// The run whose failed tests the person closed the card of, by execution.
@@ -182,15 +172,6 @@ pub struct Workbench {
     pub failure_shown: Option<String>,
     /// The space whose projects the rail shows, else every project.
     pub space: Option<String>,
-    /// Which rails stay open; a closed one comes out over the stage while the pointer is at its edge.
-    pub side_rail_open: bool,
-    pub tab_rail_open: bool,
-    side_rail_width: f32,
-    tab_rail_width: f32,
-    /// The handles beside the rails, which arrow keys move once focused.
-    resizers: [FocusHandle; 2],
-    pub peeking: Option<Edge>,
-    unpeek: Option<Task<()>>,
     /// The repository changed while the Git pane was out of sight, so it reads it and its
     /// review again once it shows rather than on every change.
     git_behind: bool,
@@ -198,8 +179,6 @@ pub struct Workbench {
     /// the chat now in front came there.
     resting_chats: Option<(Option<String>, Task<()>)>,
     pub run_clock: Entity<crate::tabs::RunClock>,
-    /// Which of its pages the tab rail shows.
-    pub rail_page: RailPage,
     pub files: FileTree,
     /// The file tree's, which its arrow keys and F2 move and act in.
     pub files_focus: FocusHandle,
@@ -207,8 +186,6 @@ pub struct Workbench {
     pub moving: Option<String>,
     /// The command deck's keys, the last used first.
     pub recent_commands: Vec<SharedString>,
-    /// The rails' state waiting to be kept in the core's preferences, once a drag settles.
-    keeping_rails: Option<Task<()>>,
     /// When a refused file listing is asked again.
     files_retry: crate::retry::Retry,
     /// The Git pane takes the keyboard once it shows, as when ⌘⌥3 opens it.
@@ -218,8 +195,6 @@ pub struct Workbench {
     pub launcher_choice: Option<String>,
     /// The plan limits are to be read once the core lists its agents, as the app starts.
     usage_wanted: bool,
-    /// The rail lists the recent chats of every agent, not one's.
-    pub all_harnesses: bool,
     pub pinch: Option<crate::pinch::Pinch>,
     /// Which of the calendar's metrics it shows, an index into `home::METRICS`.
     pub metric: usize,
@@ -279,8 +254,6 @@ pub struct Workbench {
     pub hosts_unavailable: Option<String>,
     /// The stage's tabs while they move between one another.
     pub(crate) track: crate::track::Slide<String>,
-    /// The tab rail's pages while they move between one another.
-    pub(crate) rail_slide: crate::track::Slide<RailPage>,
     /// The runs the person started here, whose terminal opens once the run has one.
     pub runs_to_show: HashSet<String>,
     /// The agent in front whose worktree its header reads, by id and folder, and where it is.
@@ -696,56 +669,58 @@ impl Workbench {
             reorder: None,
             place: None,
             last_place: None,
-            all_projects: false,
-            folded_teams: HashSet::new(),
-            rail_seen: Default::default(),
+            rails: crate::rail::Rails {
+                side_open: true,
+                tab_open: true,
+                side_width: rail::SIDE_RAIL.initial,
+                tab_width: agents::TAB_RAIL.initial,
+                resizers: [cx.focus_handle(), cx.focus_handle()],
+                peeking: None,
+                unpeek: None,
+                page: RailPage::Agents,
+                keeping: None,
+                all_projects: false,
+                all_harnesses: false,
+                folded_teams: HashSet::new(),
+                seen: Default::default(),
+                scroll: Default::default(),
+                glide: Default::default(),
+                frame: Rc::default(),
+                slide: crate::track::Slide::default(),
+            },
             strip_seen: Default::default(),
             closing_tabs: Default::default(),
             strip_glide: Default::default(),
             strip_scroll: Default::default(),
-            rail_scroll: Default::default(),
             strip_scrolled_to: Default::default(),
-            rail_glide: Default::default(),
             agent_card: crate::agents::card::Card::default(),
             picked_tasks: HashMap::new(),
-            rail_frame: Rc::default(),
             stage_frame: Rc::default(),
             tests_closed: None,
             failure_shown: None,
             space: None,
-            side_rail_open: true,
-            tab_rail_open: true,
-            side_rail_width: rail::SIDE_RAIL.initial,
-            tab_rail_width: agents::TAB_RAIL.initial,
-            resizers: [cx.focus_handle(), cx.focus_handle()],
             host_views: HashMap::new(),
             hosts_reached: HashSet::new(),
             host_homes: HashMap::new(),
             approvals: HashMap::new(),
             hosts_unavailable: None,
             track: crate::track::Slide::default(),
-            rail_slide: crate::track::Slide::default(),
             runs_to_show: HashSet::new(),
             watched_worktree: None,
             trust_asked: HashSet::new(),
             skills_offered: HashSet::new(),
             trust_host: None,
-            peeking: None,
-            unpeek: None,
             resting_chats: None,
             git_behind: false,
             run_clock: cx.new(|_| crate::tabs::RunClock::default()),
-            rail_page: RailPage::Agents,
             files: FileTree::default(),
             files_focus: cx.focus_handle(),
             moving: None,
             recent_commands: Vec::new(),
-            keeping_rails: None,
             files_retry: Default::default(),
             project_files: ProjectFiles::default(),
             launcher_choice: None,
             usage_wanted: false,
-            all_harnesses: false,
             pinch: None,
             metric: 0,
             metric_day: None,
@@ -791,9 +766,9 @@ impl Workbench {
     /// Whether the Limits panel is on screen: the tab rail open on its agents page, for one
     /// agent.
     fn limits_shown(&self) -> bool {
-        self.tab_rail_open
-            && self.rail_page == RailPage::Agents
-            && !self.all_harnesses
+        self.rails.tab_open
+            && self.rails.page == RailPage::Agents
+            && !self.rails.all_harnesses
             && self.launcher().is_some()
     }
 
@@ -1151,7 +1126,7 @@ impl Workbench {
                         return;
                     }
                     crate::keymap::bind(&preferences.keybinding_overrides, cx);
-                    if self.keeping_rails.is_none() {
+                    if self.rails.keeping.is_none() {
                         self.follow_rails(&preferences);
                     }
                     self.sims.offer_to_agents(preferences.ios_simulator);
@@ -2733,11 +2708,11 @@ impl Workbench {
     /// Keeps a rail open, or closes it; a peeking rail that is kept stays where it is.
     pub fn toggle_rail(&mut self, edge: Edge, cx: &mut Context<Self>) {
         let open = match edge {
-            Edge::Start => &mut self.side_rail_open,
-            Edge::End => &mut self.tab_rail_open,
+            Edge::Start => &mut self.rails.side_open,
+            Edge::End => &mut self.rails.tab_open,
         };
         *open = !*open;
-        self.peeking = None;
+        self.rails.peeking = None;
         self.keep_rails(cx);
         cx.notify();
     }
@@ -3230,16 +3205,16 @@ impl Workbench {
 
     pub fn rail_width(&self, edge: Edge) -> f32 {
         match edge {
-            Edge::Start => self.side_rail_width,
-            Edge::End => self.tab_rail_width,
+            Edge::Start => self.rails.side_width,
+            Edge::End => self.rails.tab_width,
         }
     }
 
     /// Sets a rail's width, within what that rail allows, and draws it at once.
     fn resize_rail(&mut self, edge: Edge, width: f32, window: &mut Window, cx: &mut Context<Self>) {
         let (kept, range) = match edge {
-            Edge::Start => (&mut self.side_rail_width, rail::SIDE_RAIL),
-            Edge::End => (&mut self.tab_rail_width, agents::TAB_RAIL),
+            Edge::Start => (&mut self.rails.side_width, rail::SIDE_RAIL),
+            Edge::End => (&mut self.rails.tab_width, agents::TAB_RAIL),
         };
         let width = width.clamp(range.min, range.max).round();
         if *kept != width {
@@ -3271,10 +3246,10 @@ impl Workbench {
             .h_full()
             .cursor_col_resize()
             .key_context("RailResizer")
-            .track_focus(&self.resizers[edge as usize])
+            .track_focus(&self.rails.resizers[edge as usize])
             .tooltip(crate::ui::tooltip("Drag or use arrow keys to resize"))
             .on_click(cx.listener(move |bench, _, window, cx| {
-                bench.resizers[edge as usize].focus(window, cx)
+                bench.rails.resizers[edge as usize].focus(window, cx)
             }))
             .on_action(cx.listener(move |bench, _: &EdgeLeft, window, cx| {
                 bench.nudge_rail(edge, -16., window, cx)
@@ -3295,19 +3270,7 @@ impl Workbench {
 
     /// Takes the rails as the person last left them, from the core's preferences.
     fn follow_rails(&mut self, preferences: &Preferences) {
-        self.side_rail_open = preferences.side_rail_open;
-        self.tab_rail_open = preferences.tab_rail_open;
-        let width =
-            |width: f64, range: RailWidth| (width as f32).clamp(range.min, range.max).round();
-        self.side_rail_width = width(preferences.side_rail_width, rail::SIDE_RAIL);
-        self.tab_rail_width = width(preferences.tab_rail_width, agents::TAB_RAIL);
-        self.rail_page = match preferences.tab_rail_page {
-            TabRailPage::Agents => RailPage::Agents,
-            TabRailPage::Terminals => RailPage::Terminals,
-            TabRailPage::Files => RailPage::Files,
-        };
-        self.all_projects = preferences.tab_rail_scope == TabRailScope::All;
-        self.all_harnesses = preferences.tab_rail_all_agents;
+        self.rails.follow(preferences);
         self.recent_commands = preferences
             .recent_command_keys
             .iter()
@@ -3322,24 +3285,24 @@ impl Workbench {
         if self.preferences.is_none() {
             return;
         }
-        self.keeping_rails = Some(cx.spawn(async move |bench, cx| {
+        self.rails.keeping = Some(cx.spawn(async move |bench, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(400))
                 .await;
             let _ = bench.update(cx, |bench, _| {
-                bench.keeping_rails = None;
+                bench.rails.keeping = None;
                 bench.write_rails();
             });
         }));
     }
 
     fn write_rails(&self) {
-        let page = match self.rail_page {
+        let page = match self.rails.page {
             RailPage::Agents => TabRailPage::Agents,
             RailPage::Terminals => TabRailPage::Terminals,
             RailPage::Files => TabRailPage::Files,
         };
-        let scope = if self.all_projects {
+        let scope = if self.rails.all_projects {
             TabRailScope::All
         } else {
             TabRailScope::Project
@@ -3350,13 +3313,13 @@ impl Workbench {
             .map(|key| key.as_ref())
             .collect();
         let now = [
-            ("sideRailOpen", json!(self.side_rail_open)),
-            ("sideRailWidth", json!(self.side_rail_width)),
-            ("tabRailOpen", json!(self.tab_rail_open)),
-            ("tabRailWidth", json!(self.tab_rail_width)),
+            ("sideRailOpen", json!(self.rails.side_open)),
+            ("sideRailWidth", json!(self.rails.side_width)),
+            ("tabRailOpen", json!(self.rails.tab_open)),
+            ("tabRailWidth", json!(self.rails.tab_width)),
             ("tabRailPage", json!(page)),
             ("tabRailScope", json!(scope)),
-            ("tabRailAllAgents", json!(self.all_harnesses)),
+            ("tabRailAllAgents", json!(self.rails.all_harnesses)),
             ("recentCommandKeys", json!(recent)),
         ];
         let kept = self
@@ -3372,10 +3335,10 @@ impl Workbench {
 
     /// Opens both rails when either is closed, else closes both.
     pub fn toggle_focus_mode(&mut self, cx: &mut Context<Self>) {
-        let open = !(self.side_rail_open && self.tab_rail_open);
-        self.side_rail_open = open;
-        self.tab_rail_open = open;
-        self.peeking = None;
+        let open = !(self.rails.side_open && self.rails.tab_open);
+        self.rails.side_open = open;
+        self.rails.tab_open = open;
+        self.rails.peeking = None;
         self.keep_rails(cx);
         cx.notify();
     }
@@ -3384,18 +3347,18 @@ impl Workbench {
     /// it away a moment after the pointer leaves.
     fn peek(&mut self, edge: Edge, inside: bool, cx: &mut Context<Self>) {
         if inside {
-            self.unpeek = None;
-            if self.peeking != Some(edge) {
-                self.peeking = Some(edge);
+            self.rails.unpeek = None;
+            if self.rails.peeking != Some(edge) {
+                self.rails.peeking = Some(edge);
                 cx.notify();
             }
             return;
         }
-        self.unpeek = Some(cx.spawn(async move |this, cx| {
+        self.rails.unpeek = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(PEEK_CLOSE).await;
             let _ = this.update(cx, |bench, cx| {
-                if bench.peeking == Some(edge) {
-                    bench.peeking = None;
+                if bench.rails.peeking == Some(edge) {
+                    bench.rails.peeking = None;
                     cx.notify();
                 }
             });
@@ -4561,7 +4524,7 @@ impl Workbench {
 
     /// The rows the agent rail lists: this project's, or every project's.
     pub fn listed_agents(&self) -> Vec<AgentRow> {
-        let mut rows = if self.all_projects {
+        let mut rows = if self.rails.all_projects {
             self.projects()
                 .iter()
                 .flat_map(|project| self.agents_of(&project.id))
@@ -4621,7 +4584,7 @@ impl Workbench {
         let provider = self.launcher().map(|launcher| launcher.provider.as_str());
         self.saved_chats(project)
             .into_iter()
-            .filter(|recent| self.all_harnesses || provider == Some(recent.provider.as_str()))
+            .filter(|recent| self.rails.all_harnesses || provider == Some(recent.provider.as_str()))
             .filter(|recent| recent.title.to_lowercase().contains(&self.filter_text))
             .collect()
     }
@@ -4848,8 +4811,8 @@ impl Workbench {
     /// it goes, so nothing in it wraps again; the stage takes the room it gives up.
     fn docked_rail(&self, edge: Edge, tuck: f32, cx: &mut Context<Self>) -> impl IntoElement {
         let (part, width) = match edge {
-            Edge::Start => (&self.parts.rail, self.side_rail_width),
-            Edge::End => (&self.parts.tabs, self.tab_rail_width),
+            Edge::Start => (&self.parts.rail, self.rails.side_width),
+            Edge::End => (&self.parts.tabs, self.rails.tab_width),
         };
         let rail = crate::settings::leaves(div().h_full().flex_none(), cx).child(
             part.clone()
@@ -4879,10 +4842,10 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let (part, width) = match edge {
-            Edge::Start => (&self.parts.rail, self.side_rail_width),
-            Edge::End => (&self.parts.tabs, self.tab_rail_width),
+            Edge::Start => (&self.parts.rail, self.rails.side_width),
+            Edge::End => (&self.parts.tabs, self.rails.tab_width),
         };
-        let peeking = self.peeking == Some(edge);
+        let peeking = self.rails.peeking == Some(edge);
         let shown = motion::follow(
             match edge {
                 Edge::Start => "peek-start-shown",
@@ -4948,8 +4911,8 @@ impl Render for Workbench {
         let this = cx.weak_entity();
         crate::see_through::follow(window, cx);
         let [side_tuck, tab_tuck] = [
-            ("side-rail-tuck", self.side_rail_open),
-            ("tab-rail-tuck", self.tab_rail_open),
+            ("side-rail-tuck", self.rails.side_open),
+            ("tab-rail-tuck", self.rails.tab_open),
         ]
         .map(|(id, open)| {
             let tucked = if open { 0. } else { 1. };
@@ -5224,10 +5187,10 @@ impl Render for Workbench {
                 div()
                     .absolute()
                     .inset_0()
-                    .when(!self.side_rail_open, |above| {
+                    .when(!self.rails.side_open, |above| {
                         above.child(self.rail_edge(Edge::Start, window, cx))
                     })
-                    .when(!self.tab_rail_open, |above| {
+                    .when(!self.rails.tab_open, |above| {
                         above.child(self.rail_edge(Edge::End, window, cx))
                     })
                     .children(asked)

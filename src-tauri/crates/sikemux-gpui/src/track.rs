@@ -219,17 +219,17 @@ impl Workbench {
 
     /// Follows a scroll over the tab rail; true when it took it as a swipe between pages.
     fn swipe_rail(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) -> bool {
-        let front = self.rail_page;
-        match self.rail_slide.scroll(event, &RailPage::ALL, &front) {
+        let front = self.rails.page;
+        match self.rails.slide.scroll(event, &RailPage::ALL, &front) {
             Scrolled::Ignored => return false,
             Scrolled::Glided => return true,
             Scrolled::Moved => {}
             Scrolled::Landed((shown, from, speed, target)) => {
                 if let Some(target) = target {
-                    self.rail_page = target;
+                    self.rails.page = target;
                 }
-                let moved = self.rail_slide.travel(shown, from, Some(speed));
-                settle(self, moved, |bench: &mut Self| &mut bench.rail_slide, cx);
+                let moved = self.rails.slide.travel(shown, from, Some(speed));
+                settle(self, moved, |bench: &mut Self| &mut bench.rails.slide, cx);
             }
         }
         self.parts.redraw(&self.parts.tabs, cx);
@@ -238,12 +238,12 @@ impl Workbench {
 
     /// Shows another of the tab rail's pages, springing over to it.
     pub fn show_rail_page(&mut self, page: RailPage, cx: &mut Context<Self>) {
-        let was = std::mem::replace(&mut self.rail_page, page);
+        let was = std::mem::replace(&mut self.rails.page, page);
         if was != page {
             self.keep_rails(cx);
         }
-        if let Some(moved) = self.rail_slide.turn(was, page, &RailPage::ALL) {
-            settle(self, moved, |bench: &mut Self| &mut bench.rail_slide, cx);
+        if let Some(moved) = self.rails.slide.turn(was, page, &RailPage::ALL) {
+            settle(self, moved, |bench: &mut Self| &mut bench.rails.slide, cx);
         }
         cx.notify();
     }
@@ -347,7 +347,7 @@ pub fn rail(
     page: impl Fn(RailPage, &mut Context<Workbench>) -> AnyElement,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let (shown, start, motion) = bench.rail_slide.shown(bench.rail_page, &RailPage::ALL);
+    let (shown, start, motion) = bench.rails.slide.shown(bench.rails.page, &RailPage::ALL);
     let cards = shown
         .into_iter()
         .map(|(shown, place)| (page(shown, cx), place))
@@ -355,7 +355,7 @@ pub fn rail(
     let this = cx.entity().downgrade();
     row(
         "rail-track",
-        &bench.rail_slide.width,
+        &bench.rails.slide.width,
         cards,
         start,
         motion,

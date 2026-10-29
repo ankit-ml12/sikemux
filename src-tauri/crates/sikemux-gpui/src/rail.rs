@@ -9,7 +9,10 @@ use gpui_kit::{
     Styled, WeakEntity, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::protocol::{AccountInfo, AgentGroup, AgentStatus, PaneKind, ProjectInfo};
+use sikemux_wire::protocol::{
+    AccountInfo, AgentGroup, AgentStatus, PaneKind, Preferences, ProjectInfo, TabRailPage,
+    TabRailScope,
+};
 
 use crate::codehost::{Area, OpenArea};
 use crate::hosts::HostChoice;
@@ -19,6 +22,58 @@ use crate::tabs;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, Button, Group, IconButton, Row, Tone, Variant};
 use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, Workbench};
+
+impl Rails {
+    /// Opens, sizes and pages the rails as the person's preferences keep them.
+    pub fn follow(&mut self, preferences: &Preferences) {
+        self.side_open = preferences.side_rail_open;
+        self.tab_open = preferences.tab_rail_open;
+        let width =
+            |width: f64, range: RailWidth| (width as f32).clamp(range.min, range.max).round();
+        self.side_width = width(preferences.side_rail_width, SIDE_RAIL);
+        self.tab_width = width(preferences.tab_rail_width, crate::agents::TAB_RAIL);
+        self.page = match preferences.tab_rail_page {
+            TabRailPage::Agents => RailPage::Agents,
+            TabRailPage::Terminals => RailPage::Terminals,
+            TabRailPage::Files => RailPage::Files,
+        };
+        self.all_projects = preferences.tab_rail_scope == TabRailScope::All;
+        self.all_harnesses = preferences.tab_rail_all_agents;
+    }
+}
+
+/// The two rails' state: which stay open and how wide, the page the tab rail shows and what it
+/// lists, and what their drawing remembers between frames.
+pub struct Rails {
+    /// Which rails stay open; a closed one comes out over the stage while the pointer is at its edge.
+    pub(crate) side_open: bool,
+    pub(crate) tab_open: bool,
+    pub(crate) side_width: f32,
+    pub(crate) tab_width: f32,
+    /// The handles beside the rails, which arrow keys move once focused.
+    pub(crate) resizers: [gpui_kit::FocusHandle; 2],
+    pub(crate) peeking: Option<Edge>,
+    pub(crate) unpeek: Option<gpui_kit::Task<()>>,
+    /// Which of its pages the tab rail shows.
+    pub page: RailPage,
+    /// The rails' state waiting to be kept in the core's preferences, once a drag settles.
+    pub(crate) keeping: Option<gpui_kit::Task<()>>,
+    pub(crate) all_projects: bool,
+    /// The rail lists the recent chats of every agent, not one's.
+    pub(crate) all_harnesses: bool,
+    /// The leads whose teams the agent rail folds away.
+    pub(crate) folded_teams: std::collections::HashSet<String>,
+    /// The agent rows the rail drew last, for telling the rows that have just arrived.
+    pub(crate) seen: std::cell::RefCell<crate::agents::RailSeen>,
+    /// The tab rail's list of agents and chats, whose foot brings older chats into view.
+    pub(crate) scroll: gpui_kit::ScrollHandle,
+    /// Where the rail's agent rows were drawn, for the chosen surface to glide between them.
+    pub(crate) glide: std::cell::RefCell<crate::motion::GlideTrack>,
+    /// Where the tab rail's frame was last drawn, left, top, width and height, for the driver.
+    pub(crate) frame: Rc<std::cell::Cell<[f32; 4]>>,
+    /// The tab rail's pages while they move between one another.
+    pub(crate) slide: crate::track::Slide<RailPage>,
+}
 
 pub const SIDE_RAIL: RailWidth = RailWidth {
     min: 180.,
@@ -583,7 +638,7 @@ fn masthead(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 IconButton::new(
                     "hide-side-rail",
                     Icon::PanelLeft,
-                    if bench.side_rail_open {
+                    if bench.rails.side_open {
                         "Hide the side rail"
                     } else {
                         "Keep the side rail open"
@@ -683,10 +738,10 @@ fn lit_surface(bench: &Workbench) -> Option<PaneKind> {
         .and_then(|tab| tabs::first_view(&tab.pane))
         .map(|(kind, _)| kind);
     let paged = front.is_none_or(|kind| page_of(kind).is_some());
-    if !(bench.tab_rail_open && paged) {
+    if !(bench.rails.tab_open && paged) {
         return front;
     }
-    Some(match bench.rail_page {
+    Some(match bench.rails.page {
         RailPage::Agents => PaneKind::Agent,
         RailPage::Terminals => PaneKind::Terminal,
         RailPage::Files => PaneKind::Files,
@@ -906,7 +961,7 @@ fn surfaces(
                     .on_click(move |_, window, cx| {
                         if let Some(page) = kind.and_then(page_of) {
                             let _ = bench.update(cx, |bench, cx| {
-                                if bench.tab_rail_open {
+                                if bench.rails.tab_open {
                                     bench.show_rail_page(page, cx);
                                 }
                             });

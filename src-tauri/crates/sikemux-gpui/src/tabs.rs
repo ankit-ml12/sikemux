@@ -113,7 +113,7 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                         },
                     )
                     .width(30.)
-                    .pressed(!bench.side_rail_open && !bench.tab_rail_open)
+                    .pressed(!bench.rails.side_open && !bench.rails.tab_open)
                     .on_click(cx.listener(|bench, _, _, cx| bench.toggle_focus_mode(cx))),
                 ),
         );

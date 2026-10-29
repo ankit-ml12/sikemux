@@ -256,8 +256,8 @@ impl Workbench {
 
     /// Opens the tab rail on `page`.
     pub fn open_rail_on(&mut self, page: RailPage, cx: &mut Context<Self>) {
-        if !self.tab_rail_open {
-            self.tab_rail_open = true;
+        if !self.rails.tab_open {
+            self.rails.tab_open = true;
             self.keep_rails(cx);
         }
         self.show_rail_page(page, cx);

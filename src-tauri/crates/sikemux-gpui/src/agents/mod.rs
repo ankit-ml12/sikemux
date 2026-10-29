@@ -34,7 +34,7 @@ pub mod review;
 pub mod setup;
 
 pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    let frame = bench.rail_frame.clone();
+    let frame = bench.rails.frame.clone();
     ui::panel(cx)
         .relative()
         .w(px(bench.rail_width(Edge::End)))
@@ -89,7 +89,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
     }
     let project = bench.project();
     let pins = project
-        .filter(|_| !bench.all_projects)
+        .filter(|_| !bench.rails.all_projects)
         .map(|project| bench.pinned_of(&project.id))
         .unwrap_or_default();
     let (held, agents): (Vec<_>, Vec<_>) = bench.listed_agents().into_iter().partition(|agent| {
@@ -113,7 +113,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
         .map(|project| bench.recent_of(&project.id))
         .unwrap_or_default()
         .into_iter()
-        .filter(|recent| !recent.pinned || bench.all_projects)
+        .filter(|recent| !recent.pinned || bench.rails.all_projects)
         .map(|recent| recent_row(bench, recent, cx))
         .collect();
     if bench.has_older() && !recent.is_empty() {
@@ -122,7 +122,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
     let empty = (rows.is_empty() && pinned.is_empty() && recent.is_empty()).then(|| {
         let shown = (project.zip(other_host(bench)))
             .filter(|_| bench.filter_text.is_empty())
-            .map(|(project, host)| match bench.all_projects {
+            .map(|(project, host)| match bench.rails.all_projects {
                 true => format!("No chats on {host}"),
                 false => format!("No chats in {} on {host}", project.name),
             });
@@ -210,7 +210,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
         .child(faded(
             div()
                 .id("tab-rail-scroll")
-                .track_scroll(&bench.rail_scroll)
+                .track_scroll(&bench.rails.scroll)
                 .on_scroll(cx.listener(|bench, _, _, cx| bench.hold_card(cx)))
                 .size_full()
                 .pt(px(EDGE_FADE))
@@ -219,7 +219,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 .overflow_y_scroll()
                 .children(empty)
                 .child({
-                    let glide = bench.rail_glide.borrow();
+                    let glide = bench.rails.glide.borrow();
                     let skip = usize::from(copy.is_some());
                     div().on_children_prepainted(glide.keep_origin()).child(
                         div()
@@ -293,7 +293,7 @@ fn header_frame(
                         IconButton::new(
                             "hide-tab-rail",
                             Icon::PanelRight,
-                            if bench.tab_rail_open {
+                            if bench.rails.tab_open {
                                 "Hide agents rail"
                             } else {
                                 "Keep agents rail open"
@@ -310,7 +310,7 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let launcher = bench.launcher();
     let (mark, label) = match launcher {
-        _ if bench.all_harnesses => (
+        _ if bench.rails.all_harnesses => (
             ui::icon(Icon::Inbox, 16.)
                 .text_color(t.text_secondary)
                 .into_any_element(),
@@ -351,13 +351,13 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             .child(name)
             .into_any_element();
     }
-    let chosen = if bench.all_harnesses {
+    let chosen = if bench.rails.all_harnesses {
         None
     } else {
         launcher.map(|launcher| launcher.provider.clone())
     };
     let choose = Rc::new(cx.listener(|bench, choice: &Option<String>, _, cx| {
-        bench.all_harnesses = choice.is_none();
+        bench.rails.all_harnesses = choice.is_none();
         if choice.is_some() {
             bench.launcher_choice = choice.clone();
         }
@@ -513,7 +513,7 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
 
 /// The foot of Recent, which brings the next page of older chats once it scrolls into view.
 fn older_when_seen(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    let (scroll, this) = (bench.rail_scroll.clone(), cx.weak_entity());
+    let (scroll, this) = (bench.rails.scroll.clone(), cx.weak_entity());
     canvas(
         move |bounds, _, cx| {
             if bounds.top() <= scroll.bounds().bottom() {
@@ -613,7 +613,8 @@ fn team_rows(
 ) -> (Option<AnyElement>, Vec<AnyElement>) {
     let chosen = bench.agent().map(|agent| agent.id.clone());
     let glided = bench
-        .rail_glide
+        .rails
+        .glide
         .borrow_mut()
         .choose(chosen, cx.reduce_motion());
     let teams = bench.filter_text.is_empty();
@@ -652,7 +653,7 @@ fn team_rows(
                     }))
                     .collect();
                 let count = members.len() - 1 + remote_of(&members).len();
-                folded = bench.folded_teams.contains(&agent.id);
+                folded = bench.rails.folded_teams.contains(&agent.id);
                 team_members = members;
                 Some(Fold {
                     open: !folded,
@@ -677,7 +678,7 @@ fn team_rows(
     }
     let view = format!(
         "{}:{}:{}",
-        bench.all_projects,
+        bench.rails.all_projects,
         bench.project().map_or("", |project| project.id.as_str()),
         bench.filter_text
     );
@@ -685,7 +686,7 @@ fn team_rows(
         .close
         .duration
         .max(crate::motion::ARRIVE_SLIDE.duration);
-    let mut seen = bench.rail_seen.borrow_mut();
+    let mut seen = bench.rails.seen.borrow_mut();
     let (arriving, left) = seen.update(view, shown, usize::MAX, lasting);
     let mut order: Vec<String> = drawn.iter().map(|(id, _)| id.clone()).collect();
     let mut rows: Vec<AnyElement> = drawn
@@ -705,7 +706,7 @@ fn team_rows(
         rows.insert(gone.at.min(rows.len()), row.into_any_element());
         order.insert(gone.at.min(order.len()), gone.id.clone());
     }
-    let mut glide = bench.rail_glide.borrow_mut();
+    let mut glide = bench.rails.glide.borrow_mut();
     glide.set_order(order);
     let chosen = Tokens::get(cx).surface_chosen;
     let copy = glide.copy(move |copy| copy.rounded(theme::RADIUS_2).bg(chosen));
@@ -798,8 +799,8 @@ fn remote_row(worker: &RemoteAgent, cx: &mut Context<Workbench>) -> AnyElement {
 impl Workbench {
     /// Folds a lead's team away, or brings it back.
     pub fn fold_team(&mut self, lead: &str, cx: &mut Context<Self>) {
-        if !self.folded_teams.remove(lead) {
-            self.folded_teams.insert(lead.to_owned());
+        if !self.rails.folded_teams.remove(lead) {
+            self.rails.folded_teams.insert(lead.to_owned());
         }
         cx.notify();
     }
@@ -821,6 +822,7 @@ fn agent_row(
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let project = bench
+        .rails
         .all_projects
         .then(|| {
             bench
@@ -1101,7 +1103,7 @@ pub fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
 /// open below it while the pointer rests on the panel.
 fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoElement> {
     let t = Tokens::get(cx).clone();
-    if bench.all_harnesses {
+    if bench.rails.all_harnesses {
         return None;
     }
     let launcher = bench.launcher()?;
@@ -1676,7 +1678,7 @@ fn pages(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
                 cx: &mut Context<Workbench>| {
         IconButton::new(id, glyph, label)
             .width(32.)
-            .pressed(bench.rail_page == shown)
+            .pressed(bench.rails.page == shown)
             .on_click(cx.listener(move |bench, _, _, cx| {
                 bench.show_rail_page(shown, cx);
             }))
@@ -1764,7 +1766,7 @@ fn rail_empty(
 
 /// The project's terminal tabs, or every project's, to bring forward or start.
 fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    let strips: Vec<Strip> = if bench.all_projects {
+    let strips: Vec<Strip> = if bench.rails.all_projects {
         bench
             .projects()
             .iter()
@@ -1783,7 +1785,7 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
                 cx,
             )
         } else {
-            let title = match (bench.all_projects, bench.project(), other_host(bench)) {
+            let title = match (bench.rails.all_projects, bench.project(), other_host(bench)) {
                 (false, Some(project), Some(host)) => {
                     format!("No terminals in {} on {host}", project.name)
                 }
@@ -1842,7 +1844,7 @@ fn terminal_rows(
     let mut rows = Vec::new();
     for strip in strips {
         let project = match strip {
-            Strip::Project(id) if bench.all_projects => bench
+            Strip::Project(id) if bench.rails.all_projects => bench
                 .projects()
                 .iter()
                 .find(|project| &project.id == id)
@@ -1973,10 +1975,10 @@ fn scope_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElem
         ),
         (Icon::Stack, SharedString::from("All projects")),
     ];
-    Segmented::new("scope", scope, usize::from(bench.all_projects))
+    Segmented::new("scope", scope, usize::from(bench.rails.all_projects))
         .waiting(1, waiting_elsewhere(bench))
         .on_select(cx.listener(|bench, all: &usize, _, cx| {
-            bench.all_projects = *all == 1;
+            bench.rails.all_projects = *all == 1;
             bench.keep_rails(cx);
             cx.notify();
         }))

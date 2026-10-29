@@ -118,7 +118,7 @@ fn main() -> anyhow::Result<()> {
         if let Some(bench) = bench.borrow().clone() {
             cx.update(|cx| {
                 bench.update(cx, |bench, cx| {
-                    bench.rail_page = workbench::RailPage::Files;
+                    bench.rails.page = workbench::RailPage::Files;
                     cx.notify();
                 })
             });
