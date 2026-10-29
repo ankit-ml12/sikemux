@@ -164,9 +164,9 @@ pub fn render(
             )
     };
     let t = crate::theme::Tokens::get(cx).clone();
-    let version = match bench.version.is_empty() {
+    let version = match bench.connection.version.is_empty() {
         true => "Version unknown".to_owned(),
-        false => format!("Version {}", bench.version),
+        false => format!("Version {}", bench.connection.version),
     };
     let app = div()
         .flex()

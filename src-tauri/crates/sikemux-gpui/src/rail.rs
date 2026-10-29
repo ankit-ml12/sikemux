@@ -600,7 +600,7 @@ fn rows(read: Option<&Value>) -> impl Iterator<Item = &Value> {
 
 fn masthead(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let (release, channel) = split_version(&bench.version);
+    let (release, channel) = split_version(&bench.connection.version);
     div()
         .flex()
         .flex_none()

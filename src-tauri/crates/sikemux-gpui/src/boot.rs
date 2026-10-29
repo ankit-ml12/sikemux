@@ -15,6 +15,48 @@ use crate::theme::{Tokens, SPACE_1H, SPACE_3H, TEXT_SM};
 use crate::ui;
 use crate::workbench::Workbench;
 
+/// How the window stands with its core: which version answered, and why it does not now.
+#[derive(Default)]
+pub struct Connection {
+    pub(crate) version: String,
+    pub(crate) lost: Option<String>,
+    /// The core stopped on purpose, so it waits for the person to start it again.
+    pub(crate) stopped: bool,
+    /// The core holding the socket stopped answering, by its process id, and whether the
+    /// person asked to restart it.
+    pub(crate) stuck: Option<(u32, bool)>,
+    /// Opening has taken long enough to show the mark.
+    pub(crate) boot_shown: bool,
+    /// Opening has taken long enough to say what the window waits for.
+    pub(crate) slow_start: bool,
+}
+
+impl Connection {
+    /// The core at `version` answered. Says whether it is the first to answer this window.
+    pub fn connected(&mut self, version: String) -> bool {
+        let first = self.version.is_empty();
+        self.version = version;
+        self.lost = None;
+        self.stopped = false;
+        self.stuck = None;
+        first
+    }
+
+    pub fn lose(&mut self, reason: String) {
+        self.lost = Some(reason);
+    }
+
+    pub fn stop(&mut self) {
+        self.lost = None;
+        self.stopped = true;
+    }
+
+    pub fn hang(&mut self, pid: u32) {
+        self.lost = None;
+        self.stuck = Some((pid, false));
+    }
+}
+
 /// An opening that finishes within this shows only the window's ground, so it never flashes.
 const SHOW_MARK_AFTER: Duration = Duration::from_millis(400);
 /// An opening still going after this says what it waits on.
@@ -27,14 +69,14 @@ impl Workbench {
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(SHOW_MARK_AFTER).await;
             let _ = this.update(cx, |bench, cx| {
-                bench.boot_shown = true;
+                bench.connection.boot_shown = true;
                 cx.notify();
             });
             cx.background_executor()
                 .timer(NAME_THE_WAIT_AFTER - SHOW_MARK_AFTER)
                 .await;
             let _ = this.update(cx, |bench, cx| {
-                bench.slow_start = true;
+                bench.connection.slow_start = true;
                 cx.notify();
             });
         })
@@ -78,12 +120,19 @@ pub fn opening(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
         return None;
     }
     let t = Tokens::get(cx).clone();
-    let words = bench.slow_start.then_some(if bench.version.is_empty() {
-        "Waiting for Sikemux to start"
-    } else {
-        "Opening your workspace"
-    });
-    let why = bench.lost.clone().filter(|_| bench.slow_start);
+    let words = bench
+        .connection
+        .slow_start
+        .then_some(if bench.connection.version.is_empty() {
+            "Waiting for Sikemux to start"
+        } else {
+            "Opening your workspace"
+        });
+    let why = bench
+        .connection
+        .lost
+        .clone()
+        .filter(|_| bench.connection.slow_start);
     let mark = div()
         .relative()
         .child(ui::icon(Icon::Logo, 34.).text_color(white()).opacity(0.9))
@@ -127,14 +176,18 @@ pub fn opening(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
             .justify_center()
             .bg(t.surface_sunken)
             .occlude()
-            .when(bench.boot_shown, |cover| cover.child(mark))
+            .when(bench.connection.boot_shown, |cover| cover.child(mark))
             .into_any_element(),
     )
 }
 
 /// Covers the workspace while the connection to the core is down.
 pub fn reconnecting(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let reason = bench.lost.clone().filter(|_| bench.view.is_some())?;
+    let reason = bench
+        .connection
+        .lost
+        .clone()
+        .filter(|_| bench.view.is_some())?;
     let t = Tokens::get(cx).clone();
     Some(
         div()
@@ -160,7 +213,7 @@ pub fn reconnecting(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<An
 
 /// Covers the workspace while the core is stopped on purpose, with the one way back: starting it.
 pub fn stopped(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    if !bench.stopped || bench.view.is_none() {
+    if !bench.connection.stopped || bench.view.is_none() {
         return None;
     }
     let t = Tokens::get(cx).clone();
@@ -198,7 +251,7 @@ pub fn stopped(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
 /// Covers the window while a core that stopped answering holds the socket, with the one way
 /// out: ending it so another starts.
 pub fn stuck(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let (pid, restarting) = bench.stuck?;
+    let (pid, restarting) = bench.connection.stuck?;
     let t = Tokens::get(cx).clone();
     Some(
         div()
@@ -227,7 +280,7 @@ pub fn stuck(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElemen
                 )
                 .disabled(restarting)
                 .on_click(cx.listener(|bench, _, _, cx| {
-                    if let Some((_, restarting)) = &mut bench.stuck {
+                    if let Some((_, restarting)) = &mut bench.connection.stuck {
                         *restarting = true;
                     }
                     let _ = bench.asks.send(crate::core::Ask::StartCore);

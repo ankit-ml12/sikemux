@@ -407,9 +407,10 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
     };
 
     let release = bench
+        .connection
         .version
         .split_once('-')
-        .map_or(bench.version.as_str(), |(release, _)| release)
+        .map_or(bench.connection.version.as_str(), |(release, _)| release)
         .to_owned();
     let foot = div()
         .flex()

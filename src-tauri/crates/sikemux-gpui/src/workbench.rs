@@ -81,21 +81,11 @@ const PICTURE_BUDGET: usize = 256 * 1024 * 1024;
 pub(crate) const MAX_SPACE_NAME: usize = 40;
 
 pub struct Workbench {
-    pub version: String,
+    pub connection: crate::boot::Connection,
     pub view: Option<DeviceView>,
     pub reads: Reads,
     /// The person's preferences, once the core has said them.
     preferences: Option<Preferences>,
-    pub lost: Option<String>,
-    /// The core stopped on purpose, so it waits for the person to start it again.
-    pub stopped: bool,
-    /// The core holding the socket stopped answering, by its process id, and whether the
-    /// person asked to restart it.
-    pub stuck: Option<(u32, bool)>,
-    /// Opening has taken long enough to show the mark.
-    pub boot_shown: bool,
-    /// Opening has taken long enough to say what the window waits for.
-    pub slow_start: bool,
     /// Dictation, heard into the chat or terminal holding the keyboard.
     pub voice: Entity<crate::voice::Dictation>,
     _voice_heard: [Subscription; 4],
@@ -550,15 +540,10 @@ impl Workbench {
             }),
         ];
         let mut bench = Self {
-            version: String::new(),
+            connection: crate::boot::Connection::default(),
             view: None,
             reads: Reads::default(),
             preferences: None,
-            lost: None,
-            stopped: false,
-            stuck: None,
-            boot_shown: false,
-            slow_start: false,
             voice,
             _voice_heard: voice_heard,
             keys: Keyboard {
@@ -730,14 +715,10 @@ impl Workbench {
         match update {
             Update::Connected(version) => {
                 // The app opens on this host, as the Mac's does, whichever host was last in front.
-                if self.version.is_empty() {
+                if self.connection.connected(version) {
                     self.call("chooseHost", json!({ "host": "this" }));
                     self.usage_wanted = true;
                 }
-                self.version = version;
-                self.lost = None;
-                self.stopped = false;
-                self.stuck = None;
                 self.on_screen = None;
                 for (agent, chat) in self.chats.open.iter().filter(|(_, chat)| !chat.resting) {
                     self.ask_chat(ChatAsk::Attach {
@@ -1123,15 +1104,9 @@ impl Workbench {
                 }
             }
             Update::From(..) => {}
-            Update::Lost(reason) => self.lost = Some(reason),
-            Update::Stopped => {
-                self.lost = None;
-                self.stopped = true;
-            }
-            Update::Stuck(pid) => {
-                self.lost = None;
-                self.stuck = Some((pid, false));
-            }
+            Update::Lost(reason) => self.connection.lose(reason),
+            Update::Stopped => self.connection.stop(),
+            Update::Stuck(pid) => self.connection.hang(pid),
             Update::ShutDown => return cx.quit(),
             Update::Notice { title, body, agent } => {
                 return crate::notifications::notice(self, title, body, agent, cx);
