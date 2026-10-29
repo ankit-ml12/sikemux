@@ -17,7 +17,7 @@ import { haptics } from '@/ui/haptics';
 import { AgentIcon, DeviceIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton } from '@/ui/controls';
 import { Screen, useBottomGap } from '@/ui/screen';
-import { NeedsYou, Working } from '@/ui/status';
+import { NeedsYou, Working } from '@/devices/AgentMarks';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles } from '@/ui/theme';
 
 function DeviceCard({ device }: { device: PairedDevice }) {

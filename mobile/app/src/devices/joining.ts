@@ -5,8 +5,8 @@ import { JoinAnswer, MobileError } from '@sikemux/native';
 import { problem } from '@/core/problem';
 import { inBackgroundTime } from '../../modules/background-time';
 import { ApiProblem, joinTicket, type TokenSource } from '@/account/api';
-import { whileJoining } from '@/device/identity';
-import { phoneName } from '@/device/name';
+import { whileJoining } from '@/phone/identity';
+import { phoneName } from '@/phone/name';
 import { rejoined, reloadDevices } from './hub';
 import { rememberDevice, type Access } from './paired';
 

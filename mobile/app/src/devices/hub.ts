@@ -6,7 +6,7 @@ import { problem } from '@/core/problem';
 import { forgetAgentCatalog, setAgentCatalog, type CatalogAgent } from '@shared/agents/catalog';
 import { externalValue, useExternalValue } from '@shared/lib/externalValue';
 import { keepUnchanged, readHost, readView, type HostInfo, type Snapshot } from '@/core/protocol';
-import { goOffline, thisDevice } from '@/device/identity';
+import { goOffline, thisDevice } from '@/phone/identity';
 import { onNetworkChange } from '@/network/connectivity';
 import { dismissHostCards, reconcileCards } from '@/notify/cards';
 import { shareKey, withdrawKey } from '@/notify/keys';

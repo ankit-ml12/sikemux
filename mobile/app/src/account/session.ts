@@ -12,7 +12,7 @@ import { externalValue, useExternalValue } from '@shared/lib/externalValue';
 import { problem as problemOf } from '@/core/problem';
 import { alertFailure } from '@/ui/prompt';
 import { notifier } from '../../modules/notify';
-import { deviceIdentity } from '@/device/identity';
+import { deviceIdentity } from '@/phone/identity';
 import { hostsArrived } from '@/devices/arrivals';
 import { joinShowing } from '@/devices/joining';
 import { pairedDevices } from '@/devices/paired';

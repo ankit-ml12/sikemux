@@ -6,7 +6,7 @@ import type { ApnsEnvironment, PushApp } from '@protocol';
 
 import { notifier } from '../../modules/notify';
 import { clearPushToken, setPushToken, type TokenSource } from '@/account/api';
-import { deviceIdentity } from '@/device/identity';
+import { deviceIdentity } from '@/phone/identity';
 import { notificationsChoice } from './setting';
 
 /** What the server last took from this phone, so an unchanged token is not sent again. */

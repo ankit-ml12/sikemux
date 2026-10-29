@@ -19,7 +19,7 @@ const token = vi.hoisted(() => ({ forgetPush: vi.fn(async () => {}) }));
 vi.mock('@/notify/token', () => token);
 
 const rotate = vi.hoisted(() => ({ rotateDeviceKey: vi.fn(async () => {}) }));
-vi.mock('@/device/identity', () => rotate);
+vi.mock('@/phone/identity', () => rotate);
 
 const live = vi.hoisted(() => ({ stopLive: vi.fn(), forgetCursor: vi.fn(async () => {}) }));
 vi.mock('./live', () => live);

@@ -15,7 +15,7 @@ import { AppleMark, GitHubMark, GoogleG } from '@/ui/brands';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button } from '@/ui/controls';
 import { useBottomGap } from '@/ui/screen';
-import { Dot, NeedsYou, Working } from '@/ui/status';
+import { Dot, NeedsYou, Working } from '@/devices/AgentMarks';
 import { defaultPalette as colors, fonts, typeFor } from '@/ui/theme';
 
 WebBrowser.maybeCompleteAuthSession();

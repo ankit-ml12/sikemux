@@ -21,7 +21,7 @@ import { projectAt, projectName } from '@/devices/words';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Row, Rows, SectionLabel } from '@/ui/list';
 import { EmptyState } from '@/ui/prompt';
-import { Dot, NeedsYou, Working } from '@/ui/status';
+import { Dot, NeedsYou, Working } from '@/devices/AgentMarks';
 import { fonts, type Palette, typeFor, useColors, useStyles } from '@/ui/theme';
 
 const COLUMNS: readonly BoardColumn[] = ['needs', 'progress', 'open', 'done'];

@@ -3,7 +3,7 @@ import { MobileError, type ConnectionLike, type CoreListener } from '@sikemux/na
 
 import { notifier, type AnswerOutcome, type ShownCard } from '../../modules/notify';
 import type { Snapshot } from '@/core/protocol';
-import { goOffline, whileJoining } from '@/device/identity';
+import { goOffline, whileJoining } from '@/phone/identity';
 import { openConnections } from '@/devices/hub';
 
 /** Permission cards whose request the host no longer has: it was answered or withdrawn elsewhere. */

@@ -1,7 +1,7 @@
 import { StyleSheet, Text } from 'react-native';
 
 import type { AgentGroup } from '@/core/protocol';
-import { AgentFace } from '@/ui/Buddy';
+import { AgentFace } from '@/devices/Buddy';
 import { fonts, type Palette, useStyles } from '@/ui/theme';
 
 /**

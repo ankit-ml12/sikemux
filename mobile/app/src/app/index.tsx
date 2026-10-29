@@ -5,10 +5,10 @@ import { useAuth } from '@clerk/expo';
 import { useFarewell } from '@/account/farewell';
 import { useAccountStatus } from '@/account/session';
 import { readDevicesAgain, useDevices } from '@/devices/hub';
-import { DevicesList } from '@/screens/DevicesList';
-import { Farewell } from '@/screens/Farewell';
-import { RestoreAccount } from '@/screens/RestoreAccount';
-import { Welcome } from '@/screens/Welcome';
+import { DevicesList } from '@/devices/DevicesList';
+import { Farewell } from '@/account/FarewellScreen';
+import { RestoreAccount } from '@/account/RestoreAccount';
+import { Welcome } from '@/account/Welcome';
 import { Button } from '@/ui/controls';
 import { alertFailure, PromptScreen } from '@/ui/prompt';
 
@@ -29,7 +29,7 @@ function Unreadable({ problem }: { problem: string }) {
   );
 }
 
-export { Crashed as ErrorBoundary } from '@/screens/Crashed';
+export { Crashed as ErrorBoundary } from '@/ui/Crashed';
 
 /** Whether launch has decided between Devices and the one host; it opens that host only once. */
 let launched = false;

@@ -12,7 +12,7 @@ import { goBack } from '@/ui/navigate';
 import { Button } from '@/ui/controls';
 import { Prompt } from '@/ui/prompt';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
-import { Working } from '@/ui/status';
+import { Working } from '@/devices/AgentMarks';
 import { offerNotifications } from '@/notify/setting';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
@@ -65,7 +65,7 @@ function stopped(error: unknown): JoinFailure {
 }
 
 /** Connects to a host on the account; someone at the host still allows it. `arrived` marks a host that just signed in. */
-export { Crashed as ErrorBoundary } from '@/screens/Crashed';
+export { Crashed as ErrorBoundary } from '@/ui/Crashed';
 
 export default function Join() {
   const styles = useStyles(makeStyles);

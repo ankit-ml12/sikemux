@@ -6,7 +6,7 @@ import NetInfo from '../../test/mocks/react-native-community-netinfo';
 import { AppState } from '../../test/mocks/react-native';
 
 const identity = vi.hoisted(() => ({ thisDevice: vi.fn(), goOffline: vi.fn(), whileJoining: vi.fn() }));
-vi.mock('@/device/identity', () => identity);
+vi.mock('@/phone/identity', () => identity);
 
 const native = vi.hoisted(() => ({
   notifier: {

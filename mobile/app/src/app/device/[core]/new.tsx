@@ -32,11 +32,11 @@ import { problem as problemOf } from '@/core/problem';
 import { useLive } from '@/devices/hub';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { haptics } from '@/ui/haptics';
-import { AgentFace } from '@/ui/Buddy';
+import { AgentFace } from '@/devices/Buddy';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { type Glyph, PromptGlyph } from '@/ui/prompt';
 import { Nav, Screen, useKeyboardShown } from '@/ui/screen';
-import { Working } from '@/ui/status';
+import { Working } from '@/devices/AgentMarks';
 import { Sheet, SheetLabel } from '@/ui/Sheet';
 import { fonts, type Palette, useColors, useStyles, useType } from '@/ui/theme';
 
@@ -163,7 +163,7 @@ function SettingsSheet({
   );
 }
 
-export { Crashed as ErrorBoundary } from '@/screens/Crashed';
+export { Crashed as ErrorBoundary } from '@/ui/Crashed';
 
 export default function NewChat() {
   const colors = useColors();

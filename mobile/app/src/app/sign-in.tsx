@@ -18,7 +18,7 @@ const TITLES: Record<SignInStep['kind'], string> = {
   'new-password': 'Choose a new password',
 };
 
-export { Crashed as ErrorBoundary } from '@/screens/Crashed';
+export { Crashed as ErrorBoundary } from '@/ui/Crashed';
 
 export default function SignIn() {
   const styles = useStyles(makeStyles);

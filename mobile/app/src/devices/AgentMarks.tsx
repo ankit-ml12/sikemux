@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
 import type { AgentGroup } from '@/core/protocol';
-import { counted } from '@/devices/words';
+import { counted } from './words';
 
-import { Icon } from './Icon';
-import { useAnimating } from './motion';
-import { fonts, type Palette, useColors, useStyles } from './theme';
+import { Icon } from '@/ui/Icon';
+import { useAnimating } from '@/ui/motion';
+import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 
 function useLoop(still: boolean, duration: number, delay = 0) {
   const [value] = useState(() => new Animated.Value(0));

@@ -3,7 +3,7 @@ import { pairedDevices } from '@/devices/paired';
 import { turnLockOff } from '@/lock/lock';
 import { choose } from '@/notify/setting';
 import { forgetPush } from '@/notify/token';
-import { rotateDeviceKey } from '@/device/identity';
+import { rotateDeviceKey } from '@/phone/identity';
 import { goHome } from '@/ui/navigate';
 import { sayFarewell, type Farewell } from './farewell';
 import { forgetCursor, stopLive } from './live';

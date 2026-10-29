@@ -34,10 +34,10 @@ import type {
 import { useAgentNames } from '@/devices/hub';
 import { CopyButton } from '@/ui/CopyButton';
 import { haptics } from '@/ui/haptics';
-import { AgentFace } from '@/ui/Buddy';
+import { AgentFace } from '@/devices/Buddy';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import type { IconName } from '@/ui/icons.generated';
-import { Working } from '@/ui/status';
+import { Working } from '@/devices/AgentMarks';
 import { fonts, italic, keyboardFor, mixed, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
 import { useAnimating, useStill } from '@/ui/motion';
 import { Shimmer } from '@/ui/Shimmer';

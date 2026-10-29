@@ -55,7 +55,7 @@ import { Button } from '@/ui/controls';
 import { pauseBackdrop } from '@/ui/motion';
 import { goBack } from '@/ui/navigate';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
-import { Working } from '@/ui/status';
+import { Working } from '@/devices/AgentMarks';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 const noSubscribe = () => () => {};

@@ -16,7 +16,7 @@ const native = vi.hoisted(() => ({
 }));
 vi.mock('../../modules/notify', () => native);
 
-vi.mock('@/device/identity', () => ({ deviceIdentity: async () => ({ id: () => 'ab'.repeat(32) }) }));
+vi.mock('@/phone/identity', () => ({ deviceIdentity: async () => ({ id: () => 'ab'.repeat(32) }) }));
 
 const token = async () => 'session';
 const TOKEN_SHA = 'c'.repeat(64);

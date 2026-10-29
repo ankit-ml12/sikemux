@@ -17,7 +17,7 @@ import { SectionLabel } from '@/ui/list';
 import { useStill } from '@/ui/motion';
 import { Sheet } from '@/ui/Sheet';
 import { Shimmer } from '@/ui/Shimmer';
-import { Dot, Working } from '@/ui/status';
+import { Dot, Working } from '@/devices/AgentMarks';
 import { fonts, mixed, type Palette, useColors, useStyles } from '@/ui/theme';
 import { counted } from '@/devices/words';
 import { liveStrip, type LiveWork, type PlanEntry, type StripPiece } from './liveWork';

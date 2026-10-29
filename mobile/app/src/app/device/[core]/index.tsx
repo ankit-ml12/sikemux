@@ -19,13 +19,13 @@ import { summary } from '@/devices/status';
 import { agentIn, itemIn, projectName, projectOf } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { useMinute, useScrollPause } from '@/ui/motion';
-import { AgentFace } from '@/ui/Buddy';
+import { AgentFace } from '@/devices/Buddy';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
 import { EmptyState, Prompt } from '@/ui/prompt';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
-import { AgentState, NeedsYou, ShellCount, SubagentCount, TriggerTime, Working } from '@/ui/status';
+import { AgentState, NeedsYou, ShellCount, SubagentCount, TriggerTime, Working } from '@/devices/AgentMarks';
 import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals' | 'board';
@@ -496,7 +496,7 @@ function Unpaired({ device }: { device?: PairedDevice }) {
   );
 }
 
-export { Crashed as ErrorBoundary } from '@/screens/Crashed';
+export { Crashed as ErrorBoundary } from '@/ui/Crashed';
 
 export default function Device() {
   const colors = useColors();

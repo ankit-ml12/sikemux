@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useAuth } from '@clerk/expo';
 
 import { apiUrl } from '@/account/config';
-import { deviceKeyHex } from '@/device/identity';
+import { deviceKeyHex } from '@/phone/identity';
 import { stashNative } from '../../modules/stash';
 import { onShareChats, shareChatsNow, type ShareChats } from './chats';
 

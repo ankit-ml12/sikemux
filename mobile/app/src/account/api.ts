@@ -2,8 +2,8 @@ import { Platform } from 'react-native';
 import type { ApnsEnvironment, Device, DeviceRegistration, JoinTicket, PushApp, PushTokenRegistration, PushTokenState } from '@protocol';
 import { ApiProblem, connectApi } from '@protocol/api';
 
-import { deviceIdentity } from '@/device/identity';
-import { phoneName } from '@/device/name';
+import { deviceIdentity } from '@/phone/identity';
+import { phoneName } from '@/phone/name';
 import { apiUrl } from './config';
 
 export { ApiProblem };

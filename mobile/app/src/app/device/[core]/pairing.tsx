@@ -6,7 +6,7 @@ import type { ConnectionLike } from '@sikemux/native';
 import { ACCESS_OPTIONS, platformName } from '@shared/remote/access';
 import { formatAgo } from '@shared/lib/format';
 import { type DeviceAccess, type LinkedHost, type DeviceInfo, type RemotePairing, readPairing } from '@/core/protocol';
-import { useDeviceId } from '@/device/identity';
+import { useDeviceId } from '@/phone/identity';
 import { problem as problemOf } from '@/core/problem';
 import { connectionOf, useDevices, useLive } from '@/devices/hub';
 import { deviceName } from '@/devices/paired';

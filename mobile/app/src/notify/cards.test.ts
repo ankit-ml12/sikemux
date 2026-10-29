@@ -12,7 +12,7 @@ const identity = vi.hoisted(() => ({
   whileJoining: vi.fn(async <T>(work: (held: typeof device) => Promise<T>) => work(device)),
   goOffline: vi.fn(async () => {}),
 }));
-vi.mock('@/device/identity', () => identity);
+vi.mock('@/phone/identity', () => identity);
 
 const HOST = 'ea'.repeat(32);
 

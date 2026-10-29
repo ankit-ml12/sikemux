@@ -23,7 +23,7 @@ import { AgentIcon, Icon } from '@/ui/Icon';
 import { useMinute } from '@/ui/motion';
 import { EmptyState, type Glyph } from '@/ui/prompt';
 import { Nav, Screen } from '@/ui/screen';
-import { Working } from '@/ui/status';
+import { Working } from '@/devices/AgentMarks';
 import { fonts, type Palette, useColors, useStyles, useType } from '@/ui/theme';
 
 type Problem = { icon: Glyph; text: string };

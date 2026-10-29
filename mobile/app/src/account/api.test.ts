@@ -10,8 +10,8 @@ const identity = vi.hoisted(() => ({
     signPush: vi.fn((nonce: string, tokenSha256: string) => `pushed:${nonce}:${tokenSha256}`),
   })),
 }));
-vi.mock('@/device/identity', () => identity);
-vi.mock('@/device/name', () => ({ phoneName: () => 'Pixel 9' }));
+vi.mock('@/phone/identity', () => identity);
+vi.mock('@/phone/name', () => ({ phoneName: () => 'Pixel 9' }));
 vi.mock('./config', () => ({ apiUrl: () => 'https://api.test' }));
 
 type Call = { url: string; method: string; body?: unknown; authorization?: string };

@@ -1,9 +1,9 @@
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { haptics } from '@/ui/haptics';
-import { AgentFace } from '@/ui/Buddy';
+import { AgentFace } from '@/devices/Buddy';
 import { Icon } from '@/ui/Icon';
-import { AgentState } from '@/ui/status';
+import { AgentState } from '@/devices/AgentMarks';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import type { Trigger } from './mentions';
 import type { MentionMark, MentionMenuView } from './useMentions';

@@ -8,7 +8,7 @@ const device = vi.hoisted(() => ({ join: vi.fn() }));
 const api = vi.hoisted(() => ({ joinTicket: vi.fn() }));
 const hub = vi.hoisted(() => ({ reloadDevices: vi.fn(async () => {}), rejoined: vi.fn() }));
 
-vi.mock('@/device/identity', () => ({ whileJoining: (work: (device: unknown) => Promise<unknown>) => work(device) }));
+vi.mock('@/phone/identity', () => ({ whileJoining: (work: (device: unknown) => Promise<unknown>) => work(device) }));
 vi.mock('@/account/api', async (original) => ({ ...(await original<typeof import('@/account/api')>()), ...api }));
 vi.mock('./hub', () => hub);
 vi.mock('@/account/config', () => ({ apiUrl: () => 'https://api.test' }));

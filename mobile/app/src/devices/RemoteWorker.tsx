@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import type { RemoteAgent } from '@/core/protocol';
 import { AgentIcon } from '@/ui/Icon';
 import { Row } from '@/ui/list';
-import { AgentState, Dot } from '@/ui/status';
+import { AgentState, Dot } from '@/devices/AgentMarks';
 import { useColors } from '@/ui/theme';
 
 function WorkerEnd({ worker }: { worker: RemoteAgent }) {
