@@ -1862,6 +1862,9 @@ impl Feed {
             if inner.replay.is_trimmed() && !inner.replay.keeps_history() {
                 fold.set_earlier_lost();
             }
+            // Events folded in now were never numbered, so a client that heard up to the
+            // last number must still be sent them.
+            inner.seq += 1;
             fold.rebuilt(inner.seq);
             inner.fold = Some(fold);
         }
