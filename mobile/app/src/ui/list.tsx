@@ -55,8 +55,9 @@ export function Row({
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const where = host ? `on ${host}` : undefined;
-  const label = title ?? name;
-  const named = title && name ? [name, where].filter(Boolean).join(' ') : undefined;
+  const handle = name ? `@${name}` : undefined;
+  const label = title ?? handle;
+  const named = title && handle ? [handle, where].filter(Boolean).join(' ') : undefined;
   return (
     <Pressable
       onPress={onPress}

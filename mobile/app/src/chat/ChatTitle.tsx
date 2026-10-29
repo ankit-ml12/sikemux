@@ -28,7 +28,7 @@ export function ChatTitle({
       <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
         {title}
       </Text>
-      {name ? <Text style={styles.name}>{name}</Text> : null}
+      {name ? <Text style={styles.name}>@{name}</Text> : null}
     </>
   );
 }
