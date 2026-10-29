@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3};
+
 impl Rundeck {
     pub(super) fn tree(
         &self,
@@ -74,7 +76,7 @@ impl Rundeck {
                         rows.push(
                             div()
                                 .pl(px(28.))
-                                .py(px(4.))
+                                .py(SPACE_1)
                                 .child(ui::meta(error.clone(), cx).text_color(t.danger))
                                 .into_any_element(),
                         );
@@ -86,8 +88,8 @@ impl Rundeck {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .px(px(6.))
-                    .py(px(8.))
+                    .px(SPACE_1H)
+                    .py(SPACE_2)
                     .flex()
                     .flex_col()
                     .gap(px(1.))
@@ -105,9 +107,9 @@ impl Rundeck {
             .border_color(t.border)
             .child(
                 div()
-                    .px(px(12.))
-                    .pt(px(12.))
-                    .pb(px(4.))
+                    .px(SPACE_3)
+                    .pt(SPACE_3)
+                    .pb(SPACE_1)
                     .child(ui::caps("Projects", cx)),
             )
             .child(body)
@@ -220,12 +222,12 @@ fn tree_row(
     div()
         .id(id)
         .pl(px(6. + depth as f32 * 14.))
-        .pr(px(8.))
-        .py(px(4.))
+        .pr(SPACE_2)
+        .py(SPACE_1)
         .rounded(theme::RADIUS_2)
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .cursor_pointer()
         .when(chosen, |row| row.bg(t.surface_chosen))
         .when(!chosen, |row| row.hover(move |row| row.bg(hover)))
@@ -268,11 +270,11 @@ fn connection(host: &mut Host, cx: &mut Context<PluginPane>) -> AnyElement {
     div()
         .border_t_1()
         .border_color(t.border)
-        .px(px(12.))
-        .py(px(10.))
+        .px(SPACE_3)
+        .py(SPACE_2H)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(ui::dot(if ok { ui::Tone::Ok } else { ui::Tone::Idle }, cx))
         .child(
             div()

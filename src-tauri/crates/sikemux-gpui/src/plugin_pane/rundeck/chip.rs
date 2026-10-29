@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::SPACE_1H;
+
 /// The top bar's word on where the project in front deploys, and a menu to pick the place,
 /// deploy there or check out what runs there.
 #[derive(Default)]
@@ -69,8 +71,8 @@ impl Panel for DeployChip {
             .ghost()
             .compact()
             .h(px(24.))
-            .px(px(6.))
-            .gap(px(6.))
+            .px(SPACE_1H)
+            .gap(SPACE_1H)
             .rounded(theme::RADIUS_1)
             .tooltip(target.summary.clone())
             .child(ui::icon(Icon::Rundeck, 12.).text_color(t.text_tertiary))

@@ -23,7 +23,10 @@ use sikemux_plugin_aws_views::{
 
 use super::{after, listen, Failure, Host, Panel, PluginPane, Streamed};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4,
+    TEXT_2XS,
+};
 use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, IconButton, Pick, Segmented, Toggle, Tone, Variant};
 
@@ -255,12 +258,12 @@ impl Aws {
             let hover = t.surface_hover;
             div()
                 .id(("aws-service", index))
-                .px(px(8.))
-                .py(px(6.))
+                .px(SPACE_2)
+                .py(SPACE_1H)
                 .rounded(theme::RADIUS_2)
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .cursor_pointer()
                 .when(chosen, |row| row.bg(t.surface_chosen))
                 .when(!chosen, |row| row.hover(move |row| row.bg(hover)))
@@ -280,20 +283,20 @@ impl Aws {
             .flex()
             .flex_col()
             .gap(px(1.))
-            .p(px(6.))
+            .p(SPACE_1H)
             .border_r_1()
             .border_color(t.border)
             .child(
                 div()
-                    .px(px(8.))
-                    .pt(px(4.))
-                    .pb(px(4.))
+                    .px(SPACE_2)
+                    .pt(SPACE_1)
+                    .pb(SPACE_1)
                     .child(ui::caps("Services", cx)),
             )
             .children(services)
             .child(div().flex_1())
             .child(self.agents(host, cx))
-            .child(div().pt(px(6.)).child(switch))
+            .child(div().pt(SPACE_1H).child(switch))
             .into_any_element()
     }
 
@@ -306,14 +309,14 @@ impl Aws {
         let Ok(Some(picks)) = read else {
             return div().into_any_element();
         };
-        let mut body = div().flex().flex_col().gap(px(4.));
+        let mut body = div().flex().flex_col().gap(SPACE_1);
         match &picks.from_shell {
-            Some(note) => body = body.child(div().px(px(8.)).child(ui::meta(note.clone(), cx))),
+            Some(note) => body = body.child(div().px(SPACE_2).child(ui::meta(note.clone(), cx))),
             None => {
                 if let Some(project) = &project {
                     let name = project.rsplit('/').next().unwrap_or(project).to_owned();
                     body = body
-                        .child(div().px(px(8.)).child(ui::meta(name, cx)))
+                        .child(div().px(SPACE_2).child(ui::meta(name, cx)))
                         .child(agent_pick(
                             "aws-agents-project",
                             &picks,
@@ -329,7 +332,7 @@ impl Aws {
                     "Every project"
                 };
                 body = body
-                    .child(div().px(px(8.)).child(ui::meta(every, cx)))
+                    .child(div().px(SPACE_2).child(ui::meta(every, cx)))
                     .child(agent_pick(
                         "aws-agents-default",
                         &picks,
@@ -343,8 +346,8 @@ impl Aws {
         div()
             .flex()
             .flex_col()
-            .gap(px(4.))
-            .child(div().px(px(8.)).child(ui::caps("Agents use", cx)))
+            .gap(SPACE_1)
+            .child(div().px(SPACE_2).child(ui::caps("Agents use", cx)))
             .child(body)
             .into_any_element()
     }
@@ -568,12 +571,12 @@ impl Aws {
             let hover = t.surface_hover;
             div()
                 .id(("aws-task", index))
-                .px(px(6.))
-                .py(px(4.))
+                .px(SPACE_1H)
+                .py(SPACE_1)
                 .rounded(theme::RADIUS_2)
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .cursor_pointer()
                 .hover(move |row| row.bg(hover))
                 .on_click(listen::<Aws, ClickEvent>(cx, move |_, host, _, _, cx| {
@@ -609,7 +612,7 @@ impl Aws {
         div()
             .flex()
             .flex_col()
-            .gap(px(2.))
+            .gap(SPACE_0)
             .child(ui::caps("Tasks", cx))
             .when(tasks.tasks.is_empty(), |list| {
                 list.child(ui::meta("No tasks running.", cx))
@@ -938,7 +941,7 @@ impl Aws {
             let below = div()
                 .flex()
                 .flex_col()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .child(ui::caps(
                     &match &month.compared_to {
                         Some(before) => format!("By service, against {before}"),
@@ -970,7 +973,7 @@ impl Aws {
             div()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(heading(
                     vec!["Billing".into(), "Costs".into()],
                     view.months.len(),
@@ -1004,8 +1007,8 @@ impl Aws {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .px(px(6.))
-                .pb(px(8.))
+                .px(SPACE_1H)
+                .pb(SPACE_2)
                 .flex()
                 .flex_col()
                 .gap(px(1.))
@@ -1023,8 +1026,8 @@ impl Aws {
             .flex_col()
             .child(
                 div()
-                    .px(px(14.))
-                    .py(px(10.))
+                    .px(SPACE_3H)
+                    .py(SPACE_2H)
                     .overflow_hidden()
                     .border_b_1()
                     .border_color(t.border)
@@ -1145,11 +1148,11 @@ impl Aws {
             .flex_col()
             .child(
                 div()
-                    .px(px(10.))
-                    .py(px(8.))
+                    .px(SPACE_2H)
+                    .py(SPACE_2)
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .border_b_1()
                     .border_color(t.border)
                     .child(back)
@@ -1162,8 +1165,8 @@ impl Aws {
             .child(div().flex_1().min_h_0().flex().flex_col().child(body))
             .child(
                 div()
-                    .px(px(12.))
-                    .py(px(6.))
+                    .px(SPACE_3)
+                    .py(SPACE_1H)
                     .border_t_1()
                     .border_color(t.border)
                     .child(ui::meta(
@@ -1276,8 +1279,8 @@ fn account_switch(
         .ghost()
         .w_full()
         .h_auto()
-        .py(px(6.))
-        .px(px(8.))
+        .py(SPACE_1H)
+        .px(SPACE_2)
         .rounded(theme::RADIUS_2)
         .tooltip(format!("{profile} · switch profile"))
         .child(
@@ -1285,12 +1288,12 @@ fn account_switch(
                 .w_full()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .child(
                             ui::text(title, 12.5, FontWeight::MEDIUM)
                                 .text_color(t.text_primary)
@@ -1305,8 +1308,8 @@ fn account_switch(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
-                        .text_size(theme::ui_text(11.))
+                        .gap(SPACE_1H)
+                        .text_size(theme::ui_text(TEXT_2XS))
                         .text_color(t.text_tertiary)
                         .child(region)
                         .child(div().flex_1())
@@ -1347,7 +1350,7 @@ fn account_switch(
                                 .when(!meta.is_empty(), |item| {
                                     item.child(
                                         div()
-                                            .text_size(theme::ui_text(11.))
+                                            .text_size(theme::ui_text(TEXT_2XS))
                                             .text_color(t.text_tertiary)
                                             .child(meta.clone()),
                                     )
@@ -1379,12 +1382,12 @@ fn choose_profile(account: &Account, cx: &mut Context<PluginPane>) -> AnyElement
         div()
             .id(("aws-pick-profile", index))
             .w(px(320.))
-            .px(px(10.))
+            .px(SPACE_2H)
             .py(px(7.))
             .rounded(theme::RADIUS_2)
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .cursor_pointer()
             .hover(move |row| row.bg(hover))
             .on_click(cx.listener(move |pane, _, _, cx| {
@@ -1399,7 +1402,7 @@ fn choose_profile(account: &Account, cx: &mut Context<PluginPane>) -> AnyElement
         .flex_col()
         .items_center()
         .justify_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(
             ui::text("Pick the AWS profile to show", 14., FontWeight::SEMIBOLD)
                 .text_color(t.text_primary),
@@ -1462,7 +1465,7 @@ fn agent_pick(
         },
         cx,
     );
-    div().px(px(2.)).child(field).into_any_element()
+    div().px(SPACE_0).child(field).into_any_element()
 }
 
 /// Calls the plugin's `method`, saying over the window when it fails; the core reads the views
@@ -1489,7 +1492,7 @@ fn heading(
     div()
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .children(back)
         .children(trail.into_iter().enumerate().map(|(at, part)| {
             let ink = if at == last {
@@ -1500,7 +1503,7 @@ fn heading(
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .min_w_0()
                 .when(at > 0, |part| part.child(ui::meta("›", cx)))
                 .child(
@@ -1526,8 +1529,8 @@ fn row(
     let key = item.key;
     div()
         .id((list, index))
-        .px(px(8.))
-        .py(px(6.))
+        .px(SPACE_2)
+        .py(SPACE_1H)
         .rounded(theme::RADIUS_2)
         .flex()
         .flex_col()
@@ -1544,7 +1547,7 @@ fn row(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .children(item.tone.map(|tone| ui::dot(tone, cx)))
                 .child(
                     ui::text(item.title, 12.5, FontWeight::MEDIUM)
@@ -1583,7 +1586,7 @@ fn detail(
         div()
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .min_h(px(22.))
             .child(ui::meta(fact.label, cx).w(px(96.)).flex_none())
             .child(
@@ -1599,16 +1602,16 @@ fn detail(
         .id("aws-detail")
         .size_full()
         .overflow_y_scroll()
-        .px(px(16.))
-        .py(px(12.))
+        .px(SPACE_4)
+        .py(SPACE_3)
         .flex()
         .flex_col()
-        .gap(px(12.))
+        .gap(SPACE_3)
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     ui::text(title, 14., FontWeight::SEMIBOLD)
                         .text_color(t.text_primary)
@@ -1617,7 +1620,7 @@ fn detail(
                 .children(sub.map(|sub| ui::mono(sub, 11., cx).truncate())),
         )
         .when(!actions.is_empty(), |page| {
-            page.child(div().flex().flex_wrap().gap(px(6.)).children(actions))
+            page.child(div().flex().flex_wrap().gap(SPACE_1H).children(actions))
         })
         .child(div().flex().flex_col().children(facts))
         .children(below)
@@ -1677,7 +1680,7 @@ fn bar_row(name: String, amount: String, ratio: f64, cx: &App) -> Div {
         .child(
             div()
                 .flex()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(
                     ui::text(name, 12., FontWeight::NORMAL)
                         .text_color(t.text_primary)
@@ -1693,7 +1696,7 @@ fn bar_row(name: String, amount: String, ratio: f64, cx: &App) -> Div {
 fn fact_row(name: &str, amount: &str, cx: &App) -> Div {
     div()
         .flex()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .py(px(3.))
         .child(ui::meta(name.to_owned(), cx).flex_1().min_w_0().truncate())
         .child(ui::mono(amount.to_owned(), 11., cx))
@@ -1707,10 +1710,10 @@ fn log_line(line: &LogLine, t: &Tokens, cx: &App) -> AnyElement {
     };
     div()
         .h(px(LINE))
-        .px(px(12.))
+        .px(SPACE_3)
         .flex()
         .items_center()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .child(
             ui::mono(line.clock.clone().unwrap_or_default(), 11., cx)
                 .w(px(60.))

@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3H, TEXT_2XS};
+
 impl Jira {
     pub(super) fn sidebar(
         &mut self,
@@ -37,7 +39,7 @@ impl Jira {
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(ui::icon(Icon::Jira, 16.).text_color(jira_blue()))
                 .child(
                     ui::text(
@@ -110,12 +112,12 @@ impl Jira {
             .flex_col()
             .child(
                 div()
-                    .px(px(10.))
-                    .pt(px(10.))
-                    .pb(px(8.))
+                    .px(SPACE_2H)
+                    .pt(SPACE_2H)
+                    .pb(SPACE_2)
                     .flex()
                     .flex_col()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(head)
                     .child(ui::Field::new(&search).icon(Icon::Search)),
             )
@@ -125,19 +127,19 @@ impl Jira {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .px(px(6.))
-                    .pb(px(8.))
+                    .px(SPACE_1H)
+                    .pb(SPACE_2)
                     .flex()
                     .flex_col()
-                    .gap(px(10.))
+                    .gap(SPACE_2H)
                     .child(lists)
                     .children(spaces_part)
                     .children(filters),
             )
             .child(
                 div()
-                    .px(px(6.))
-                    .py(px(6.))
+                    .px(SPACE_1H)
+                    .py(SPACE_1H)
                     .border_t_1()
                     .border_color(t.border)
                     .child(
@@ -243,7 +245,7 @@ impl Jira {
             .flex_col()
             .gap(px(1.))
             .child(heading("Spaces", cx))
-            .children(find.map(|find| div().px(px(2.)).pb(px(4.)).child(ui::Field::new(&find))));
+            .children(find.map(|find| div().px(SPACE_0).pb(SPACE_1).child(ui::Field::new(&find))));
         for space in &shown {
             let key = space.project.key.clone();
             let open = !wanted.is_empty()
@@ -266,7 +268,7 @@ impl Jira {
             if !open {
                 continue;
             }
-            let mut children = div().pl(px(14.)).flex().flex_col().gap(px(1.));
+            let mut children = div().pl(SPACE_3H).flex().flex_col().gap(px(1.));
             for board in &space.boards {
                 let list = List::Board {
                     id: board.id,
@@ -315,8 +317,8 @@ impl Jira {
         if let Some(failed) = &listed.boards_failed {
             part = part.child(
                 div()
-                    .px(px(8.))
-                    .text_size(crate::theme::ui_text(11.))
+                    .px(SPACE_2)
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(t.danger)
                     .child(format!("{failed} Sign out and in again to retry.")),
             );

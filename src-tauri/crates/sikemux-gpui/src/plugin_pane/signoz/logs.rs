@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_4};
+
 fn severity_ink(severity: Option<&str>, cx: &App) -> Hsla {
     let t = Tokens::get(cx);
     let level = severity.unwrap_or_default().to_uppercase();
@@ -40,10 +42,10 @@ impl Signoz {
         }
         heads.push(("Message", 0.));
         let columns = div()
-            .px(px(16.))
-            .py(px(4.))
+            .px(SPACE_4)
+            .py(SPACE_1)
             .flex()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .border_b_1()
             .border_color(t.border)
             .children(heads.into_iter().map(|(label, width)| match width {
@@ -100,8 +102,8 @@ impl Signoz {
         };
         let banner = error.map(|error| {
             div()
-                .px(px(16.))
-                .py(px(6.))
+                .px(SPACE_4)
+                .py(SPACE_1H)
                 .border_b_1()
                 .border_color(t.border)
                 .child(ui::text(error, 12., FontWeight::NORMAL).text_color(t.danger))
@@ -133,7 +135,7 @@ impl Signoz {
             .map(|(index, line)| self.log_row(line, index, show_service, &lines, true, cx))
             .collect();
         let older_button = older.map(|reading| {
-            div().p(px(10.)).flex().justify_center().child(
+            div().p(SPACE_2H).flex().justify_center().child(
                 Button::new(
                     "signoz-older",
                     if reading {
@@ -286,11 +288,11 @@ impl Signoz {
             .collect();
         let head = div()
             .id(("signoz-log", index))
-            .px(px(16.))
+            .px(SPACE_4)
             .py(px(3.))
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .cursor_pointer()
             .when(picked, |row| row.bg(t.surface_chosen))
             .hover(move |row| row.bg(t.surface_hover))
@@ -466,7 +468,7 @@ impl Signoz {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .children(
                         attributes
                             .into_iter()
@@ -477,7 +479,7 @@ impl Signoz {
                                 div()
                                     .flex()
                                     .items_center()
-                                    .gap(px(8.))
+                                    .gap(SPACE_2)
                                     .child(
                                         div()
                                             .w(px(180.))
@@ -532,12 +534,12 @@ impl Signoz {
                     .into_any_element()
             };
         div()
-            .px(px(16.))
+            .px(SPACE_4)
             .pl(px(122.))
-            .py(px(6.))
+            .py(SPACE_1H)
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .bg(t.surface_sunken)
             .children(trace)
             .children(full)
@@ -551,8 +553,8 @@ impl Signoz {
         let t = Tokens::get(cx).clone();
         let strip = div()
             .h(px(64.))
-            .px(px(16.))
-            .py(px(8.))
+            .px(SPACE_4)
+            .py(SPACE_2)
             .flex()
             .items_end()
             .gap(px(1.))

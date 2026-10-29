@@ -34,7 +34,9 @@ use sikemux_wire::protocol::ProjectCodeHost;
 
 use crate::core::{Target, Watch};
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{
+    Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_6, TEXT_2XS, TEXT_2XS_H, TEXT_XS,
+};
 use crate::toast;
 use crate::ui;
 use crate::workbench::Workbench;
@@ -819,7 +821,7 @@ impl Render for HostArea {
         let away = self
             .out_of_reach
             .clone()
-            .map(|host| away_note(&host, cx).mx(px(12.)).mt(px(10.)));
+            .map(|host| away_note(&host, cx).mx(SPACE_3).mt(SPACE_2H));
         self.fetch_pictures(cx);
         let picking = self.picking.map(|end| {
             let title = match end {
@@ -877,13 +879,13 @@ pub(crate) fn call_of(
 pub fn away_note(host: &str, cx: &App) -> Div {
     let t = Tokens::get(cx);
     div()
-        .px(px(12.))
-        .py(px(8.))
+        .px(SPACE_3)
+        .py(SPACE_2)
         .rounded(crate::theme::RADIUS_2)
         .border_1()
         .border_color(t.warn.opacity(0.4))
         .bg(t.warn.opacity(0.08))
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .text_color(t.text_primary)
         .child(format!(
             "{host} is out of reach. Showing what it last said; changes wait until it is back."
@@ -912,8 +914,8 @@ fn notice(title: impl Into<SharedString>, detail: Option<SharedString>, cx: &App
         .flex_col()
         .items_center()
         .justify_center()
-        .gap(px(6.))
-        .px(px(24.))
+        .gap(SPACE_1H)
+        .px(SPACE_6)
         .child(ui::text(title, 12.5, FontWeight::MEDIUM).text_color(t.text_secondary))
         .children(detail.map(|detail| ui::meta(detail, cx).text_center()))
         .into_any_element()
@@ -953,7 +955,7 @@ fn list_page(id: &'static str, head: Div, body: impl IntoElement, cx: &App) -> A
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .child(div().py(px(12.)).child(body)),
+                .child(div().py(SPACE_3).child(body)),
         )
         .into_any_element()
 }
@@ -961,7 +963,7 @@ fn list_page(id: &'static str, head: Div, body: impl IntoElement, cx: &App) -> A
 /// A list's rows in one card, filled so they read over a picture.
 fn carded(rows: Div, cx: &App) -> Div {
     let t = Tokens::get(cx);
-    rows.mx(px(12.))
+    rows.mx(SPACE_3)
         .rounded(crate::theme::RADIUS_2)
         .border_1()
         .border_color(t.border)
@@ -975,15 +977,15 @@ fn list_head(area: Area, host: &ProjectCodeHost, cx: &App) -> Div {
     div()
         .flex()
         .items_center()
-        .gap(px(12.))
-        .px(px(12.))
-        .py(px(10.))
+        .gap(SPACE_3)
+        .px(SPACE_3)
+        .py(SPACE_2H)
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
-                .mr(px(8.))
+                .gap(SPACE_1H)
+                .mr(SPACE_2)
                 .child(ui::icon(area.icon(), 14.).text_color(t.text_tertiary))
                 .child(
                     ui::text(area.label(host), 12., FontWeight::MEDIUM).text_color(t.text_primary),
@@ -1115,12 +1117,12 @@ fn branch_chip(name: &str, ink: Hsla, cx: &App) -> Div {
         .flex_shrink(1.)
         .min_w_0()
         .max_w(px(220.))
-        .px(px(6.))
+        .px(SPACE_1H)
         .py(px(1.))
         .rounded(crate::theme::RADIUS_1)
         .bg(t.surface_active)
         .font_family(crate::theme::MONO)
-        .text_size(crate::theme::ui_text(11.5))
+        .text_size(crate::theme::ui_text(TEXT_2XS_H))
         .text_color(ink)
         .truncate()
         .child(name.to_owned())
@@ -1133,8 +1135,8 @@ fn comments(count: u64, cx: &App) -> Option<Div> {
         div()
             .flex()
             .items_center()
-            .gap(px(4.))
-            .text_size(crate::theme::ui_text(11.))
+            .gap(SPACE_1)
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .text_color(t.text_tertiary)
             .font_features(crate::theme::tabular())
             .child(ui::icon(Icon::Message, 12.).text_color(t.text_tertiary))

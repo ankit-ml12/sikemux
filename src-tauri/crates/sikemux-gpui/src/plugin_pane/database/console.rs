@@ -19,7 +19,9 @@ use sikemux_plugin_database_views::{Connection, CopyFormat, QueryOutcome, Result
 use super::{Database, Host, PluginPane};
 use crate::icons::Icon;
 use crate::plugin_pane::{after, listen};
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{
+    self, Tokens, RADIUS_2, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS_H, TEXT_XS,
+};
 use crate::ui::{self, Button, MenuRow, Pick, Variant};
 
 /// The most rows kept from each statement, as the person can pick it.
@@ -216,17 +218,17 @@ pub(super) fn page(
     let toolbar = div()
         .h(px(44.))
         .flex_none()
-        .px(px(12.))
+        .px(SPACE_3)
         .flex()
         .items_center()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .children(lead)
         .child(
             div()
                 .min_w_0()
                 .flex()
                 .items_baseline()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(
                     ui::text(connection.name.clone(), 12.5, FontWeight::SEMIBOLD)
                         .text_color(t.text_primary)
@@ -258,9 +260,9 @@ pub(super) fn page(
     let rows = console.sql.read(cx).text().lines_len().clamp(fewest, most);
     let editor = div()
         .flex_none()
-        .mx(px(12.))
-        .mb(px(12.))
-        .px(px(6.))
+        .mx(SPACE_3)
+        .mb(SPACE_3)
+        .px(SPACE_1H)
         .py(px(7.))
         .rounded(RADIUS_2)
         .border_1()
@@ -268,7 +270,7 @@ pub(super) fn page(
         .bg(t.surface)
         .flex()
         .items_start()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(
             div().flex_1().min_w_0().child(
                 Editor::new(&console.sql)
@@ -282,20 +284,20 @@ pub(super) fn page(
             div()
                 .flex_none()
                 .h(theme::ui_text(SQL_LINE))
-                .pr(px(4.))
+                .pr(SPACE_1)
                 .flex()
                 .items_center()
                 .child(ui::meta("⌘↵ to run", cx).text_color(t.ink_faint)),
         );
     let below = match (&console.error, &console.outcome) {
         (Some(error), _) => div()
-            .m(px(12.))
+            .m(SPACE_3)
             .mt_0()
-            .px(px(12.))
-            .py(px(8.))
+            .px(SPACE_3)
+            .py(SPACE_2)
             .rounded(RADIUS_2)
             .bg(t.danger.opacity(0.12))
-            .text_size(theme::ui_text(12.))
+            .text_size(theme::ui_text(TEXT_XS))
             .text_color(t.danger)
             .child(error.clone())
             .into_any_element(),
@@ -383,10 +385,10 @@ fn results(
     let bar = div()
         .h(px(40.))
         .flex_none()
-        .px(px(12.))
+        .px(SPACE_3)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .children(statements)
         .child(ui::meta(result.summary.clone(), cx))
         .child(ui::meta("·", cx).text_color(t.ink_faint))
@@ -571,7 +573,7 @@ fn grid(
                         .px(px(CELL_PADDING))
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .overflow_hidden()
                         .border_r_1()
                         .border_color(line)
@@ -618,7 +620,7 @@ fn grid(
                         .hover(move |style| style.bg(hover))
                         .font_family(theme::MONO)
                         .font_features(theme::tabular())
-                        .text_size(theme::ui_text(11.5))
+                        .text_size(theme::ui_text(TEXT_2XS_H))
                         .child(
                             div()
                                 .w(px(number_width))
@@ -703,11 +705,11 @@ fn inspector(
     let copied = cell.clone().unwrap_or_default();
     Some(
         div()
-            .px(px(12.))
-            .py(px(8.))
+            .px(SPACE_3)
+            .py(SPACE_2)
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .border_t_1()
             .border_color(t.border)
             .child(ui::meta(name, cx))
@@ -717,7 +719,7 @@ fn inspector(
                     .min_w_0()
                     .truncate()
                     .font_family(theme::MONO)
-                    .text_size(theme::ui_text(11.5))
+                    .text_size(theme::ui_text(TEXT_2XS_H))
                     .text_color(if cell.is_some() {
                         t.text_primary
                     } else {

@@ -20,7 +20,9 @@ use sikemux_plugin_slack_views::{
 
 use super::{after, listen, Failure, Host, Panel, PluginPane};
 use crate::icons::Icon;
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{
+    Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_XS_H,
+};
 use crate::ui;
 
 pub const REGISTRATION: super::Registration = super::Registration {
@@ -414,7 +416,7 @@ impl Slack {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .when(!rooms.is_empty(), |list| {
                         list.child(ui::Group::new("Channels", "").children(rooms))
                     })
@@ -428,7 +430,7 @@ impl Slack {
             div()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .children(status.details.workspaces.iter().map(|each| {
                     let id = each.id.clone();
                     ui::Row::new(
@@ -457,12 +459,12 @@ impl Slack {
             .border_color(t.border)
             .flex()
             .flex_col()
-            .gap(px(8.))
-            .p(px(8.))
+            .gap(SPACE_2)
+            .p(SPACE_2)
             .map(|side| match others {
                 Some(others) => side.child(others),
                 None => side.child(
-                    div().px(px(6.)).child(
+                    div().px(SPACE_1H).child(
                         ui::text(workspace.name.clone(), 13., FontWeight::SEMIBOLD)
                             .text_color(t.text_primary),
                     ),
@@ -576,8 +578,8 @@ impl Slack {
                     .overflow_y_scroll()
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
-                    .p(px(10.))
+                    .gap(SPACE_1)
+                    .p(SPACE_2H)
                     .children(rows)
                     .into_any_element()
             }
@@ -659,8 +661,8 @@ impl Slack {
                     .overflow_y_scroll()
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
-                    .p(px(10.))
+                    .gap(SPACE_1)
+                    .p(SPACE_2H)
                     .children(rows)
                     .into_any_element()
             }
@@ -707,26 +709,26 @@ impl Slack {
         };
         let written = !reply.read(cx).value().trim().is_empty();
         div()
-            .m(px(10.))
+            .m(SPACE_2H)
             .rounded(RADIUS_2)
             .border_1()
             .border_color(t.border)
             .bg(t.surface)
             .child(
                 div()
-                    .px(px(10.))
-                    .py(px(8.))
-                    .text_size(crate::theme::ui_text(12.5))
+                    .px(SPACE_2H)
+                    .py(SPACE_2)
+                    .text_size(crate::theme::ui_text(TEXT_XS_H))
                     .child(
                         Textarea::new(&reply)
                             .appearance(false)
-                            .text_size(crate::theme::ui_text(12.5)),
+                            .text_size(crate::theme::ui_text(TEXT_XS_H)),
                     ),
             )
             .child(
                 div()
-                    .px(px(8.))
-                    .py(px(6.))
+                    .px(SPACE_2)
+                    .py(SPACE_1H)
                     .flex()
                     .justify_end()
                     .border_t_1()
@@ -793,9 +795,9 @@ impl Slack {
             });
         div()
             .flex()
-            .gap(px(10.))
-            .px(px(8.))
-            .py(px(6.))
+            .gap(SPACE_2H)
+            .px(SPACE_2)
+            .py(SPACE_1H)
             .rounded(RADIUS_2)
             .when(opened, |row| row.bg(t.surface_chosen))
             .child(
@@ -817,12 +819,12 @@ impl Slack {
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(SPACE_2)
                             .child(
                                 ui::text(message.name.clone(), 12.5, FontWeight::SEMIBOLD)
                                     .text_color(t.text_primary),
@@ -873,10 +875,10 @@ fn head(title: String, actions: Vec<AnyElement>, cx: &Context<PluginPane>) -> An
     div()
         .h(px(40.))
         .flex_none()
-        .px(px(12.))
+        .px(SPACE_3)
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .border_b_1()
         .border_color(t.border)
         .child(ui::text(title, 13., FontWeight::SEMIBOLD).text_color(t.text_primary))

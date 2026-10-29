@@ -13,7 +13,7 @@ use sikemux_wire::protocol::ProjectCodeHost;
 
 use super::{answer, call_of, notice, Area, Read};
 use crate::core::Target;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_0, SPACE_2, SPACE_3, TEXT_XS_H};
 use crate::toast;
 use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, Toggle, Variant};
@@ -198,11 +198,11 @@ impl Render for Inbox {
         };
         let unread = list.iter().filter(|item| item.unread).count();
         let head = div()
-            .px(px(12.))
-            .py(px(8.))
+            .px(SPACE_3)
+            .py(SPACE_2)
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .border_b_1()
             .border_color(t.border)
             .child(
@@ -235,11 +235,11 @@ impl Render for Inbox {
                 let opened = item.clone();
                 div()
                     .id(("inbox", index))
-                    .px(px(12.))
+                    .px(SPACE_3)
                     .py(px(7.))
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .cursor_pointer()
                     .hover(move |row| row.bg(t.surface_hover))
                     .on_click(cx.listener(move |inbox, _, _, cx| inbox.open(&opened, cx)))
@@ -256,11 +256,11 @@ impl Render for Inbox {
                             .min_w_0()
                             .flex()
                             .flex_col()
-                            .gap(px(2.))
+                            .gap(SPACE_0)
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(crate::theme::ui_text(12.5))
+                                    .text_size(crate::theme::ui_text(TEXT_XS_H))
                                     .text_color(if item.unread {
                                         t.text_primary
                                     } else {

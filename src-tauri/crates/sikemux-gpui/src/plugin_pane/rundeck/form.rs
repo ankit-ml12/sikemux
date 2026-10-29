@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_5};
+
 impl Rundeck {
     pub(super) fn deploy(
         &mut self,
@@ -98,7 +100,7 @@ impl Rundeck {
         let options = div()
             .flex()
             .flex_col()
-            .gap(px(12.))
+            .gap(SPACE_3)
             .when(form_data.options.is_empty(), |list| {
                 list.child(ui::meta("This job takes no options.", cx))
             })
@@ -166,17 +168,17 @@ impl Rundeck {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .px(px(20.))
-                    .py(px(14.))
+                    .px(SPACE_5)
+                    .py(SPACE_3H)
                     .flex()
                     .flex_col()
-                    .gap(px(14.))
+                    .gap(SPACE_3H)
                     .children(banners.into_iter().flatten())
                     .child(
                         div()
                             .flex()
                             .flex_wrap()
-                            .gap(px(14.))
+                            .gap(SPACE_3H)
                             .items_start()
                             .child(div().flex_1().min_w(px(320.)).child(card(
                                 "Options",
@@ -202,7 +204,7 @@ impl Rundeck {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(SPACE_2)
                             .children(form_data.usual_secs.map(|usual| {
                                 ui::meta(format!("Usually takes {}", took(usual as f64)), cx)
                             }))
@@ -280,7 +282,7 @@ impl Rundeck {
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(ui::meta("file options must be run from Rundeck", cx))
                 .children(form_data.permalink.clone().map(|url| {
                     Button::new("rundeck-file-open", "Open in Rundeck", Variant::Outline)
@@ -298,7 +300,7 @@ impl Rundeck {
             div()
                 .flex()
                 .flex_wrap()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .children(choices.iter().enumerate().map(|(at, choice)| {
                     let on = picked.contains(&choice.value);
                     let (name, value, all, delimiter, picked) = (
@@ -379,12 +381,12 @@ impl Rundeck {
         div()
             .flex()
             .flex_col()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(
                         ui::text(label.clone(), 12., FontWeight::MEDIUM).text_color(t.text_primary),
                     )
@@ -434,19 +436,19 @@ impl Rundeck {
             div()
                 .flex()
                 .flex_col()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .child(ui::meta(label, cx))
                 .child(field)
         };
         div()
             .flex()
             .flex_col()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(toggle)
                     .when(!form.advanced, |row| {
                         row.child(ui::meta("debug output, nodes, schedule, run as", cx))
@@ -946,7 +948,7 @@ fn branch_picks(
         div()
             .flex()
             .flex_wrap()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .children(picks.into_iter().enumerate().map(|(at, (name, note))| {
                 let (key, picked) = (key.clone(), name.clone());
                 Toggle::new(
@@ -998,17 +1000,17 @@ fn plan_card(
         Some(Ok(Some(plan))) => div()
             .flex()
             .flex_col()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(10.))
+                    .gap(SPACE_2H)
                     .child(
                         div()
                             .flex()
                             .flex_col()
-                            .gap(px(2.))
+                            .gap(SPACE_0)
                             .child(ui::meta("Live now", cx))
                             .child(match &plan.deployed_branch {
                                 Some(branch) => branch_chip(Some(branch), cx),
@@ -1020,7 +1022,7 @@ fn plan_card(
                         div()
                             .flex()
                             .flex_col()
-                            .gap(px(2.))
+                            .gap(SPACE_0)
                             .child(ui::meta("Will deploy", cx))
                             .child(branch_chip(Some(&plan.target_branch), cx)),
                     ),
@@ -1036,7 +1038,7 @@ fn plan_card(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(ui::icon(icon, 13.).text_color(ink))
                     .child(
                         ui::text(check.text.clone(), 12., FontWeight::NORMAL)

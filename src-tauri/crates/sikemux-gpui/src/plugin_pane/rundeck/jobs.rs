@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3};
+
 impl Rundeck {
     pub(super) fn jobs(
         &mut self,
@@ -103,7 +105,7 @@ impl Rundeck {
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .children(layout)
                 .child(
                     div()
@@ -155,9 +157,9 @@ impl Rundeck {
                                 "rundeck-section-{}",
                                 section.path
                             )))
-                            .px(px(12.))
-                            .pt(px(12.))
-                            .pb(px(4.))
+                            .px(SPACE_3)
+                            .pt(SPACE_3)
+                            .pb(SPACE_1)
                             .when(link, |head| {
                                 head.cursor_pointer()
                                     .on_click(listen::<Rundeck, ClickEvent>(
@@ -184,8 +186,8 @@ impl Rundeck {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .px(px(6.))
-                .pb(px(12.))
+                .px(SPACE_1H)
+                .pb(SPACE_3)
                 .flex()
                 .flex_col()
                 .children(rows)
@@ -260,12 +262,12 @@ impl Rundeck {
         ];
         div()
             .id(SharedString::from(format!("rundeck-job-{}", job.job_id)))
-            .px(px(8.))
-            .py(px(6.))
+            .px(SPACE_2)
+            .py(SPACE_1H)
             .rounded(theme::RADIUS_2)
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .cursor_pointer()
             .hover(move |row| row.bg(hover))
             .when(!job.enabled, |row| row.opacity(0.6))
@@ -284,12 +286,12 @@ impl Rundeck {
                     .overflow_hidden()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(6.))
+                            .gap(SPACE_1H)
                             .child(
                                 ui::text(job.name.clone(), 12.5, FontWeight::MEDIUM)
                                     .text_color(t.text_primary)

@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_4};
+
 impl Signoz {
     pub(super) fn filter_bar(
         &mut self,
@@ -11,7 +13,7 @@ impl Signoz {
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
-        let mut row = div().flex().flex_wrap().items_center().gap(px(6.));
+        let mut row = div().flex().flex_wrap().items_center().gap(SPACE_1H);
         match signal {
             Signal::Logs => {
                 let search = field(
@@ -100,9 +102,9 @@ impl Signoz {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .pl(px(8.))
-                    .pr(px(2.))
+                    .gap(SPACE_1)
+                    .pl(SPACE_2)
+                    .pr(SPACE_0)
                     .h(px(22.))
                     .rounded(RADIUS_1)
                     .border_1()
@@ -167,11 +169,11 @@ impl Signoz {
             ui::Field::new(&input).mono()
         });
         div()
-            .px(px(16.))
-            .py(px(8.))
+            .px(SPACE_4)
+            .py(SPACE_2)
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .border_b_1()
             .border_color(t.border)
             .child(row)
@@ -309,7 +311,7 @@ impl Signoz {
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap(px(4.))
+                    .gap(SPACE_1)
                     .children(items.iter().enumerate().map(|(index, item)| {
                         let item = item.clone();
                         Button::new((id, index), item.clone(), Variant::Outline).on_click(listen::<
@@ -366,10 +368,10 @@ impl Signoz {
         let (keys, values) = (draft.keys.clone(), draft.values.clone());
         Some(
             div()
-                .p(px(8.))
+                .p(SPACE_2)
                 .flex()
                 .flex_col()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .rounded(RADIUS_2)
                 .border_1()
                 .border_color(t.border)
@@ -377,7 +379,7 @@ impl Signoz {
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .child(div().w(px(200.)).child(ui::Field::new(&key).mono()))
                         .child(ops)
                         .when(takes, |row| {

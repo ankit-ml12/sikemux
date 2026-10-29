@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_4};
+
 impl Signoz {
     pub(super) fn traces(
         &mut self,
@@ -17,10 +19,10 @@ impl Signoz {
         let show_service = asked.scope.service.is_none();
         let key = serde_json::to_string(&asked).unwrap_or_default();
         let columns = div()
-            .px(px(16.))
-            .py(px(4.))
+            .px(SPACE_4)
+            .py(SPACE_1)
             .flex()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .border_b_1()
             .border_color(t.border)
             .child(div().w(px(96.)).child(ui::caps("Time", cx)))
@@ -77,11 +79,11 @@ impl Signoz {
             };
             div()
                 .id(("signoz-trace", index))
-                .px(px(16.))
-                .py(px(4.))
+                .px(SPACE_4)
+                .py(SPACE_1)
                 .flex()
                 .items_center()
-                .gap(px(10.))
+                .gap(SPACE_2H)
                 .cursor_pointer()
                 .hover(move |row| row.bg(t.surface_hover))
                 .child(div().w(px(96.)).flex_none().child(ui::mono(
@@ -120,7 +122,7 @@ impl Signoz {
                         .flex_none()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .child(
                             div().flex_1().h(px(6.)).child(
                                 div()
@@ -144,7 +146,7 @@ impl Signoz {
                 }))
         });
         let more_button = next.map(|_| {
-            div().p(px(10.)).flex().justify_center().child(
+            div().p(SPACE_2H).flex().justify_center().child(
                 Button::new(
                     "signoz-more-traces",
                     if reading { "Reading…" } else { "More traces" },
@@ -241,12 +243,12 @@ impl Signoz {
             )
             .read::<LogPage>();
         let mut head = div()
-            .px(px(16.))
-            .py(px(10.))
+            .px(SPACE_4)
+            .py(SPACE_2H)
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .border_b_1()
             .border_color(t.border)
             .child(
@@ -298,11 +300,11 @@ impl Signoz {
             let width = ((span.duration_ms / total) as f32).max(0.002);
             div()
                 .id(("signoz-span", index))
-                .px(px(16.))
+                .px(SPACE_4)
                 .py(px(3.))
                 .flex()
                 .items_center()
-                .gap(px(10.))
+                .gap(SPACE_2H)
                 .when_some(span.status.clone(), |row, status| {
                     row.tooltip(ui::tooltip(status))
                 })
@@ -313,7 +315,7 @@ impl Signoz {
                         .pl(px(8. * span.depth.min(MAX_INDENT) as f32))
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .min_w_0()
                         .child(
                             ui::mono(span.name.clone(), 11.5, cx)
@@ -389,12 +391,12 @@ impl Signoz {
                     .overflow_y_scroll()
                     .flex()
                     .flex_col()
-                    .gap(px(12.))
-                    .py(px(8.))
+                    .gap(SPACE_3)
+                    .py(SPACE_2)
                     .child(waterfall)
                     .child(
                         div()
-                            .px(px(16.))
+                            .px(SPACE_4)
                             .child(ui::caps("Log lines in this trace", cx)),
                     )
                     .child(lines),

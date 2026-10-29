@@ -19,7 +19,10 @@ use sikemux_plugin_api::codehost::{
 
 use super::{outcome_word, Asking, HostArea, Said};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{
+    self, Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H,
+    TEXT_2XS, TEXT_2XS_H, TEXT_XS,
+};
 use crate::ui::{self, Button, Choice, IconButton, Variant};
 
 /// What pressing one of the dispatch sheet's buttons does.
@@ -566,18 +569,18 @@ pub fn approvals(area: &HostArea, view: &OpenRun, cx: &mut Context<HostArea>) ->
         .join(", ");
     Some(
         div()
-            .mx(px(10.))
-            .mb(px(8.))
-            .px(px(10.))
-            .py(px(8.))
+            .mx(SPACE_2H)
+            .mb(SPACE_2)
+            .px(SPACE_2H)
+            .py(SPACE_2)
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .rounded(RADIUS_2)
             .border_1()
             .border_color(t.warn.opacity(0.34))
             .bg(t.warn.opacity(0.08))
-            .text_size(crate::theme::ui_text(11.5))
+            .text_size(crate::theme::ui_text(TEXT_2XS_H))
             .child(
                 ui::text("Waiting for approval", 12., FontWeight::SEMIBOLD)
                     .text_color(t.text_primary),
@@ -604,7 +607,7 @@ pub fn approvals(area: &HostArea, view: &OpenRun, cx: &mut Context<HostArea>) ->
                 callout.child(
                     div()
                         .flex()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .child(
                             Button::new("approval-reject", "Reject", Variant::Outline)
                                 .disabled(busy)
@@ -642,11 +645,11 @@ pub fn job_bar(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> Div {
     let busy = area.runs.open.as_ref().is_some_and(|opened| opened.busy);
     let url = job.url.clone();
     div()
-        .px(px(12.))
-        .py(px(8.))
+        .px(SPACE_3)
+        .py(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .border_b_1()
         .border_color(t.border)
         .child(ui::run_mark(
@@ -703,11 +706,11 @@ pub fn annotations(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> Op
     let project = area.project.clone();
     Some(
         div()
-            .px(px(12.))
-            .py(px(6.))
+            .px(SPACE_3)
+            .py(SPACE_1H)
             .flex()
             .flex_col()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .border_b_1()
             .border_color(t.border)
             .children(
@@ -737,9 +740,13 @@ pub fn annotations(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> Op
                         div()
                             .flex()
                             .items_start()
-                            .gap(px(8.))
-                            .text_size(crate::theme::ui_text(12.))
-                            .child(div().pt(px(2.)).child(ui::icon(glyph, 13.).text_color(ink)))
+                            .gap(SPACE_2)
+                            .text_size(crate::theme::ui_text(TEXT_XS))
+                            .child(
+                                div()
+                                    .pt(SPACE_0)
+                                    .child(ui::icon(glyph, 13.).text_color(ink)),
+                            )
                             .child(
                                 div()
                                     .flex_1()
@@ -758,7 +765,7 @@ pub fn annotations(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> Op
                                     .id(("annotation-place", index))
                                     .flex_none()
                                     .font_family(theme::MONO)
-                                    .text_size(crate::theme::ui_text(11.))
+                                    .text_size(crate::theme::ui_text(TEXT_2XS))
                                     .text_color(t.text_tertiary)
                                     .when_some(open, |place, open| {
                                         place
@@ -779,7 +786,7 @@ pub fn annotations(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> Op
                     list.child(
                         div()
                             .id("annotations-more")
-                            .text_size(crate::theme::ui_text(11.))
+                            .text_size(crate::theme::ui_text(TEXT_2XS))
                             .text_color(t.accent)
                             .cursor_pointer()
                             .on_click(cx.listener(|area, _, _, cx| {
@@ -819,7 +826,7 @@ pub fn file_toggle(
     Some(
         div()
             .id("run-file")
-            .text_size(crate::theme::ui_text(11.))
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .text_color(t.accent)
             .cursor_pointer()
             .on_click(cx.listener(move |area, _, _, cx| area.toggle_file(workflow.clone(), cx)))
@@ -850,21 +857,21 @@ pub fn below_graph(area: &HostArea, window: &mut Window, cx: &mut Context<HostAr
             .bg(t.surface)
             .child(
                 div()
-                    .px(px(10.))
-                    .py(px(6.))
+                    .px(SPACE_2H)
+                    .py(SPACE_1H)
                     .border_b_1()
                     .border_color(t.border)
-                    .text_size(crate::theme::ui_text(11.))
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(t.text_secondary)
                     .font_family(theme::MONO)
                     .child(file.path.clone()),
             )
             .child(
                 div()
-                    .px(px(10.))
-                    .py(px(8.))
+                    .px(SPACE_2H)
+                    .py(SPACE_2)
                     .font_family(theme::MONO)
-                    .text_size(crate::theme::ui_text(11.5))
+                    .text_size(crate::theme::ui_text(TEXT_2XS_H))
                     .text_color(t.text_primary)
                     .children(
                         file.text
@@ -891,16 +898,16 @@ pub fn below_graph(area: &HostArea, window: &mut Window, cx: &mut Context<HostAr
                 .border_color(t.border)
                 .child(
                     div()
-                        .px(px(12.))
+                        .px(SPACE_3)
                         .py(px(7.))
                         .border_b_1()
                         .border_color(t.border)
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(t.text_primary)
                         .child(format!("{name} summary")),
                 )
-                .child(div().px(px(14.)).py(px(10.)).child(pen.markdown(
+                .child(div().px(SPACE_3H).py(SPACE_2H).child(pen.markdown(
                     ("run-summary", index),
                     body,
                     window,
@@ -919,7 +926,7 @@ pub fn below_graph(area: &HostArea, window: &mut Window, cx: &mut Context<HostAr
             let rest = total - SUMMARIES_FIRST;
             div()
                 .id("summaries-more")
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.accent)
                 .cursor_pointer()
                 .on_click(cx.listener(|area, _, _, cx| {
@@ -938,7 +945,7 @@ pub fn below_graph(area: &HostArea, window: &mut Window, cx: &mut Context<HostAr
     div()
         .flex()
         .flex_col()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .children(file)
         .children(summaries)
         .children(more)
@@ -972,11 +979,11 @@ pub fn artifacts(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
                     let saved = artifact.clone();
                     div()
                         .h(px(28.))
-                        .px(px(12.))
+                        .px(SPACE_3)
                         .flex()
                         .items_center()
-                        .gap(px(8.))
-                        .text_size(crate::theme::ui_text(12.))
+                        .gap(SPACE_2)
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .child(ui::icon(Icon::Download, 13.).text_color(t.text_tertiary))
                         .child(
                             div()
@@ -1038,14 +1045,14 @@ pub fn dispatch_sheet(area: &HostArea, cx: &mut Context<HostArea>) -> Option<Any
         .ok();
     });
     let body = ui::dialog::marked_body()
-        .pt(px(12.))
-        .gap(px(10.))
-        .text_size(crate::theme::ui_text(12.))
+        .pt(SPACE_3)
+        .gap(SPACE_2H)
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .child(ui::meta("Branch or tag", cx))
         .child(
             div()
-                .px(px(10.))
-                .py(px(6.))
+                .px(SPACE_2H)
+                .py(SPACE_1H)
                 .rounded(RADIUS_2)
                 .border_1()
                 .border_color(t.border)
@@ -1055,8 +1062,8 @@ pub fn dispatch_sheet(area: &HostArea, cx: &mut Context<HostArea>) -> Option<Any
         .child(ui::meta("Its host says if an input is wrong.", cx))
         .child(
             div()
-                .px(px(10.))
-                .py(px(6.))
+                .px(SPACE_2H)
+                .py(SPACE_1H)
                 .rounded(RADIUS_2)
                 .border_1()
                 .border_color(t.border)

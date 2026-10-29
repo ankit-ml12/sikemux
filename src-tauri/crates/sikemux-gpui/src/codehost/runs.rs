@@ -17,7 +17,10 @@ use super::{
     HostArea, Read, Said,
 };
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{
+    self, Tokens, RADIUS_2, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4,
+    TEXT_2XS, TEXT_2XS_H, TEXT_3XS_H, TEXT_XS,
+};
 use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, Choice, IconButton, Segmented, Variant};
 
@@ -368,11 +371,11 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
             let pager = (runs.page > 1 || list.next_page.is_some()).then(|| {
                 let older = list.next_page.is_some();
                 div()
-                    .px(px(12.))
-                    .py(px(10.))
+                    .px(SPACE_3)
+                    .py(SPACE_2H)
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(
                         Button::new("runs-newer", "Newer", Variant::Outline)
                             .disabled(runs.page <= 1)
@@ -430,11 +433,11 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                     let more = super::run_actions::MoreRun::of(run, !listed.unfinished);
                     div()
                         .id(("run", index))
-                        .px(px(12.))
-                        .py(px(10.))
+                        .px(SPACE_3)
+                        .py(SPACE_2H)
                         .flex()
                         .items_center()
-                        .gap(px(12.))
+                        .gap(SPACE_3)
                         .when(index > 0, |row| row.border_t_1().border_color(t.border))
                         .cursor_pointer()
                         .hover(move |row| row.bg(t.surface_hover))
@@ -453,7 +456,7 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap(px(8.))
+                                        .gap(SPACE_2)
                                         .child(ui::run_mark(
                                             format!("run-row-{}", run.id),
                                             outcome_word(run.outcome),
@@ -479,8 +482,8 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap(px(6.))
-                                        .text_size(crate::theme::ui_text(10.5))
+                                        .gap(SPACE_1H)
+                                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                                         .text_color(t.text_tertiary)
                                         .child(div().flex_none().child(who))
                                         .children(place),
@@ -492,14 +495,14 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                                 .flex_col()
                                 .items_end()
                                 .gap(px(3.))
-                                .text_size(crate::theme::ui_text(11.))
+                                .text_size(crate::theme::ui_text(TEXT_2XS))
                                 .text_color(t.text_tertiary)
                                 .child(ago(started))
                                 .child(
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap(px(4.))
+                                        .gap(SPACE_1)
                                         .font_features(theme::tabular())
                                         .child(
                                             ui::icon(Icon::Clock, 11.).text_color(t.text_tertiary),
@@ -589,12 +592,12 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
     let failed = !live && run.outcome != Outcome::Success;
     let url = run.url.clone();
     let head = div()
-        .px(px(10.))
-        .pt(px(10.))
-        .pb(px(8.))
+        .px(SPACE_2H)
+        .pt(SPACE_2H)
+        .pb(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .children((!area.on_a_desk()).then(|| back_button(back, cx)))
         .child(ui::run_mark(
             format!("run-head-{}", run.id),
@@ -612,7 +615,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
         .child(
             div()
                 .id("run-took")
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .font_features(theme::tabular())
                 .text_color(t.text_tertiary)
                 .tooltip(ui::tooltip(outcome_label(run.outcome)))
@@ -621,11 +624,11 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
         .child(super::run_actions::more_button(found, cx));
     let busy = opened.busy;
     let actions = div()
-        .px(px(10.))
-        .pb(px(10.))
+        .px(SPACE_2H)
+        .pb(SPACE_2H)
         .flex()
         .flex_wrap()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .when(live, |row| {
             row.child(
                 Button::new("run-cancel", "Cancel run", Variant::Outline)
@@ -675,7 +678,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
     let attempts = (ci.attempts && found.attempts > 1).then(|| {
         let latest = found.attempts;
         let shown = opened.attempt.unwrap_or(latest);
-        div().px(px(8.)).pb(px(8.)).child(
+        div().px(SPACE_2).pb(SPACE_2).child(
             Segmented::words(
                 "run-attempts",
                 (1..=latest)
@@ -698,7 +701,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
     let artifacts = super::run_actions::artifact_count(area);
     let artifacts_shown = artifacts > 0 && opened.extras.artifacts_page;
     let pages = (artifacts > 0).then(|| {
-        div().px(px(10.)).pb(px(8.)).child(
+        div().px(SPACE_2H).pb(SPACE_2).child(
             Segmented::words(
                 "run-pages",
                 vec![
@@ -720,11 +723,11 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
         .flex_col()
         .child(
             div()
-                .px(px(12.))
-                .py(px(4.))
+                .px(SPACE_3)
+                .py(SPACE_1)
                 .flex()
-                .gap(px(6.))
-                .text_size(crate::theme::ui_text(11.))
+                .gap(SPACE_1H)
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .text_color(t.text_secondary)
                 .child("Jobs")
                 .child(
@@ -736,8 +739,8 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
         .when(found.jobs.is_empty(), |jobs| {
             jobs.child(
                 div()
-                    .px(px(12.))
-                    .py(px(6.))
+                    .px(SPACE_3)
+                    .py(SPACE_1H)
                     .child(ui::meta("No jobs yet", cx)),
             )
         })
@@ -756,11 +759,11 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
             div()
                 .id(("run-job", index))
                 .h(px(28.))
-                .px(px(12.))
+                .px(SPACE_3)
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .text_size(crate::theme::ui_text(12.))
+                .gap(SPACE_2)
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .cursor_pointer()
                 .when(chosen, |row| row.bg(t.surface_chosen))
                 .hover(move |row| row.bg(t.surface_hover))
@@ -789,7 +792,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
                     div()
                         .flex_none()
                         .font_features(theme::tabular())
-                        .text_size(crate::theme::ui_text(11.))
+                        .text_size(crate::theme::ui_text(TEXT_2XS))
                         .text_color(t.text_tertiary)
                         .child(took),
                 )
@@ -874,18 +877,18 @@ fn main(
     let url = run.url.clone();
     let (sha, short) = (run.sha.clone(), run.short_sha.clone());
     let headline = div()
-        .px(px(16.))
-        .pt(px(14.))
-        .pb(px(10.))
+        .px(SPACE_4)
+        .pt(SPACE_3H)
+        .pb(SPACE_2H)
         .flex()
         .flex_col()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .border_b_1()
         .border_color(t.border)
         .child(
             div()
                 .flex()
-                .gap(px(12.))
+                .gap(SPACE_3)
                 .child(area.face(Some(&actor), run.avatar_url.as_deref(), 36., cx))
                 .child(
                     div()
@@ -893,12 +896,12 @@ fn main(
                         .min_w_0()
                         .flex()
                         .flex_col()
-                        .gap(px(4.))
+                        .gap(SPACE_1)
                         .child(
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(8.))
+                                .gap(SPACE_2)
                                 .child(ui::run_mark(
                                     format!("run-summary-{}", run.id),
                                     outcome_word(run.outcome),
@@ -933,8 +936,8 @@ fn main(
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(6.))
-                                .text_size(crate::theme::ui_text(10.5))
+                                .gap(SPACE_1H)
+                                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                                 .text_color(t.text_tertiary)
                                 .child(format!(
                                     "{} #{} · {actor} · {} {}{attempt}",
@@ -973,20 +976,20 @@ fn main(
         .child(
             div()
                 .flex()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .children(tabs.into_iter().map(|(tab, label)| {
                     let on = opened.tab == tab;
                     div()
                         .id(SharedString::from(format!("run-tab-{}", tab == Tab::Logs)))
                         .h(px(24.))
-                        .px(px(10.))
+                        .px(SPACE_2H)
                         .flex()
                         .items_center()
                         .rounded_full()
                         .border_1()
                         .border_color(if on { t.border_strong } else { t.border })
                         .when(on, |chip| chip.bg(t.surface_active))
-                        .text_size(crate::theme::ui_text(11.5))
+                        .text_size(crate::theme::ui_text(TEXT_2XS_H))
                         .text_color(if on { t.text_primary } else { t.text_secondary })
                         .cursor_pointer()
                         .on_click(cx.listener(move |area, _, _, cx| {
@@ -1060,17 +1063,17 @@ fn summary(
         .id("run-summary")
         .size_full()
         .overflow_scroll()
-        .p(px(16.))
+        .p(SPACE_4)
         .flex()
         .flex_col()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .children(billed.map(|minutes| ui::meta(format!("Billed {minutes} min"), cx)))
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .text_size(crate::theme::ui_text(12.))
+                .gap(SPACE_2)
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .child(
                     div()
                         .font_family(theme::MONO)
@@ -1089,7 +1092,7 @@ fn summary(
                     .when(found.failed > 0, |head| {
                         head.child(
                             div()
-                                .text_size(crate::theme::ui_text(11.))
+                                .text_size(crate::theme::ui_text(TEXT_2XS))
                                 .text_color(t.danger)
                                 .child(format!("· {} failed", found.failed)),
                         )
@@ -1184,10 +1187,10 @@ fn graph(found: &OpenRun, chosen: Option<&str>, cx: &mut Context<HostArea>) -> A
             .children(graph_box.title.as_ref().map(|title| {
                 div()
                     .h(px(TITLE))
-                    .px(px(6.))
+                    .px(SPACE_1H)
                     .flex()
                     .items_center()
-                    .text_size(crate::theme::ui_text(10.5))
+                    .text_size(crate::theme::ui_text(TEXT_3XS_H))
                     .text_color(t.text_tertiary)
                     .truncate()
                     .child(title.clone())
@@ -1214,12 +1217,12 @@ fn graph(found: &OpenRun, chosen: Option<&str>, cx: &mut Context<HostArea>) -> A
                         graph_box.id
                     )))
                     .h(px(JOB))
-                    .px(px(6.))
+                    .px(SPACE_1H)
                     .flex()
                     .items_center()
                     .gap(px(7.))
                     .rounded(RADIUS_2)
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(if job.is_some() {
                         t.text_primary
                     } else {
@@ -1242,7 +1245,7 @@ fn graph(found: &OpenRun, chosen: Option<&str>, cx: &mut Context<HostArea>) -> A
                     .children(took.map(|took| {
                         div()
                             .flex_none()
-                            .text_size(crate::theme::ui_text(10.5))
+                            .text_size(crate::theme::ui_text(TEXT_3XS_H))
                             .font_features(theme::tabular())
                             .text_color(t.text_tertiary)
                             .child(took)

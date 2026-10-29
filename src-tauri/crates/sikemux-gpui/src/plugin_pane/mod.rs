@@ -24,7 +24,7 @@ use sikemux_core::git::log::GitCommit;
 use crate::core::Target;
 use crate::icons::Icon;
 use crate::send_to::{self, Choice, Recipient};
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_1H, SPACE_6, TEXT_XS};
 use crate::toast;
 use crate::ui;
 use crate::workbench::Workbench;
@@ -1148,15 +1148,15 @@ fn notice(
         .flex_col()
         .items_center()
         .justify_center()
-        .gap(px(6.))
-        .p(px(24.))
+        .gap(SPACE_1H)
+        .p(SPACE_6)
         .children(icon.map(|icon| ui::icon(icon, 16.).text_color(t.text_tertiary)))
         .child(ui::text(title, 12.5, FontWeight::MEDIUM).text_color(t.text_secondary))
         .children(detail.map(|detail| {
             div()
                 .max_w(px(420.))
                 .text_center()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_tertiary)
                 .child(detail)
         }))

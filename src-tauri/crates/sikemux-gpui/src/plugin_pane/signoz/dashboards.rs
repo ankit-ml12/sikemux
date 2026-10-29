@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_4};
+
 impl Signoz {
     pub(super) fn dashboards(
         &mut self,
@@ -21,11 +23,11 @@ impl Signoz {
         );
         let wanted = words(&self.dashboard_find, cx);
         let bar = div()
-            .px(px(16.))
-            .py(px(10.))
+            .px(SPACE_4)
+            .py(SPACE_2H)
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(
                 div()
                     .w(px(240.))
@@ -82,11 +84,11 @@ impl Signoz {
             let id = dashboard.id.clone();
             div()
                 .id(("signoz-dashboard", index))
-                .px(px(16.))
-                .py(px(8.))
+                .px(SPACE_4)
+                .py(SPACE_2)
                 .flex()
                 .items_center()
-                .gap(px(12.))
+                .gap(SPACE_3)
                 .cursor_pointer()
                 .hover(move |row| row.bg(t.surface_hover))
                 .child(
@@ -95,7 +97,7 @@ impl Signoz {
                         .min_w_0()
                         .flex()
                         .flex_col()
-                        .gap(px(2.))
+                        .gap(SPACE_0)
                         .child(
                             ui::text(dashboard.title.clone(), 12.5, FontWeight::MEDIUM)
                                 .text_color(t.text_primary)
@@ -106,7 +108,7 @@ impl Signoz {
                         }),
                 )
                 .child(
-                    div().flex().gap(px(4.)).children(
+                    div().flex().gap(SPACE_1).children(
                         dashboard
                             .tags
                             .iter()
@@ -182,12 +184,12 @@ impl Signoz {
             .collect();
         let open = format!("{}/dashboard/{id}", url.trim_end_matches('/'));
         let mut bar = div()
-            .px(px(16.))
-            .py(px(8.))
+            .px(SPACE_4)
+            .py(SPACE_2)
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(px(10.));
+            .gap(SPACE_2H);
         for variable in &dashboard.variables {
             let current = variables.get(&variable.name).cloned().unwrap_or_default();
             let mut options = vec![current.clone()];
@@ -203,7 +205,7 @@ impl Signoz {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(ui::meta(variable.name.clone(), cx))
                     .child(ui::select(
                         SharedString::from(format!("signoz-variable-{}", variable.name)),
@@ -279,10 +281,10 @@ impl Signoz {
                 div()
                     .min_w_0()
                     .min_h_0()
-                    .p(px(10.))
+                    .p(SPACE_2H)
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .overflow_hidden()
                     .rounded(RADIUS_2)
                     .border_1()
@@ -314,8 +316,8 @@ impl Signoz {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .px(px(16.))
-                    .pb(px(16.))
+                    .px(SPACE_4)
+                    .pb(SPACE_4)
                     .child(grid),
             )
             .into_any_element()
@@ -338,7 +340,7 @@ impl Signoz {
             return div()
                 .flex()
                 .flex_col()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(ui::meta(
                     format!("Sikemux does not draw {} panels yet.", panel.kind),
                     cx,
@@ -420,12 +422,12 @@ impl Signoz {
                     .overflow_y_scroll()
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
+                    .gap(SPACE_1)
                     .children(parts.into_iter().enumerate().map(|(at, (label, value))| {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(SPACE_2)
                             .child(
                                 div()
                                     .w(px(120.))
@@ -460,8 +462,8 @@ impl Signoz {
                 .child(
                     div()
                         .flex()
-                        .gap(px(10.))
-                        .pb(px(4.))
+                        .gap(SPACE_2H)
+                        .pb(SPACE_1)
                         .children(columns.iter().map(|column| {
                             let name = if column.name.starts_with("__result") {
                                 "value".to_owned()
@@ -474,8 +476,8 @@ impl Signoz {
                 .children(rows.iter().map(|row| {
                     div()
                         .flex()
-                        .gap(px(10.))
-                        .py(px(2.))
+                        .gap(SPACE_2H)
+                        .py(SPACE_0)
                         .children(row.iter().enumerate().map(|(at, cell)| {
                             let aggregation =
                                 columns.get(at).is_some_and(|column| column.aggregation);

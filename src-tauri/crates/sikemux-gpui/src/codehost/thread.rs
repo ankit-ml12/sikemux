@@ -13,7 +13,10 @@ use gpui_transcript::{Markdown, Pen};
 use sikemux_plugin_api::codehost::{Mention, PullCommit, TimelineItem};
 
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3H, SPACE_4, TEXT_2XS_H,
+    TEXT_3XS,
+};
 use crate::toast;
 use crate::ui;
 use crate::ui::time::ago_written as ago;
@@ -184,8 +187,8 @@ pub fn thread(
     div()
         .flex()
         .flex_col()
-        .px(px(16.))
-        .py(px(16.))
+        .px(SPACE_4)
+        .py(SPACE_4)
         .children(items.into_iter().enumerate().map(|(at, item)| {
             let space = if at == 0 { 0. } else { item.space };
             div()
@@ -305,12 +308,12 @@ fn post(
                         .py(px(7.))
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .border_b_1()
                         .border_color(t.border)
                         .bg(t.surface_sunken.opacity(0.4))
                         .text_size(crate::theme::ui_text(TEXT))
-                        .child(div().mr(px(2.)).child(faces(
+                        .child(div().mr(SPACE_0).child(faces(
                             Some(author),
                             post.avatar.as_deref(),
                             AVATAR,
@@ -329,16 +332,16 @@ fn post(
                         .child(div().flex_1())
                         .children(post.association.as_deref().and_then(role).map(|role| {
                             div()
-                                .px(px(6.))
+                                .px(SPACE_1H)
                                 .rounded_full()
                                 .border_1()
                                 .border_color(t.border)
-                                .text_size(crate::theme::ui_text(10.))
+                                .text_size(crate::theme::ui_text(TEXT_3XS))
                                 .text_color(t.text_tertiary)
                                 .child(role)
                         })),
                 )
-                .child(div().px(px(14.)).py(px(10.)).child(body)),
+                .child(div().px(SPACE_3H).py(SPACE_2H).child(body)),
         )
         .into_any_element()
 }
@@ -360,7 +363,7 @@ fn line_over(
     div()
         .flex()
         .items_start()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .pl(px(SPINE - BADGE / 2.))
         .min_w_0()
         .text_size(crate::theme::ui_text(TEXT))
@@ -382,7 +385,7 @@ fn line_over(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(
                     div()
                         .min_h(px(BADGE))
@@ -424,7 +427,7 @@ fn mentioned_by(subject: String, source: &Mention, cx: &App) -> AnyElement {
     div()
         .flex()
         .items_start()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .min_w_0()
         .child(
             div()
@@ -432,7 +435,7 @@ fn mentioned_by(subject: String, source: &Mention, cx: &App) -> AnyElement {
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(
                     ui::text(subject, TEXT, FontWeight::SEMIBOLD)
                         .whitespace_normal()
@@ -444,13 +447,13 @@ fn mentioned_by(subject: String, source: &Mention, cx: &App) -> AnyElement {
             div()
                 .flex_none()
                 .h(px(22.))
-                .px(px(8.))
+                .px(SPACE_2)
                 .flex()
                 .items_center()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .rounded_full()
                 .bg(ink.opacity(0.16))
-                .text_size(crate::theme::ui_text(11.5))
+                .text_size(crate::theme::ui_text(TEXT_2XS_H))
                 .text_color(ink)
                 .child(ui::icon(glyph, 12.).text_color(ink))
                 .child(word),
@@ -480,7 +483,7 @@ fn dim(words: impl Into<SharedString>, cx: &App) -> AnyElement {
 fn chip(words: impl Into<SharedString>, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     div()
-        .px(px(6.))
+        .px(SPACE_1H)
         .rounded(theme::RADIUS_1)
         .bg(t.surface_active)
         .text_color(t.text_primary)
@@ -696,7 +699,7 @@ fn pushed(
                 .h(px(COMMIT_ROW))
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .min_w_0()
                 .text_size(crate::theme::ui_text(TEXT))
                 .pl(px(SPINE - COMMIT_GLYPH / 2.))

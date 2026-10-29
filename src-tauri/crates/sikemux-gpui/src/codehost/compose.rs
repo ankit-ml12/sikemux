@@ -17,7 +17,10 @@ use super::diffs::{Changed, Diffs};
 use super::{branch_chip, HostArea, Read, Said};
 use crate::git::Diff;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{
+    self, Tokens, RADIUS_2, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4,
+    TEXT_2XS, TEXT_2XS_H, TEXT_3XS_H, TEXT_SM, TEXT_XS, TEXT_XS_H,
+};
 use crate::ui::{self, Button, Choice, IconButton, Toggle, Variant};
 
 /// What a new pull request starts with, as the core works it out.
@@ -414,15 +417,15 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         div()
             .id(id)
             .h(px(24.))
-            .px(px(8.))
+            .px(SPACE_2)
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .min_w_0()
             .rounded(RADIUS_2)
             .border_1()
             .border_color(t.border)
-            .text_size(crate::theme::ui_text(11.5))
+            .text_size(crate::theme::ui_text(TEXT_2XS_H))
             .text_color(if shown.is_some() {
                 t.text_primary
             } else {
@@ -461,18 +464,18 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .and_then(|start| start.head.clone());
     let push = (!composing.pushed()).then(|| {
         div()
-            .mx(px(10.))
-            .mb(px(8.))
-            .px(px(10.))
+            .mx(SPACE_2H)
+            .mb(SPACE_2)
+            .px(SPACE_2H)
             .py(px(7.))
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .rounded(RADIUS_2)
             .border_1()
             .border_color(t.warn.opacity(0.34))
             .bg(t.warn.opacity(0.08))
-            .text_size(crate::theme::ui_text(11.5))
+            .text_size(crate::theme::ui_text(TEXT_2XS_H))
             .child(format!("Not on {host} yet"))
             .child(div().flex_1())
             .when(head == starting, |callout| {
@@ -497,14 +500,14 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         div()
             .flex()
             .flex_col()
-            .pt(px(6.))
+            .pt(SPACE_1H)
             .child(
                 div()
-                    .px(px(12.))
-                    .py(px(4.))
+                    .px(SPACE_3)
+                    .py(SPACE_1)
                     .flex()
-                    .gap(px(6.))
-                    .text_size(crate::theme::ui_text(11.))
+                    .gap(SPACE_1H)
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(t.text_secondary)
                     .child("Files")
                     .child(
@@ -528,11 +531,11 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 div()
                     .id(("compose-file", at))
                     .h(px(26.))
-                    .px(px(12.))
+                    .px(SPACE_3)
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .text_size(crate::theme::ui_text(12.))
+                    .gap(SPACE_2)
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .cursor_pointer()
                     .hover(move |row| row.bg(t.surface_hover))
                     .on_click(cx.listener(move |area, _, _, cx| {
@@ -548,7 +551,7 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(crate::theme::ui_text(10.5))
+                            .text_size(crate::theme::ui_text(TEXT_3XS_H))
                             .text_color(t.text_tertiary)
                             .child(dir)
                     }))
@@ -556,7 +559,7 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                         div()
                             .ml_auto()
                             .font_family(theme::MONO)
-                            .text_size(crate::theme::ui_text(11.))
+                            .text_size(crate::theme::ui_text(TEXT_2XS))
                             .text_color(ink)
                             .child(file.status.clone()),
                     )
@@ -568,14 +571,14 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
             div()
                 .flex()
                 .flex_col()
-                .pt(px(8.))
+                .pt(SPACE_2)
                 .child(
                     div()
-                        .px(px(12.))
-                        .py(px(4.))
+                        .px(SPACE_3)
+                        .py(SPACE_1)
                         .flex()
-                        .gap(px(6.))
-                        .text_size(crate::theme::ui_text(11.))
+                        .gap(SPACE_1H)
+                        .text_size(crate::theme::ui_text(TEXT_2XS))
                         .text_color(t.text_secondary)
                         .child("Commits")
                         .child(
@@ -586,12 +589,12 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 )
                 .children(compare.commits.iter().map(|commit| {
                     div()
-                        .px(px(12.))
+                        .px(SPACE_3)
                         .py(px(5.))
                         .flex()
                         .items_center()
-                        .gap(px(8.))
-                        .text_size(crate::theme::ui_text(12.))
+                        .gap(SPACE_2)
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .child(ui::initials(&commit.author, &commit.author_email, 16., cx))
                         .child(
                             div()
@@ -609,11 +612,11 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .flex_col()
         .child(
             div()
-                .px(px(10.))
-                .py(px(10.))
+                .px(SPACE_2H)
+                .py(SPACE_2H)
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(picker(
                     "compose-head",
                     End::Head,
@@ -642,39 +645,39 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .children(push)
         .child(
             div()
-                .mx(px(10.))
+                .mx(SPACE_2H)
                 .rounded(RADIUS_2)
                 .border_1()
                 .border_color(t.border)
                 .bg(t.surface)
                 .child(
                     div()
-                        .px(px(10.))
+                        .px(SPACE_2H)
                         .py(px(7.))
                         .border_b_1()
                         .border_color(t.border)
-                        .text_size(crate::theme::ui_text(13.))
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .font_weight(FontWeight::MEDIUM)
                         .child(Input::new(&composing.title).appearance(false)),
                 )
                 .child(
                     div()
-                        .px(px(10.))
+                        .px(SPACE_2H)
                         .py(px(7.))
-                        .text_size(crate::theme::ui_text(12.5))
+                        .text_size(crate::theme::ui_text(TEXT_XS_H))
                         .child(
                             Textarea::new(&composing.body)
                                 .appearance(false)
-                                .text_size(crate::theme::ui_text(12.5)),
+                                .text_size(crate::theme::ui_text(TEXT_XS_H)),
                         ),
                 )
                 .child(
                     div()
-                        .px(px(10.))
-                        .py(px(8.))
+                        .px(SPACE_2H)
+                        .py(SPACE_2)
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .border_t_1()
                         .border_color(t.border)
                         .child(
@@ -745,12 +748,12 @@ fn main(area: &HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> Any
         .flex_col()
         .child(
             div()
-                .px(px(16.))
-                .pt(px(14.))
-                .pb(px(10.))
+                .px(SPACE_4)
+                .pt(SPACE_3H)
+                .pb(SPACE_2H)
                 .flex()
                 .flex_col()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .border_b_1()
                 .border_color(t.border)
                 .child(
@@ -769,8 +772,8 @@ fn main(area: &HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> Any
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
-                        .text_size(crate::theme::ui_text(10.5))
+                        .gap(SPACE_1H)
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(t.text_tertiary)
                         .child(format!(
                             "{} · {}",

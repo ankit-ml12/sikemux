@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H};
+
 impl Jira {
     pub(super) fn board(
         &mut self,
@@ -97,7 +99,7 @@ impl Jira {
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(
                 div()
                     .w(px(200.))
@@ -107,7 +109,7 @@ impl Jira {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .children(faces)
                     .when(hidden > 0, |faces| {
                         faces.child(
@@ -174,19 +176,19 @@ impl Jira {
             .and_then(|sprint| sprint.goal.clone())
             .map(|goal| ui::text(goal, 12., FontWeight::NORMAL).text_color(t.text_secondary));
         let head = div()
-            .px(px(14.))
-            .pt(px(12.))
-            .pb(px(10.))
+            .px(SPACE_3H)
+            .pt(SPACE_3)
+            .pb(SPACE_2H)
             .flex()
             .flex_col()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .border_b_1()
             .border_color(t.border)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(
                         ui::text(board.name.clone(), 15., FontWeight::SEMIBOLD)
                             .text_color(t.text_primary)
@@ -233,7 +235,7 @@ impl Jira {
             self.columns(host, &shape, &board.columns, "all", cx)
                 .into_any_element()
         } else {
-            let mut lanes = div().flex().flex_col().gap(px(10.));
+            let mut lanes = div().flex().flex_col().gap(SPACE_2H);
             for lane in &page.lanes {
                 let id = lane.id.clone();
                 let folded = self.listing.folded.contains(&id);
@@ -254,7 +256,7 @@ impl Jira {
                         .id(SharedString::from(format!("jira-lane-{id}")))
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .cursor_pointer()
                         .child(chevron(!folded, cx))
                         .child(host.face(&name, avatar, 20., cx))
@@ -287,7 +289,7 @@ impl Jira {
                     .flex_1()
                     .min_h_0()
                     .overflow_scroll()
-                    .p(px(12.))
+                    .p(SPACE_3)
                     .flex()
                     .items_start()
                     .child(div().flex_none().child(body)),
@@ -305,7 +307,7 @@ impl Jira {
         cx: &mut Context<PluginPane>,
     ) -> Div {
         let t = Tokens::get(cx).clone();
-        let mut row = div().flex().gap(px(10.));
+        let mut row = div().flex().gap(SPACE_2H);
         for (at, (column, cards)) in columns
             .iter()
             .zip(with_moves(columns, &self.listing.moves))
@@ -322,19 +324,19 @@ impl Jira {
             let mut list = div()
                 .w(px(250.))
                 .flex_none()
-                .p(px(6.))
+                .p(SPACE_1H)
                 .flex()
                 .flex_col()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .rounded(RADIUS_2)
                 .bg(t.surface_sunken)
                 .child(
                     div()
-                        .px(px(4.))
-                        .py(px(2.))
+                        .px(SPACE_1)
+                        .py(SPACE_0)
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .child(ui::caps(&column.name, cx))
                         .child(ui::meta(cards.len().to_string(), cx)),
                 );
@@ -370,7 +372,7 @@ impl Jira {
             div()
                 .flex()
                 .flex_wrap()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .children(issue.parent.as_ref().map(|parent| epic_chip(parent, cx)))
                 .children(
                     issue
@@ -392,10 +394,10 @@ impl Jira {
                 "jira-card-{lane}-{}",
                 issue.key
             )))
-            .p(px(8.))
+            .p(SPACE_2)
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .rounded(RADIUS_2)
             .border_1()
             .border_color(if chosen { t.border_selected } else { t.border })
@@ -419,7 +421,7 @@ impl Jira {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(type_mark(issue.issue_type.as_deref(), cx))
                     .child(ui::mono(issue.key.clone(), 11., cx).text_color(t.text_secondary))
                     .children(

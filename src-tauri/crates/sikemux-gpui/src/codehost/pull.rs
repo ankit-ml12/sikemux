@@ -23,7 +23,10 @@ use super::{branch_chip, outcome_word, pull_mark, tally_summary, HostArea, Read}
 use crate::git::pane::ROW_HEIGHT;
 use crate::git::Diff;
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{
+    self, Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H,
+    SPACE_4, TEXT_2XS, TEXT_2XS_H, TEXT_3XS_H, TEXT_SM, TEXT_XS, TEXT_XS_H,
+};
 use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, IconButton, Variant};
 use gpui_kit::component::input::{Textarea, TextareaState};
@@ -455,9 +458,9 @@ fn page_view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea
     ];
     let chosen = opened.section;
     let top = div()
-        .px(px(16.))
-        .pt(px(14.))
-        .pb(px(12.))
+        .px(SPACE_4)
+        .pt(SPACE_3H)
+        .pb(SPACE_3)
         .child(header(area, found, cx));
     let folding = (chosen == Section::Files)
         .then(|| fold_all(opened, cx))
@@ -761,9 +764,9 @@ fn merge_footer(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) ->
                 .id(("pull-status", at))
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .whitespace_nowrap()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(if stops { t.danger } else { t.text_primary })
                 .cursor_pointer()
                 .on_click(cx.listener(|area, _, _, cx| {
@@ -777,8 +780,8 @@ fn merge_footer(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) ->
         })
         .collect::<Vec<_>>();
     let row = div()
-        .px(px(16.))
-        .py(px(10.))
+        .px(SPACE_4)
+        .py(SPACE_2H)
         .flex()
         .items_center()
         .gap(px(if narrow { 12. } else { 16. }))
@@ -787,7 +790,7 @@ fn merge_footer(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) ->
             div()
                 .ml_auto()
                 .flex()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .when(!narrow, |acts| acts.child(checkout_button(area, view, cx)))
                 .child(merge_button(area, view, narrow, cx)),
         );
@@ -839,8 +842,8 @@ fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div 
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(px(6.))
-            .text_size(crate::theme::ui_text(12.))
+            .gap(SPACE_1H)
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .text_color(t.text_tertiary)
     };
     let who = div()
@@ -871,7 +874,7 @@ fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div 
             false => at.absolute().top_0().left(px(-30.)),
         }
     });
-    div().flex().flex_col().gap(px(12.)).child(
+    div().flex().flex_col().gap(SPACE_3).child(
         div()
             .relative()
             .flex()
@@ -885,7 +888,7 @@ fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div 
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(
                         ui::text(pull.title.clone(), 16., FontWeight::SEMIBOLD)
                             .whitespace_normal()
@@ -917,13 +920,13 @@ fn state_pill(state: PullState, cx: &App) -> Div {
     div()
         .flex_none()
         .h(px(20.))
-        .px(px(8.))
+        .px(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .rounded_full()
         .bg(ink.opacity(0.16))
-        .text_size(crate::theme::ui_text(11.5))
+        .text_size(crate::theme::ui_text(TEXT_2XS_H))
         .font_weight(FontWeight::MEDIUM)
         .text_color(ink)
         .child(ui::icon(glyph, 12.).text_color(ink))
@@ -959,7 +962,7 @@ fn fold_all(opened: &Opened, cx: &mut Context<HostArea>) -> Option<AnyElement> {
 fn tally(count: u64, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     div()
-        .text_size(crate::theme::ui_text(11.5))
+        .text_size(crate::theme::ui_text(TEXT_2XS_H))
         .font_features(theme::tabular())
         .text_color(t.text_tertiary)
         .child(count.to_string())
@@ -983,10 +986,10 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
     let group = div()
         .id("pull-files-group")
         .h(px(ROW_HEIGHT))
-        .px(px(6.))
+        .px(SPACE_1H)
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .rounded(RADIUS_2)
         .cursor_pointer()
         .hover(move |row| row.bg(t.surface_hover))
@@ -1004,13 +1007,13 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
         ))
         .child(ui::icon(Icon::File, 13.).text_color(t.text_tertiary))
         .child(ui::text("Changed files", 12., FontWeight::MEDIUM).text_color(t.text_primary))
-        .child(ui::meta(files.len().to_string(), cx).ml(px(2.)))
+        .child(ui::meta(files.len().to_string(), cx).ml(SPACE_0))
         .child(div().flex_1())
         .child(
             div()
                 .flex()
-                .gap(px(6.))
-                .text_size(crate::theme::ui_text(11.5))
+                .gap(SPACE_1H)
+                .text_size(crate::theme::ui_text(TEXT_2XS_H))
                 .font_features(theme::tabular())
                 .child(div().text_color(t.live).child(format!("+{added}")))
                 .child(div().text_color(t.danger).child(format!("−{removed}"))),
@@ -1021,7 +1024,7 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
         file_row(at, changed, at == 0, at == last, chosen, cx)
     });
     div()
-        .p(px(6.))
+        .p(SPACE_1H)
         .flex()
         .flex_col()
         .child(group)
@@ -1056,12 +1059,12 @@ fn file_row(
         .w_full()
         .h(px(ROW_HEIGHT))
         .pl(px(18.))
-        .pr(px(6.))
+        .pr(SPACE_1H)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .rounded(RADIUS_2)
-        .text_size(crate::theme::ui_text(13.))
+        .text_size(crate::theme::ui_text(TEXT_SM))
         .text_color(if chosen {
             t.text_primary
         } else {
@@ -1091,10 +1094,10 @@ fn file_row(
                 .child(div().flex_none().child(name))
                 .children(dir.map(|dir| {
                     div()
-                        .ml(px(6.))
+                        .ml(SPACE_1H)
                         .min_w_0()
                         .truncate()
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .text_color(t.text_tertiary)
                         .child(dir)
                 })),
@@ -1105,7 +1108,7 @@ fn file_row(
                 .w(px(14.))
                 .text_center()
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(11.))
+                .text_size(crate::theme::ui_text(TEXT_2XS))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(ink)
                 .child(letter),
@@ -1126,12 +1129,12 @@ fn commits_page(opened: &Opened, cx: &App) -> AnyElement {
             let subject = commit.message.lines().next().unwrap_or_default().to_owned();
             let short: String = commit.sha.chars().take(7).collect();
             div()
-                .px(px(12.))
-                .py(px(6.))
+                .px(SPACE_3)
+                .py(SPACE_1H)
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .text_size(crate::theme::ui_text(12.))
+                .gap(SPACE_2)
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .child(ui::initials(&author, "", 18., cx))
                 .child(
                     div()
@@ -1142,7 +1145,7 @@ fn commits_page(opened: &Opened, cx: &App) -> AnyElement {
                         .child(div().truncate().text_color(t.text_primary).child(subject))
                         .child(
                             div()
-                                .text_size(crate::theme::ui_text(10.5))
+                                .text_size(crate::theme::ui_text(TEXT_3XS_H))
                                 .text_color(t.text_tertiary)
                                 .child(format!(
                                     "{author} · {}",
@@ -1160,18 +1163,18 @@ fn part(outcome: Outcome, title: impl Into<SharedString>, detail: Option<String>
     let t = Tokens::get(cx);
     let title: SharedString = title.into();
     div()
-        .px(px(12.))
+        .px(SPACE_3)
         .py(px(9.))
         .flex()
         .flex_col()
-        .gap(px(2.))
+        .gap(SPACE_0)
         .border_b_1()
         .border_color(t.border)
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(ui::run_mark(
                     format!("merge-part-{title}"),
                     outcome_word(outcome),
@@ -1198,7 +1201,7 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .unwrap_or_else(|| "the base branch".into());
     let checks = checks(area, view, cx);
     let card = div()
-        .m(px(10.))
+        .m(SPACE_2H)
         .rounded(RADIUS_2)
         .border_1()
         .border_color(t.border)
@@ -1211,18 +1214,18 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         return card
             .child(
                 div()
-                    .px(px(12.))
+                    .px(SPACE_3)
                     .py(px(9.))
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .border_b_1()
                     .border_color(t.border)
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(SPACE_2)
                             .child(pull_mark(view.state, 14., cx))
                             .child(
                                 ui::text("Merged into", 12., FontWeight::MEDIUM)
@@ -1234,8 +1237,8 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(6.))
-                            .text_size(crate::theme::ui_text(11.))
+                            .gap(SPACE_1H)
+                            .text_size(crate::theme::ui_text(TEXT_2XS))
                             .text_color(t.text_tertiary)
                             .when(!by.is_empty(), |row| {
                                 let url = pull.avatars.get(&by).map(String::as_str);
@@ -1272,11 +1275,11 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         return card
             .child(
                 div()
-                    .px(px(12.))
+                    .px(SPACE_3)
                     .py(px(9.))
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .border_b_1()
                     .border_color(t.border)
                     .child(pull_mark(view.state, 14., cx))
@@ -1303,7 +1306,7 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 .h(px(22.))
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(crate::file_icons::glyph(
                     path.rsplit('/').next().unwrap_or(path),
                     13.,
@@ -1314,7 +1317,7 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                         .min_w_0()
                         .truncate()
                         .font_family(theme::MONO)
-                        .text_size(crate::theme::ui_text(11.5))
+                        .text_size(crate::theme::ui_text(TEXT_2XS_H))
                         .text_color(t.text_secondary)
                         .child(path.clone()),
                 )
@@ -1453,7 +1456,7 @@ fn checks(area: &HostArea, view: &OpenPull, cx: &mut Context<HostArea>) -> Optio
                     .mt(px(-2.))
                     .child(ui::meta(checks_said(tally), cx)),
             )
-            .child(div().pt(px(6.)).flex().flex_col().children(rows)),
+            .child(div().pt(SPACE_1H).flex().flex_col().children(rows)),
     )
 }
 
@@ -1487,12 +1490,12 @@ fn check_row(
     div()
         .id(id.clone())
         .h(px(ROW_HEIGHT))
-        .px(px(4.))
+        .px(SPACE_1)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .rounded(RADIUS_2)
-        .text_size(crate::theme::ui_text(12.5))
+        .text_size(crate::theme::ui_text(TEXT_XS_H))
         .cursor_pointer()
         .hover(move |row| row.bg(t.surface_hover))
         .child(chevron)
@@ -1508,7 +1511,7 @@ fn check_row(
             div()
                 .min_w_0()
                 .truncate()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_tertiary)
                 .child(after)
         }))
@@ -1544,12 +1547,12 @@ fn job_row(
         .relative()
         .h(px(ROW_HEIGHT))
         .pl(px(26.))
-        .pr(px(4.))
+        .pr(SPACE_1)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .rounded(RADIUS_2)
-        .text_size(crate::theme::ui_text(12.5))
+        .text_size(crate::theme::ui_text(TEXT_XS_H))
         .text_color(if skipped {
             t.text_tertiary
         } else {
@@ -1565,7 +1568,7 @@ fn job_row(
         .children(
             crate::git::pane::tree_lines(first, last, &t)
                 .into_iter()
-                .map(|line| line.ml(px(4.))),
+                .map(|line| line.ml(SPACE_1)),
         )
         .child(ui::run_mark(
             format!("pull-job-mark-{}", job.name),
@@ -1583,11 +1586,11 @@ fn required_badge(cx: &App) -> Div {
     let t = Tokens::get(cx);
     div()
         .flex_none()
-        .px(px(6.))
+        .px(SPACE_1H)
         .rounded_full()
         .border_1()
         .border_color(t.border)
-        .text_size(crate::theme::ui_text(10.5))
+        .text_size(crate::theme::ui_text(TEXT_3XS_H))
         .text_color(t.text_tertiary)
         .child("Required")
 }
@@ -1598,7 +1601,7 @@ fn took_cell(took: String, cx: &App) -> Div {
         .flex_none()
         .w(px(52.))
         .text_right()
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .font_features(theme::tabular())
         .text_color(t.text_tertiary)
         .child(took)
@@ -1615,7 +1618,7 @@ fn run_rows(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
         format!("Checks: {summary}")
     };
     Some(
-        part(tally.outcome, title, None, cx).child(div().pt(px(4.)).flex().flex_col().children(
+        part(tally.outcome, title, None, cx).child(div().pt(SPACE_1).flex().flex_col().children(
             view.runs.iter().enumerate().map(|(index, listed)| {
                 let run = &listed.run;
                 let (id, number) = (run.id.clone(), view.pull.number);
@@ -1629,8 +1632,8 @@ fn run_rows(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
                     .pl(px(22.))
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .text_size(crate::theme::ui_text(11.5))
+                    .gap(SPACE_2)
+                    .text_size(crate::theme::ui_text(TEXT_2XS_H))
                     .rounded(RADIUS_2)
                     .cursor_pointer()
                     .hover(move |row| row.bg(t.surface_hover))
@@ -1801,11 +1804,11 @@ fn composer(
     let sending = opened.sending;
     let busy = sending.is_some();
     let mut foot = div()
-        .px(px(10.))
-        .py(px(8.))
+        .px(SPACE_2H)
+        .py(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .border_t_1()
         .border_color(t.border);
     if let Some((true, _)) = review {
@@ -1878,8 +1881,8 @@ fn composer(
             .on_click(cx.listener(|area, _, window, cx| area.send(None, window, cx))),
     );
     div()
-        .px(px(16.))
-        .pb(px(16.))
+        .px(SPACE_4)
+        .pb(SPACE_4)
         .child(
             div()
                 .rounded(RADIUS_2)
@@ -1888,13 +1891,13 @@ fn composer(
                 .bg(t.surface_composer)
                 .child(
                     div()
-                        .px(px(12.))
-                        .py(px(8.))
-                        .text_size(crate::theme::ui_text(13.))
+                        .px(SPACE_3)
+                        .py(SPACE_2)
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .child(
                             Textarea::new(&draft)
                                 .appearance(false)
-                                .text_size(crate::theme::ui_text(13.)),
+                                .text_size(crate::theme::ui_text(TEXT_SM)),
                         ),
                 )
                 .child(foot),

@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_2, SPACE_2H, SPACE_4};
+
 const TABS: [(Tab, &str); 3] = [
     (Tab::Overview, "Overview"),
     (Tab::Logs, "Logs"),
@@ -29,12 +31,12 @@ impl Signoz {
         let t = Tokens::get(cx).clone();
         let rows = services.as_ref().ok().cloned().flatten();
         let head = div()
-            .px(px(16.))
-            .py(px(10.))
+            .px(SPACE_4)
+            .py(SPACE_2H)
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .border_b_1()
             .border_color(t.border)
             .child(self.title(host, settings, rows.as_deref(), cx))
@@ -45,7 +47,7 @@ impl Signoz {
                 .iter()
                 .position(|(tab, _)| *tab == self.tab && self.trace.is_none())
                 .unwrap_or(TABS.len());
-            div().px(px(16.)).pt(px(8.)).child(
+            div().px(SPACE_4).pt(SPACE_2).child(
                 Segmented::words(
                     "signoz-tabs",
                     TABS.iter()
@@ -115,7 +117,7 @@ impl Signoz {
         div()
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .min_w_0()
             .child(
                 div()
@@ -185,7 +187,7 @@ impl Signoz {
         div()
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(
                 Segmented::words(
                     "signoz-window",

@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_5};
+
 impl Rundeck {
     pub(super) fn job(
         &mut self,
@@ -46,7 +48,7 @@ impl Rundeck {
         let tools = div()
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .children(page.permalink.clone().map(|url| {
                 IconButton::new("rundeck-job-open", Icon::Link, "Open in Rundeck")
                     .on_click(move |_, _, cx| cx.open_url(&url))
@@ -104,13 +106,13 @@ impl Rundeck {
             div()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(ui::caps(label, cx))
                 .child(
                     div()
                         .flex()
                         .items_baseline()
-                        .gap(px(4.))
+                        .gap(SPACE_1)
                         .child(ui::text(value, 13., FontWeight::MEDIUM).text_color(t.text_primary))
                         .children(under.map(|under| ui::meta(under, cx))),
                 )
@@ -190,7 +192,7 @@ impl Rundeck {
             div()
                 .flex()
                 .flex_col()
-                .gap(px(14.))
+                .gap(SPACE_3H)
                 .child(card(
                     if page.runs_branch {
                         "Deploy times"
@@ -220,11 +222,11 @@ impl Rundeck {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .px(px(20.))
-                    .py(px(14.))
+                    .px(SPACE_5)
+                    .py(SPACE_3H)
                     .flex()
                     .flex_col()
-                    .gap(px(14.))
+                    .gap(SPACE_3H)
                     .children(page.description.clone().map(|description| {
                         ui::text(description, 12.5, FontWeight::NORMAL)
                             .text_color(t.text_secondary)
@@ -233,7 +235,7 @@ impl Rundeck {
                     .child(
                         div()
                             .flex()
-                            .gap(px(6.))
+                            .gap(SPACE_1H)
                             .children(tags.into_iter().flatten()),
                     )
                     .child(facts)
@@ -329,11 +331,11 @@ impl Rundeck {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .px(px(20.))
-                .py(px(14.))
+                .px(SPACE_5)
+                .py(SPACE_3H)
                 .child(history(&shown, true, &job, cx))
                 .when(more, |list| {
-                    list.child(div().pt(px(10.)).flex().justify_center().child(
+                    list.child(div().pt(SPACE_2H).flex().justify_center().child(
                         Button::new("rundeck-older", "Show older runs", Variant::Outline).on_click(
                             listen::<Rundeck, ClickEvent>(cx, move |rd, _, _, _, cx| {
                                 rd.activity_max = (max + ACTIVITY_PAGE).min(ACTIVITY_MOST);
@@ -363,7 +365,7 @@ impl Rundeck {
         div()
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .child(
                 IconButton::new("rundeck-back", Icon::Chevron, "Back")
                     .small()
@@ -405,10 +407,10 @@ fn history(runs: &[Run], with_job: bool, job: &JobRef, cx: &mut Context<PluginPa
                 .child(
                     div()
                         .flex()
-                        .gap(px(6.))
-                        .px(px(12.))
-                        .pt(px(10.))
-                        .pb(px(4.))
+                        .gap(SPACE_1H)
+                        .px(SPACE_3)
+                        .pt(SPACE_2H)
+                        .pb(SPACE_1)
                         .child(ui::caps(&day, cx))
                         .child(ui::meta(runs.len().to_string(), cx)),
                 )
@@ -431,12 +433,12 @@ fn history(runs: &[Run], with_job: bool, job: &JobRef, cx: &mut Context<PluginPa
                     let clickable = !open.job_id.is_empty();
                     div()
                         .id(SharedString::from(format!("rundeck-run-{id}")))
-                        .px(px(12.))
+                        .px(SPACE_3)
                         .py(px(5.))
                         .rounded(theme::RADIUS_2)
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .when(clickable, |row| {
                             row.cursor_pointer()
                                 .hover(move |row| row.bg(hover))
@@ -598,7 +600,7 @@ fn times(
         .relative()
         .h(px(HEIGHT))
         .flex()
-        .gap(px(2.))
+        .gap(SPACE_0)
         .children(empty.map(IntoElement::into_any_element))
         .children(bars.map(IntoElement::into_any_element))
         .children(usual.map(|usual| {
@@ -637,19 +639,19 @@ fn live_card(
     });
     div()
         .id("rundeck-live-run")
-        .p(px(12.))
+        .p(SPACE_3)
         .rounded(theme::RADIUS_2)
         .border_1()
         .border_color(t.border)
         .cursor_pointer()
         .flex()
         .flex_col()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(div().size(px(7.)).rounded_full().bg(t.warn))
                 .child(
                     ui::text(
@@ -687,7 +689,7 @@ fn live_card(
             card.child(
                 div()
                     .flex()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .children(run.steps.iter().map(|step| {
                         div()
                             .flex_1()
@@ -699,7 +701,7 @@ fn live_card(
             .child(
                 div()
                     .flex()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .children(run.steps.iter().map(|step| {
                         ui::meta(step.name.clone(), cx)
                             .flex_1()

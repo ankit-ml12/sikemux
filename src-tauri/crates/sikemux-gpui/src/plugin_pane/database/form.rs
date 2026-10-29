@@ -22,7 +22,10 @@ use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::plugin_pane::Failure;
 use crate::plugin_pane::{after, listen};
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{
+    Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4,
+    SPACE_5, SPACE_6, TEXT_XS,
+};
 use crate::ui::{self, Button, IconButton, Pick, Variant};
 
 /// A connection an agent proposed, which the core opens a new connection's form on.
@@ -498,7 +501,7 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
     let server = form.engine != Engine::Sqlite;
     let engines = div()
         .flex()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .children(form.choices.engines.iter().map(|each| {
             let engine = each.engine;
             let chosen = engine == form.engine;
@@ -506,11 +509,11 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                 .id(SharedString::from(format!("db-form-engine-{}", each.label)))
                 .flex_1()
                 .min_w_0()
-                .py(px(14.))
+                .py(SPACE_3H)
                 .flex()
                 .flex_col()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .rounded(RADIUS_2)
                 .border_1()
                 .cursor_pointer()
@@ -547,14 +550,14 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
             .min_w_0()
             .flex()
             .flex_col()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .child(ui::meta(label, cx))
             .child(ui::Field::new(input))
     };
     let mut fields = div()
         .flex()
         .flex_col()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .child(labelled("Name", &form.name));
     fields = match server {
         true => {
@@ -588,7 +591,7 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                 .child(
                     div()
                         .flex()
-                        .gap(px(10.))
+                        .gap(SPACE_2H)
                         .child(labelled("Host", &form.host))
                         .child(
                             div()
@@ -601,7 +604,7 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                 .child(
                     div()
                         .flex()
-                        .gap(px(10.))
+                        .gap(SPACE_2H)
                         .child(labelled("User", &form.user))
                         .child(labelled("Password", &form.password)),
                 )
@@ -620,13 +623,13 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                     div()
                         .flex()
                         .flex_col()
-                        .gap(px(4.))
+                        .gap(SPACE_1)
                         .child(ui::meta("Encryption", cx))
                         .child(
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(10.))
+                                .gap(SPACE_2H)
                                 .child(encryption)
                                 .child(ui::meta(tls_detail, cx)),
                         ),
@@ -637,7 +640,7 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
                 div()
                     .flex()
                     .items_end()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(labelled("Database file", &form.path))
                     .child(
                         IconButton::new("db-form-choose", Icon::Folder, "Choose…").on_click(
@@ -650,7 +653,7 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
     let toggles = div()
         .flex()
         .flex_col()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(
             Checkbox::new("db-form-read-only")
                 .label("Read only: open connections read-only, a guard against accidental changes")
@@ -680,12 +683,12 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
             Said::Failed(text) => (text.clone(), t.danger),
         };
         div()
-            .px(px(12.))
-            .py(px(8.))
+            .px(SPACE_3)
+            .py(SPACE_2)
             .rounded(RADIUS_2)
             .bg(ink.opacity(0.12))
             .text_color(ink)
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .child(text)
     });
     let busy = form.busy;
@@ -700,13 +703,13 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
         ))
     });
     let actions = div()
-        .px(px(20.))
-        .py(px(14.))
+        .px(SPACE_5)
+        .py(SPACE_3H)
         .border_t_1()
         .border_color(t.border)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .children(removing)
         .child(div().flex_1())
         .child(
@@ -752,19 +755,19 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
         false => "A SQLite file on this host.",
     };
     let header = div()
-        .px(px(20.))
+        .px(SPACE_5)
         .pt(px(18.))
-        .pb(px(14.))
+        .pb(SPACE_3H)
         .flex()
         .items_center()
-        .gap(px(12.))
+        .gap(SPACE_3)
         .child(logo_mark(form.engine, 30.))
         .child(
             div()
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .child(ui::text(title, 15., FontWeight::SEMIBOLD).text_color(t.text_primary))
                 .child(ui::meta(subtitle, cx)),
         );
@@ -772,7 +775,7 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
     let by_url = div()
         .flex()
         .flex_col()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .child(ui::meta("Connection URL", cx))
         .child(ui::Field::new(&form.url))
         .children(
@@ -783,16 +786,16 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
     let or = div()
         .flex()
         .items_center()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .child(rule())
         .child(ui::meta("or", cx))
         .child(rule());
     let body = div()
-        .px(px(20.))
+        .px(SPACE_5)
         .pb(px(18.))
         .flex()
         .flex_col()
-        .gap(px(16.))
+        .gap(SPACE_4)
         .child(by_url)
         .child(or)
         .child(engines)
@@ -806,7 +809,7 @@ pub(super) fn page(database: &Database, cx: &mut Context<PluginPane>) -> AnyElem
         .child(
             div()
                 .min_h_full()
-                .px(px(24.))
+                .px(SPACE_6)
                 .py(px(32.))
                 .flex()
                 .items_center()

@@ -2,14 +2,16 @@
 
 use super::*;
 
+use crate::theme::{SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_4};
+
 /// A box with a small heading over what it holds.
 fn card(title: &str, body: impl IntoElement, cx: &App) -> Div {
     let t = Tokens::get(cx);
     div()
-        .p(px(12.))
+        .p(SPACE_3)
         .flex()
         .flex_col()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .rounded(RADIUS_2)
         .border_1()
         .border_color(t.border)
@@ -26,7 +28,7 @@ const SORTS: [(ServiceSort, &str, bool); 4] = [
 
 /// A row of a table: its first cell takes what room is left, the rest sit at fixed widths.
 fn table_row(cells: Vec<AnyElement>, widths: &[f32]) -> Div {
-    let mut row = div().flex().items_center().gap(px(12.)).min_w_0();
+    let mut row = div().flex().items_center().gap(SPACE_3).min_w_0();
     for (index, cell) in cells.into_iter().enumerate() {
         row = row.child(match widths.get(index) {
             Some(width) if *width > 0. => div()
@@ -81,11 +83,11 @@ impl Signoz {
         );
         let wanted = words(&self.service_find, cx);
         let bar = div()
-            .px(px(16.))
-            .py(px(10.))
+            .px(SPACE_4)
+            .py(SPACE_2H)
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(
                 div()
                     .w(px(240.))
@@ -157,8 +159,8 @@ impl Signoz {
                 .collect(),
             &widths,
         )
-        .px(px(16.))
-        .py(px(6.))
+        .px(SPACE_4)
+        .py(SPACE_1H)
         .border_b_1()
         .border_color(t.border);
         let minutes = f64::from(settings.minutes());
@@ -187,7 +189,7 @@ impl Signoz {
                 &widths,
             )
             .id(("signoz-service", index))
-            .px(px(16.))
+            .px(SPACE_4)
             .py(px(7.))
             .cursor_pointer()
             .hover(move |row| row.bg(t.surface_hover))
@@ -240,10 +242,10 @@ impl Signoz {
         let tile = |label: &'static str, value: String, bad: bool| {
             div()
                 .flex_1()
-                .p(px(12.))
+                .p(SPACE_3)
                 .flex()
                 .flex_col()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .rounded(RADIUS_2)
                 .border_1()
                 .border_color(t.border)
@@ -258,7 +260,7 @@ impl Signoz {
         };
         let tiles = div()
             .flex()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(tile("Requests", per_minute(data.calls, minutes), false))
             .child(tile(
                 "Error rate",
@@ -283,7 +285,7 @@ impl Signoz {
         let charts = div()
             .flex()
             .flex_wrap()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(
                 card(
                     "Requests / min",
@@ -315,7 +317,7 @@ impl Signoz {
                         .collect(),
                     &widths,
                 )
-                .pb(px(4.)),
+                .pb(SPACE_1),
             );
             for (index, operation) in page.operations.iter().take(OPERATIONS_SHOWN).enumerate() {
                 let name = operation.name.clone();
@@ -385,7 +387,7 @@ impl Signoz {
                         .py(px(5.))
                         .flex()
                         .items_center()
-                        .gap(px(10.))
+                        .gap(SPACE_2H)
                         .cursor_pointer()
                         .rounded(RADIUS_1)
                         .hover(move |row| row.bg(t.surface_hover))
@@ -419,17 +421,17 @@ impl Signoz {
             .id("signoz-overview")
             .size_full()
             .overflow_y_scroll()
-            .p(px(16.))
+            .p(SPACE_4)
             .flex()
             .flex_col()
-            .gap(px(12.))
+            .gap(SPACE_3)
             .child(tiles)
             .child(charts)
             .child(
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap(px(10.))
+                    .gap(SPACE_2H)
                     .child(card("Endpoints", operations, cx).flex_1().min_w(px(340.)))
                     .child(card("Errors", errors, cx).flex_1().min_w(px(340.))),
             )

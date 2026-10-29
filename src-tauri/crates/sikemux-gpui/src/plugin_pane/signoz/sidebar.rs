@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H};
+
 impl Signoz {
     pub(super) fn sidebar(
         &mut self,
@@ -73,9 +75,9 @@ impl Signoz {
         let pins = (!settings.pins.is_empty()).then(|| {
             let mut pinned = div().flex().flex_col().gap(px(1.)).child(
                 div()
-                    .px(px(8.))
-                    .pt(px(4.))
-                    .pb(px(2.))
+                    .px(SPACE_2)
+                    .pt(SPACE_1)
+                    .pb(SPACE_0)
                     .child(ui::caps("Pinned", cx)),
             );
             for pin in &settings.pins {
@@ -138,17 +140,17 @@ impl Signoz {
             .flex_col()
             .child(
                 div()
-                    .px(px(10.))
-                    .pt(px(10.))
-                    .pb(px(8.))
+                    .px(SPACE_2H)
+                    .pt(SPACE_2H)
+                    .pb(SPACE_2)
                     .flex()
                     .flex_col()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(SPACE_2)
                             .child(ui::picture(Icon::Signoz, 16., signoz_mark()))
                             .child(
                                 ui::text("SigNoz", 13., FontWeight::SEMIBOLD)
@@ -163,20 +165,20 @@ impl Signoz {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .px(px(6.))
+                    .px(SPACE_1H)
                     .flex()
                     .flex_col()
-                    .gap(px(10.))
+                    .gap(SPACE_2H)
                     .child(sections)
                     .children(pins),
             )
             .child(
                 div()
-                    .px(px(10.))
-                    .py(px(8.))
+                    .px(SPACE_2H)
+                    .py(SPACE_2)
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .border_t_1()
                     .border_color(t.border)
                     .child(
@@ -189,7 +191,7 @@ impl Signoz {
                         div()
                             .flex()
                             .flex_wrap()
-                            .gap(px(6.))
+                            .gap(SPACE_1H)
                             .child(
                                 Button::new("signoz-open", "Open", Variant::Outline)
                                     .icon(Icon::Globe)

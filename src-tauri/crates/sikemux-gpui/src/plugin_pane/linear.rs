@@ -16,7 +16,10 @@ use sikemux_plugin_linear_views::{IssueList, IssueRow, IssueView};
 
 use super::{Failure, Host, Panel, PluginPane};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_5, TEXT_2XS,
+    TEXT_SM,
+};
 use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, IconButton, Pick, Variant};
 
@@ -153,16 +156,16 @@ impl Linear {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .px(px(6.))
-                .pb(px(8.))
+                .px(SPACE_1H)
+                .pb(SPACE_2)
                 .flex()
                 .flex_col()
                 .gap(px(1.))
                 .child(
                     div()
-                        .px(px(8.))
-                        .pt(px(10.))
-                        .pb(px(4.))
+                        .px(SPACE_2)
+                        .pt(SPACE_2H)
+                        .pb(SPACE_1)
                         .child(ui::meta(list.heading.clone(), cx)),
                 )
                 .children(list.issues.iter().enumerate().map(|(index, issue)| {
@@ -225,12 +228,12 @@ impl Linear {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
+                    .gap(SPACE_1)
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(SPACE_2)
                             .child(
                                 ui::text(comment.author.clone(), 12., FontWeight::SEMIBOLD)
                                     .text_color(t.text_primary),
@@ -245,11 +248,11 @@ impl Linear {
             .id("linear-issue")
             .size_full()
             .overflow_y_scroll()
-            .px(px(20.))
-            .py(px(14.))
+            .px(SPACE_5)
+            .py(SPACE_3H)
             .flex()
             .flex_col()
-            .gap(px(12.))
+            .gap(SPACE_3)
             .child(head(issue, host, picked, cx))
             .child(
                 ui::text(issue.title.clone(), 16., FontWeight::SEMIBOLD).text_color(t.text_primary),
@@ -304,12 +307,12 @@ fn row(
     let (picked, id) = (picked.clone(), issue.identifier.clone());
     div()
         .id(("linear-row", index))
-        .px(px(8.))
-        .py(px(6.))
+        .px(SPACE_2)
+        .py(SPACE_1H)
         .rounded(theme::RADIUS_2)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .cursor_pointer()
         .when(open, |row| row.bg(t.surface_chosen))
         .when(!open, |row| row.hover(move |row| row.bg(hover)))
@@ -364,7 +367,7 @@ fn head(
     div()
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(ui::mono(issue.identifier.clone(), 12., cx))
         .child(div().flex_1())
         .child(
@@ -442,7 +445,7 @@ fn facts(
         .flex()
         .flex_wrap()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(state)
         .child(ui::meta(
             issue
@@ -467,7 +470,7 @@ fn facts(
                 .rounded_full()
                 .border_1()
                 .border_color(t.border)
-                .text_size(theme::ui_text(11.))
+                .text_size(theme::ui_text(TEXT_2XS))
                 .text_color(t.text_secondary)
                 .child(dot(&label.color, cx))
                 .child(label.name.clone())
@@ -490,16 +493,16 @@ fn composer(
         .border_color(t.border)
         .bg(t.surface)
         .child(
-            div().px(px(12.)).py(px(8.)).child(
+            div().px(SPACE_3).py(SPACE_2).child(
                 Textarea::new(draft)
                     .appearance(false)
-                    .text_size(theme::ui_text(13.)),
+                    .text_size(theme::ui_text(TEXT_SM)),
             ),
         )
         .child(
             div()
-                .px(px(10.))
-                .py(px(8.))
+                .px(SPACE_2H)
+                .py(SPACE_2)
                 .flex()
                 .border_t_1()
                 .border_color(t.border)

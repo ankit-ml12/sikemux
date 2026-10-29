@@ -2,11 +2,13 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, TEXT_3XS_H};
+
 pub(super) fn heading(label: &str, cx: &App) -> Div {
     div()
-        .px(px(8.))
-        .pt(px(4.))
-        .pb(px(2.))
+        .px(SPACE_2)
+        .pt(SPACE_1)
+        .pb(SPACE_0)
         .child(ui::caps(label, cx))
 }
 
@@ -24,11 +26,11 @@ pub(super) fn chevron(open: bool, cx: &App) -> AnyElement {
 pub(super) fn tag(text: &str, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     div()
-        .px(px(6.))
+        .px(SPACE_1H)
         .py(px(1.))
         .rounded(RADIUS_1)
         .bg(t.surface_active)
-        .text_size(crate::theme::ui_text(10.5))
+        .text_size(crate::theme::ui_text(TEXT_3XS_H))
         .text_color(t.text_secondary)
         .child(text.to_owned())
         .into_any_element()
@@ -48,11 +50,11 @@ pub(super) fn status_chip(status: &str, category: &str, cx: &App) -> Div {
     };
     div()
         .flex_none()
-        .px(px(6.))
+        .px(SPACE_1H)
         .py(px(1.))
         .rounded(RADIUS_1)
         .bg(ground)
-        .text_size(crate::theme::ui_text(10.5))
+        .text_size(crate::theme::ui_text(TEXT_3XS_H))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(ink)
         .whitespace_nowrap()
@@ -98,11 +100,11 @@ pub(super) fn epic_chip(parent: &Parent, cx: &App) -> AnyElement {
     div()
         .id(SharedString::from(format!("jira-parent-{}", parent.key)))
         .max_w(px(200.))
-        .px(px(6.))
+        .px(SPACE_1H)
         .py(px(1.))
         .rounded(RADIUS_1)
         .bg(t.accent.opacity(0.14))
-        .text_size(crate::theme::ui_text(10.5))
+        .text_size(crate::theme::ui_text(TEXT_3XS_H))
         .text_color(t.text_primary)
         .truncate()
         .tooltip(ui::tooltip(format!("{} {}", parent.key, parent.summary)))
@@ -137,7 +139,7 @@ pub(super) fn due_chip(due: &str, done: bool, long: bool, cx: &App) -> AnyElemen
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .px(px(if long { 7. } else { 6. }))
         .py(px(1.))
         .rounded(RADIUS_1)
@@ -163,7 +165,7 @@ pub(super) fn said(
     let t = Tokens::get(cx);
     div()
         .flex()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .child(host.face(author, avatar, 24., cx))
         .child(
             div()
@@ -171,12 +173,12 @@ pub(super) fn said(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .child(
                             ui::text(author.to_owned(), 12.5, FontWeight::SEMIBOLD)
                                 .text_color(t.text_primary)

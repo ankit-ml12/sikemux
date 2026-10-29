@@ -20,7 +20,9 @@ use super::HostArea;
 use crate::git::{row, Colours, Diff, RowLook};
 use crate::icons::Icon;
 use crate::send_to;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{
+    self, Tokens, RADIUS_2, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_XS,
+};
 use crate::workbench::Workbench;
 
 /// The pull request a list of files belongs to, which a line handed to an agent is quoted from.
@@ -215,7 +217,7 @@ fn item_of(
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let frame = |inner: Div| {
-        div().px(px(12.)).child(
+        div().px(SPACE_3).child(
             inner
                 .border_l_1()
                 .border_r_1()
@@ -233,9 +235,9 @@ fn item_of(
             let (toggling, find) = (view.clone(), find_mut.clone());
             let key = SharedString::from(format!("pull-diff-{}", file.path));
             div()
-                .px(px(12.))
-                .pt(px(12.))
-                .when(!open && last, |card| card.pb(px(12.)))
+                .px(SPACE_3)
+                .pt(SPACE_3)
+                .when(!open && last, |card| card.pb(SPACE_3))
                 .child(
                     crate::ui::file_head(key, &file.path, open, None, cx)
                         .on_click(move |_, _, cx| {
@@ -248,7 +250,7 @@ fn item_of(
                         })
                         .children(file.previous_path.as_ref().map(|from| {
                             div()
-                                .text_size(crate::theme::ui_text(12.))
+                                .text_size(crate::theme::ui_text(TEXT_XS))
                                 .text_color(t.text_tertiary)
                                 .child(format!("from {from}"))
                         }))
@@ -257,7 +259,7 @@ fn item_of(
                                 .flex()
                                 .gap(px(5.))
                                 .pr(px(1.))
-                                .text_size(crate::theme::ui_text(12.))
+                                .text_size(crate::theme::ui_text(TEXT_XS))
                                 .child(div().text_color(t.live).child(format!("+{added}")))
                                 .child(div().text_color(t.danger).child(format!("−{removed}"))),
                         ),
@@ -311,10 +313,10 @@ fn item_of(
                             }
                         }
                     })
-                    .text_size(crate::theme::ui_text(12.))
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .line_height(crate::theme::ui_text(19.))
-                    .when(index == 0, |rows| rows.pt(px(6.)))
-                    .when(index + 1 == diff.len(), |rows| rows.pb(px(6.)))
+                    .when(index == 0, |rows| rows.pt(SPACE_1H))
+                    .when(index + 1 == diff.len(), |rows| rows.pb(SPACE_1H))
                     .child(row(
                         diff,
                         &changed.colours,
@@ -349,15 +351,15 @@ fn item_of(
                 Some(_) => None,
             };
             div()
-                .px(px(12.))
+                .px(SPACE_3)
                 .child(
                     div()
                         .map(|end| match said {
                             Some(said) => end
-                                .px(px(10.))
-                                .py(px(8.))
+                                .px(SPACE_2H)
+                                .py(SPACE_2)
                                 .font_family(theme::UI)
-                                .text_size(crate::theme::ui_text(11.))
+                                .text_size(crate::theme::ui_text(TEXT_2XS))
                                 .text_color(t.text_tertiary)
                                 .child(said),
                             None => end.h(px(1.)),

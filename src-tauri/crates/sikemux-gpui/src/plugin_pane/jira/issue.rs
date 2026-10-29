@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_4, TEXT_XS, TEXT_XS_H};
+
 /// The people an issue can be given to, each that does not read left out and said.
 fn people(found: Value) -> Vec<Person> {
     let Value::Array(found) = found else {
@@ -51,12 +53,12 @@ impl Jira {
         let sent = view.clone();
         let head = div()
             .id("jira-detail-head")
-            .px(px(16.))
-            .pt(px(12.))
-            .pb(px(10.))
+            .px(SPACE_4)
+            .pt(SPACE_3)
+            .pb(SPACE_2H)
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .border_b_1()
             .border_color(t.border)
             .child(
@@ -64,7 +66,7 @@ impl Jira {
                     .flex()
                     .flex_wrap()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(type_mark(issue.issue_type.as_deref(), cx))
                     .child(
                         div()
@@ -146,11 +148,11 @@ impl Jira {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .px(px(16.))
-                    .py(px(12.))
+                    .px(SPACE_4)
+                    .py(SPACE_3)
                     .flex()
                     .flex_col()
-                    .gap(px(16.))
+                    .gap(SPACE_4)
                     .child(actions)
                     .child(fields)
                     .child(description)
@@ -233,12 +235,12 @@ impl Jira {
                     div()
                         .id(id)
                         .h(px(26.))
-                        .px(px(10.))
+                        .px(SPACE_2H)
                         .flex()
                         .items_center()
                         .gap(px(5.))
                         .when(at > 0, |part| part.border_l_1().border_color(t.border))
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .text_color(if off { t.text_tertiary } else { t.text_primary })
                         .when(pressed, |part| part.bg(t.surface_chosen))
                         .when(!off, |part| {
@@ -285,7 +287,7 @@ impl Jira {
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .child(status)
             .child(group);
         let finder = self
@@ -329,14 +331,14 @@ impl Jira {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(ui::Field::new(&find).icon(Icon::Search))
-                    .child(div().flex().flex_wrap().gap(px(4.)).children(chips))
+                    .child(div().flex().flex_wrap().gap(SPACE_1).children(chips))
             });
         div()
             .flex()
             .flex_col()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(row)
             .children(finder)
             .into_any_element()
@@ -376,15 +378,15 @@ impl Jira {
             div()
                 .flex()
                 .items_center()
-                .gap(px(12.))
+                .gap(SPACE_3)
                 .min_h(px(34.))
-                .px(px(12.))
-                .py(px(4.))
+                .px(SPACE_3)
+                .py(SPACE_1)
                 .child(
                     div()
                         .w(px(84.))
                         .flex_none()
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .text_color(t.text_tertiary)
                         .child(label),
                 )
@@ -395,8 +397,8 @@ impl Jira {
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
-                .text_size(crate::theme::ui_text(12.5))
+                .gap(SPACE_1H)
+                .text_size(crate::theme::ui_text(TEXT_XS_H))
                 .text_color(t.text_primary)
                 .child(host.face(
                     name,
@@ -431,7 +433,7 @@ impl Jira {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(priority_mark(priority, cx))
                     .child(plain(priority.clone()))
                     .into_any_element(),
@@ -452,7 +454,7 @@ impl Jira {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(type_mark(Some(kind), cx))
                     .child(plain(kind.clone()))
                     .into_any_element(),
@@ -467,7 +469,7 @@ impl Jira {
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap(px(4.))
+                    .gap(SPACE_1)
                     .children(view.labels.iter().map(|label| tag(label, cx)))
                     .into_any_element(),
             ));
@@ -475,7 +477,7 @@ impl Jira {
         div()
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .child(ui::caps("Details", cx))
             .child(facts)
             .into_any_element()
@@ -498,7 +500,7 @@ impl Jira {
         div()
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .text_color(t.text_primary)
             .child(ui::caps("Description", cx))
             .child(body)
@@ -553,19 +555,19 @@ impl Jira {
                 .bg(t.surface)
                 .child(
                     div()
-                        .px(px(10.))
-                        .py(px(8.))
-                        .text_size(crate::theme::ui_text(12.5))
+                        .px(SPACE_2H)
+                        .py(SPACE_2)
+                        .text_size(crate::theme::ui_text(TEXT_XS_H))
                         .child(
                             Textarea::new(&draft)
                                 .appearance(false)
-                                .text_size(crate::theme::ui_text(12.5)),
+                                .text_size(crate::theme::ui_text(TEXT_XS_H)),
                         ),
                 )
                 .child(
                     div()
-                        .px(px(8.))
-                        .py(px(6.))
+                        .px(SPACE_2)
+                        .py(SPACE_1H)
                         .flex()
                         .justify_end()
                         .border_t_1()
@@ -608,7 +610,7 @@ impl Jira {
         let mut part = div()
             .flex()
             .flex_col()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(
                 div()
                     .flex()
@@ -629,32 +631,29 @@ impl Jira {
             ));
         }
         for (index, entry) in entries.into_iter().enumerate() {
-            part = part.child(match entry {
-                Activity::Comment { comment } => {
-                    let doc = self.markdown(&comment.body);
-                    let body = pen.markdown(("jira-comment-body", index), &doc, window, cx);
-                    said(
-                        host,
-                        &comment.author,
-                        comment.author_avatar_url.as_deref(),
-                        &comment.created,
-                        body,
-                        cx,
-                    )
-                }
-                Activity::Change { change } => {
-                    let lines =
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(4.))
-                            .children(change.fields.iter().map(|field| {
+            part =
+                part.child(match entry {
+                    Activity::Comment { comment } => {
+                        let doc = self.markdown(&comment.body);
+                        let body = pen.markdown(("jira-comment-body", index), &doc, window, cx);
+                        said(
+                            host,
+                            &comment.author,
+                            comment.author_avatar_url.as_deref(),
+                            &comment.created,
+                            body,
+                            cx,
+                        )
+                    }
+                    Activity::Change { change } => {
+                        let lines = div().flex().flex_col().gap(SPACE_1).children(
+                            change.fields.iter().map(|field| {
                                 let mut line = div()
                                     .flex()
                                     .flex_wrap()
                                     .items_center()
-                                    .gap(px(6.))
-                                    .text_size(crate::theme::ui_text(12.))
+                                    .gap(SPACE_1H)
+                                    .text_size(crate::theme::ui_text(TEXT_XS))
                                     .text_color(t.text_secondary)
                                     .child("changed")
                                     .child(
@@ -679,17 +678,18 @@ impl Jira {
                                         );
                                 }
                                 line
-                            }));
-                    said(
-                        host,
-                        &change.author,
-                        change.author_avatar_url.as_deref(),
-                        &change.created,
-                        lines.into_any_element(),
-                        cx,
-                    )
-                }
-            });
+                            }),
+                        );
+                        said(
+                            host,
+                            &change.author,
+                            change.author_avatar_url.as_deref(),
+                            &change.created,
+                            lines.into_any_element(),
+                            cx,
+                        )
+                    }
+                });
         }
         if self.shown != Shown::History && hidden > 0 {
             let comments = if hidden == 1 { "comment" } else { "comments" };
@@ -797,13 +797,13 @@ fn commits(host: &Host, key: &str, cx: &App) -> Option<AnyElement> {
         div()
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .child(ui::caps("Commits in this project", cx))
             .children(named.into_iter().map(|commit| {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .min_w_0()
                     .child(ui::mono(commit.hash.clone(), 11., cx))
                     .child(
@@ -811,7 +811,7 @@ fn commits(host: &Host, key: &str, cx: &App) -> Option<AnyElement> {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(crate::theme::ui_text(12.))
+                            .text_size(crate::theme::ui_text(TEXT_XS))
                             .text_color(t.text_primary)
                             .child(commit.subject.clone()),
                     )

@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_5};
+
 /// A page's head: where it is, its title with what sits beside it, and its tools.
 pub(super) fn header(
     crumbs: AnyElement,
@@ -12,12 +14,12 @@ pub(super) fn header(
 ) -> AnyElement {
     let t = Tokens::get(cx);
     div()
-        .px(px(20.))
-        .pt(px(12.))
-        .pb(px(10.))
+        .px(SPACE_5)
+        .pt(SPACE_3)
+        .pb(SPACE_2H)
         .flex()
         .flex_col()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .border_b_1()
         .border_color(t.border)
         .child(crumbs)
@@ -26,7 +28,7 @@ pub(super) fn header(
                 .flex()
                 .flex_wrap()
                 .items_center()
-                .gap(px(10.))
+                .gap(SPACE_2H)
                 .child(ui::text(title, 17., FontWeight::SEMIBOLD).text_color(t.text_primary))
                 .children(aside)
                 .child(div().flex_1())
@@ -75,28 +77,28 @@ pub(super) fn card(
         .flex_col()
         .child(
             div()
-                .px(px(12.))
-                .py(px(8.))
+                .px(SPACE_3)
+                .py(SPACE_2)
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .border_b_1()
                 .border_color(t.line_soft)
                 .child(ui::text(title, 12.5, FontWeight::SEMIBOLD).text_color(t.text_primary))
                 .child(div().flex_1())
                 .child(ui::meta(note.into(), cx).truncate()),
         )
-        .child(div().p(px(12.)).child(body))
+        .child(div().p(SPACE_3).child(body))
         .into_any_element()
 }
 
 pub(super) fn banner(text: String, ink: Hsla, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     div()
-        .mx(px(20.))
-        .my(px(6.))
-        .px(px(10.))
-        .py(px(6.))
+        .mx(SPACE_5)
+        .my(SPACE_1H)
+        .px(SPACE_2H)
+        .py(SPACE_1H)
         .rounded(theme::RADIUS_2)
         .border_1()
         .border_color(ink.opacity(0.4))
@@ -123,14 +125,14 @@ pub(super) fn tag(text: &str, ink: Hsla, cx: &App) -> AnyElement {
 pub(super) fn meta_chip(icon: Icon, text: String, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     div()
-        .px(px(8.))
+        .px(SPACE_2)
         .py(px(3.))
         .rounded(theme::RADIUS_2)
         .border_1()
         .border_color(t.border)
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .child(ui::icon(icon, 12.).text_color(t.text_tertiary))
         .child(ui::text(text, 12., FontWeight::NORMAL).text_color(t.text_secondary))
         .into_any_element()
@@ -153,7 +155,7 @@ pub(super) fn branch_chip(branch: Option<&str>, cx: &App) -> AnyElement {
         Some(branch) => div()
             .flex()
             .items_center()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .min_w_0()
             .child(ui::icon(Icon::Git, 11.).text_color(t.text_tertiary))
             .child(

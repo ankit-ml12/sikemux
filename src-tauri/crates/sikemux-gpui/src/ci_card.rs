@@ -16,7 +16,9 @@ use sikemux_plugin_api::codehost::{Outcome, Run};
 
 use crate::avatars::Avatars;
 use crate::codehost::Area;
-use crate::theme::Tokens;
+use crate::theme::{
+    Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, TEXT_2XS, TEXT_SM,
+};
 use crate::ui::clock::{self, Slot};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::Workbench;
@@ -350,10 +352,10 @@ impl Render for CiCard {
             _ => t.text_disabled,
         };
         let meter = div()
-            .mt(px(10.))
+            .mt(SPACE_2H)
             .h(px(3.))
             .flex()
-            .gap(px(2.))
+            .gap(SPACE_0)
             .children(runs.iter().map(|run| {
                 let segment = div().flex_1().h_full();
                 match run.outcome {
@@ -401,7 +403,7 @@ impl Render for CiCard {
                 }
                 div()
                     .flex()
-                    .gap(px(10.))
+                    .gap(SPACE_2H)
                     .children(counts.into_iter().map(|(outcome, count)| {
                         div()
                             .when(outcome == Outcome::Failure, |word| {
@@ -412,14 +414,14 @@ impl Render for CiCard {
             }
         };
         let header = div()
-            .pt(px(12.))
-            .px(px(14.))
-            .pb(px(10.))
+            .pt(SPACE_3)
+            .px(SPACE_3H)
+            .pb(SPACE_2H)
             .border_b_1()
             .border_color(t.border)
             .child(
                 div()
-                    .text_size(crate::theme::ui_text(13.))
+                    .text_size(crate::theme::ui_text(TEXT_SM))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(t.text_primary)
                     .line_clamp(2)
@@ -427,22 +429,22 @@ impl Render for CiCard {
             )
             .child(
                 div()
-                    .mt(px(6.))
+                    .mt(SPACE_1H)
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .text_size(crate::theme::ui_text(11.))
+                    .gap(SPACE_1H)
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(t.text_tertiary)
                     .child(
                         ui::mono(head.short_sha.clone(), 11., cx)
-                            .px(px(6.))
+                            .px(SPACE_1H)
                             .py(px(1.))
                             .rounded(crate::theme::RADIUS_1)
                             .bg(t.surface_hover)
                             .text_color(t.text_primary),
                     )
                     .when(!actor.is_empty(), |meta| {
-                        meta.child(div().ml(px(2.)).child(face))
+                        meta.child(div().ml(SPACE_0).child(face))
                             .child(actor.clone())
                             .child(div().text_color(t.text_disabled).child("·"))
                     })
@@ -451,12 +453,12 @@ impl Render for CiCard {
             .child(meter)
             .child(
                 summary
-                    .mt(px(6.))
-                    .text_size(crate::theme::ui_text(11.))
+                    .mt(SPACE_1H)
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(t.text_tertiary),
             );
         let rows = div()
-            .p(px(4.))
+            .p(SPACE_1)
             .flex()
             .flex_col()
             .children(runs.iter().map(|run| {
@@ -472,10 +474,10 @@ impl Render for CiCard {
                 div()
                     .id(SharedString::from(format!("ci-card-run-{}", run.id)))
                     .h(px(32.))
-                    .px(px(10.))
+                    .px(SPACE_2H)
                     .flex()
                     .items_center()
-                    .gap(px(10.))
+                    .gap(SPACE_2H)
                     .rounded(crate::theme::RADIUS_2)
                     .cursor_pointer()
                     .hover(|row| row.bg(t.surface_hover))
@@ -495,7 +497,7 @@ impl Render for CiCard {
                             .min_w_0()
                             .flex()
                             .items_baseline()
-                            .gap(px(6.))
+                            .gap(SPACE_1H)
                             .overflow_hidden()
                             .child(
                                 div()
@@ -507,7 +509,7 @@ impl Render for CiCard {
                                 div()
                                     .min_w_0()
                                     .truncate()
-                                    .text_size(crate::theme::ui_text(11.))
+                                    .text_size(crate::theme::ui_text(TEXT_2XS))
                                     .text_color(t.text_tertiary)
                                     .child(extra)
                             })),
@@ -531,9 +533,9 @@ impl Render for CiCard {
                     )
             }));
         let footer = div()
-            .py(px(6.))
-            .pl(px(8.))
-            .pr(px(6.))
+            .py(SPACE_1H)
+            .pl(SPACE_2)
+            .pr(SPACE_1H)
             .flex()
             .items_center()
             .border_t_1()
@@ -565,11 +567,11 @@ impl Render for CiCard {
             .child(
                 div()
                     .id("ci-card-actions")
-                    .px(px(8.))
+                    .px(SPACE_2)
                     .py(px(3.))
                     .rounded(crate::theme::RADIUS_2)
                     .cursor_pointer()
-                    .text_size(crate::theme::ui_text(11.))
+                    .text_size(crate::theme::ui_text(TEXT_2XS))
                     .text_color(t.text_tertiary)
                     .hover(|link| link.text_color(t.text_primary))
                     .on_click(cx.listener(|card, _, _, cx| {
@@ -590,7 +592,7 @@ impl Render for CiCard {
             .rounded(crate::theme::RADIUS_3)
             .shadow(t.shadow_float())
             .overflow_hidden()
-            .text_size(crate::theme::ui_text(13.))
+            .text_size(crate::theme::ui_text(TEXT_SM))
             .text_color(t.text_secondary)
             .on_hover(cx.listener(|card, inside: &bool, _, cx| card.hover(*inside, cx)))
             .child(header)

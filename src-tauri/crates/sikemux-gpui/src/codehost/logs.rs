@@ -15,7 +15,7 @@ use sikemux_plugin_api::codehost::{Job, JobLogLine, LogColor, LogMark, OpenJobLo
 
 use super::{elapsed, notice, outcome_word, HostArea, Read, Said};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{self, Tokens, RADIUS_2, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS_H, TEXT_XS};
 use crate::ui::{self, Button, IconButton, Variant};
 
 pub const KEY: &str = "host-log";
@@ -345,11 +345,11 @@ pub fn view(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> AnyElemen
         .iter()
         .all(|section| log.opened.contains(&section.key));
     let head = div()
-        .px(px(12.))
-        .py(px(8.))
+        .px(SPACE_3)
+        .py(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .border_b_1()
         .border_color(t.border)
         .child(ui::icon(Icon::Search, 13.).text_color(t.text_tertiary))
@@ -357,7 +357,7 @@ pub fn view(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> AnyElemen
             div()
                 .flex_1()
                 .min_w_0()
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .child(Input::new(&field).appearance(false)),
         )
         .children(found.map(|found| ui::meta(found, cx)))
@@ -490,18 +490,18 @@ fn item_of(view: &Entity<HostArea>, log: &Log, item: Item, job: &str, cx: &App) 
             let folding = view.clone();
             div()
                 .id(SharedString::from(format!("log-step-{}", section.key)))
-                .mx(px(12.))
-                .mt(px(8.))
+                .mx(SPACE_3)
+                .mt(SPACE_2)
                 .h(px(30.))
-                .px(px(10.))
+                .px(SPACE_2H)
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .rounded(RADIUS_2)
                 .border_1()
                 .border_color(t.border)
                 .bg(t.surface_raised)
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .cursor_pointer()
                 .on_click(move |_, _, cx| {
                     let key = key.clone();
@@ -541,9 +541,9 @@ fn item_of(view: &Entity<HostArea>, log: &Log, item: Item, job: &str, cx: &App) 
                 .into_any_element()
         }
         Item::Empty(_) => div()
-            .mx(px(12.))
-            .px(px(12.))
-            .py(px(8.))
+            .mx(SPACE_3)
+            .px(SPACE_3)
+            .py(SPACE_2)
             .child(ui::meta("This step wrote nothing.", cx))
             .into_any_element(),
         Item::Line(index) => {
@@ -566,7 +566,7 @@ fn item_of(view: &Entity<HostArea>, log: &Log, item: Item, job: &str, cx: &App) 
                 Some(LogMark::Endgroup) | None => (t.text_secondary, FontWeight::NORMAL),
             };
             div()
-                .mx(px(12.))
+                .mx(SPACE_3)
                 .h(px(LINE))
                 .flex()
                 .items_center()
@@ -582,12 +582,12 @@ fn item_of(view: &Entity<HostArea>, log: &Log, item: Item, job: &str, cx: &App) 
                     })
                 })
                 .font_family(theme::MONO)
-                .text_size(crate::theme::ui_text(11.5))
+                .text_size(crate::theme::ui_text(TEXT_2XS_H))
                 .child(
                     div()
                         .w(px(52.))
                         .flex_none()
-                        .pr(px(10.))
+                        .pr(SPACE_2H)
                         .text_right()
                         .text_color(t.ink_faint)
                         .child((index - section_from + 1).to_string()),

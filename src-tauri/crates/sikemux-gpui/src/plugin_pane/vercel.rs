@@ -20,7 +20,10 @@ use std::rc::Rc;
 
 use super::{after, listen, Host, Panel, PluginPane};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{
+    self, Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H,
+    TEXT_2XS_H,
+};
 use crate::toast;
 use crate::ui;
 
@@ -159,7 +162,7 @@ impl Panel for Vercel {
                         div()
                             .h(px(40.))
                             .flex_none()
-                            .px(px(14.))
+                            .px(SPACE_3H)
                             .flex()
                             .items_center()
                             .border_b_1()
@@ -177,7 +180,7 @@ impl Panel for Vercel {
                             .flex_1()
                             .min_h_0()
                             .overflow_y_scroll()
-                            .p(px(14.))
+                            .p(SPACE_3H)
                             .child(page),
                     ),
             )
@@ -670,7 +673,7 @@ impl Vercel {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .children(rows)
                     .child(
                         ui::Row::new("vercel-all-projects", "All projects")
@@ -720,8 +723,8 @@ impl Vercel {
             .border_color(t.border)
             .flex()
             .flex_col()
-            .gap(px(8.))
-            .p(px(8.))
+            .gap(SPACE_2)
+            .p(SPACE_2)
             .children(scope_rows)
             .child(ui::Field::new(find).icon(Icon::Search))
             .child(
@@ -736,8 +739,8 @@ impl Vercel {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .px(px(4.))
+                    .gap(SPACE_1H)
+                    .px(SPACE_1)
                     .child(div().flex_1().min_w_0().child(ui::meta(who, cx)))
                     .child(
                         ui::IconButton::new("vercel-sign-out", Icon::LogOut, "Sign out of Vercel")
@@ -777,14 +780,14 @@ impl Vercel {
         div()
             .flex()
             .flex_col()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .children(shown.into_iter().map(|project| {
                 let name = project.name.clone();
                 let production = project.production.as_ref();
                 let state = production.map_or("", |production| production.state.as_str());
                 div()
                     .id(SharedString::from(format!("vercel-card-{}", project.id)))
-                    .p(px(12.))
+                    .p(SPACE_3)
                     .rounded(RADIUS_2)
                     .border_1()
                     .border_color(t.border)
@@ -792,7 +795,7 @@ impl Vercel {
                     .hover(move |card| card.bg(t.surface_hover))
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
+                    .gap(SPACE_1)
                     .on_click(listen::<Vercel, ClickEvent>(
                         cx,
                         move |vercel, _, _, _, cx| {
@@ -803,7 +806,7 @@ impl Vercel {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(SPACE_2)
                             .child(dot(state, &t))
                             .child(
                                 ui::text(project.name.clone(), 13., FontWeight::SEMIBOLD)
@@ -933,7 +936,7 @@ impl Vercel {
                         .id("vercel-production")
                         .flex()
                         .flex_col()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .cursor_pointer()
                         .on_click(listen::<Vercel, ClickEvent>(
                             cx,
@@ -985,7 +988,7 @@ impl Vercel {
         div()
             .flex()
             .flex_col()
-            .gap(px(14.))
+            .gap(SPACE_3H)
             .child(card)
             .child(box_of(
                 "Active Branches",
@@ -995,7 +998,7 @@ impl Vercel {
                     false => div()
                         .flex()
                         .flex_col()
-                        .gap(px(2.))
+                        .gap(SPACE_0)
                         .children(branch_rows)
                         .into_any_element(),
                 },
@@ -1061,7 +1064,7 @@ impl Vercel {
             .map(|production| production.id.clone());
         let filters = div()
             .flex()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .child(
                 ui::Segmented::words(
                     "vercel-environment",
@@ -1119,7 +1122,7 @@ impl Vercel {
         div()
             .flex()
             .flex_col()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(filters)
             .child(match rows.is_empty() {
                 true => super::empty(
@@ -1132,7 +1135,7 @@ impl Vercel {
                 false => div()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .children(rows)
                     .into_any_element(),
             })
@@ -1161,14 +1164,14 @@ impl Vercel {
                 "vercel-deployment-{}",
                 deployment.id
             )))
-            .px(px(10.))
-            .py(px(8.))
+            .px(SPACE_2H)
+            .py(SPACE_2)
             .rounded(RADIUS_2)
             .cursor_pointer()
             .hover(move |row| row.bg(t.surface_hover))
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .on_click(listen::<Vercel, ClickEvent>(
                 cx,
                 move |vercel, _, _, _, cx| {
@@ -1183,7 +1186,7 @@ impl Vercel {
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(SPACE_0)
                     .child(
                         ui::text(name_of(deployment), 12.5, FontWeight::MEDIUM)
                             .text_color(t.text_primary)
@@ -1380,11 +1383,11 @@ impl Vercel {
             .border_1()
             .border_color(t.border)
             .bg(t.surface_sunken)
-            .p(px(10.))
+            .p(SPACE_2H)
             .flex()
             .flex_col()
             .font_family(theme::MONO)
-            .text_size(crate::theme::ui_text(11.5))
+            .text_size(crate::theme::ui_text(TEXT_2XS_H))
             .children(match lines.is_empty() {
                 true => vec![ui::meta("Nothing printed yet.", cx).into_any_element()],
                 false => lines
@@ -1406,11 +1409,11 @@ impl Vercel {
         div()
             .flex()
             .flex_col()
-            .gap(px(14.))
-            .child(div().flex().flex_wrap().gap(px(6.)).children(actions))
+            .gap(SPACE_3H)
+            .child(div().flex().flex_wrap().gap(SPACE_1H).children(actions))
             .children(deployment.error.clone().map(|error| {
                 div()
-                    .p(px(10.))
+                    .p(SPACE_2H)
                     .rounded(RADIUS_2)
                     .border_1()
                     .border_color(t.danger)
@@ -1420,13 +1423,13 @@ impl Vercel {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .children(facts.into_iter().filter_map(|(label, value)| {
                         let value = value?;
                         Some(
                             div()
                                 .flex()
-                                .gap(px(12.))
+                                .gap(SPACE_3)
                                 .child(div().w(px(110.)).flex_none().child(ui::meta(label, cx)))
                                 .child(
                                     ui::text(value, 12.5, FontWeight::NORMAL)
@@ -1439,7 +1442,7 @@ impl Vercel {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(
                         ui::text("Build Logs", 13., FontWeight::SEMIBOLD)
                             .text_color(t.text_primary),
@@ -1487,7 +1490,7 @@ impl Vercel {
             false => div()
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .children(shown.into_iter().map(|variable| {
                     let targets = match variable.target.len() {
                         3 => "All Environments".to_owned(),
@@ -1499,11 +1502,11 @@ impl Vercel {
                             .join(", "),
                     };
                     div()
-                        .px(px(10.))
-                        .py(px(8.))
+                        .px(SPACE_2H)
+                        .py(SPACE_2)
                         .flex()
                         .items_center()
-                        .gap(px(12.))
+                        .gap(SPACE_3)
                         .border_b_1()
                         .border_color(t.border)
                         .child(div().flex_1().min_w_0().child(ui::mono(
@@ -1529,7 +1532,7 @@ impl Vercel {
         div()
             .flex()
             .flex_col()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .child(ui::meta(
                 "Values stay in Vercel; only the names are shown here.",
                 cx,
@@ -1564,7 +1567,7 @@ impl Vercel {
         div()
             .flex()
             .flex_col()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .children(domains.domains.iter().map(|domain| {
                 let url = format!("https://{}", domain.name);
                 let role = match (&domain.redirect, &domain.git_branch) {
@@ -1577,20 +1580,20 @@ impl Vercel {
                     false => ("Invalid Configuration", t.danger),
                 };
                 div()
-                    .p(px(12.))
+                    .p(SPACE_3)
                     .rounded(RADIUS_2)
                     .border_1()
                     .border_color(t.border)
                     .flex()
                     .items_center()
-                    .gap(px(12.))
+                    .gap(SPACE_3)
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .flex()
                             .flex_col()
-                            .gap(px(2.))
+                            .gap(SPACE_0)
                             .child(
                                 ui::text(domain.name.clone(), 13., FontWeight::SEMIBOLD)
                                     .text_color(t.text_primary),
@@ -1601,7 +1604,7 @@ impl Vercel {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(6.))
+                            .gap(SPACE_1H)
                             .child(div().size(px(8.)).rounded_full().bg(colour))
                             .child(ui::meta(word, cx)),
                     )
@@ -1643,7 +1646,7 @@ fn summary_line(
     div()
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .child(dot(&production.state, &t))
         .child(ui::text(address, 13., FontWeight::SEMIBOLD).text_color(t.text_primary))
         .child(ui::meta(
@@ -1676,17 +1679,17 @@ fn box_of(
         .flex_col()
         .child(
             div()
-                .px(px(12.))
-                .py(px(8.))
+                .px(SPACE_3)
+                .py(SPACE_2)
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .border_b_1()
                 .border_color(t.border)
                 .child(ui::text(title, 12.5, FontWeight::SEMIBOLD).text_color(t.text_primary))
                 .child(div().flex_1())
                 .children(actions),
         )
-        .child(div().p(px(12.)).child(body))
+        .child(div().p(SPACE_3).child(body))
         .into_any_element()
 }

@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_5};
+
 impl Rundeck {
     pub(super) fn execution(
         &mut self,
@@ -48,7 +50,7 @@ impl Rundeck {
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(
                     Button::new(
                         "rundeck-run-again",
@@ -118,7 +120,7 @@ impl Rundeck {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(folder_chip(
                         &job.project,
                         job.group.as_deref(),
@@ -141,11 +143,11 @@ impl Rundeck {
             _ => None,
         };
         let progress = (!page.steps.is_empty()).then(|| {
-            div().flex().flex_col().gap(px(6.)).child(
+            div().flex().flex_col().gap(SPACE_1H).child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(12.))
+                    .gap(SPACE_3)
                     .child(
                         ui::text(
                             page.percent
@@ -160,7 +162,7 @@ impl Rundeck {
                         div()
                             .flex_1()
                             .flex()
-                            .gap(px(2.))
+                            .gap(SPACE_0)
                             .children(page.steps.iter().map(|step| {
                                 div()
                                     .flex_1()
@@ -186,7 +188,7 @@ impl Rundeck {
         });
         let metas = div()
             .flex()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .flex_wrap()
             .children(
                 page.branch
@@ -220,11 +222,11 @@ impl Rundeck {
             .child(head)
             .child(
                 div()
-                    .px(px(20.))
-                    .py(px(12.))
+                    .px(SPACE_5)
+                    .py(SPACE_3)
                     .flex()
                     .flex_col()
-                    .gap(px(10.))
+                    .gap(SPACE_2H)
                     .border_b_1()
                     .border_color(t.border)
                     .children(progress)
@@ -259,15 +261,15 @@ impl Rundeck {
             .overflow_y_scroll()
             .border_r_1()
             .border_color(t.border)
-            .px(px(6.))
-            .py(px(8.))
+            .px(SPACE_1H)
+            .py(SPACE_2)
             .flex()
             .flex_col()
             .gap(px(1.))
-            .child(div().px(px(8.)).pb(px(4.)).child(ui::caps("Steps", cx)))
+            .child(div().px(SPACE_2).pb(SPACE_1).child(ui::caps("Steps", cx)))
             .child(all)
             .when(steps.is_empty(), |list| {
-                list.child(div().px(px(8.)).child(ui::meta("Waiting for steps…", cx)))
+                list.child(div().px(SPACE_2).child(ui::meta("Waiting for steps…", cx)))
             })
             .children(steps.iter().enumerate().map(|(at, step)| {
                 let key = step.key.clone();
@@ -386,10 +388,10 @@ impl Rundeck {
                         };
                         div()
                             .h(px(LOG_ROW))
-                            .px(px(12.))
+                            .px(SPACE_3)
                             .flex()
                             .items_center()
-                            .gap(px(10.))
+                            .gap(SPACE_2H)
                             .child(
                                 ui::mono(line.time.clone().unwrap_or_default(), 11., cx)
                                     .w(px(64.))
@@ -449,12 +451,12 @@ impl Rundeck {
             .flex_col()
             .child(
                 div()
-                    .px(px(12.))
-                    .py(px(8.))
+                    .px(SPACE_3)
+                    .py(SPACE_2)
                     .flex()
                     .flex_wrap()
                     .items_center()
-                    .gap(px(10.))
+                    .gap(SPACE_2H)
                     .border_b_1()
                     .border_color(t.border)
                     .child(
@@ -514,8 +516,8 @@ impl Rundeck {
             .child(list)
             .child(
                 div()
-                    .px(px(12.))
-                    .py(px(6.))
+                    .px(SPACE_3)
+                    .py(SPACE_1H)
                     .flex()
                     .border_t_1()
                     .border_color(t.border)

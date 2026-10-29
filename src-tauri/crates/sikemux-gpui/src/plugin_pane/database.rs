@@ -21,7 +21,10 @@ use sikemux_plugin_database_views::{
 
 use super::{after, listen, Host, Panel, PluginPane};
 use crate::icons::Icon;
-use crate::theme::{self, Tokens, RADIUS_2};
+use crate::theme::{
+    self, Tokens, RADIUS_2, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4,
+    SPACE_5, TEXT_2XS_H, TEXT_XS_H,
+};
 use crate::ui::{self, Button, IconButton, Variant};
 
 mod console;
@@ -443,10 +446,10 @@ impl Database {
         }
         let head = div()
             .h(px(36.))
-            .px(px(10.))
+            .px(SPACE_2H)
             .flex()
             .items_center()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .child(ui::caps("Explorer", cx))
             .child(div().flex_1())
             .child(
@@ -491,7 +494,7 @@ impl Database {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .p(px(4.))
+                    .p(SPACE_1)
                     .flex()
                     .flex_col()
                     .children(rows),
@@ -580,7 +583,8 @@ impl Database {
                     self.connection_rows(database, words, true, &mut nested, cx);
                 }
                 rows.extend(
-                    (nested.into_iter()).map(|row| div().pl(px(14.)).child(row).into_any_element()),
+                    (nested.into_iter())
+                        .map(|row| div().pl(SPACE_3H).child(row).into_any_element()),
                 );
             }
             (None, None, None) => rows.push(note(1, "Loading…".into(), false, &t)),
@@ -796,7 +800,7 @@ impl Database {
                     let detail = div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .children(mark)
                         .child(
                             ui::mono(column.type_name.clone(), 10.5, cx)
@@ -833,10 +837,10 @@ impl Database {
         div()
             .id("db-tabs")
             .h(px(36.))
-            .px(px(6.))
+            .px(SPACE_1H)
             .flex()
             .items_center()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .overflow_x_scroll()
             .border_b_1()
             .border_color(t.border)
@@ -962,7 +966,7 @@ impl Database {
             };
             div()
                 .flex()
-                .gap(px(16.))
+                .gap(SPACE_4)
                 .child(
                     div()
                         .w(px(90.))
@@ -975,23 +979,23 @@ impl Database {
             .id("db-properties")
             .size_full()
             .overflow_y_scroll()
-            .px(px(20.))
-            .py(px(16.))
+            .px(SPACE_5)
+            .py(SPACE_4)
             .flex()
             .flex_col()
-            .gap(px(14.))
+            .gap(SPACE_3H)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(
                         ui::text(connection.name.clone(), 15., FontWeight::SEMIBOLD)
                             .text_color(t.text_primary),
                     )
                     .children(connection.read_only.then(|| ui::caps("Read only", cx))),
             )
-            .child(div().flex().flex_col().gap(px(6.)).children(facts))
+            .child(div().flex().flex_col().gap(SPACE_1H).children(facts))
             .child(
                 div().flex().child(
                     Button::new(
@@ -1035,11 +1039,11 @@ impl Database {
         let has_entries = matches!(&read, Ok(Some(history)) if !history.entries.is_empty());
         let (clear_id, clear_name) = (id.to_owned(), connection.name.clone());
         let toolbar = div()
-            .px(px(10.))
-            .py(px(8.))
+            .px(SPACE_2H)
+            .py(SPACE_2)
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .children(self.search.as_ref().map(|search| {
                 div()
                     .flex_1()
@@ -1064,11 +1068,11 @@ impl Database {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .px(px(10.))
-                .pb(px(10.))
+                .px(SPACE_2H)
+                .pb(SPACE_2H)
                 .flex()
                 .flex_col()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .children(history.entries.iter().map(|entry| history_row(entry, cx)))
                 .into_any_element(),
         };
@@ -1177,14 +1181,14 @@ fn welcome(cx: &mut Context<PluginPane>) -> AnyElement {
         .flex_col()
         .items_center()
         .justify_center()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .child(ui::icon(Icon::Database, 28.).text_color(t.text_tertiary))
         .child(ui::text("Connect a database", 15., FontWeight::SEMIBOLD).text_color(t.text_primary))
         .child(
             div()
                 .max_w(px(420.))
                 .text_center()
-                .text_size(theme::ui_text(12.5))
+                .text_size(theme::ui_text(TEXT_XS_H))
                 .text_color(t.text_secondary)
                 .child("Save a PostgreSQL or MySQL server, or a SQLite file, to browse its tables and run SQL beside your code. Your agents can use it too."),
         )
@@ -1236,7 +1240,7 @@ fn table_page(
     let heading = |text: &'static str| {
         ui::text(text, 12., FontWeight::SEMIBOLD)
             .text_color(t.text_secondary)
-            .mt(px(6.))
+            .mt(SPACE_1H)
     };
     let cell = |share: Option<f32>| {
         let cell = div().min_w_0().truncate();
@@ -1248,8 +1252,8 @@ fn table_page(
     let header = div()
         .w_full()
         .flex()
-        .gap(px(12.))
-        .py(px(4.))
+        .gap(SPACE_3)
+        .py(SPACE_1)
         .border_b_1()
         .border_color(t.border)
         .child(cell(Some(0.3)).child(ui::meta("Name", cx)))
@@ -1261,13 +1265,13 @@ fn table_page(
             .w_full()
             .flex()
             .items_center()
-            .gap(px(12.))
+            .gap(SPACE_3)
             .py(px(3.))
             .child(
                 cell(Some(0.3))
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(SPACE_1H)
                     .child(ui::mono(column.name.clone(), 11.5, cx).text_color(t.text_primary))
                     .children(column.primary_key.then(|| ui::caps("PK", cx))),
             )
@@ -1289,7 +1293,7 @@ fn table_page(
             .children(info.indexes.iter().map(|index| {
                 div()
                     .flex()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(ui::mono(index.name.clone(), 11.5, cx).text_color(t.text_primary))
                     .child(ui::meta(index.detail.clone(), cx))
             }))
@@ -1309,7 +1313,7 @@ fn table_page(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(SPACE_2)
                     .child(ui::mono(key.columns.clone(), 11.5, cx).text_color(t.text_primary))
                     .child(ui::meta("→", cx))
                     .child(
@@ -1329,16 +1333,16 @@ fn table_page(
         .id("db-table-page")
         .size_full()
         .overflow_y_scroll()
-        .px(px(20.))
-        .py(px(16.))
+        .px(SPACE_5)
+        .py(SPACE_4)
         .flex()
         .flex_col()
-        .gap(px(10.))
+        .gap(SPACE_2H)
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(
                     div()
                         .flex()
@@ -1378,20 +1382,20 @@ fn history_row(entry: &HistoryEntry, cx: &mut Context<PluginPane>) -> AnyElement
         age => format!("{age} ago"),
     };
     div()
-        .px(px(10.))
-        .py(px(8.))
+        .px(SPACE_2H)
+        .py(SPACE_2)
         .rounded(RADIUS_2)
         .border_1()
         .border_color(t.border)
         .flex()
         .flex_col()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .child(
             div()
                 .max_h(px(80.))
                 .overflow_hidden()
                 .font_family(theme::MONO)
-                .text_size(theme::ui_text(11.5))
+                .text_size(theme::ui_text(TEXT_2XS_H))
                 .text_color(t.text_primary)
                 .child(entry.sql.clone()),
         )
@@ -1399,7 +1403,7 @@ fn history_row(entry: &HistoryEntry, cx: &mut Context<PluginPane>) -> AnyElement
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.))
+                .gap(SPACE_2)
                 .child(ui::meta(ago, cx))
                 .child(ui::meta(format!("{} ms", entry.millis), cx))
                 .children(said)
@@ -1432,10 +1436,10 @@ fn node(
         .id(ElementId::Name(id.into()))
         .h(px(24.))
         .pl(px(6. + depth as f32 * 14.))
-        .pr(px(6.))
+        .pr(SPACE_1H)
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .rounded(RADIUS_2)
         .cursor_pointer()
         .when(current, |row| row.bg(t.surface_chosen))
@@ -1455,7 +1459,7 @@ fn note(depth: usize, text: SharedString, error: bool, t: &Tokens) -> AnyElement
     div()
         .pl(px(6. + depth as f32 * 14. + 26.))
         .py(px(3.))
-        .text_size(theme::ui_text(11.5))
+        .text_size(theme::ui_text(TEXT_2XS_H))
         .text_color(if error { t.danger } else { t.text_tertiary })
         .child(text)
         .into_any_element()

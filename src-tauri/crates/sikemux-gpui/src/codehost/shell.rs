@@ -19,7 +19,7 @@ use super::{HostArea, Said};
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::palette::{Mark, Row, Spec};
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{Tokens, RADIUS_2, SPACE_2, SPACE_2H, SPACE_3, TEXT_XS};
 use crate::ui::{self, sign_in, Button, Choice, Variant};
 
 /// Who is signed in to the host, as its plugin says.
@@ -844,7 +844,7 @@ fn sign_in_chip(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .border_color(t.border)
         .bg(t.surface)
         .cursor_pointer()
-        .text_size(crate::theme::ui_text(12.))
+        .text_size(crate::theme::ui_text(TEXT_XS))
         .font_weight(FontWeight::MEDIUM)
         .text_color(t.text_secondary)
         .hover(move |chip| chip.bg(t.surface_hover).text_color(t.text_primary))
@@ -854,14 +854,14 @@ fn sign_in_chip(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         })
         .child(
             div()
-                .px(px(8.))
+                .px(SPACE_2)
                 .flex()
                 .items_center()
                 .border_r_1()
                 .border_color(t.border)
                 .child(ui::picture(logo, 12., t.text_secondary)),
         )
-        .child(div().px(px(10.)).flex().items_center().child("Sign in"))
+        .child(div().px(SPACE_2H).flex().items_center().child("Sign in"))
         .into_any_element()
 }
 
@@ -872,15 +872,15 @@ pub fn budget_note(area: &HostArea, cx: &mut Context<HostArea>) -> Option<AnyEle
     let ink = if spent { t.danger } else { t.warn };
     Some(
         div()
-            .mx(px(12.))
-            .mt(px(10.))
-            .px(px(12.))
-            .py(px(8.))
+            .mx(SPACE_3)
+            .mt(SPACE_2H)
+            .px(SPACE_3)
+            .py(SPACE_2)
             .rounded(RADIUS_2)
             .border_1()
             .border_color(ink.opacity(0.4))
             .bg(ink.opacity(0.08))
-            .text_size(crate::theme::ui_text(12.))
+            .text_size(crate::theme::ui_text(TEXT_XS))
             .text_color(t.text_primary)
             .child(words)
             .into_any_element(),

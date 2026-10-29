@@ -13,7 +13,10 @@ use super::{
     HostArea, Read,
 };
 use crate::icons::Icon;
-use crate::theme::{self, Tokens};
+use crate::theme::{
+    self, Tokens, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, TEXT_2XS, TEXT_3XS_H,
+    TEXT_XS,
+};
 use crate::ui;
 use crate::ui::time::ago_written as ago;
 
@@ -114,17 +117,17 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .filter(|(_, needs)| *needs && listed)
         .map(|(branch, _)| {
             div()
-                .mx(px(12.))
-                .mb(px(8.))
-                .px(px(12.))
-                .py(px(8.))
+                .mx(SPACE_3)
+                .mb(SPACE_2)
+                .px(SPACE_3)
+                .py(SPACE_2)
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .rounded(theme::RADIUS_2)
                 .border_1()
                 .border_color(t.border)
-                .text_size(crate::theme::ui_text(12.))
+                .text_size(crate::theme::ui_text(TEXT_XS))
                 .text_color(t.text_secondary)
                 .child(branch_chip(branch, t.text_primary, cx))
                 .child("has no pull request yet.")
@@ -178,7 +181,7 @@ fn row(
         div()
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .min_w_0()
             .child(branch_chip(head, t.text_secondary, cx))
             .when_some(pull.base.as_ref(), |refs, base| {
@@ -198,7 +201,7 @@ fn row(
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .tooltip(ui::tooltip(about))
             .child("·")
             .child(ui::run_mark(
@@ -217,7 +220,7 @@ fn row(
         div()
             .id(("pull-reviewers", index))
             .flex()
-            .gap(px(2.))
+            .gap(SPACE_0)
             .tooltip(ui::tooltip(format!(
                 "Reviewers: {}",
                 pull.reviewers.join(", ")
@@ -241,8 +244,8 @@ fn row(
             .id(("pull-closes", index))
             .flex()
             .items_center()
-            .gap(px(4.))
-            .text_size(crate::theme::ui_text(11.))
+            .gap(SPACE_1)
+            .text_size(crate::theme::ui_text(TEXT_2XS))
             .text_color(t.text_tertiary)
             .tooltip(ui::tooltip(format!("Closes {}", numbers.join(", "))))
             .child(ui::icon(Icon::Issues, 13.).text_color(t.text_tertiary))
@@ -251,11 +254,11 @@ fn row(
     div()
         .id(("pull", index))
         .w_full()
-        .px(px(12.))
-        .py(px(10.))
+        .px(SPACE_3)
+        .py(SPACE_2H)
         .flex()
         .items_center()
-        .gap(px(12.))
+        .gap(SPACE_3)
         .when(index > 0, |row| row.border_t_1().border_color(t.border))
         .cursor_pointer()
         .hover(move |row| row.bg(t.surface_hover))
@@ -275,7 +278,7 @@ fn row(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .min_w_0()
                         .child(pull_mark(listed.state, 14., cx))
                         .child(
@@ -289,10 +292,10 @@ fn row(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .min_w_0()
                         .whitespace_nowrap()
-                        .text_size(crate::theme::ui_text(10.5))
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(t.text_tertiary)
                         .child(div().flex_none().child(who))
                         .children(refs)
@@ -304,7 +307,7 @@ fn row(
                 .flex()
                 .flex_none()
                 .items_center()
-                .gap(px(12.))
+                .gap(SPACE_3)
                 .children(reviewers)
                 .children(closes)
                 .children(comments(pull.comments.unwrap_or_default(), cx)),

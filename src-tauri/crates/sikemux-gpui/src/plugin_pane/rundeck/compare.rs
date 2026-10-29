@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_0, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3};
+
 /// The same jobs across the folders right below this one, side by side.
 pub(super) fn compare_grid(
     sections: &[(&Section, Vec<&JobRow>)],
@@ -16,22 +18,22 @@ pub(super) fn compare_grid(
     names.sort_unstable();
     names.dedup();
     let column = |section: &Section| {
-        div().flex_1().min_w_0().px(px(8.)).child(
+        div().flex_1().min_w_0().px(SPACE_2).child(
             ui::caps(section.segment.as_deref().unwrap_or_default(), cx)
                 .when(section.prod, |caps| caps.text_color(t.warn)),
         )
     };
     let head = div()
         .flex()
-        .px(px(12.))
-        .py(px(8.))
+        .px(SPACE_3)
+        .py(SPACE_2)
         .child(div().w(px(160.)).flex_none().child(ui::caps("Job", cx)))
         .children(sections.iter().map(|(section, _)| column(section)));
     let rows = names.into_iter().map(|name| {
         div()
             .flex()
-            .px(px(12.))
-            .py(px(6.))
+            .px(SPACE_3)
+            .py(SPACE_1H)
             .border_t_1()
             .border_color(t.line_soft)
             .child(
@@ -45,10 +47,10 @@ pub(super) fn compare_grid(
                 let cell = div()
                     .flex_1()
                     .min_w_0()
-                    .px(px(8.))
+                    .px(SPACE_2)
                     .flex()
                     .flex_col()
-                    .gap(px(2.));
+                    .gap(SPACE_0);
                 match jobs.iter().find(|job| job.name == name) {
                     None => cell,
                     Some(job) => cell
@@ -56,7 +58,7 @@ pub(super) fn compare_grid(
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(6.))
+                                .gap(SPACE_1H)
                                 .child(status_dot(
                                     job.latest.as_ref().map(|run| run.status_kind),
                                     cx,
@@ -89,7 +91,7 @@ pub(super) fn compare_grid(
         .child(head)
         .children(rows)
         .when(loose > 0, |grid| {
-            grid.child(div().px(px(12.)).py(px(10.)).child(ui::meta(
+            grid.child(div().px(SPACE_3).py(SPACE_2H).child(ui::meta(
                 format!(
                     "{loose} {} directly in this folder; switch to List to see {}.",
                     if loose == 1 { "job sits" } else { "jobs sit" },

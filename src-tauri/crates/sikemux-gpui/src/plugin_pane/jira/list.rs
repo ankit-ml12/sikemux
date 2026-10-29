@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::theme::{SPACE_1, SPACE_1H, SPACE_2, SPACE_3};
+
 impl Jira {
     pub(super) fn issues(
         &mut self,
@@ -36,11 +38,11 @@ impl Jira {
         let t = Tokens::get(cx).clone();
         let chips = (page.statuses.len() > 1).then(|| {
             div()
-                .px(px(12.))
-                .py(px(8.))
+                .px(SPACE_3)
+                .py(SPACE_2)
                 .flex()
                 .flex_wrap()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .border_b_1()
                 .border_color(t.border)
                 .child(
@@ -120,11 +122,11 @@ fn issue_row(
         .and_then(|person| person.avatar_url.as_deref());
     div()
         .id(("jira-issue", index))
-        .px(px(12.))
-        .py(px(8.))
+        .px(SPACE_3)
+        .py(SPACE_2)
         .flex()
         .flex_col()
-        .gap(px(4.))
+        .gap(SPACE_1)
         .when(index > 0, |row| row.border_t_1().border_color(t.border))
         .when(chosen, |row| row.bg(t.surface_chosen))
         .cursor_pointer()
@@ -133,7 +135,7 @@ fn issue_row(
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(type_mark(issue.issue_type.as_deref(), cx))
                 .child(ui::mono(issue.key.clone(), 11., cx).text_color(t.text_secondary))
                 .child(status_chip(&issue.status, &issue.status_category, cx)),
@@ -149,7 +151,7 @@ fn issue_row(
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .children(
                     issue
                         .priority

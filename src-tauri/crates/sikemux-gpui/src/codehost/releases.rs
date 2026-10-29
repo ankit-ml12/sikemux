@@ -14,7 +14,10 @@ use sikemux_plugin_api::codehost::{Release, ReleaseList};
 
 use super::{branch_chip, notice, Area, HostArea, Read, Said};
 use crate::icons::Icon;
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{
+    Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4,
+    SPACE_5, TEXT_3XS, TEXT_3XS_H, TEXT_XS, TEXT_XS_H,
+};
 use crate::ui::time::ago_written as ago;
 use crate::ui::{self, IconButton, Segmented};
 
@@ -72,11 +75,11 @@ fn tags(release: &Release, latest: bool, cx: &mut Context<HostArea>) -> Vec<AnyE
     let t = Tokens::get(cx).clone();
     let tag = |word: &'static str, ink| {
         div()
-            .px(px(6.))
+            .px(SPACE_1H)
             .rounded_full()
             .border_1()
             .border_color(ink)
-            .text_size(crate::theme::ui_text(10.))
+            .text_size(crate::theme::ui_text(TEXT_3XS))
             .text_color(ink)
             .child(word)
             .into_any_element()
@@ -143,11 +146,11 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
             );
             div()
                 .id(("release", index))
-                .px(px(12.))
-                .py(px(6.))
+                .px(SPACE_3)
+                .py(SPACE_1H)
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .cursor_pointer()
                 .when(on, |row| row.bg(t.surface_chosen))
                 .hover(move |row| row.bg(t.surface_hover))
@@ -159,14 +162,14 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .child(ui::icon(Icon::Releases, 13.).text_color(t.text_tertiary))
                         .child(
                             div()
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(crate::theme::ui_text(12.5))
+                                .text_size(crate::theme::ui_text(TEXT_XS_H))
                                 .text_color(t.text_primary)
                                 .child(release.name.clone()),
                         )
@@ -185,19 +188,19 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
         .border_color(t.border)
         .child(
             div()
-                .px(px(12.))
-                .pt(px(12.))
-                .pb(px(8.))
+                .px(SPACE_3)
+                .pt(SPACE_3)
+                .pb(SPACE_2)
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(SPACE_1H)
                 .child(ui::icon(Area::Releases.icon(), 14.).text_color(t.text_tertiary))
                 .child(ui::text("Releases", 12., FontWeight::MEDIUM).text_color(t.text_primary))
                 .child(div().flex_1())
                 .child(super::shell::account(area, cx)),
         )
         .child(
-            div().px(px(8.)).pb(px(8.)).child(
+            div().px(SPACE_2).pb(SPACE_2).child(
                 Segmented::words(
                     "release-kinds",
                     KINDS
@@ -227,8 +230,8 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                     |rows| {
                         rows.child(
                             div()
-                                .px(px(12.))
-                                .py(px(8.))
+                                .px(SPACE_3)
+                                .py(SPACE_2)
                                 .child(ui::meta("No releases here.", cx)),
                         )
                     },
@@ -249,20 +252,20 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
             let folded = releases.assets_folded;
             let assets = (!release.assets.is_empty()).then(|| {
                 div()
-                    .mt(px(16.))
+                    .mt(SPACE_4)
                     .rounded(RADIUS_2)
                     .border_1()
                     .border_color(t.border)
                     .child(
                         div()
                             .id("release-assets")
-                            .px(px(12.))
+                            .px(SPACE_3)
                             .py(px(7.))
                             .flex()
                             .items_center()
-                            .gap(px(6.))
+                            .gap(SPACE_1H)
                             .cursor_pointer()
-                            .text_size(crate::theme::ui_text(12.))
+                            .text_size(crate::theme::ui_text(TEXT_XS))
                             .text_color(t.text_primary)
                             .on_click(cx.listener(|area, _, _, cx| {
                                 area.releases.assets_folded = !area.releases.assets_folded;
@@ -278,13 +281,13 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                             div()
                                 .id(("asset", index))
                                 .h(px(28.))
-                                .px(px(12.))
+                                .px(SPACE_3)
                                 .flex()
                                 .items_center()
-                                .gap(px(8.))
+                                .gap(SPACE_2)
                                 .border_t_1()
                                 .border_color(t.border)
-                                .text_size(crate::theme::ui_text(12.))
+                                .text_size(crate::theme::ui_text(TEXT_XS))
                                 .cursor_pointer()
                                 .hover(move |row| row.bg(t.surface_hover))
                                 .tooltip(ui::tooltip(format!("Download {}", asset.name)))
@@ -324,11 +327,11 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                 .flex_col()
                 .child(
                     div()
-                        .px(px(16.))
-                        .pt(px(14.))
-                        .pb(px(10.))
+                        .px(SPACE_4)
+                        .pt(SPACE_3H)
+                        .pb(SPACE_2H)
                         .flex()
-                        .gap(px(12.))
+                        .gap(SPACE_3)
                         .border_b_1()
                         .border_color(t.border)
                         .child(ui::initials(&author, "", 36., cx))
@@ -338,12 +341,12 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                                 .min_w_0()
                                 .flex()
                                 .flex_col()
-                                .gap(px(4.))
+                                .gap(SPACE_1)
                                 .child(
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap(px(8.))
+                                        .gap(SPACE_2)
                                         .child(
                                             ui::text(
                                                 release.name.clone(),
@@ -367,8 +370,8 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap(px(6.))
-                                        .text_size(crate::theme::ui_text(10.5))
+                                        .gap(SPACE_1H)
+                                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                                         .text_color(t.text_tertiary)
                                         .child(format!(
                                             "{author} released this {}",
@@ -388,8 +391,8 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
-                        .px(px(20.))
-                        .py(px(16.))
+                        .px(SPACE_5)
+                        .py(SPACE_4)
                         .child(match notes.filter(|_| !release.body.trim().is_empty()) {
                             Some(notes) => pen.markdown(
                                 ("release-notes", release.id as usize),

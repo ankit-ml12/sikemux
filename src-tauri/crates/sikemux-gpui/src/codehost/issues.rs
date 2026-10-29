@@ -17,7 +17,10 @@ use super::pulls::Listed;
 use super::thread::{self, Block, Post};
 use super::{comments, label_chip, list_head, notice, Area, HostArea, Read, Said};
 use crate::icons::Icon;
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{
+    Tokens, RADIUS_2, SPACE_0, SPACE_1, SPACE_1H, SPACE_2, SPACE_2H, SPACE_3, SPACE_3H, SPACE_4,
+    TEXT_3XS_H, TEXT_SM, TEXT_XS, TEXT_XS_H,
+};
 use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, IconButton, Segmented, Variant};
 
@@ -476,12 +479,12 @@ fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     let next = matches!(&area.issues.list, Some(Ok(list)) if list.next_page.is_some());
     let pager = (page > 1 || next).then(|| {
         div()
-            .px(px(12.))
-            .py(px(10.))
+            .px(SPACE_3)
+            .py(SPACE_2H)
             .flex()
             .items_center()
             .justify_center()
-            .gap(px(10.))
+            .gap(SPACE_2H)
             .border_t_1()
             .border_color(t.border)
             .child(
@@ -515,7 +518,7 @@ fn row(area: &HostArea, issue: &Issue, index: usize, cx: &mut Context<HostArea>)
         div()
             .id(("issue-assignees", index))
             .flex()
-            .gap(px(2.))
+            .gap(SPACE_0)
             .tooltip(ui::tooltip(format!(
                 "Assigned to {}",
                 issue.assignees.join(", ")
@@ -539,11 +542,11 @@ fn row(area: &HostArea, issue: &Issue, index: usize, cx: &mut Context<HostArea>)
     div()
         .id(("issue", index))
         .w_full()
-        .px(px(12.))
-        .py(px(10.))
+        .px(SPACE_3)
+        .py(SPACE_2H)
         .flex()
         .items_center()
-        .gap(px(12.))
+        .gap(SPACE_3)
         .when(index > 0, |row| row.border_t_1().border_color(t.border))
         .cursor_pointer()
         .hover(move |row| row.bg(t.surface_hover))
@@ -560,7 +563,7 @@ fn row(area: &HostArea, issue: &Issue, index: usize, cx: &mut Context<HostArea>)
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .min_w_0()
                         .child(mark(issue, 14., cx))
                         .child(
@@ -574,10 +577,10 @@ fn row(area: &HostArea, issue: &Issue, index: usize, cx: &mut Context<HostArea>)
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .min_w_0()
                         .whitespace_nowrap()
-                        .text_size(crate::theme::ui_text(10.5))
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(t.text_tertiary)
                         .child(div().flex_none().child(who))
                         .children(issue.labels.iter().map(|label| label_chip(label, cx))),
@@ -588,7 +591,7 @@ fn row(area: &HostArea, issue: &Issue, index: usize, cx: &mut Context<HostArea>)
                 .flex()
                 .flex_none()
                 .items_center()
-                .gap(px(12.))
+                .gap(SPACE_3)
                 .children(assignees)
                 .children(comments(issue.comments, cx))
                 .children(work),
@@ -601,12 +604,12 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     let open = area.issues.open.as_ref().expect("an issue is open");
     let found = open.issue.as_ref().and_then(|issue| issue.as_ref().ok());
     let head = div()
-        .px(px(10.))
-        .pt(px(10.))
-        .pb(px(8.))
+        .px(SPACE_2H)
+        .pt(SPACE_2H)
+        .pb(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(SPACE_2)
         .when(!area.on_a_desk(), |head| {
             head.child(
                 IconButton::new("issue-back", Icon::Chevron, "Back to the issues")
@@ -635,7 +638,7 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .iter()
         .position(|(_, _, page)| *page == open.side)
         .unwrap_or_default();
-    let switch = div().px(px(10.)).pb(px(8.)).child(
+    let switch = div().px(SPACE_2H).pb(SPACE_2).child(
         Segmented::new(
             "issue-pages",
             pages
@@ -684,11 +687,11 @@ fn facts(open: &OpenIssue, cx: &mut Context<HostArea>) -> AnyElement {
     };
     let fact = |name: &'static str, value: AnyElement| {
         div()
-            .px(px(12.))
-            .py(px(8.))
+            .px(SPACE_3)
+            .py(SPACE_2)
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .border_b_1()
             .border_color(t.border)
             .child(ui::meta(name, cx))
@@ -699,13 +702,13 @@ fn facts(open: &OpenIssue, cx: &mut Context<HostArea>) -> AnyElement {
         div()
             .flex()
             .flex_wrap()
-            .gap(px(8.))
+            .gap(SPACE_2)
             .children(logins.iter().map(|login| {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .text_size(crate::theme::ui_text(12.))
+                    .gap(SPACE_1H)
+                    .text_size(crate::theme::ui_text(TEXT_XS))
                     .text_color(t.text_primary)
                     .child(ui::initials(login, "", 18., cx))
                     .child(login.clone())
@@ -723,7 +726,7 @@ fn facts(open: &OpenIssue, cx: &mut Context<HostArea>) -> AnyElement {
         div()
             .flex()
             .flex_wrap()
-            .gap(px(4.))
+            .gap(SPACE_1)
             .children(issue.labels.iter().map(|label| label_chip(label, cx)))
             .into_any_element()
     };
@@ -733,7 +736,7 @@ fn facts(open: &OpenIssue, cx: &mut Context<HostArea>) -> AnyElement {
         div()
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(SPACE_1H)
             .children(open.linked.iter().filter_map(|item| {
                 let source = item.source.as_ref()?;
                 let (glyph, ink, _) = thread::mention_state(source, &t);
@@ -741,9 +744,9 @@ fn facts(open: &OpenIssue, cx: &mut Context<HostArea>) -> AnyElement {
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .min_w_0()
-                        .text_size(crate::theme::ui_text(12.))
+                        .text_size(crate::theme::ui_text(TEXT_XS))
                         .child(ui::icon(glyph, 13.).text_color(ink))
                         .child(
                             div()
@@ -784,7 +787,7 @@ fn side_list(area: &HostArea, open: u64, cx: &mut Context<HostArea>) -> AnyEleme
     div()
         .flex()
         .flex_col()
-        .child(div().px(px(10.)).pb(px(8.)).child(state_switch(area, cx)))
+        .child(div().px(SPACE_2H).pb(SPACE_2).child(state_switch(area, cx)))
         .children(issues.iter().enumerate().map(|(index, issue)| {
             let number = issue.number;
             let sub = format!(
@@ -794,11 +797,11 @@ fn side_list(area: &HostArea, open: u64, cx: &mut Context<HostArea>) -> AnyEleme
             );
             div()
                 .id(("issue-side", index))
-                .px(px(12.))
-                .py(px(6.))
+                .px(SPACE_3)
+                .py(SPACE_1H)
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(SPACE_0)
                 .cursor_pointer()
                 .when(number == open, |row| row.bg(t.surface_chosen))
                 .hover(move |row| row.bg(t.surface_hover))
@@ -807,14 +810,14 @@ fn side_list(area: &HostArea, open: u64, cx: &mut Context<HostArea>) -> AnyEleme
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(SPACE_1H)
                         .child(mark(issue, 13., cx))
                         .child(
                             div()
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(crate::theme::ui_text(12.5))
+                                .text_size(crate::theme::ui_text(TEXT_XS_H))
                                 .text_color(t.text_primary)
                                 .child(issue.title.clone()),
                         )
@@ -843,11 +846,11 @@ fn detail(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) 
     }
     let working = area.issues.working.contains(&number);
     let headline = div()
-        .px(px(16.))
-        .pt(px(14.))
-        .pb(px(10.))
+        .px(SPACE_4)
+        .pt(SPACE_3H)
+        .pb(SPACE_2H)
         .flex()
-        .gap(px(12.))
+        .gap(SPACE_3)
         .border_b_1()
         .border_color(t.border)
         .child(area.face(Some(&author), issue.avatar_url.as_deref(), 36., cx))
@@ -857,12 +860,12 @@ fn detail(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) 
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(4.))
+                .gap(SPACE_1)
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .child(mark(&issue, 16., cx))
                         .child(
                             ui::text(issue.title.clone(), 15., FontWeight::SEMIBOLD)
@@ -903,8 +906,8 @@ fn detail(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) 
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
-                        .text_size(crate::theme::ui_text(10.5))
+                        .gap(SPACE_1H)
+                        .text_size(crate::theme::ui_text(TEXT_3XS_H))
                         .text_color(t.text_tertiary)
                         .child(who)
                         .children(issue.labels.iter().map(|label| label_chip(label, cx))),
@@ -979,11 +982,11 @@ fn composer(
         (false, false) => "Reopen issue",
     };
     let foot = div()
-        .px(px(10.))
-        .py(px(8.))
+        .px(SPACE_2H)
+        .py(SPACE_2)
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(SPACE_1H)
         .border_t_1()
         .border_color(t.border)
         .child(div().flex_1())
@@ -1002,8 +1005,8 @@ fn composer(
             .on_click(cx.listener(|area, _, window, cx| area.comment_on_issue(window, cx))),
         );
     div()
-        .px(px(16.))
-        .pb(px(16.))
+        .px(SPACE_4)
+        .pb(SPACE_4)
         .child(
             div()
                 .rounded(RADIUS_2)
@@ -1012,13 +1015,13 @@ fn composer(
                 .bg(t.surface_composer)
                 .child(
                     div()
-                        .px(px(12.))
-                        .py(px(8.))
-                        .text_size(crate::theme::ui_text(13.))
+                        .px(SPACE_3)
+                        .py(SPACE_2)
+                        .text_size(crate::theme::ui_text(TEXT_SM))
                         .child(
                             Textarea::new(&draft)
                                 .appearance(false)
-                                .text_size(crate::theme::ui_text(13.)),
+                                .text_size(crate::theme::ui_text(TEXT_SM)),
                         ),
                 )
                 .child(foot),
@@ -1039,16 +1042,16 @@ fn new_issue(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .child(
             div()
                 .max_w(px(720.))
-                .px(px(16.))
-                .py(px(14.))
+                .px(SPACE_4)
+                .py(SPACE_3H)
                 .flex()
                 .flex_col()
-                .gap(px(10.))
+                .gap(SPACE_2H)
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(SPACE_2)
                         .child(
                             IconButton::new("issue-new-back", Icon::Chevron, "Back to the issues")
                                 .turned(std::f32::consts::PI)
@@ -1071,32 +1074,32 @@ fn new_issue(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                         .bg(t.surface_composer)
                         .child(
                             div()
-                                .px(px(10.))
+                                .px(SPACE_2H)
                                 .py(px(7.))
                                 .border_b_1()
                                 .border_color(t.border)
-                                .text_size(crate::theme::ui_text(13.))
+                                .text_size(crate::theme::ui_text(TEXT_SM))
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(Input::new(&composing.title).appearance(false)),
                         )
                         .child(
                             div()
-                                .px(px(10.))
+                                .px(SPACE_2H)
                                 .py(px(7.))
-                                .text_size(crate::theme::ui_text(12.5))
+                                .text_size(crate::theme::ui_text(TEXT_XS_H))
                                 .child(
                                     Textarea::new(&composing.body)
                                         .appearance(false)
-                                        .text_size(crate::theme::ui_text(12.5)),
+                                        .text_size(crate::theme::ui_text(TEXT_XS_H)),
                                 ),
                         )
                         .child(
                             div()
-                                .px(px(10.))
-                                .py(px(8.))
+                                .px(SPACE_2H)
+                                .py(SPACE_2)
                                 .flex()
                                 .items_center()
-                                .gap(px(8.))
+                                .gap(SPACE_2)
                                 .border_t_1()
                                 .border_color(t.border)
                                 .child(div().flex_1())
