@@ -17,6 +17,7 @@ mod runs;
 pub(crate) mod shell;
 mod thread;
 
+use sikemux_wire::changed::Topic;
 use std::future::Future;
 use std::rc::Rc;
 
@@ -715,8 +716,10 @@ impl HostArea {
         if self.hidden {
             return;
         }
-        self.core
-            .watch(self.key(key), Watch::new(method, params, &["codeHost"]));
+        self.core.watch(
+            self.key(key),
+            Watch::new(method, params, &[Topic::CodeHost]),
+        );
     }
 }
 

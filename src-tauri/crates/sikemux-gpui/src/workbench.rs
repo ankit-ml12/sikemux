@@ -1,3 +1,4 @@
+use sikemux_wire::changed::Topic;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -512,35 +513,35 @@ impl Workbench {
         .detach();
         let _ = asks.send(Ask::Watch(
             "theme",
-            Watch::new("theme", json!({}), &["preferences"]),
+            Watch::new("theme", json!({}), &[Topic::Preferences]),
         ));
         let _ = asks.send(Ask::Watch(
             "plugins",
-            Watch::new("plugins", json!({}), &["plugins"]),
+            Watch::new("plugins", json!({}), &[Topic::Plugins]),
         ));
         let _ = asks.send(Ask::Watch(
             "hosts",
-            Watch::new("hosts", json!({}), &["hosts"]),
+            Watch::new("hosts", json!({}), &[Topic::Hosts]),
         ));
         let _ = asks.send(Ask::Watch(
             "update",
-            Watch::new("updateStatus", json!({}), &["update"]),
+            Watch::new("updateStatus", json!({}), &[Topic::Update]),
         ));
         let _ = asks.send(Ask::Watch(
             "trust",
-            Watch::new("trustAsks", json!({}), &["trust"]),
+            Watch::new("trustAsks", json!({}), &[Topic::Trust]),
         ));
         let _ = asks.send(Ask::Watch(
             "questions",
-            Watch::new("questions", json!({}), &["questions"]),
+            Watch::new("questions", json!({}), &[Topic::Questions]),
         ));
         let _ = asks.send(Ask::Watch(
             "shares",
-            Watch::new("shares", json!({}), &["shares"]),
+            Watch::new("shares", json!({}), &[Topic::Shares]),
         ));
         let _ = asks.send(Ask::Watch(
             "stash",
-            Watch::new("stash", json!({}), &["stash", "account"]),
+            Watch::new("stash", json!({}), &[Topic::Stash, Topic::Account]),
         ));
         let _ = asks.send(Ask::Watch(
             "catalog",
@@ -548,27 +549,27 @@ impl Workbench {
         ));
         let _ = asks.send(Ask::Watch(
             "usage",
-            Watch::new("agentUsages", json!({}), &["usage"]),
+            Watch::new("agentUsages", json!({}), &[Topic::Usage]),
         ));
         let _ = asks.send(Ask::Watch(
             "skills-added",
-            Watch::new("skillsAdded", json!({}), &["skills"]),
+            Watch::new("skillsAdded", json!({}), &[Topic::Skills]),
         ));
         let _ = asks.send(Ask::Watch(
             "preferences",
-            Watch::new("preferences", json!({}), &["preferences"]),
+            Watch::new("preferences", json!({}), &[Topic::Preferences]),
         ));
         let _ = asks.send(Ask::Watch(
             "whatsNew",
-            Watch::new("whatsNew", json!({}), &["preferences"]),
+            Watch::new("whatsNew", json!({}), &[Topic::Preferences]),
         ));
-        let _ = asks.send(Ask::Follow("git"));
-        let _ = asks.send(Ask::Follow("files"));
-        let _ = asks.send(Ask::Follow("lsp"));
-        let _ = asks.send(Ask::Follow("boards"));
-        let _ = asks.send(Ask::Follow("agentSignIn"));
-        let _ = asks.send(Ask::Follow("agentStatus"));
-        let _ = asks.send(Ask::Follow("agentAccounts"));
+        let _ = asks.send(Ask::Follow(Topic::Git));
+        let _ = asks.send(Ask::Follow(Topic::Files));
+        let _ = asks.send(Ask::Follow(Topic::Lsp));
+        let _ = asks.send(Ask::Follow(Topic::Boards));
+        let _ = asks.send(Ask::Follow(Topic::AgentSignIn));
+        let _ = asks.send(Ask::Follow(Topic::AgentStatus));
+        let _ = asks.send(Ask::Follow(Topic::AgentAccounts));
         cx.spawn(async move |this, cx| loop {
             cx.background_executor()
                 .timer(Self::until_next_minute())
@@ -1220,12 +1221,28 @@ impl Workbench {
                     return self.terminals.redraw(key, cx);
                 }
             }
-            Update::From(host, update) if matches!(&*update, Update::Changed { topic, .. } if topic == "pluginView") => {
+            Update::From(host, update)
+                if matches!(
+                    &*update,
+                    Update::Changed {
+                        topic: Topic::PluginView,
+                        ..
+                    }
+                ) =>
+            {
                 if let Update::Changed { paths, .. } = *update {
                     self.plugin_views_changed(&Place::Account(host), paths.as_deref(), cx);
                 }
             }
-            Update::From(host, update) if matches!(&*update, Update::Changed { topic, .. } if topic == "files" || topic == "git") => {
+            Update::From(host, update)
+                if matches!(
+                    &*update,
+                    Update::Changed {
+                        topic: Topic::Files | Topic::Git,
+                        ..
+                    }
+                ) =>
+            {
                 if let Update::Changed {
                     topic,
                     project,
@@ -1233,7 +1250,7 @@ impl Workbench {
                 } = *update
                 {
                     let place = Place::Account(host);
-                    if topic == "files" {
+                    if topic == Topic::Files {
                         crate::editor::changed(
                             self,
                             &place,
@@ -1241,7 +1258,7 @@ impl Workbench {
                             cx,
                         );
                     }
-                    self.project_changed(&place, &topic, project, paths, cx);
+                    self.project_changed(&place, topic, project, paths, cx);
                 }
             }
             Update::From(..) => {}
@@ -1284,7 +1301,7 @@ impl Workbench {
                 project,
                 paths,
             } => {
-                if topic == "files" {
+                if topic == Topic::Files {
                     crate::editor::changed(
                         self,
                         &Place::This,
@@ -1292,32 +1309,32 @@ impl Workbench {
                         cx,
                     );
                 }
-                self.project_changed(&Place::This, &topic, project.clone(), paths.clone(), cx);
-                if topic == "boards" {
+                self.project_changed(&Place::This, topic, project.clone(), paths.clone(), cx);
+                if topic == Topic::Boards {
                     if let Some(board) = &self.board {
                         board.update(cx, |board, cx| board.changed(cx));
                     }
                 }
-                if topic == "pluginView" {
+                if topic == Topic::PluginView {
                     self.plugin_views_changed(&Place::This, paths.as_deref(), cx);
                 }
-                if topic == "lsp" {
+                if topic == Topic::Lsp {
                     crate::editor::diagnostics_changed(
                         self,
                         paths.as_deref().unwrap_or_default(),
                         cx,
                     );
                 }
-                if topic == "agentSignIn" {
+                if topic == Topic::AgentSignIn {
                     crate::accounts::pages_moved(self, cx);
                 }
-                if topic == "agentAccounts" {
+                if topic == Topic::AgentAccounts {
                     crate::accounts::book_moved(self, cx);
                 }
-                if topic == "agentStatus" {
+                if topic == Topic::AgentStatus {
                     crate::accounts::statuses_moved(self, cx);
                 }
-                if topic == "git" {
+                if topic == Topic::Git {
                     crate::editor::git_changed(self, project.as_deref(), paths.as_deref(), cx);
                 }
                 return;
@@ -1890,7 +1907,7 @@ impl Workbench {
     fn project_changed(
         &mut self,
         place: &Place,
-        topic: &str,
+        topic: Topic,
         project: Option<String>,
         paths: Option<Vec<String>>,
         cx: &mut Context<Self>,
@@ -1903,7 +1920,7 @@ impl Workbench {
             .root
             .as_ref()
             .map(|root| root.to_string_lossy().into_owned());
-        if topic == "git" {
+        if topic == Topic::Git {
             match (&self.git, self.git_in_front()) {
                 (Some(pane), true) => pane.update(cx, |pane, cx| {
                     pane.git_moved(project.as_deref(), paths.as_deref(), cx)
@@ -1912,7 +1929,7 @@ impl Workbench {
                 (None, _) => {}
             }
         }
-        if topic == "git" && (project.is_none() || project == root) {
+        if topic == Topic::Git && (project.is_none() || project == root) {
             if self.files.changed(paths.as_deref()) {
                 self.parts.redraw(&self.parts.tabs, cx);
             }
@@ -1920,7 +1937,7 @@ impl Workbench {
                 self.project_files.read(root.as_deref(), &self.target());
             }
         }
-        if topic == "files" {
+        if topic == Topic::Files {
             if let Some(search) = &self.search {
                 search.update(cx, |search, cx| search.changed(cx));
             }
@@ -2042,12 +2059,12 @@ impl Workbench {
             let target = self.target();
             target.watch(
                 "git-overview",
-                Watch::new("git.overview", json!({ "repo": repo }), &["git"]),
+                Watch::new("git.overview", json!({ "repo": repo }), &[Topic::Git]),
             );
             let draft = format!("git:{repo}");
             target.watch(
                 "git-draft",
-                Watch::new("drafts", json!({ "keys": [draft] }), &["drafts"]),
+                Watch::new("drafts", json!({ "keys": [draft] }), &[Topic::Drafts]),
             );
         }
         self.parts.redraw(&self.parts.stage, cx);
@@ -2071,17 +2088,20 @@ impl Workbench {
         let activity = json!({ "utcOffsetMinutes": utc_offset_minutes(), "project": path });
         target.watch(
             "activity",
-            Watch::new("activitySummary", activity, &["activity"]),
+            Watch::new("activitySummary", activity, &[Topic::Activity]),
         );
         match &place {
             crate::hosts::Place::Account(host) if self.trust_host.as_ref() != Some(host) => {
                 self.reads.forget("host-trust");
                 self.trust_host = Some(host.clone());
-                target.watch("host-trust", Watch::new("trustAsks", json!({}), &["trust"]));
+                target.watch(
+                    "host-trust",
+                    Watch::new("trustAsks", json!({}), &[Topic::Trust]),
+                );
                 self.host_questions.clear();
                 target.watch(
                     "host-questions",
-                    Watch::new("questions", json!({}), &["questions"]),
+                    Watch::new("questions", json!({}), &[Topic::Questions]),
                 );
             }
             crate::hosts::Place::This if self.trust_host.is_some() => {
@@ -2101,23 +2121,27 @@ impl Workbench {
             Some(path) => {
                 target.watch(
                     "tasks",
-                    Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"]),
+                    Watch::new(
+                        "tasks",
+                        json!({ "project": path }),
+                        &[Topic::Tasks, Topic::Runs],
+                    ),
                 );
-                target.watch("runs", Watch::new("taskRuns", json!({}), &["runs"]));
+                target.watch("runs", Watch::new("taskRuns", json!({}), &[Topic::Runs]));
                 target.watch(
                     "project-config",
-                    Watch::new("projectConfig", json!({ "project": path }), &["tasks"]),
+                    Watch::new("projectConfig", json!({ "project": path }), &[Topic::Tasks]),
                 );
                 target.watch(
                     "ports",
-                    Watch::new("ports", json!({ "project": path }), &["ports"]),
+                    Watch::new("ports", json!({ "project": path }), &[Topic::Ports]),
                 );
                 target.watch(
                     "git-project-repo",
                     Watch::new(
                         "git.projectRepo",
                         json!({ "project": path }),
-                        &["git", "preferences"],
+                        &[Topic::Git, Topic::Preferences],
                     ),
                 );
             }
@@ -2153,7 +2177,8 @@ impl Workbench {
                 .map(|(agent, _)| crate::chat::draft_key(agent))
                 .collect()
         };
-        let watch = |keys: Vec<String>| Watch::new("drafts", json!({ "keys": keys }), &["drafts"]);
+        let watch =
+            |keys: Vec<String>| Watch::new("drafts", json!({ "keys": keys }), &[Topic::Drafts]);
         let _ = self.asks.send(Ask::Watch("drafts", watch(keys(false))));
         let there = keys(true);
         let place = self.place();
@@ -2184,7 +2209,7 @@ impl Workbench {
             let call = json!({ "plugin": format!("sikemux.{}", ci.host), "method": "runs", "params": runs });
             let _ = self
                 .asks
-                .send(Ask::Watch("ci", Watch::new("plugin", call, &["ci"])));
+                .send(Ask::Watch("ci", Watch::new("plugin", call, &[Topic::Ci])));
         }
         self.watched_ci = shown;
     }
@@ -2236,9 +2261,10 @@ impl Workbench {
         let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "headSha": head, "perPage": 20 });
         let call =
             json!({ "plugin": format!("sikemux.{}", ci.host), "method": "runs", "params": runs });
-        let _ = self
-            .asks
-            .send(Ask::Watch("ci-head", Watch::new("plugin", call, &["ci"])));
+        let _ = self.asks.send(Ask::Watch(
+            "ci-head",
+            Watch::new("plugin", call, &[Topic::Ci]),
+        ));
         self.watched_head = head.map(str::to_owned);
     }
 

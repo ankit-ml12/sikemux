@@ -2132,7 +2132,7 @@ pub enum Event {
     /// it again. `paths` names what moved inside it; absent means anything
     /// may have. A client skips topics it does not know.
     Changed {
-        topic: String,
+        topic: crate::changed::Topic,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

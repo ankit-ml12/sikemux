@@ -1574,7 +1574,8 @@ export type CoreChangeTopic =
     | "pluginView"
     | "files"
     | "update"
-    | "stash";
+    | "stash"
+    | "stopping";
 
 /**
  * How the person wants Sikemux to behave, the same in every app. A field

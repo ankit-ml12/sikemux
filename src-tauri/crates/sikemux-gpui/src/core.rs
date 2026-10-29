@@ -1,3 +1,4 @@
+use sikemux_wire::changed::Topic;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -71,7 +72,7 @@ pub enum Update {
     WindowCall(CallId, WindowCall),
     /// The core said something under a followed topic moved; no paths means anything may have.
     Changed {
-        topic: String,
+        topic: Topic,
         project: Option<String>,
         paths: Option<Vec<String>>,
     },
@@ -183,7 +184,7 @@ pub enum TerminalAsk {
 pub struct Watch {
     pub method: &'static str,
     pub params: Value,
-    pub topics: &'static [&'static str],
+    pub topics: &'static [Topic],
     /// The project folder whose git and code host changes move what it reads, when its
     /// params do not name it.
     folder: Option<String>,
@@ -192,7 +193,7 @@ pub struct Watch {
 }
 
 impl Watch {
-    pub fn new(method: &'static str, params: Value, topics: &'static [&'static str]) -> Self {
+    pub fn new(method: &'static str, params: Value, topics: &'static [Topic]) -> Self {
         Self {
             method,
             params,
@@ -211,16 +212,16 @@ impl Watch {
     /// Whether `topic` changing for the project folder `project`, or for every project when
     /// none, could move what this watch reads. Git and code host changes name the folder
     /// that moved, so a watch on another project's folder lets them pass.
-    fn moved_by(&self, topic: &str, project: Option<&str>) -> bool {
+    fn moved_by(&self, topic: Topic, project: Option<&str>) -> bool {
         if !self.topics.contains(&topic) {
             return false;
         }
         let folder = match topic {
-            "git" | "codeHost" if self.folder.is_some() => self.folder.as_deref(),
-            "git" => self.params["project"]
+            Topic::Git | Topic::CodeHost if self.folder.is_some() => self.folder.as_deref(),
+            Topic::Git => self.params["project"]
                 .as_str()
                 .or(self.params["repo"].as_str()),
-            "codeHost" => self.params["project"].as_str(),
+            Topic::CodeHost => self.params["project"].as_str(),
             _ => None,
         };
         match (folder, project) {
@@ -290,7 +291,7 @@ pub enum Ask {
         reply: oneshot::Sender<Result<Value, String>>,
     },
     /// Hands the window the core's changes under `topic`, with what moved.
-    Follow(&'static str),
+    Follow(Topic),
     /// Makes this window the one the core hands its calls to, as when it comes to the front.
     RegisterWindow,
     /// The agents the window shows, and whether the person is looking at it, so the core
@@ -1030,7 +1031,7 @@ async fn run(
 ) {
     let mut watches: HashMap<&'static str, Watch> = HashMap::new();
     let mut host_watches: HashMap<String, HashMap<&'static str, Watch>> = HashMap::new();
-    let mut followed: Vec<&'static str> = Vec::new();
+    let mut followed: Vec<Topic> = Vec::new();
     let mut linked: Option<Arc<Linked>> = None;
     let mut heard: Option<mpsc::UnboundedReceiver<Happened>> = None;
     let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
@@ -1161,11 +1162,11 @@ async fn run(
                                 }
                             }
                             Some(ClientEvent::Event(Event::Changed { topic, project, paths })) => {
-                                stopping |= topic == "stopping";
-                                for (key, watch) in watches.iter().filter(|(_, watch)| watch.moved_by(&topic, project.as_deref())) {
+                                stopping |= topic == Topic::Stopping;
+                                for (key, watch) in watches.iter().filter(|(_, watch)| watch.moved_by(topic, project.as_deref())) {
                                     read(&client, key, watch, (&current, &failed), &updates);
                                 }
-                                if followed.contains(&topic.as_str()) {
+                                if followed.contains(&topic) {
                                     let _ = updates.send(Update::Changed { topic, project, paths });
                                 }
                             }
@@ -1227,11 +1228,11 @@ async fn run(
                                         .get(&host)
                                         .into_iter()
                                         .flatten()
-                                        .filter(|(_, watch)| watch.moved_by(&topic, project.as_deref()));
+                                        .filter(|(_, watch)| watch.moved_by(topic, project.as_deref()));
                                     for (key, watch) in changed {
                                         read_on(&linked, &host, key, watch, &current, &updates);
                                     }
-                                    if followed.contains(&topic.as_str()) {
+                                    if followed.contains(&topic) {
                                         let news = Update::Changed { topic, project, paths };
                                         let _ = updates.send(Update::From(host, Box::new(news)));
                                     }
@@ -1566,7 +1567,7 @@ async fn wait_to_start(
     home: &Home,
     asks: &mut mpsc::UnboundedReceiver<Ask>,
     watches: &mut HashMap<&'static str, Watch>,
-    followed: &mut Vec<&'static str>,
+    followed: &mut Vec<Topic>,
     current: &Arc<Mutex<HashMap<&'static str, u64>>>,
 ) -> bool {
     let mut look = tokio::time::interval(STOPPED_LOOK);

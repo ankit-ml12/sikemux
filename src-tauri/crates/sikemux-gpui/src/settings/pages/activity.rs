@@ -9,6 +9,7 @@ use gpui_kit::{
     ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::{json, Map, Value};
+use sikemux_wire::changed::Topic;
 
 use crate::core::{utc_offset_minutes, Ask, Watch};
 use crate::home::{self, compact, money, number, plural, whole};
@@ -39,7 +40,7 @@ fn make(bench: &mut Workbench, _: &mut Window, cx: &mut Context<Workbench>) {
         Watch::new(
             "activitySummary",
             json!({ "utcOffsetMinutes": utc_offset_minutes(), "project": null }),
-            &["activity"],
+            &[Topic::Activity],
         ),
     ));
     if let Some(settings) = bench.settings.as_mut() {

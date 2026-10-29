@@ -27,7 +27,7 @@ const SOURCES = [
   `${WIRE}/catalog.rs`,
   `${WIRE}/questions.rs`,
   `${CORE}/server/drafts.rs`,
-  `${CORE}/server/changed.rs`,
+  `${WIRE}/changed.rs`,
   `${CORE}/server/board.rs`,
   `${CORE}/server/board/auto.rs`,
   `${CORE}/server/workspace.rs`,
@@ -53,7 +53,7 @@ const SOURCES = [
 /** Names the clients know a type by where the Rust one would clash or say too little. */
 const RENAMES = {
   [`${WIRE}/catalog.rs`]: { Driver: "ChatDriver" },
-  [`${CORE}/server/changed.rs`]: { Topic: "CoreChangeTopic" },
+  [`${WIRE}/changed.rs`]: { Topic: "CoreChangeTopic" },
   [`${CORE}/server/board.rs`]: {
     Status: "CardStatus",
     Ticket: "CardTicket",

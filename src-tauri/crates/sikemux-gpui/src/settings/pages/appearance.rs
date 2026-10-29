@@ -1,6 +1,7 @@
 //! How the app looks: its theme, the size of its text, the panes' grain or
 //! picture, the agents' buddies, and the window's opacity and blur.
 
+use sikemux_wire::changed::Topic;
 use std::rc::Rc;
 
 use gpui_kit::component::color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState};
@@ -119,7 +120,7 @@ fn slider(
 fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
     let _ = bench.asks.send(Ask::Watch(
         "themes",
-        Watch::new("themes", json!({}), &["preferences"]),
+        Watch::new("themes", json!({}), &[Topic::Preferences]),
     ));
     let preferences = bench.preferences();
     let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search themes"));

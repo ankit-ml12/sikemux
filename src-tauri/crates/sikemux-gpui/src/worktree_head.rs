@@ -7,6 +7,7 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled,
 };
 use serde_json::{json, Value};
+use sikemux_wire::changed::Topic;
 
 use crate::core::Watch;
 use crate::icons::Icon;
@@ -45,10 +46,11 @@ impl Workbench {
                     Watch::new(
                         "codeHostPulls",
                         json!({ "project": folder, "state": "all" }),
-                        &["codeHost"],
+                        &[Topic::CodeHost],
                     ),
                 );
-                let merged = Watch::new("worktreeMerged", json!({ "agentId": agent }), &["git"]);
+                let merged =
+                    Watch::new("worktreeMerged", json!({ "agentId": agent }), &[Topic::Git]);
                 let project =
                     (self.project()).map(|project| project.path.to_string_lossy().into_owned());
                 target.watch(

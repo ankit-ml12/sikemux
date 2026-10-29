@@ -9,6 +9,7 @@ use gpui_kit::{
     SharedString, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
+use sikemux_wire::changed::Topic;
 
 use crate::core::{self, Ask, Watch};
 use crate::icons::Icon;
@@ -195,7 +196,7 @@ fn preview(bench: &Workbench, cx: &mut Context<Workbench>) {
 pub fn wear_picked(bench: &Workbench) {
     let _ = bench.asks.send(Ask::Watch(
         "theme",
-        Watch::new("theme", json!({}), &["preferences"]),
+        Watch::new("theme", json!({}), &[Topic::Preferences]),
     ));
 }
 
