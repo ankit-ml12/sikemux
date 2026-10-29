@@ -232,8 +232,8 @@ fn at_work(core: &Core, agent: &WorkspaceAgent) -> bool {
     let terminal = agent
         .pty_id
         .and_then(|pty| core.session(pty))
-        .and_then(|session| session.agent.as_ref().and_then(AgentActivity::state_label));
-    core.chats.at_work(&agent.id) || matches!(terminal, Some("working" | "blocked"))
+        .is_some_and(|session| session.agent.as_ref().is_some_and(AgentActivity::busy));
+    core.chats.at_work(&agent.id) || terminal
 }
 
 /// Closes the chats `sent` here and removes their saved files, now that another host holds

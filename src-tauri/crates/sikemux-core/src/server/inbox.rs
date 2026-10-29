@@ -12,7 +12,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use crate::protocol::{
-    AgentGroup, AgentStatus, ChatInfo, PermissionChoices, SessionId, SessionInfo,
+    AgentGroup, AgentState, AgentStatus, ChatInfo, PermissionChoices, SessionId, SessionInfo,
 };
 use crate::text::{clipped, clipped_line};
 
@@ -219,13 +219,8 @@ pub(crate) enum TeamLink {
 }
 
 impl Shown {
-    fn new(
-        agent_id: String,
-        cli: String,
-        title: String,
-        status: AgentStatus,
-        group: AgentGroup,
-    ) -> Self {
+    fn new(agent_id: String, cli: String, title: String, status: AgentStatus) -> Self {
+        let group = status.group();
         Self {
             agent_id,
             cli,
@@ -320,7 +315,7 @@ fn remote_agents(core: &Core) -> Vec<RemoteAgent> {
             name: foreign.name,
             cli: foreign.cli,
             status: foreign.status,
-            group: display::group_of_status(foreign.status),
+            group: foreign.status.group(),
             label: display::status_label(foreign.status),
             lead: foreign.parent,
             project: foreign.project,
@@ -806,7 +801,7 @@ fn needs(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> Vec<Item> {
             continue;
         };
         if !session.running
-            || session.agent_state.as_deref() != Some("blocked")
+            || session.agent_state != Some(AgentState::Blocked)
             || questions
                 .iter()
                 .any(|question| &question.agent_id == agent_id)
@@ -996,7 +991,6 @@ fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown
                 chat.provider.clone(),
                 title,
                 chat.status,
-                chat.group,
             )
             .running(chat.subagents, chat.tasks);
             shown.unread = chat.unread;
@@ -1017,13 +1011,7 @@ fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown
             .clone()
             .filter(|title| !title.is_empty())
             .unwrap_or_else(|| provider_name(core, &cli));
-        let mut shown = Shown::new(
-            agent_id.clone(),
-            cli,
-            title,
-            session.status?,
-            session.group?,
-        );
+        let mut shown = Shown::new(agent_id.clone(), cli, title, session.status?);
         shown.unread = session.unread;
         shown.active_at = session.active_at;
         shown.next_trigger = session.next_trigger;

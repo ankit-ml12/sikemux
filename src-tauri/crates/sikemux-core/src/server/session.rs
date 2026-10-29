@@ -329,11 +329,7 @@ impl Session {
             agent_name: None,
             agent_type: self.owner.agent_type.clone(),
             task_execution_id: self.owner.task_execution_id.clone(),
-            agent_state: self
-                .agent
-                .as_ref()
-                .and_then(AgentActivity::state_label)
-                .map(str::to_string),
+            agent_state: self.agent.as_ref().and_then(AgentActivity::state),
             task: self.owner.task.clone(),
             started_by: self.owner.started_by.clone(),
             exit: self.exit.locked().clone(),

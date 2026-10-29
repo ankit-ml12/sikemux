@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 
 use crate::accounts::live::Push;
 use crate::accounts::protocol::PushKind;
-use crate::protocol::{Attention, Event, NotifyPrefs, NotifyWhen, PendingDevice};
+use crate::protocol::{AgentState, Attention, Event, NotifyPrefs, NotifyWhen, PendingDevice};
 use crate::push::{self, Notification, NotificationCategory, NotificationKind, MAX_PLAINTEXT};
 use crate::text::clipped_line;
 
@@ -44,8 +44,6 @@ const MAX_TITLE_CHARS: usize = 100;
 const MAX_BODY_CHARS: usize = 180;
 const MAX_DETAIL_CHARS: usize = 120;
 const MAX_OPTION_ID: usize = 128;
-/// A terminal agent's state while it waits for the person to type.
-const NEEDS_INPUT: &str = "blocked";
 
 /// Something that happened on this host that a phone may want to hear of.
 #[derive(Clone, Debug)]
@@ -57,7 +55,7 @@ pub(crate) enum Signal {
     },
     AgentState {
         agent_id: String,
-        state: String,
+        state: AgentState,
     },
     TurnStarted {
         agent_id: String,
@@ -286,17 +284,17 @@ fn apply(core: &Core, signal: Signal, now: u64) {
         Signal::AgentState { agent_id, state } => {
             let was_waiting = {
                 let mut notify = core.notify.state.locked();
-                if state == NEEDS_INPUT {
+                if state == AgentState::Blocked {
                     !notify.waiting_for_input.insert(agent_id.clone())
                 } else {
                     notify.waiting_for_input.remove(&agent_id)
                 }
             };
-            if state == NEEDS_INPUT && !was_waiting {
+            if state == AgentState::Blocked && !was_waiting {
                 if let Some(draft) = needs_input(core, &agent_id, now) {
                     alert_all(core, &draft, now);
                 }
-            } else if state != NEEDS_INPUT && was_waiting {
+            } else if state != AgentState::Blocked && was_waiting {
                 clear_all(core, &agent_id, &input_card(&agent_id), None, now);
             }
         }

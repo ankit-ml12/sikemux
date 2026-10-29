@@ -14,7 +14,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 use tokio::sync::Notify;
 
-use crate::protocol::{Continuation, SessionId};
+use crate::protocol::{AgentState, Continuation, SessionId};
 
 use super::agent::AgentActivity;
 use super::{launching, session, Core, CoreError, CoreResult};
@@ -149,8 +149,7 @@ pub(crate) fn sleep_agent(core: &Core, agent_id: &str) -> CoreResult<()> {
     if agent.resume_id.is_none() {
         return Err("this agent has no saved session to wake on".into());
     }
-    let state = terminal.agent.as_ref().and_then(AgentActivity::state_label);
-    if matches!(state, Some("working" | "blocked")) {
+    if terminal.agent.as_ref().is_some_and(AgentActivity::busy) {
         return Err("the agent is at work; it can sleep once its turn ends".into());
     }
     session::kill(core, &terminal);
@@ -329,7 +328,7 @@ fn kept(core: &Core, agent_id: &str) -> bool {
 fn idle(core: &Core, agent_id: &str) -> bool {
     core.chats
         .get(agent_id)
-        .is_some_and(|chat| chat.state_now() == "idle")
+        .is_some_and(|chat| chat.state_now() == AgentState::Idle)
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@ use super::sandbox::AgentWorktree;
 use super::{board, ports, tasks};
 use super::{Core, CoreError, CoreResult};
 use crate::git::Git;
-use crate::protocol::WorkspaceAgent;
+use crate::protocol::{AgentState, WorkspaceAgent};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,7 +93,7 @@ fn costs(worktree: &AgentWorktree) -> (usize, usize) {
 fn busy(core: &Core, agent_id: &str) -> bool {
     core.chats
         .get(agent_id)
-        .is_some_and(|chat| chat.state_now() != "idle")
+        .is_some_and(|chat| chat.state_now() != AgentState::Idle)
 }
 
 /// What an agent's worktree shows of its work, as its review lays it out.

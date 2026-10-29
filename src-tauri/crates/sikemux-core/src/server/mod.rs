@@ -25,8 +25,8 @@ mod collisions;
 mod connection;
 mod custom_command;
 mod data_format;
-mod display;
 mod diagrams;
+mod display;
 mod drafts;
 mod edits;
 mod entry;
@@ -834,7 +834,7 @@ impl Core {
             }),
             Event::AgentState(state) => self.notify.send(notify::Signal::AgentState {
                 agent_id: state.agent_id.clone(),
-                state: state.state.clone(),
+                state: state.state,
             }),
             _ => {}
         }

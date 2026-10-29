@@ -340,7 +340,7 @@ export interface SessionInfo {
   agentType?: string;
   taskExecutionId?: string;
   /** The last state published for an agent terminal. */
-  agentState?: string;
+  agentState?: AgentState;
   /**
    * What a task session was started as, so a client that did not start it
    * can take it over.
@@ -393,6 +393,9 @@ export interface SessionInfo {
 }
 
 export type SessionKind = 'terminal' | 'task';
+
+/** What an agent's turn is doing now, as its chat or the screen of its terminal shows it. */
+export type AgentState = 'unknown' | 'idle' | 'working' | 'blocked' | 'stopped';
 
 /** A task's launch request without its environment. */
 export interface TaskSessionInfo {

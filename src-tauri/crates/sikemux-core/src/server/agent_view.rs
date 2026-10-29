@@ -76,8 +76,7 @@ async fn to_chat(
     terminal: Option<Arc<session::Session>>,
 ) -> CoreResult<Value> {
     if let Some(terminal) = terminal {
-        let state = terminal.agent.as_ref().and_then(AgentActivity::state_label);
-        if matches!(state, Some("working" | "blocked")) {
+        if terminal.agent.as_ref().is_some_and(AgentActivity::busy) {
             return Err(AT_WORK.into());
         }
         let draft = session::prompt_draft(&terminal);

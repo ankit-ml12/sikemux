@@ -7,7 +7,7 @@ use super::*;
 use crate::accounts::protocol::PushResult;
 use crate::acp::permission;
 use crate::protocol::{
-    AttentionKind, DeviceAccess, DeviceInfo, NotificationState, NotifyMute, NotifyPrefs,
+    AgentState, AttentionKind, DeviceAccess, DeviceInfo, NotificationState, NotifyMute, NotifyPrefs,
 };
 use crate::push::NotificationKey;
 use crate::server::access::Peer;
@@ -322,23 +322,23 @@ async fn a_problem_says_what_went_wrong_once_a_minute() {
 #[tokio::test]
 async fn waiting_for_input_notifies_and_clears_when_the_agent_moves_on() {
     let host = host(NotifyWhen::Always);
-    let state = |state: &str, at: u64| {
+    let state = |state: AgentState, at: u64| {
         host.signal(
             Signal::AgentState {
                 agent_id: "chat-1".into(),
-                state: state.into(),
+                state,
             },
             at,
         );
         host.sent()
     };
-    let sent = state("blocked", T);
+    let sent = state(AgentState::Blocked, T);
     assert_eq!(sent[0].1.kind, NotificationKind::Input);
     assert_eq!(sent[0].1.title, "Claude needs your input");
-    assert!(state("blocked", T + 1).is_empty());
-    let sent = state("working", T + 2);
+    assert!(state(AgentState::Blocked, T + 1).is_empty());
+    let sent = state(AgentState::Working, T + 2);
     assert_eq!(sent[0].0.kind, PushKind::Clear);
-    assert!(state("idle", T + 3).is_empty());
+    assert!(state(AgentState::Idle, T + 3).is_empty());
 }
 
 #[tokio::test]

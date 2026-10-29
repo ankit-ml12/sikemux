@@ -11,7 +11,7 @@ use sikemux_pty::agent_detection::{
     DetectionInput, ManifestRegistry,
 };
 
-use crate::protocol::{AgentStateEvent, Event};
+use crate::protocol::{AgentState, AgentStateEvent, Event};
 
 use super::activity::Activity;
 use super::messages;
@@ -23,21 +23,6 @@ const ACTIVITY_SETTLE: Duration = Duration::from_secs(2);
 /// How long an agent at rest must keep printing before that counts as a turn
 /// it began by itself rather than a redraw of its screen.
 const OUTPUT_MAKES_A_TURN: Duration = Duration::from_secs(5);
-const UNKNOWN: u8 = 0;
-const IDLE: u8 = 1;
-const WORKING: u8 = 2;
-const BLOCKED: u8 = 3;
-const STOPPED: u8 = 4;
-
-fn state_label(state: u8) -> &'static str {
-    match state {
-        IDLE => "idle",
-        WORKING => "working",
-        BLOCKED => "blocked",
-        STOPPED => "stopped",
-        _ => "unknown",
-    }
-}
 
 fn sequence() -> &'static AtomicU64 {
     static NEXT: OnceLock<AtomicU64> = OnceLock::new();
@@ -60,11 +45,11 @@ fn next_sequence() -> u64 {
 /// A chat's state, from the core that runs it, so it reads the same in every
 /// app whether or not one has the chat open. A chat's permission requests
 /// already notify, so its state stays out of the notices.
-pub(crate) fn publish_chat_state(core: &Core, agent_id: &str, state: &str) {
+pub(crate) fn publish_chat_state(core: &Core, agent_id: &str, state: AgentState) {
     core.agents_changed();
     let event = Event::AgentState(AgentStateEvent {
         agent_id: agent_id.to_owned(),
-        state: state.to_owned(),
+        state,
         sequence: next_sequence(),
         source: "acp".into(),
         confidence: "high".into(),
@@ -127,7 +112,7 @@ impl AgentActivity {
             agent_id: agent_id.to_string(),
             kind: agent_type.and_then(AgentKind::from_label),
             armed: AtomicBool::new(initial_prompt_submitted),
-            state: AtomicU8::new(UNKNOWN),
+            state: AtomicU8::new(AgentState::Unknown as u8),
             silenced: AtomicBool::new(false),
             last_published: AtomicU64::new(0),
             idle_confirmations: AtomicU8::new(0),
@@ -176,19 +161,23 @@ impl AgentActivity {
         self.kind
     }
 
-    pub(crate) fn state_label(&self) -> Option<&'static str> {
-        self.kind
-            .map(|_| state_label(self.state.load(Ordering::Acquire)))
+    fn state_now(&self) -> AgentState {
+        AgentState::from_u8(self.state.load(Ordering::Acquire))
+    }
+
+    /// What it was last published doing, for an agent of a kind the core reads.
+    pub(crate) fn state(&self) -> Option<AgentState> {
+        self.kind.map(|_| self.state_now())
     }
 
     /// It is at work on a turn, or waits on the person in the middle of one.
     pub(crate) fn busy(&self) -> bool {
-        matches!(self.state.load(Ordering::Acquire), WORKING | BLOCKED)
+        self.state_now().busy()
     }
 
     /// Its screen shows it waiting for a prompt.
     pub(crate) fn idle(&self) -> bool {
-        self.kind.is_some() && self.state.load(Ordering::Acquire) == IDLE
+        self.kind.is_some() && self.state_now() == AgentState::Idle
     }
 
     pub(crate) fn silence(&self) {
@@ -207,7 +196,7 @@ impl AgentActivity {
     fn publish(
         &self,
         core: &Core,
-        next: u8,
+        next: AgentState,
         source: &str,
         confidence: &str,
         reason: impl Into<String>,
@@ -217,41 +206,36 @@ impl AgentActivity {
             return;
         }
         let reason = reason.into();
-        let label = state_label(next);
-        let fingerprint = event_fingerprint(
-            next,
-            label,
-            source,
-            confidence,
-            &reason,
-            matched_rule.as_deref(),
-        );
+        let fingerprint =
+            event_fingerprint(next, source, confidence, &reason, matched_rule.as_deref());
         if self.last_published.swap(fingerprint, Ordering::AcqRel) == fingerprint {
             return;
         }
-        let previous = self.state.swap(next, Ordering::AcqRel);
-        let busy = matches!(previous, WORKING | BLOCKED);
+        let previous = AgentState::from_u8(self.state.swap(next as u8, Ordering::AcqRel));
+        let busy = previous.busy();
         let activity = match next {
-            WORKING if busy => Some(Activity::Working),
-            WORKING => Some(Activity::Started),
-            BLOCKED => Some(Activity::NeedsYou),
-            IDLE if busy => Some(Activity::Finished { cancelled: false }),
+            AgentState::Working if busy => Some(Activity::Working),
+            AgentState::Working => Some(Activity::Started),
+            AgentState::Blocked => Some(Activity::NeedsYou),
+            AgentState::Idle if busy => Some(Activity::Finished { cancelled: false }),
             _ => None,
         };
         if let Some(activity) = activity {
             core.note_activity(&self.agent_id, activity);
         }
         match next {
-            WORKING if source != "activity" => messages::prompt_taken(core, &self.agent_id),
-            BLOCKED => messages::prompt_taken(core, &self.agent_id),
-            IDLE | STOPPED if busy => messages::prompt_settled(
+            AgentState::Working if source != "activity" => {
+                messages::prompt_taken(core, &self.agent_id)
+            }
+            AgentState::Blocked => messages::prompt_taken(core, &self.agent_id),
+            AgentState::Idle | AgentState::Stopped if busy => messages::prompt_settled(
                 core,
                 &self.agent_id,
                 self.last_output_ms.load(Ordering::Acquire),
             ),
             _ => {}
         }
-        if next == IDLE && busy {
+        if next == AgentState::Idle && busy {
             spawn::terminal_turn_ended(core, &self.agent_id, Ending::Finished);
         }
         if next != previous {
@@ -259,7 +243,7 @@ impl AgentActivity {
         }
         core.broadcast_event(&Event::AgentState(AgentStateEvent {
             agent_id: self.agent_id.clone(),
-            state: label.into(),
+            state: next,
             sequence: next_sequence(),
             source: source.into(),
             confidence: confidence.into(),
@@ -276,7 +260,7 @@ pub(crate) fn publish_start(core: &Core, agent: &AgentActivity) {
     if agent.armed.load(Ordering::Acquire) {
         agent.publish(
             core,
-            WORKING,
+            AgentState::Working,
             "activity",
             "high",
             "initial prompt submitted",
@@ -285,7 +269,7 @@ pub(crate) fn publish_start(core: &Core, agent: &AgentActivity) {
     } else {
         agent.publish(
             core,
-            IDLE,
+            AgentState::Idle,
             "process",
             "high",
             "agent ready; no prompt submitted",
@@ -311,7 +295,14 @@ pub(crate) fn note_input(core: &Core, session: &Session, bytes: &[u8]) {
         .store(uptime_ms(), Ordering::Relaxed);
     agent.idle_confirmations.store(0, Ordering::Release);
     agent.revision.fetch_add(1, Ordering::AcqRel);
-    agent.publish(core, WORKING, "activity", "high", "command submitted", None);
+    agent.publish(
+        core,
+        AgentState::Working,
+        "activity",
+        "high",
+        "command submitted",
+        None,
+    );
 }
 
 /// Startup banners and the first paint are output but not work. An agent
@@ -336,7 +327,7 @@ pub(crate) fn note_output(core: &Core, agent: &AgentActivity) {
     }
     agent.publish(
         core,
-        WORKING,
+        AgentState::Working,
         "activity",
         "medium",
         "agent produced output",
@@ -356,7 +347,7 @@ pub(crate) fn note_exit(core: &Core, agent: &AgentActivity, status: Option<&Exit
             |signal| format!("agent process stopped from signal {signal}"),
         ),
     };
-    agent.publish(core, STOPPED, "process", "high", reason, None);
+    agent.publish(core, AgentState::Stopped, "process", "high", reason, None);
 }
 
 fn detection_input<'a>(recent: &'a str, title: &'a str) -> DetectionInput<'a> {
@@ -452,13 +443,8 @@ pub(crate) fn poll(core: &Core, session: &Session, now: u64) {
             .store(revision, Ordering::Release);
         return;
     }
-    let next = match detection.state {
-        AgentDetectionState::Unknown => UNKNOWN,
-        AgentDetectionState::Idle => IDLE,
-        AgentDetectionState::Working => WORKING,
-        AgentDetectionState::Blocked => BLOCKED,
-    };
-    if next == IDLE {
+    let next = AgentState::from(detection.state);
+    if next == AgentState::Idle {
         let confirmations = agent.idle_confirmations.fetch_add(1, Ordering::AcqRel) + 1;
         if confirmations < 2 {
             return;
@@ -515,8 +501,7 @@ fn semantic_fingerprint(revision: u64, screen: &str, title: &str) -> u64 {
 }
 
 fn event_fingerprint(
-    state: u8,
-    label: &str,
+    state: AgentState,
     source: &str,
     confidence: &str,
     reason: &str,
@@ -524,7 +509,6 @@ fn event_fingerprint(
 ) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     state.hash(&mut hasher);
-    label.hash(&mut hasher);
     source.hash(&mut hasher);
     confidence.hash(&mut hasher);
     reason.hash(&mut hasher);

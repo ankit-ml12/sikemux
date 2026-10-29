@@ -14,9 +14,9 @@ use sikemux_core::client::{
 };
 use sikemux_core::grid::{decode_frame, Screen, MODE_ALT_SCREEN, MODE_MOUSE_ANY};
 use sikemux_core::protocol::{
-    encode_control, read_frame_sync, AgentStateEvent, BuildIdentity, ClientMessage, Continuation,
-    Event, LaunchIdentity, Request, Response, ServerMessage, SessionExit, SessionId, SpawnTarget,
-    StreamId, TerminalSpawn, PROTOCOL, PROTOCOL_VERSION,
+    encode_control, read_frame_sync, AgentState, AgentStateEvent, BuildIdentity, ClientMessage,
+    Continuation, Event, LaunchIdentity, Request, Response, ServerMessage, SessionExit, SessionId,
+    SpawnTarget, StreamId, TerminalSpawn, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
 use sikemux_pty::launch::PtyContext;
@@ -193,7 +193,11 @@ impl Stream {
         }
     }
 
-    async fn until_agent_state(&mut self, client: &CoreClient, state: &str) -> AgentStateEvent {
+    async fn until_agent_state(
+        &mut self,
+        client: &CoreClient,
+        state: AgentState,
+    ) -> AgentStateEvent {
         loop {
             if let Some(event) = self.agent_states.iter().find(|event| event.state == state) {
                 return event.clone();
@@ -784,20 +788,20 @@ async fn an_agent_terminal_reports_ready_then_working_on_a_submitted_line_then_s
         .spawn(launch(), agent_terminal("agent-7", "read line; exit 3"))
         .await
         .expect("spawn");
-    let ready = stream.until_agent_state(&client, "idle").await;
+    let ready = stream.until_agent_state(&client, AgentState::Idle).await;
     assert_eq!(ready.agent_id, "agent-7");
     assert_eq!(ready.reason, "agent ready; no prompt submitted");
     let listed = client.list().await.expect("list");
     let info = listed.iter().find(|info| info.id == id).expect("listed");
-    assert_eq!(info.agent_state.as_deref(), Some("idle"));
+    assert_eq!(info.agent_state, Some(AgentState::Idle));
 
     client.write(id, b"go").await.expect("typing");
     client.write(id, b"\r").await.expect("submit");
-    let working = stream.until_agent_state(&client, "working").await;
+    let working = stream.until_agent_state(&client, AgentState::Working).await;
     assert_eq!(working.reason, "command submitted");
     assert!(working.sequence > ready.sequence);
 
-    let stopped = stream.until_agent_state(&client, "stopped").await;
+    let stopped = stream.until_agent_state(&client, AgentState::Stopped).await;
     assert_eq!(stopped.reason, "agent process stopped with code 3");
     assert!(stopped.sequence > working.sequence);
 }
@@ -881,7 +885,7 @@ async fn a_killed_agent_reports_nothing_more() {
         .spawn(launch(), agent_terminal("agent-8", "sleep 1000"))
         .await
         .expect("spawn");
-    stream.until_agent_state(&client, "idle").await;
+    stream.until_agent_state(&client, AgentState::Idle).await;
     client.kill(id).await.expect("kill");
     stream.until_exit(&client, id).await;
     client.list().await.expect("list");
@@ -918,7 +922,7 @@ async fn manifests_are_listed_reloaded_and_explained() {
         .spawn(launch(), agent_terminal("agent-9", "sleep 1000"))
         .await
         .expect("spawn");
-    stream.until_agent_state(&client, "idle").await;
+    stream.until_agent_state(&client, AgentState::Idle).await;
     let explain = client
         .explain_agent_detection("agent-9".into())
         .await

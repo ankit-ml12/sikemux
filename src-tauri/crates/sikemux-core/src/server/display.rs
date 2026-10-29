@@ -3,28 +3,9 @@
 
 use std::cmp::Reverse;
 
-use crate::protocol::{AgentGroup, AgentStatus, ChatInfo, ChatState, SessionInfo, SessionKind};
-
-fn group(blocked: bool, working: bool, unread: bool) -> AgentGroup {
-    if blocked {
-        AgentGroup::Blocked
-    } else if working {
-        AgentGroup::Working
-    } else if unread {
-        AgentGroup::Done
-    } else {
-        AgentGroup::Idle
-    }
-}
-
-fn status(group: AgentGroup) -> AgentStatus {
-    match group {
-        AgentGroup::Blocked => AgentStatus::Blocked,
-        AgentGroup::Working => AgentStatus::Working,
-        AgentGroup::Done => AgentStatus::Done,
-        AgentGroup::Idle => AgentStatus::Idle,
-    }
-}
+use crate::protocol::{
+    AgentGroup, AgentState, AgentStatus, ChatInfo, ChatState, SessionInfo, SessionKind,
+};
 
 /// The one word every client shows for an agent in `group`.
 pub(crate) fn group_label(group: AgentGroup) -> &'static str {
@@ -36,59 +17,54 @@ pub(crate) fn group_label(group: AgentGroup) -> &'static str {
     }
 }
 
-/// The group a status puts an agent in; one starting up already counts as
-/// at work.
-pub(crate) fn group_of_status(status: AgentStatus) -> AgentGroup {
-    match status {
-        AgentStatus::Blocked => AgentGroup::Blocked,
-        AgentStatus::Working | AgentStatus::Starting => AgentGroup::Working,
-        AgentStatus::Done => AgentGroup::Done,
-        AgentStatus::Idle | AgentStatus::Asleep | AgentStatus::Stopped => AgentGroup::Idle,
-    }
-}
-
 /// The word for an agent's status, where a list says more than its group.
 pub(crate) fn status_label(status: AgentStatus) -> &'static str {
     match status {
         AgentStatus::Asleep => "Sleeping",
         AgentStatus::Stopped => "Stopped",
         AgentStatus::Starting => "Starting…",
-        status => group_label(group_of_status(status)),
+        status => group_label(status.group()),
     }
 }
 
 /// `asking` says the agent waits on the person to answer its question.
 pub(crate) fn show_chat(chat: &mut ChatInfo, asking: bool) {
-    chat.group = group(
-        asking || !chat.pending_permissions.is_empty(),
-        chat.running || chat.subagents > 0,
-        chat.unread,
-    );
-    chat.status = match chat.group {
-        AgentGroup::Blocked => AgentStatus::Blocked,
-        AgentGroup::Done => AgentStatus::Done,
-        _ if chat.asleep => AgentStatus::Asleep,
-        _ if chat.state == ChatState::Stopped => AgentStatus::Stopped,
-        _ if chat.state == ChatState::Starting => AgentStatus::Starting,
-        shown => status(shown),
+    chat.status = if asking || !chat.pending_permissions.is_empty() {
+        AgentStatus::Blocked
+    } else if chat.running || chat.subagents > 0 {
+        AgentStatus::Working
+    } else if chat.unread {
+        AgentStatus::Done
+    } else if chat.asleep {
+        AgentStatus::Asleep
+    } else {
+        match chat.state {
+            ChatState::Stopped => AgentStatus::Stopped,
+            ChatState::Starting => AgentStatus::Starting,
+            ChatState::Ready => AgentStatus::Idle,
+        }
     };
+    chat.group = chat.status.group();
 }
 
 pub(crate) fn show_session(session: &mut SessionInfo, asking: bool) {
     if session.kind != SessionKind::Terminal || session.agent_id.is_none() {
         return;
     }
-    let state = session.agent_state.as_deref();
-    let shown = group(
-        asking || state == Some("blocked"),
-        state == Some("working"),
-        session.unread,
-    );
-    session.group = Some(shown);
-    session.status = Some(match shown {
-        AgentGroup::Idle if !session.running || state == Some("stopped") => AgentStatus::Stopped,
-        shown => status(shown),
-    });
+    let state = session.agent_state;
+    let status = if asking || state == Some(AgentState::Blocked) {
+        AgentStatus::Blocked
+    } else if state == Some(AgentState::Working) {
+        AgentStatus::Working
+    } else if session.unread {
+        AgentStatus::Done
+    } else if !session.running || state == Some(AgentState::Stopped) {
+        AgentStatus::Stopped
+    } else {
+        AgentStatus::Idle
+    };
+    session.status = Some(status);
+    session.group = Some(status.group());
 }
 
 /// Numbers the open agents in the order they want the person. Within a

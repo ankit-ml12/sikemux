@@ -575,6 +575,67 @@ pub enum AgentStatus {
     Starting,
 }
 
+impl AgentStatus {
+    /// The group a list puts an agent with this status in. Only a turn under way or a wait
+    /// on the person counts as busy, so an agent still starting up rests with the idle ones.
+    pub fn group(self) -> AgentGroup {
+        match self {
+            AgentStatus::Blocked => AgentGroup::Blocked,
+            AgentStatus::Working => AgentGroup::Working,
+            AgentStatus::Done => AgentGroup::Done,
+            AgentStatus::Idle
+            | AgentStatus::Asleep
+            | AgentStatus::Stopped
+            | AgentStatus::Starting => AgentGroup::Idle,
+        }
+    }
+}
+
+/// What an agent's turn is doing now, as its chat or the screen of its terminal shows it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(u8)]
+pub enum AgentState {
+    /// Nothing has said yet.
+    #[default]
+    Unknown,
+    Idle,
+    Working,
+    /// It waits on the person in the middle of a turn.
+    Blocked,
+    /// Its terminal's program ended.
+    Stopped,
+}
+
+impl AgentState {
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            1 => AgentState::Idle,
+            2 => AgentState::Working,
+            3 => AgentState::Blocked,
+            4 => AgentState::Stopped,
+            _ => AgentState::Unknown,
+        }
+    }
+
+    /// It is at work on a turn, or waits on the person in the middle of one.
+    pub fn busy(self) -> bool {
+        matches!(self, AgentState::Working | AgentState::Blocked)
+    }
+}
+
+impl From<crate::pty::agent_detection::AgentDetectionState> for AgentState {
+    fn from(state: crate::pty::agent_detection::AgentDetectionState) -> Self {
+        use crate::pty::agent_detection::AgentDetectionState;
+        match state {
+            AgentDetectionState::Unknown => AgentState::Unknown,
+            AgentDetectionState::Idle => AgentState::Idle,
+            AgentDetectionState::Working => AgentState::Working,
+            AgentDetectionState::Blocked => AgentState::Blocked,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatInfo {
@@ -1834,7 +1895,7 @@ pub struct SessionInfo {
     pub agent_type: Option<String>,
     pub task_execution_id: Option<String>,
     /// The last state published for an agent terminal.
-    pub agent_state: Option<String>,
+    pub agent_state: Option<AgentState>,
     /// What a task session was started as, so a client that did not start it
     /// can take it over.
     pub task: Option<TaskSessionInfo>,
@@ -2234,7 +2295,7 @@ pub struct PermissionChoices {
 #[serde(rename_all = "camelCase")]
 pub struct AgentStateEvent {
     pub agent_id: String,
-    pub state: String,
+    pub state: AgentState,
     pub sequence: u64,
     pub source: String,
     pub confidence: String,

@@ -30,8 +30,8 @@ use crate::acp::{bounded_text, current_choice, native as acp_native, permission,
 use crate::launch::providers::ROUTED_ENV;
 use crate::launch::PermissionMode;
 use crate::protocol::{
-    Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatInfo, ChatLaunch,
-    ChatMark, ChatStart, ChatState, Event, RequestId, Response,
+    AgentState, Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatInfo,
+    ChatLaunch, ChatMark, ChatStart, ChatState, Event, RequestId, Response,
 };
 
 use super::activity::Activity;
@@ -234,7 +234,7 @@ pub(crate) struct Chat {
     /// When the agent was lately started again after it stopped by itself.
     restarts: Mutex<std::collections::VecDeque<std::time::Instant>>,
     /// What every app was last told the chat is doing.
-    published: Mutex<&'static str>,
+    published: Mutex<AgentState>,
     /// A new chat starts its agent only once the person writes in it or something is sent to it.
     unstarted: AtomicBool,
     wanted: tokio::sync::Notify,
@@ -373,18 +373,18 @@ impl Chat {
     }
 
     /// What the chat is doing, in the words every app shows an agent by.
-    pub(crate) fn state_now(&self) -> &'static str {
+    pub(crate) fn state_now(&self) -> AgentState {
         if !self.permissions.locked().is_empty() {
-            "blocked"
+            AgentState::Blocked
         } else if self.turn_running()
             || self.held.load(Ordering::Acquire)
             || self.feed.running_subagents() > 0
         {
-            "working"
+            AgentState::Working
         } else if self.feed.start().is_some() {
-            "idle"
+            AgentState::Idle
         } else {
-            "unknown"
+            AgentState::Unknown
         }
     }
 
@@ -394,7 +394,7 @@ impl Chat {
         self.publish(self.state_now());
     }
 
-    fn publish(&self, state: &'static str) {
+    fn publish(&self, state: AgentState) {
         let mut published = self.published.locked();
         if *published == state {
             return;
@@ -1360,7 +1360,7 @@ impl Chats {
     pub(crate) fn in_turn(&self) -> usize {
         self.all()
             .iter()
-            .filter(|chat| !chat.handable() || matches!(chat.state_now(), "working" | "blocked"))
+            .filter(|chat| !chat.handable() || chat.state_now().busy())
             .count()
     }
 
@@ -1460,9 +1460,8 @@ impl Chats {
 
     /// Whether the agent's chat is in a turn or has tasks running.
     pub(crate) fn at_work(&self, agent_id: &str) -> bool {
-        self.get(agent_id).is_some_and(|chat| {
-            matches!(chat.state_now(), "working" | "blocked") || chat.feed.running_tasks() > 0
-        })
+        self.get(agent_id)
+            .is_some_and(|chat| chat.state_now().busy() || chat.feed.running_tasks() > 0)
     }
 
     pub(crate) fn stop_all(&self) {
@@ -1561,7 +1560,7 @@ impl Chats {
             keeper,
             agent: Mutex::new(None),
             restarts: Mutex::new(Default::default()),
-            published: Mutex::new("unknown"),
+            published: Mutex::new(AgentState::Unknown),
             unstarted: AtomicBool::new(false),
             wanted: tokio::sync::Notify::new(),
             saved_shown: AtomicBool::new(history_shown),
@@ -1703,7 +1702,7 @@ fn launch(
             owner.note_agent_gone(ending.agent_id());
         }
         ending.cancel_permissions();
-        ending.publish("stopped");
+        ending.publish(AgentState::Stopped);
     });
     let mut slot = chat.task.locked();
     *slot = Some(task);
