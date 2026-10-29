@@ -5,10 +5,10 @@ import {
   type CSSProperties,
   type RefObject,
 } from "react";
-import { animate, EASE_IN, foldedFrames, leavingRef } from "./lib/motion";
+import { animate, EASE_IN, foldedFrames, leavingRef } from "../ui/motion";
 import { IconChevron } from "@shared/ui/Icons";
-import { LiveSeconds } from "./LiveSeconds";
-import { Shimmer } from "./Shimmer";
+import { LiveSeconds } from "../transcript/LiveSeconds";
+import { Shimmer } from "../ui/Shimmer";
 import { ToolRow } from "./ToolRow";
 import { durationLabel } from "@shared/chat/durationLabel";
 import { callCount, callsLabel, toolGroupSummary } from "@shared/chat/toolView";

@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { Agent } from "./page/agent";
+import type { Agent } from "../agents/agent";
 import type { ChatMessage, SubagentCard, ToolDetail } from "@shared/chat/types";
 
 export const ChatAgentContext = createContext<{

@@ -1,9 +1,17 @@
 import { useContext, useEffect, useRef, useState } from "react";
-import type { PageRef } from "./page/pages";
-import { currentTheme, subscribeTheme } from "./themes/bus";
-import { ChatAgentContext, openLink, ReaderScrollContext } from "./chatAgent";
-import { pageThemeMessage } from "./pageTheme";
-import { clampPageHeight, PAGE_DEFAULT_HEIGHT, readPageMessage } from "./pages";
+import type { PageRef } from "./ref";
+import { currentTheme, subscribeTheme } from "../themes/bus";
+import {
+  ChatAgentContext,
+  openLink,
+  ReaderScrollContext,
+} from "../transcript/chatAgent";
+import { pageThemeMessage } from "./theme";
+import {
+  clampPageHeight,
+  PAGE_DEFAULT_HEIGHT,
+  readPageMessage,
+} from "./messages";
 
 /* A chat opened again mounts its pages afresh; a page coming back takes the
    height it last reported, so the rows around it do not move. */

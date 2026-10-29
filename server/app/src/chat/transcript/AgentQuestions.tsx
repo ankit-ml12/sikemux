@@ -1,5 +1,5 @@
 import { useContext, type ReactNode } from "react";
-import { AgentMark } from "./agents/AgentMark";
+import { AgentMark } from "../agents/AgentMark";
 import { IconLock } from "@shared/ui/Icons";
 import { SECRET_ANSWERED } from "@shared/chat/agentLetters";
 import type { AgentLetter } from "@shared/chat/types";

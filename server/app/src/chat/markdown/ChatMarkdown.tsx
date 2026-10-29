@@ -1,12 +1,8 @@
 import { useMemo, type ReactNode } from "react";
-import { CopyButton } from "./ui/CopyButton";
-import { FileIcon } from "./ui/FileIcon";
-import {
-  Markdown,
-  MarkdownBlocks,
-  type MarkdownComponents,
-} from "./markdown/Markdown";
-import { warmMarkdown } from "./markdown/useMarkdownBlocks";
+import { CopyButton } from "../ui/CopyButton";
+import { FileIcon } from "../files/FileIcon";
+import { Markdown, MarkdownBlocks, type MarkdownComponents } from "./Markdown";
+import { warmMarkdown } from "./useMarkdownBlocks";
 import { tableSource } from "@shared/markdown/tableSource";
 import type { MarkdownOptions, MdElement } from "@shared/markdown/types";
 import { fencedDiff } from "@shared/chat/diff";
@@ -15,19 +11,19 @@ import {
   fenceLanguage,
   useCodeTokens,
   useDiffTokens,
-} from "./codeHighlight";
+} from "../code/codeHighlight";
 import { localImagePath } from "@shared/lib/imagePaths";
-import { useImagePreview } from "./imagePreview";
-import { ChatFileRef, useFileRef } from "./FileRef";
+import { useImagePreview } from "../files/imagePreview";
+import { ChatFileRef, useFileRef } from "../files/FileRef";
 import {
   cutLongBlocks,
   cutLongText,
   showRestLabel,
   useLongTextFold,
 } from "@shared/chat/longText";
-import { openLink } from "./chatAgent";
-import { ChatImage } from "./ChatImage";
-import { DiffText } from "./DiffView";
+import { openLink } from "../transcript/chatAgent";
+import { ChatImage } from "../files/ChatImage";
+import { DiffText } from "../tools/DiffView";
 import { decodedFenceName } from "@shared/chat/transcript";
 
 /* An agent writes an attached file back as a link to it. A picture beats its

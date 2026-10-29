@@ -6,7 +6,7 @@ import {
   type RefObject,
   type UIEvent,
 } from "react";
-import type { Agent } from "./page/agent";
+import type { Agent } from "../agents/agent";
 import { ChatActivity } from "./ChatActivity";
 import { ChatMessageRow } from "./ChatMessageRow";
 import { FoldMemoryContext, type FoldMemory } from "@shared/chat/longText";

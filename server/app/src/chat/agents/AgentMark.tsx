@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { AgentBuddy } from "../buddies/Buddy";
-import { useStore } from "../page/store";
+import { AgentBuddy } from "./Buddy";
+import { useStore } from "./store";
 import { AgentIcon } from "@shared/ui/Icons";
 import { isAgentType } from "@shared/agents/catalog";
 

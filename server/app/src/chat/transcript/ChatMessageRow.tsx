@@ -1,5 +1,5 @@
 import { memo, useContext, useMemo, useState, type ReactNode } from "react";
-import { CopyButton } from "./ui/CopyButton";
+import { CopyButton } from "../ui/CopyButton";
 import { basename } from "@shared/lib/paths";
 import {
   AgentIcon,
@@ -15,22 +15,22 @@ import {
   IconWarning,
   IconWorkflow,
 } from "@shared/ui/Icons";
-import { Tooltip } from "./ui/Tooltip";
-import { AgentMark } from "./agents/AgentMark";
-import sikemuxMark from "../../../../brand/mark/mark-purple.svg";
+import { Tooltip } from "../ui/Tooltip";
+import { AgentMark } from "../agents/AgentMark";
+import sikemuxMark from "../../../../../brand/mark/mark-purple.svg";
 import { AnsweredQuestion } from "./AgentQuestions";
 import { rateLabel, sentLabel, sentTitle } from "@shared/chat/messageMeta";
 import { durationLabel } from "@shared/chat/durationLabel";
 import { localImagePath } from "@shared/lib/imagePaths";
-import { useImagePreview } from "./imagePreview";
-import { ChatFileRef, useFileRef } from "./FileRef";
+import { useImagePreview } from "../files/imagePreview";
+import { ChatFileRef, useFileRef } from "../files/FileRef";
 import { ChatAgentContext, ChatSubagentsContext } from "./chatAgent";
-import { ChatImage } from "./ChatImage";
+import { ChatImage } from "../files/ChatImage";
 import { imageTag } from "@shared/chat/composerInput";
-import { FoldedMarkdown, warmChatMarkdown } from "./ChatMarkdown";
-import { ChatPage } from "./ChatPage";
-import { ToolGroup } from "./ToolGroup";
-import { ToolRow } from "./ToolRow";
+import { FoldedMarkdown, warmChatMarkdown } from "../markdown/ChatMarkdown";
+import { ChatPage } from "../pages/ChatPage";
+import { ToolGroup } from "../tools/ToolGroup";
+import { ToolRow } from "../tools/ToolRow";
 import {
   attachmentName,
   formatDetail,
@@ -54,7 +54,7 @@ import type {
 } from "@shared/chat/types";
 import { ContextChipLabel } from "./ContextChip";
 import type { MdElement } from "@shared/markdown/types";
-import { Shimmer } from "./Shimmer";
+import { Shimmer } from "../ui/Shimmer";
 import { MessageEditor } from "./MessageEditor";
 
 function ResourceLinkPart({ content }: { content: ContentBlock }) {

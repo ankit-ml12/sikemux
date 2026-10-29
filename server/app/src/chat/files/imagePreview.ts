@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { isImagePath } from "@shared/lib/imagePaths";
-import { useRemoteOrigin, type RemoteOrigin } from "./origin";
+import { useRemoteOrigin, type RemoteOrigin } from "../transcript/origin";
 
 /* Pictures from another computer, by where they came from, so two shared chats never mix theirs. */
 const remotePreviews = new WeakMap<RemoteOrigin, Map<string, string | null>>();

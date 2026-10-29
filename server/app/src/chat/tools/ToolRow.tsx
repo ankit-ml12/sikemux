@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { CopyButton } from "./ui/CopyButton";
+import { CopyButton } from "../ui/CopyButton";
 import {
   IconActivity,
   IconAgent,
@@ -69,13 +69,13 @@ import {
   IconWrench,
   Logo,
 } from "@shared/ui/Icons";
-import { ChatFileRef, useFileRef } from "./FileRef";
-import { openLink, ToolDetailContext } from "./chatAgent";
-import { ChatImage } from "./ChatImage";
+import { ChatFileRef, useFileRef } from "../files/FileRef";
+import { openLink, ToolDetailContext } from "../transcript/chatAgent";
+import { ChatImage } from "../files/ChatImage";
 import { DiffBody } from "./DiffView";
-import { LiveSeconds } from "./LiveSeconds";
-import { Shimmer } from "./Shimmer";
-import { useCutOff } from "./useCutOff";
+import { LiveSeconds } from "../transcript/LiveSeconds";
+import { Shimmer } from "../ui/Shimmer";
+import { useCutOff } from "../transcript/useCutOff";
 import {
   toolDetail,
   toolKind,

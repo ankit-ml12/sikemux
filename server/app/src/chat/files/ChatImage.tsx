@@ -1,5 +1,5 @@
 import { basename } from "@shared/lib/paths";
-import { showImage } from "./page/imageViewer";
+import { showImage } from "./imageViewer";
 
 /* Every picture in a transcript is a thumbnail of itself: it opens at the size
    the window allows, where it can also be saved. */

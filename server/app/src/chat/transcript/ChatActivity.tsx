@@ -1,10 +1,10 @@
 import { useContext, useState } from "react";
-import { useNow } from "./hooks/useNow";
-import { AgentMark } from "./agents/AgentMark";
-import type { Agent } from "./page/agent";
+import { useNow } from "../ui/useNow";
+import { AgentMark } from "../agents/AgentMark";
+import type { Agent } from "../agents/agent";
 import { ChatAgentContext } from "./chatAgent";
 import { elapsedLabel } from "@shared/chat/durationLabel";
-import { Shimmer } from "./Shimmer";
+import { Shimmer } from "../ui/Shimmer";
 
 /* Keeps its own clock so a ticking second redraws this row alone, not the
    whole transcript. */

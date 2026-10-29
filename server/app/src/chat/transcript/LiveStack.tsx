@@ -13,7 +13,7 @@ import {
 import { ChatAgentContext } from "./chatAgent";
 import { queuedLabel } from "@shared/chat/queuedMessages";
 import type { QueuedMessage } from "@shared/chat/types";
-import { Shimmer } from "./Shimmer";
+import { Shimmer } from "../ui/Shimmer";
 import {
   groupTasks,
   subagentActivity,

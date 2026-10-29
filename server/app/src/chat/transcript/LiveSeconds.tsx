@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNow } from "./hooks/useNow";
+import { useNow } from "../ui/useNow";
 import { secondsSince } from "@shared/chat/toolView";
 
 /* Counts up in whole seconds like the Thinking row does, on a clock of its own

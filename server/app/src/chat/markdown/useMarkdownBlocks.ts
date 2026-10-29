@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { markdownApi } from "../page/markdown";
+import { markdownApi } from "./parser";
 import type { MarkdownOptions, MdElement } from "@shared/markdown/types";
 
 /* A finished message is read once. A transcript scrolled back and forth mounts

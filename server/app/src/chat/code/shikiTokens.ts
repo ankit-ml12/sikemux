@@ -1,8 +1,8 @@
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
-import { bundledLanguages, createHighlighter } from "./vendor/shiki";
+import { bundledLanguages, createHighlighter } from "./shiki";
 import type { Grammar, HighlighterCore } from "shiki/core";
-import { createCodeTheme } from "./themes/codeTheme";
-import type { Theme } from "./themes/index";
+import { createCodeTheme } from "../themes/codeTheme";
+import type { Theme } from "../themes/index";
 import { codeLines } from "./codeLines";
 import type { CodeLine } from "@shared/chat/types";
 

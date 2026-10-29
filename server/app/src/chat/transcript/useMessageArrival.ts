@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
-import { animate } from "./lib/motion";
+import { animate } from "../ui/motion";
 import type { ChatMessage } from "@shared/chat/types";
 
 /* A message that has just arrived rises into place. Only new ones: a

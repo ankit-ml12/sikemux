@@ -13,19 +13,19 @@ import {
   ChatSubagentsContext,
   ReaderScrollContext,
   ToolDetailContext,
-} from "../chat/chatAgent";
-import { warmTranscript } from "../chat/ChatMessageRow";
-import { ChatTranscript } from "../chat/ChatTranscript";
-import { EarlierTurns } from "../chat/EarlierTurns";
+} from "../chat/transcript/chatAgent";
+import { warmTranscript } from "../chat/transcript/ChatMessageRow";
+import { ChatTranscript } from "../chat/transcript/ChatTranscript";
+import { EarlierTurns } from "../chat/transcript/EarlierTurns";
 import { activityText } from "@shared/chat/chatStatus";
-import { PathRootsProvider } from "../chat/FileRef";
-import LiveStack from "../chat/LiveStack";
+import { PathRootsProvider } from "../chat/files/FileRef";
+import LiveStack from "../chat/transcript/LiveStack";
 import { newFoldMemory } from "@shared/chat/longText";
-import { RemoteOriginContext } from "../chat/origin";
+import { RemoteOriginContext } from "../chat/transcript/origin";
 import { activeToolLabel } from "@shared/chat/toolLabels";
 import { subagentCards } from "@shared/chat/transcript";
-import { useMessageArrival } from "../chat/useMessageArrival";
-import { useStickToBottom } from "../chat/useStickToBottom";
+import { useMessageArrival } from "../chat/transcript/useMessageArrival";
+import { useStickToBottom } from "../chat/transcript/useStickToBottom";
 import { AgentIcon, IconArrowDown, IconEye, IconPlug } from "@shared/ui/Icons";
 import {
   sharedChatTitle,
@@ -35,7 +35,7 @@ import {
 import "../chat/styles/chat.css";
 import "../chat/styles/share.css";
 import { formatTimeLeft } from "@shared/lib/format";
-import { useNow } from "../chat/hooks/useNow";
+import { useNow } from "../chat/ui/useNow";
 
 const PROBLEMS: Partial<Record<ShareSnapshot["status"], string>> = {
   missing: "This chat is not running on its host right now.",

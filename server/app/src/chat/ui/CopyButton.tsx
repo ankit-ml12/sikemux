@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCheck, IconCopy } from "@shared/ui/Icons";
-import { copyText } from "../lib/clipboard";
+import { copyText } from "./clipboard";
 import { Tooltip } from "./Tooltip";
 
 const FEEDBACK_MS = 1100;

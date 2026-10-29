@@ -1,6 +1,6 @@
 import { useContext } from "react";
-import { AgentMark } from "./agents/AgentMark";
-import type { AgentType } from "./page/agent";
+import { AgentMark } from "../agents/AgentMark";
+import type { AgentType } from "../agents/agent";
 import { IconChevron } from "@shared/ui/Icons";
 import { ChatAgentContext } from "./chatAgent";
 import { callsLabel, workedLabel } from "@shared/chat/toolView";

@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { FileIcon, FileTypeIcon } from "./ui/FileIcon";
+import { FileIcon, FileTypeIcon } from "./FileIcon";
 import { IconFolder } from "@shared/ui/Icons";
 import { basename } from "@shared/lib/paths";
 import {

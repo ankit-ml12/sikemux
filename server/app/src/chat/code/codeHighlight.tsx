@@ -7,9 +7,9 @@ import {
   useSyncExternalStore,
   type CSSProperties,
 } from "react";
-import { currentTheme, subscribeTheme } from "./themes/bus";
-import { codeThemeName } from "./themes/codeTheme";
-import { grammarFor } from "./languages/index";
+import { currentTheme, subscribeTheme } from "../themes/bus";
+import { codeThemeName } from "../themes/codeTheme";
+import { grammarFor } from "../languages/index";
 import type { CodeLine, CodeToken } from "@shared/chat/types";
 import type { DiffLine } from "@shared/chat/types";
 import type * as ShikiTokens from "./shikiTokens";
