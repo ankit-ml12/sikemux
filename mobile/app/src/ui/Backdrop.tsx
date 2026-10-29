@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Image, PixelRatio, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, Image, PixelRatio, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import { File, Paths } from 'expo-file-system';
@@ -14,6 +14,10 @@ import { vertexShaderSource } from './vertexShader.generated';
 
 /** What the host a screen belongs to draws behind its panes; absent outside a device's screens. */
 export const BackdropContext = createContext<DeviceBackdrop | undefined>(undefined);
+
+/* Android takes a leaving screen out of the window while it still draws, and its picture and GL go blank then,
+   so there one backdrop sits under the whole stack and its see-through screens fade over it. */
+export const backdropUnderStack = Platform.OS === 'android';
 
 /** Every backdrop reads one clock, so the grain carries on across screens instead of restarting. */
 const ORIGIN = Date.now();

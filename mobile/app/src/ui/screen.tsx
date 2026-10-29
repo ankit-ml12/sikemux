@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useState, type ReactNode } from 'react';
 import { Keyboard, Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Backdrop } from './Backdrop';
+import { Backdrop, BackdropContext, backdropUnderStack } from './Backdrop';
 import { Icon } from './Icon';
 import { goBack } from './navigate';
 import { fonts, type Palette, useColors, useStyles } from './theme';
@@ -28,9 +28,11 @@ export function useKeyboardShown(): boolean {
 
 export function Screen({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const styles = useStyles(makeStyles);
+  const backdrop = useContext(BackdropContext);
+  const underStack = backdropUnderStack && backdrop !== undefined;
   return (
-    <SafeAreaView style={[styles.screen, style]} edges={['top', 'left', 'right']}>
-      <Backdrop />
+    <SafeAreaView style={[styles.screen, underStack && styles.seeThrough, style]} edges={['top', 'left', 'right']}>
+      {underStack ? null : <Backdrop />}
       {children}
     </SafeAreaView>
   );
@@ -56,7 +58,8 @@ export function Nav({ back, title, end, onBack }: { back?: string; title?: React
           title
         )}
       </View>
-      <View style={styles.navEnd}>{end}</View>
+      {/* An empty end still balances the back button, so a centred title stays centred. */}
+      <View style={[styles.navEnd, end == null && styles.navEndEmpty]}>{end}</View>
     </View>
   );
 }
@@ -64,12 +67,14 @@ export function Nav({ back, title, end, onBack }: { back?: string; title?: React
 const makeStyles = (colors: Palette) => {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: colors.ground },
+    seeThrough: { backgroundColor: 'transparent' },
     nav: { minHeight: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 },
     back: { flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingRight: 8, paddingLeft: 4, minWidth: 44 },
     backChevron: { transform: [{ rotate: '180deg' }] },
     backText: { fontFamily: fonts.ui, fontSize: 16, color: colors.secondary, marginLeft: 2 },
     navTitle: { flex: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
     navTitleText: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink },
-    navEnd: { minWidth: 76, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
+    navEnd: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
+    navEndEmpty: { minWidth: 76 },
   });
 };

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState, Platform, View } from 'react-native';
 import { Stack } from 'expo-router';
+import SwipeStack from 'expo-router/js-stack';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -27,6 +28,8 @@ import { useShareExtension } from '@/stash/extension';
 import { useShareIntake } from '@/stash/incoming';
 import { useStashFeed } from '@/stash/store';
 import { UpdateRequired } from '@/screens/UpdateRequired';
+import { backdropUnderStack } from '@/ui/Backdrop';
+import { swipeOptions } from '@/ui/swipeStack';
 import { useColors } from '@/ui/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -114,16 +117,32 @@ function Routes({ background }: { background: string }) {
   if (isSignedIn && !lock.opened) return lock.on ? <LockScreen /> : null;
   return (
     <>
-      <Stack screenOptions={{ headerShown: false, freezeOnBlur: true, contentStyle: { backgroundColor: background } }}>
-        <Stack.Screen name="index" />
-        <Stack.Protected guard={!!isSignedIn}>
-          <Stack.Screen name="device/[core]" />
-          <Stack.Screen name="join" />
-          <Stack.Screen name="host-sign-in" />
-          <Stack.Screen name="share/[id]" />
-          <Stack.Screen name="stash" />
-        </Stack.Protected>
-      </Stack>
+      {backdropUnderStack ? (
+        <View style={{ flex: 1, backgroundColor: background }}>
+          <SwipeStack screenOptions={swipeOptions(background)}>
+            <SwipeStack.Screen name="index" />
+            <SwipeStack.Protected guard={!!isSignedIn}>
+              {/* A host's screen paints its own ground, which fades as the screen leaves. */}
+              <SwipeStack.Screen name="device/[core]" options={{ cardStyle: { backgroundColor: 'transparent' } }} />
+              <SwipeStack.Screen name="join" />
+              <SwipeStack.Screen name="host-sign-in" />
+              <SwipeStack.Screen name="share/[id]" />
+              <SwipeStack.Screen name="stash" />
+            </SwipeStack.Protected>
+          </SwipeStack>
+        </View>
+      ) : (
+        <Stack screenOptions={{ headerShown: false, freezeOnBlur: true, contentStyle: { backgroundColor: background } }}>
+          <Stack.Screen name="index" />
+          <Stack.Protected guard={!!isSignedIn}>
+            <Stack.Screen name="device/[core]" />
+            <Stack.Screen name="join" />
+            <Stack.Screen name="host-sign-in" />
+            <Stack.Screen name="share/[id]" />
+            <Stack.Screen name="stash" />
+          </Stack.Protected>
+        </Stack>
+      )}
       {!isSignedIn || lock.phase === 'open' ? (
         <>
           <NotificationsOffer />
