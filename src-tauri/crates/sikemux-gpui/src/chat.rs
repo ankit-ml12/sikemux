@@ -645,6 +645,8 @@ impl Question {
 struct Choice {
     label: String,
     detail: Option<String>,
+    #[serde(default)]
+    recommended: bool,
 }
 
 impl Question {
@@ -2770,17 +2772,16 @@ fn asking(
             let number = ui::kbd((ix + 1).to_string(), cx)
                 .line_height(crate::theme::ui_text(19.))
                 .into_any_element();
-            let (label, recommended) = recommended(&choice.label);
             let label = div()
                 .flex()
                 .flex_wrap()
                 .items_center()
                 .gap_x(px(8.))
                 .child(
-                    ui::text(label.to_owned(), 13., FontWeight::MEDIUM)
+                    ui::text(choice.label.clone(), 13., FontWeight::MEDIUM)
                         .line_height(crate::theme::ui_text(19.)),
                 )
-                .when(recommended, |label| {
+                .when(choice.recommended, |label| {
                     label.child(
                         ui::text("recommended", 11., FontWeight::NORMAL)
                             .text_color(t.text_disabled),
@@ -2855,20 +2856,6 @@ fn asking(
             )
         })
         .children(secret)
-}
-
-/// A choice's label without the "(recommended)" the agent put after it, and whether it did.
-fn recommended(label: &str) -> (&str, bool) {
-    const MARK: &str = "(recommended)";
-    let trimmed = label.trim_end();
-    let cut = trimmed
-        .len()
-        .checked_sub(MARK.len())
-        .filter(|&at| trimmed.is_char_boundary(at));
-    match cut {
-        Some(at) if trimmed[at..].eq_ignore_ascii_case(MARK) => (trimmed[..at].trim_end(), true),
-        _ => (label, false),
-    }
 }
 
 fn answer_row(
@@ -4295,9 +4282,7 @@ fn answered_question(
     } else {
         (
             Icon::Check,
-            div()
-                .text_color(t.text_primary)
-                .child(recommended(answer).0.to_owned()),
+            div().text_color(t.text_primary).child(answer.to_owned()),
         )
     };
     div()

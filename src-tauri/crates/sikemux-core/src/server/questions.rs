@@ -55,6 +55,9 @@ pub(crate) struct Choice {
     pub label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// The agent marked it as the one it would pick.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub recommended: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -558,7 +561,8 @@ fn choices(value: Option<&Value>) -> Result<Vec<Choice>, String> {
                 ),
                 _ => ("", None),
             };
-            if label.trim().is_empty() {
+            let (label, recommended) = recommended(label);
+            if label.is_empty() {
                 return Err("each choice needs a label".to_owned());
             }
             Ok(Choice {
@@ -566,9 +570,24 @@ fn choices(value: Option<&Value>) -> Result<Vec<Choice>, String> {
                 detail: detail
                     .filter(|detail| !detail.trim().is_empty())
                     .map(|detail| clipped(detail, MAX_DETAIL_CHARS)),
+                recommended,
             })
         })
         .collect()
+}
+
+/// A choice's label without the "(recommended)" the agent put after it, and whether it did.
+fn recommended(label: &str) -> (&str, bool) {
+    const MARK: &str = "(recommended)";
+    let label = label.trim();
+    let cut = label
+        .len()
+        .checked_sub(MARK.len())
+        .filter(|&at| label.is_char_boundary(at));
+    match cut {
+        Some(at) if label[at..].eq_ignore_ascii_case(MARK) => (label[..at].trim_end(), true),
+        _ => (label, false),
+    }
 }
 
 fn running(core: &Core, agent_id: &str) -> bool {

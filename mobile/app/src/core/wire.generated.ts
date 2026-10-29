@@ -2219,6 +2219,8 @@ export interface AgentQuestion {
 export interface QuestionChoice {
   label: string;
   detail?: string;
+  /** The agent marked it as the one it would pick. */
+  recommended?: boolean;
 }
 
 /** Where a question stands for the person. */

@@ -222,6 +222,7 @@ pub(crate) async fn propose(
         .map(|offered| Choice {
             label: offered.label,
             detail: offered.detail,
+            recommended: false,
         })
         .collect();
     let approval = Approval {
