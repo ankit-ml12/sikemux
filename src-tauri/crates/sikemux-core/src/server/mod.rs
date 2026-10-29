@@ -98,10 +98,10 @@ mod window;
 mod workspace;
 mod worktree;
 
-pub use calls::call;
+pub use calls::{call, NoParams};
 pub use entry::main;
 pub use host::{info as host_info, PLATFORM as HOST_PLATFORM};
-pub use remote::trust_remote_file;
+pub use remote::{trust_remote_file, ApprovalSetting};
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::{DirBuilder, File, OpenOptions};

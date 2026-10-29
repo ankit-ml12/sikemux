@@ -14,12 +14,14 @@ use gpui_kit::{
     Window,
 };
 use serde_json::{json, Value};
+use sikemux_core::server::{call, ApprovalSetting, NoParams};
 use sikemux_wire::accounts::protocol::RevokeReason;
 use sikemux_wire::protocol::{
     AccountLink, AccountLinkState, DeviceAccess, DeviceInfo, NotificationState, RemoteStatus,
 };
 
 use crate::core::{self, Ask, RemoteAsk};
+use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::settings::rows;
 use crate::settings::Page;
@@ -74,8 +76,10 @@ pub fn read_links(bench: &Workbench, cx: &mut Context<Workbench>) {
             bench.parts.redraw_stage(cx);
         });
         for host in hosts {
-            let read = core::request_on(&asks, &host, "requireApproval", Value::Null).await;
-            let on = read.ok().and_then(|read| read["requireApproval"].as_bool());
+            let read = core::Target::new(&asks, Place::Account(host.clone()))
+                .request_typed::<call::RequireApproval>(NoParams {})
+                .await;
+            let on = read.ok().map(|read| read.require_approval);
             let _ = bench.update(cx, |bench, cx| {
                 if let Some(fields) = fields_of(bench) {
                     fields.approvals.insert(host, on);
@@ -167,16 +171,12 @@ fn top_row(
 fn set_require_approval(bench: &Workbench, on: bool, cx: &mut Context<Workbench>) {
     let asks = bench.asks.clone();
     cx.spawn(async move |bench, cx| {
-        let answer = core::request(
-            &asks,
-            "setRequireApproval",
-            json!({ "requireApproval": on }),
-        )
-        .await;
-        let Some(status) = answer
-            .ok()
-            .and_then(|status| serde_json::from_value::<RemoteStatus>(status).ok())
-        else {
+        let answer = core::Target::here(&asks)
+            .request_typed::<call::SetRequireApproval>(ApprovalSetting {
+                require_approval: on,
+            })
+            .await;
+        let Ok(status) = answer else {
             return;
         };
         let _ = bench.update(cx, |bench, cx| {
@@ -455,8 +455,11 @@ fn remove_host(
 fn set_host_approval(bench: &Workbench, host: String, on: bool, cx: &mut Context<Workbench>) {
     let asks = bench.asks.clone();
     cx.spawn(async move |bench, cx| {
-        let params = json!({ "requireApproval": on });
-        let set = core::request_on(&asks, &host, "setRequireApproval", params).await;
+        let set = core::Target::new(&asks, Place::Account(host.clone()))
+            .request_typed::<call::SetRequireApproval>(ApprovalSetting {
+                require_approval: on,
+            })
+            .await;
         if set.is_err() {
             return;
         }

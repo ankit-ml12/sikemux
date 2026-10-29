@@ -43,6 +43,7 @@ mod account;
 mod links;
 mod listening;
 mod pairing;
+pub use pairing::ApprovalSetting;
 mod push;
 
 pub(crate) use account::*;

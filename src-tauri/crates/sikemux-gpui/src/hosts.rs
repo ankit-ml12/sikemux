@@ -7,6 +7,7 @@ use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::WindowExt;
 use gpui_kit::{App, Context, SharedString};
 use serde_json::{json, Value};
+use sikemux_core::server::{call, ApprovalSetting, NoParams};
 
 use crate::core;
 use crate::icons::Icon;
@@ -291,16 +292,15 @@ impl Workbench {
     /// Reads whether `host`, this one when none, asks the person before a new device joins.
     pub fn read_approval(&self, host: Option<String>, cx: &mut Context<Self>) {
         let place = host.clone().map_or(Place::This, Place::Account);
-        let asked = core::Target::new(&self.asks, place).request("requireApproval", json!({}));
+        let asked = core::Target::new(&self.asks, place)
+            .request_typed::<call::RequireApproval>(NoParams {});
         cx.spawn(async move |bench, cx| {
             let Ok(read) = asked.await else {
                 return;
             };
             let _ = bench.update(cx, |bench, cx| {
-                if let Some(on) = read["requireApproval"].as_bool() {
-                    bench.hosts.approvals.insert(host, on);
-                    cx.notify();
-                }
+                bench.hosts.approvals.insert(host, read.require_approval);
+                cx.notify();
             });
         })
         .detach();
@@ -312,8 +312,11 @@ impl Workbench {
             return;
         };
         let place = host.clone().map_or(Place::This, Place::Account);
-        let set = core::Target::new(&self.asks, place)
-            .request("setRequireApproval", json!({ "requireApproval": !on }));
+        let set = core::Target::new(&self.asks, place).request_typed::<call::SetRequireApproval>(
+            ApprovalSetting {
+                require_approval: !on,
+            },
+        );
         cx.spawn(async move |bench, cx| {
             let set = set.await;
             let _ = bench.update(cx, |bench, cx| match set {

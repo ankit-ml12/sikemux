@@ -6,10 +6,13 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::{json, Value};
 use sikemux_client::accounts::network;
 use sikemux_client::client::{Attached, ClientError, ClientEvent, CoreClient};
 use sikemux_client::remote::SecretKey;
+use sikemux_core::server::call::Call;
 use sikemux_host::cli_paths;
 use sikemux_host::core_start::{self, StartError};
 use sikemux_host::login_item::{self, CoreLaunch};
@@ -893,6 +896,26 @@ impl Target {
         match &self.place {
             Place::This => Box::pin(request(&self.asks, method, params)),
             Place::Account(host) => Box::pin(request_on(&self.asks, host, method, params)),
+        }
+    }
+
+    /// Asks the place's core for the call `C`, and reads its answer as `C`'s answer.
+    pub fn request_typed<C: Call>(
+        &self,
+        params: C::Params,
+    ) -> impl Future<Output = Result<C::Answer, String>> + use<C>
+    where
+        C::Params: Serialize,
+        C::Answer: DeserializeOwned,
+    {
+        let asked = serde_json::to_value(params)
+            .map(|params| self.request(C::METHOD, params))
+            .map_err(|error| error.to_string());
+        async move {
+            let answer = asked?.await?;
+            serde_json::from_value(answer).map_err(|error| {
+                format!("the core's answer to {} did not read: {error}", C::METHOD)
+            })
         }
     }
 

@@ -1176,6 +1176,7 @@ pub struct QueuedParams {
 }
 
 /// What a call that takes nothing is sent; whatever a client sends reads as nothing.
+#[derive(Serialize)]
 pub struct NoParams {}
 
 impl<'de> Deserialize<'de> for NoParams {
