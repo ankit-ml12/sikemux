@@ -1,8 +1,5 @@
-import {
-  bundledLanguages,
-  createHighlighter,
-  createJavaScriptRegexEngine,
-} from "./vendor/shiki";
+import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
+import { bundledLanguages, createHighlighter } from "./vendor/shiki";
 import type { Grammar, HighlighterCore } from "shiki/core";
 import { createCodeTheme } from "./themes/codeTheme";
 import type { Theme } from "./themes/index";
