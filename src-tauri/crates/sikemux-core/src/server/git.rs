@@ -456,8 +456,6 @@ pub(crate) fn follow_projects(core: &Core) {
                 (path, identity)
             })
             .collect();
-        if core.workspaces.set_identities(identities) {
-            core.view_changed();
-        }
+        core.workspaces.set_identities(identities);
     });
 }

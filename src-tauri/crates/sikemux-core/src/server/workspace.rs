@@ -720,8 +720,8 @@ impl Workspaces {
         })
     }
 
-    /// Keeps what each project is known by, answering whether any changed.
-    pub(crate) fn set_identities(&self, identities: Vec<(PathBuf, Option<String>)>) -> bool {
+    /// Keeps what each project is known by.
+    pub(crate) fn set_identities(&self, identities: Vec<(PathBuf, Option<String>)>) {
         let changed = |saved: &Saved| {
             identities.iter().any(|(path, identity)| {
                 saved
@@ -731,9 +731,9 @@ impl Workspaces {
             })
         };
         if !changed(&self.published.locked().saved) {
-            return false;
+            return;
         }
-        self.change(|saved| {
+        let _ = self.change(|saved| {
             for project in &mut saved.projects {
                 if let Some((_, identity)) =
                     identities.iter().find(|(path, _)| *path == project.path)
@@ -742,8 +742,7 @@ impl Workspaces {
                 }
             }
             Ok(())
-        })
-        .is_ok()
+        });
     }
 
     fn move_project(&self, id: &str, index: usize) -> CoreResult<()> {
@@ -2063,7 +2062,6 @@ pub(crate) async fn add_project(
     .await?;
     let project = core.workspaces.add_project(path, params.name, params.id)?;
     super::git::follow_projects(core);
-    core.view_changed();
     Ok(project)
 }
 
@@ -2078,7 +2076,6 @@ pub(crate) fn remove_project(core: &Core, params: RemoveProjectParams) -> CoreRe
     core.workspaces.remove_project(&params.path)?;
     agents_closed(core, before);
     super::git::follow_projects(core);
-    core.view_changed();
     Ok(())
 }
 
@@ -2096,7 +2093,6 @@ pub(crate) fn update_project(core: &Core, params: UpdateProjectParams) -> CoreRe
         super::git::read_hosts(&core, vec![project.path.to_string_lossy().into_owned()]);
         super::codehost::picked(&core, &project.path.to_string_lossy());
     }
-    core.view_changed();
     Ok(project)
 }
 
@@ -2107,9 +2103,7 @@ pub(crate) struct MoveProjectParams {
 }
 
 pub(crate) fn move_project(core: &Core, params: MoveProjectParams) -> CoreResult<()> {
-    core.workspaces.move_project(&params.id, params.index)?;
-    core.view_changed();
-    Ok(())
+    core.workspaces.move_project(&params.id, params.index)
 }
 
 #[derive(Deserialize)]
@@ -2118,9 +2112,7 @@ pub(crate) struct SpacesParams {
 }
 
 pub(crate) fn set_spaces(core: &Core, params: SpacesParams) -> CoreResult<()> {
-    core.workspaces.set_spaces(params.spaces)?;
-    core.view_changed();
-    Ok(())
+    core.workspaces.set_spaces(params.spaces)
 }
 
 #[derive(Deserialize)]
@@ -2129,9 +2121,7 @@ pub(crate) struct PinnedParams {
 }
 
 pub(crate) fn set_pinned_chats(core: &Core, params: PinnedParams) -> CoreResult<()> {
-    core.workspaces.set_pinned(params.chats)?;
-    core.view_changed();
-    Ok(())
+    core.workspaces.set_pinned(params.chats)
 }
 
 #[derive(Deserialize)]
@@ -2141,9 +2131,7 @@ pub(crate) struct PinParams {
 }
 
 pub(crate) fn pin_chat(core: &Core, params: PinParams) -> CoreResult<()> {
-    core.workspaces.pin_chat(&params.recent, params.pinned)?;
-    core.view_changed();
-    Ok(())
+    core.workspaces.pin_chat(&params.recent, params.pinned)
 }
 
 #[derive(Deserialize)]
@@ -2278,18 +2266,14 @@ pub(crate) fn close(core: &Core, agent_ids: &[String]) -> CoreResult<()> {
     let before = core.workspaces.agent_ids();
     core.workspaces.close_agents(agent_ids)?;
     agents_closed(core, before);
-    core.view_changed();
     Ok(())
 }
 
 /// Titles the agent from what its chat said, as [`Workspaces::note_title`]
-/// does, and shows every client.
+/// does.
 pub(crate) fn retitle(core: &Core, agent_id: &str, title: Option<String>, stand_in: bool) {
-    let Some(title) = title else {
-        return;
-    };
-    if core.workspaces.note_title(agent_id, &title, stand_in) {
-        core.view_changed();
+    if let Some(title) = title {
+        core.workspaces.note_title(agent_id, &title, stand_in);
     }
 }
 
@@ -2562,7 +2546,6 @@ async fn refresh(core: Arc<Core>, asked: u64) {
         *logged = missed;
     }
     core.workspaces.set_launchers(found);
-    core.view_changed();
     // The accounts' kept plan limits are listed by launcher, so they show once launchers are.
     core.changes.changed(Topic::Usage, None, None);
 }
