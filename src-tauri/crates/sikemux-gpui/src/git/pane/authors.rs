@@ -31,7 +31,7 @@ impl GitPane {
         self.authors.read_for = Some(read_for);
         self.authors.by_email.clear();
         let call = move |method: &'static str, more| {
-            crate::codehost::call_of(&host.host, &host.repo, &account, method, more)
+            crate::codehost::call_of(&host.plugin, &host.repo, &account, method, more)
         };
         let listed = self
             .core

@@ -165,11 +165,12 @@ impl CiCard {
         };
         let bench = bench.read(cx);
         let asks = bench.asks.clone();
-        let host = bench.watched_ci.as_ref().map(|ci| ci.host.clone());
+        let plugin = bench.watched_ci.as_ref().map(|ci| ci.plugin.clone());
         self.pictures.fetch(
             |url| {
-                let asked = host.as_ref().map(|host| {
-                    let call = json!({ "plugin": format!("sikemux.{host}"), "method": "image", "params": { "url": url } });
+                let asked = plugin.as_ref().map(|plugin| {
+                    let call =
+                        json!({ "plugin": plugin, "method": "image", "params": { "url": url } });
                     crate::core::request(&asks, "plugin", call)
                 });
                 async move { asked?.await.ok()?["value"].as_str().map(str::to_owned) }
@@ -212,8 +213,7 @@ fn plugin(
         params["owner"] = json!(ci.owner);
         params["name"] = json!(ci.name);
         params["account"] = json!(ci.account);
-        let call =
-            json!({ "plugin": format!("sikemux.{}", ci.host), "method": method, "params": params });
+        let call = json!({ "plugin": ci.plugin, "method": method, "params": params });
         crate::core::request(&bench.asks, "plugin", call)
     });
     async move { asked?.await.ok()?.get("value").cloned() }

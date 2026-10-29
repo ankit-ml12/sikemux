@@ -79,7 +79,7 @@ impl Inbox {
         let answered = self.core.request(
             "plugin",
             call_of(
-                &self.host.host,
+                &self.host.plugin,
                 &self.host.repo,
                 &self.account,
                 method,

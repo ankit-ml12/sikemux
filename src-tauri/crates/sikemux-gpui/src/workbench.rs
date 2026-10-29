@@ -255,7 +255,8 @@ pub struct Workbench {
 
 #[derive(Clone, PartialEq)]
 pub struct CiRepo {
-    pub host: String,
+    /// The plugin that speaks for the code host, such as `sikemux.github`.
+    pub plugin: String,
     pub owner: String,
     pub name: String,
     pub account: Option<String>,
@@ -2172,7 +2173,7 @@ impl Workbench {
         }
         let repos: Vec<Value> = shown
             .iter()
-            .map(|ci| json!({ "provider": format!("sikemux.{}", ci.host), "owner": ci.owner, "name": ci.name, "account": ci.account, "host": null }))
+            .map(|ci| json!({ "provider": ci.plugin, "owner": ci.owner, "name": ci.name, "account": ci.account, "host": null }))
             .collect();
         let _ = self.asks.send(Ask::Watch(
             "ci-shown",
@@ -2180,7 +2181,7 @@ impl Workbench {
         ));
         if let Some(ci) = &shown {
             let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "branch": ci.branch, "perPage": 1 });
-            let call = json!({ "plugin": format!("sikemux.{}", ci.host), "method": "runs", "params": runs });
+            let call = json!({ "plugin": ci.plugin, "method": "runs", "params": runs });
             let _ = self
                 .asks
                 .send(Ask::Watch("ci", Watch::new("plugin", call, &[Topic::Ci])));
@@ -2194,14 +2195,13 @@ impl Workbench {
             .code_host
             .as_ref()
             .filter(|host| host.host == "github")?;
-        let plugin = format!("sikemux.{}", host.host);
-        let signed_in = self.reads.plugins.signed_in(&plugin) == Some(true);
+        let signed_in = self.reads.plugins.signed_in(&host.plugin) == Some(true);
         let (owner, name) = host.repo.split_once('/')?;
         if !signed_in {
             return None;
         }
         Some(CiRepo {
-            host: host.host.clone(),
+            plugin: host.plugin.clone(),
             owner: owner.to_owned(),
             name: name.to_owned(),
             account: project
@@ -2227,8 +2227,7 @@ impl Workbench {
             return;
         }
         let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "headSha": head, "perPage": 20 });
-        let call =
-            json!({ "plugin": format!("sikemux.{}", ci.host), "method": "runs", "params": runs });
+        let call = json!({ "plugin": ci.plugin, "method": "runs", "params": runs });
         let _ = self.asks.send(Ask::Watch(
             "ci-head",
             Watch::new("plugin", call, &[Topic::Ci]),

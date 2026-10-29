@@ -607,12 +607,11 @@ impl HostArea {
     /// The form the host is signed in to with a token, as its plugin gives it.
     fn token_form(&self, cx: &App) -> Option<TokenForm> {
         let bench = self.bench.upgrade()?;
-        let plugin = format!("sikemux.{}", self.host.host);
-        bench.read(cx).reads.plugins.token_form(&plugin).cloned()
+        bench.read(cx).reads.plugins.token_form(&self.host.plugin).cloned()
     }
 
     fn plugin_call(&self, method: &str, more: Value) -> Value {
-        call_of(&self.host.host, self.repo(), &self.account, method, more)
+        call_of(&self.host.plugin, self.repo(), &self.account, method, more)
     }
 
     /// The repository shown: the project's, or another an inbox item opened.
@@ -848,9 +847,9 @@ impl Render for HostArea {
     }
 }
 
-/// The `plugin` call of `method` of `host`'s plugin about `repo`, as `account`, with `more`.
+/// The `plugin` call of `method` of `plugin` about `repo`, as `account`, with `more`.
 pub(crate) fn call_of(
-    host: &str,
+    plugin: &str,
     repo: &str,
     account: &Option<String>,
     method: &str,
@@ -858,7 +857,7 @@ pub(crate) fn call_of(
 ) -> Value {
     let (owner, name) = repo.split_once('/').unwrap_or_default();
     let mut params = json!({
-        "provider": host,
+        "provider": plugin,
         "owner": owner,
         "name": name,
         "account": account,
@@ -866,7 +865,7 @@ pub(crate) fn call_of(
     if let (Some(params), Value::Object(more)) = (params.as_object_mut(), more) {
         params.extend(more);
     }
-    json!({ "plugin": format!("sikemux.{host}"), "method": method, "params": params })
+    json!({ "plugin": plugin, "method": method, "params": params })
 }
 
 /// Says that `host` is out of reach and what shows is what it last said.
