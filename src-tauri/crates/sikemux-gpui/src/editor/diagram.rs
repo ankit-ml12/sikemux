@@ -5,6 +5,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -15,7 +16,11 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, TextAlign, TextRun, WeakEntity, Window,
 };
 
+use serde_json::{json, Value};
+use tokio::sync::mpsc::UnboundedSender;
+
 use super::dbml::{self, Ref, Schema};
+use crate::core::{self, Ask};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::IconButton;
@@ -101,6 +106,24 @@ enum Drag {
 /// Shows the file's text at a line, counted from 0.
 pub(crate) type OpenLine = Rc<dyn Fn(u32, &mut Window, &mut App)>;
 
+/// How long after the last move, pan or zoom the arrangement is kept, so a drag writes once.
+const SAVE_AFTER: Duration = Duration::from_millis(400);
+/// How long a diagram waits for its kept arrangement before it lays itself out.
+const LOAD_WAIT: Duration = Duration::from_millis(800);
+
+/// Where the core keeps a diagram's arrangement across restarts.
+pub(crate) struct Kept {
+    pub asks: UnboundedSender<Ask>,
+    pub key: KeptKey,
+}
+
+pub(crate) enum KeptKey {
+    /// One arrangement, such as a file's, whatever its text.
+    Fixed(String),
+    /// An arrangement for each text under this prefix, such as a chat's blocks.
+    ByText(String),
+}
+
 pub(crate) struct Diagram {
     schema: Rc<Schema>,
     cards: Vec<Card>,
@@ -139,6 +162,13 @@ pub(crate) struct Diagram {
     /// How wide each name and type measured, so text that grows as an agent writes it is
     /// measured once rather than on every change.
     widths: HashMap<(String, u8), f32>,
+    /// The text it was last drawn from.
+    source: String,
+    kept_by: Option<Kept>,
+    /// Waiting for the kept arrangement, which it is drawn with once it comes.
+    loading: bool,
+    /// When the arrangement is next kept, while a move has not been kept yet.
+    save_at: Option<Instant>,
 }
 
 impl Diagram {
@@ -176,9 +206,134 @@ impl Diagram {
             embedded,
             touched: false,
             widths: HashMap::new(),
+            source: String::new(),
+            kept_by: None,
+            loading: false,
+            save_at: None,
         };
         diagram.read(source);
         diagram
+    }
+
+    /// Keeps where the person moves the tables with the core, and draws the arrangement kept
+    /// there when one is, waiting a moment for it before laying the tables out.
+    pub(crate) fn kept_by(&mut self, kept: Kept, cx: &mut Context<Self>) {
+        let key = self.key_for(&kept.key);
+        let asked = core::request(&kept.asks, "diagramLayout", json!({ "key": key }));
+        self.kept_by = Some(kept);
+        self.loading = true;
+        cx.spawn(async move |this, cx| {
+            let answer = asked.await.ok();
+            let _ = this.update(cx, |diagram, cx| {
+                if !diagram.loading {
+                    return;
+                }
+                let layout = answer.and_then(|answer| answer.get("layout").cloned());
+                if let Some(layout) = layout.filter(|layout| !layout.is_null()) {
+                    diagram.restore(&layout);
+                }
+                diagram.loading = false;
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(LOAD_WAIT).await;
+            let _ = this.update(cx, |diagram, cx| {
+                if std::mem::take(&mut diagram.loading) {
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn key_for(&self, key: &KeptKey) -> String {
+        match key {
+            KeptKey::Fixed(key) => key.clone(),
+            KeptKey::ByText(prefix) => format!("{prefix}:{:016x}", fnv(&self.source)),
+        }
+    }
+
+    /// Draws the tables where the kept arrangement put them, at its pan and zoom.
+    fn restore(&mut self, layout: &Value) {
+        let Some(tables) = layout["tables"].as_object() else {
+            return;
+        };
+        self.kept = (tables.iter())
+            .filter_map(|(name, at)| {
+                let at = at.as_array()?;
+                Some((
+                    name.clone(),
+                    point(at.first()?.as_f64()? as f32, at.get(1)?.as_f64()? as f32),
+                ))
+            })
+            .collect();
+        let source = std::mem::take(&mut self.source);
+        self.read(&source);
+        self.touched = true;
+        let pan = layout["pan"].as_array();
+        let zoom = layout["zoom"].as_f64();
+        if let (Some(pan), Some(zoom)) = (pan, zoom) {
+            let x = pan.first().and_then(Value::as_f64).unwrap_or_default();
+            let y = pan.get(1).and_then(Value::as_f64).unwrap_or_default();
+            self.pan = point(x as f32, y as f32);
+            self.zoom = (zoom as f32).clamp(MIN_ZOOM, MAX_ZOOM);
+            self.fit_pending = false;
+            self.fitted_once = true;
+        }
+    }
+
+    /// Keeps the arrangement once the person has stopped moving it for a moment.
+    fn remember(&mut self, cx: &mut Context<Self>) {
+        if self.kept_by.is_none() {
+            return;
+        }
+        let waiting = self.save_at.is_some();
+        self.save_at = Some(Instant::now() + SAVE_AFTER);
+        if waiting {
+            return;
+        }
+        cx.spawn(async move |this, cx| loop {
+            let due = this.update(cx, |diagram, _| diagram.save_at).ok().flatten();
+            let Some(due) = due else {
+                return;
+            };
+            let now = Instant::now();
+            if now < due {
+                cx.background_executor().timer(due - now).await;
+                continue;
+            }
+            let _ = this.update(cx, |diagram, _| {
+                diagram.save_at = None;
+                diagram.keep(true);
+            });
+            return;
+        })
+        .detach();
+    }
+
+    /// Tells the core where the tables are, or that there is no arrangement to keep.
+    fn keep(&self, arranged: bool) {
+        let Some(kept) = &self.kept_by else {
+            return;
+        };
+        let layout = arranged.then(|| {
+            let tables: serde_json::Map<String, Value> = (self.schema.tables.iter())
+                .zip(&self.cards)
+                .map(|(table, card)| (table.name.clone(), json!([card.x.round(), card.y.round()])))
+                .collect();
+            json!({
+                "tables": tables,
+                "pan": [self.pan.x.round(), self.pan.y.round()],
+                "zoom": self.zoom,
+            })
+        });
+        let key = self.key_for(&kept.key);
+        let _ = kept.asks.send(Ask::Call {
+            method: "setDiagramLayout",
+            params: json!({ "key": key, "layout": layout }),
+        });
     }
 
     pub(crate) fn set_source(&mut self, source: &str, cx: &mut Context<Self>) {
@@ -203,6 +358,7 @@ impl Diagram {
     }
 
     fn read(&mut self, source: &str) {
+        self.source = source.to_owned();
         self.schema = Rc::new(dbml::parse(source));
         self.cards = (self.schema.tables.iter())
             .map(|table| match self.kept.get(&table.name) {
@@ -321,6 +477,7 @@ impl Diagram {
         let origin = self.viewport.get().origin;
         self.zoom = (self.zoom * factor).clamp(MIN_ZOOM, MAX_ZOOM);
         self.touched = true;
+        self.remember(cx);
         self.pan = point(
             f32::from(at.x - origin.x) - world.x * self.zoom,
             f32::from(at.y - origin.y) - world.y * self.zoom,
@@ -390,6 +547,8 @@ impl Diagram {
         arrange(&self.schema, &mut self.cards);
         self.kept.clear();
         self.touched = false;
+        self.save_at = None;
+        self.keep(false);
         self.fit(cx);
     }
 
@@ -526,6 +685,7 @@ impl Render for Diagram {
             pointer: self.pointer,
             dragging: matches!(self.drag, Some(Drag::Card { .. } | Drag::Pan { .. })),
             waiting: self.fit_pending,
+            hidden: self.loading,
             lanes: lanes(&self.schema, &self.cards),
             map: !self.embedded,
             t: t.clone(),
@@ -573,6 +733,9 @@ impl Render for Diagram {
                             },
                             &hitbox,
                         );
+                        if frame.hidden {
+                            return;
+                        }
                         if frame.waiting {
                             let this = this.clone();
                             cx.defer(move |cx| {
@@ -722,6 +885,9 @@ fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
             }
             let _ = this.update(cx, |diagram, cx| {
                 if diagram.drag.take().is_some() {
+                    if diagram.touched {
+                        diagram.remember(cx);
+                    }
                     cx.notify();
                 }
             });
@@ -746,6 +912,7 @@ fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
                     diagram.touched = true;
                     diagram.pan.x += f32::from(delta.x);
                     diagram.pan.y += f32::from(delta.y);
+                    diagram.remember(cx);
                     cx.notify();
                 }
                 true
@@ -780,6 +947,9 @@ struct Frame {
     pointer: Option<Point<Pixels>>,
     dragging: bool,
     waiting: bool,
+    /// Its kept arrangement has not come yet, so it draws nothing rather than a layout that
+    /// would jump.
+    hidden: bool,
     /// Where each reference crossing a gap between tables turns, so lines sharing a gap
     /// take lanes of their own.
     lanes: HashMap<usize, f32>,
@@ -1896,6 +2066,13 @@ fn dot_tile(ink: Hsla) -> Option<Arc<RenderImage>> {
         let image = Arc::new(RenderImage::new([image::Frame::new(pixels)]));
         *tile.borrow_mut() = Some((ink, image.clone()));
         Some(image)
+    })
+}
+
+/// A hash of `text` that stays the same from one run and build to the next, unlike std's.
+fn fnv(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ byte as u64).wrapping_mul(0x0100_0000_01b3)
     })
 }
 

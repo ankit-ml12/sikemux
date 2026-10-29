@@ -1244,7 +1244,7 @@ fn read(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
                     document.notice = None;
                     if document.mode == preview::Mode::Preview {
                         let text = document.saved.clone();
-                        show_rendered(document, &key, &text, window, cx);
+                        show_rendered(document, &key, &text, &asks, window, cx);
                         preview::refind(document, cx);
                     }
                     lsp::changed(document, &asks, cx);
@@ -1628,7 +1628,7 @@ fn show_mode(
     match mode {
         preview::Mode::Preview => {
             let text = document.state.read(cx).value();
-            show_rendered(document, key, &text, window, cx);
+            show_rendered(document, key, &text, &bench.asks, window, cx);
             document.goto = None;
             preview::refind(document, cx);
             if matches!(
@@ -1651,6 +1651,7 @@ fn show_rendered(
     document: &mut Document,
     key: &FileKey,
     text: &str,
+    asks: &tokio::sync::mpsc::UnboundedSender<Ask>,
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) {
@@ -1684,6 +1685,14 @@ fn show_rendered(
                 diagram.update(cx, |diagram, cx| diagram.set_source(text, cx));
                 return;
             }
+            let host = match &key.place {
+                Host::This => "this".to_owned(),
+                Host::Account(host) => format!("host:{host}"),
+            };
+            let kept = diagram::Kept {
+                asks: asks.clone(),
+                key: diagram::KeptKey::Fixed(format!("file:{host}:{}", key.path.display())),
+            };
             let (bench, key) = (cx.entity().downgrade(), key.clone());
             let open: diagram::OpenLine = Rc::new(move |line, window, cx| {
                 let at = OpenAt {
@@ -1698,7 +1707,11 @@ fn show_rendered(
                     place_cursor(bench, &key, &at, window, cx)
                 });
             });
-            let diagram = cx.new(|_| diagram::Diagram::new(text, open));
+            let diagram = cx.new(|cx| {
+                let mut diagram = diagram::Diagram::new(text, open);
+                diagram.kept_by(kept, cx);
+                diagram
+            });
             document.rendered = Some(Rendered::Diagram(diagram));
         }
         _ => document.rendered = Some(Rendered::Markdown(Rc::new(preview::render(text)))),

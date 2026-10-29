@@ -14,15 +14,22 @@ use gpui_kit::{
 };
 use gpui_transcript::{Fence, Fences};
 
-use crate::editor::diagram::Diagram;
+use tokio::sync::mpsc::UnboundedSender;
+
+use crate::core::Ask;
+use crate::editor::diagram::{Diagram, Kept, KeptKey};
 use crate::theme::{self, Tokens};
 use crate::workbench::Workbench;
 
 /// Draws the ```dbml blocks of `agent`'s chat.
-pub(super) fn fences(bench: WeakEntity<Workbench>, agent: String) -> Fences {
+pub(super) fn fences(
+    bench: WeakEntity<Workbench>,
+    agent: String,
+    asks: UnboundedSender<Ask>,
+) -> Fences {
     Fences {
         langs: Rc::from(["dbml"]),
-        draw: Rc::new(move |fence, window, cx| block(fence, &bench, &agent, window, cx)),
+        draw: Rc::new(move |fence, window, cx| block(fence, &bench, &agent, &asks, window, cx)),
     }
 }
 
@@ -43,13 +50,25 @@ fn block(
     fence: Fence,
     bench: &WeakEntity<Workbench>,
     agent: &str,
+    asks: &UnboundedSender<Ask>,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
     let key = ElementId::NamedChild(Arc::new(fence.id.clone()), "dbml".into());
     let written = fence.code.clone();
     let block = window.use_keyed_state(key, cx, |_, cx| Block {
-        diagram: cx.new(|_| Diagram::embedded(&written)),
+        diagram: cx.new(|cx| {
+            let mut diagram = Diagram::embedded(&written);
+            let key = KeptKey::ByText(format!("chat:{agent}"));
+            diagram.kept_by(
+                Kept {
+                    asks: asks.clone(),
+                    key,
+                },
+                cx,
+            );
+            diagram
+        }),
         code: written.clone(),
         written: written.clone(),
         source: false,
