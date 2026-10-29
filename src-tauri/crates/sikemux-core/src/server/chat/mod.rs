@@ -2399,6 +2399,39 @@ pub(crate) fn switch_account(core: &Core, agent_id: &str, account: ChatAccount) 
     Ok(())
 }
 
+/// The account the agent's chat runs on, and the signed-in accounts that keep
+/// its chats too, which it may move to.
+pub(crate) fn accounts(
+    core: &Core,
+    agent_id: &str,
+) -> CoreResult<(Option<ChatAccount>, Vec<ChatAccount>)> {
+    let chat = core.chats.running(agent_id)?;
+    let (provider, launch) = (chat.provider(), chat.current_launch());
+    let others = launch
+        .fallbacks
+        .iter()
+        .filter(|other| {
+            let env = rebind::on_account(provider, &launch, other).env;
+            matches!(
+                crate::acp::account::signed_in(provider, &env),
+                Some(crate::acp::account::SignIn::Account(_))
+            )
+        })
+        .cloned()
+        .collect();
+    Ok((launch.account, others))
+}
+
+/// Moves the agent's chat to `account_id`, one of the accounts [`accounts`] offers.
+pub(crate) fn move_to_account(core: &Core, agent_id: &str, account_id: &str) -> CoreResult<()> {
+    let (_, others) = accounts(core, agent_id)?;
+    let account = others
+        .into_iter()
+        .find(|other| other.id == account_id)
+        .ok_or("that account cannot carry this chat on")?;
+    switch_account(core, agent_id, account)
+}
+
 /// Stops the running turn. The messages waiting behind it go back to the
 /// person rather than out.
 pub(crate) fn cancel(core: &Core, agent_id: &str) -> CoreResult<()> {

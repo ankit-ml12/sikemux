@@ -15,6 +15,7 @@ use crate::agent_accounts::{chat_account, defaults, folders, status, usage, Book
 use crate::agent_catalog::{AgentEntry, AGENTS};
 use crate::flights::{shared, Flights};
 use crate::launch::discovery;
+use crate::protocol::ChatAccount;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +35,27 @@ pub(super) struct Forget {
 #[serde(rename_all = "camelCase")]
 pub(super) struct Resuming {
     agent_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Moving {
+    agent_id: String,
+    account_id: String,
+}
+
+/// The account a chat runs on and those it may move to, as a client offers them.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ChatAccounts {
+    account: Option<Named>,
+    others: Vec<Named>,
+}
+
+#[derive(Serialize)]
+pub(super) struct Named {
+    id: String,
+    label: String,
 }
 
 #[derive(Deserialize)]
@@ -351,6 +373,22 @@ pub(super) fn retry_failed(core: &Core, failed: Resuming) -> CoreResult<()> {
 
 pub(super) fn discard_failed(core: &Core, failed: Resuming) -> CoreResult<()> {
     failed_chat(core, &failed)?.discard_failed()
+}
+
+pub(super) fn chat_accounts(core: &Core, chat: Resuming) -> CoreResult<ChatAccounts> {
+    let named = |account: ChatAccount| Named {
+        id: account.id,
+        label: account.label,
+    };
+    let (account, others) = super::chat::accounts(core, &chat.agent_id)?;
+    Ok(ChatAccounts {
+        account: account.map(named),
+        others: others.into_iter().map(named).collect(),
+    })
+}
+
+pub(super) fn move_chat(core: &Core, moving: Moving) -> CoreResult<()> {
+    super::chat::move_to_account(core, &moving.agent_id, &moving.account_id)
 }
 
 pub(super) async fn authenticate(core: &Arc<Core>, params: Authenticate) -> CoreResult<()> {

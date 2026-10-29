@@ -299,8 +299,10 @@ calls! { core, client, params;
     "setAccountAutoSwitch": Local => {
         answer(agent_accounts::set_auto_switch(&core, parse(params)?).await?)
     },
-    "retryFailed": Local => answer(agent_accounts::retry_failed(&core, parse(params)?)?),
-    "discardFailed": Local => answer(agent_accounts::discard_failed(&core, parse(params)?)?),
+    "retryFailed": Full => answer(agent_accounts::retry_failed(&core, parse(params)?)?),
+    "discardFailed": Full => answer(agent_accounts::discard_failed(&core, parse(params)?)?),
+    "chatAccounts": Full => answer(agent_accounts::chat_accounts(&core, parse(params)?)?),
+    "moveChatAccount": Full => answer(agent_accounts::move_chat(&core, parse(params)?)?),
     "authenticateChat": Local => {
         agent_accounts::authenticate(&core, parse(params)?).await?;
         answer(())
