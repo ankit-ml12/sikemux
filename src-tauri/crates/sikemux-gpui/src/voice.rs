@@ -12,8 +12,7 @@ use gpui_kit::{
     div, Animation, AnimationExt, App, Context, Entity, EventEmitter, IntoElement, ParentElement,
     Render, SharedString, Styled, Subscription, Task, Window,
 };
-use serde_json::Value;
-use sikemux_voice::Voice;
+use sikemux_voice::{Reason, Stage, Voice, VoiceEvent};
 use sikemux_wire::protocol::NetworkChange;
 use tokio::sync::mpsc;
 
@@ -158,48 +157,46 @@ impl Dictation {
         cx.notify();
     }
 
-    fn heard(&mut self, event: &Value, cx: &mut Context<Self>) {
-        let text = || event["text"].as_str().unwrap_or_default().to_owned();
-        match event["type"].as_str().unwrap_or_default() {
-            "progress" => {
+    fn heard(&mut self, event: &VoiceEvent, cx: &mut Context<Self>) {
+        match event {
+            VoiceEvent::Progress { stage, fraction } => {
                 self.phase = Phase::Preparing;
-                self.downloading = (event["stage"] == "download")
-                    .then(|| event["fraction"].as_f64().unwrap_or(0.));
+                self.downloading = (*stage == Stage::Download).then_some(*fraction);
             }
-            "ready" => (self.phase, self.downloading, self.reason) = (Phase::Ready, None, None),
-            "listening" if self.phase == Phase::Ready => {
+            VoiceEvent::Ready => {
+                (self.phase, self.downloading, self.reason) = (Phase::Ready, None, None)
+            }
+            VoiceEvent::Listening if self.phase == Phase::Ready => {
                 (self.phase, self.partial) = (Phase::Listening, SharedString::default());
             }
-            "partial" if matches!(self.phase, Phase::Listening | Phase::Transcribing) => {
-                self.partial = text().into();
+            VoiceEvent::Partial { text }
+                if matches!(self.phase, Phase::Listening | Phase::Transcribing) =>
+            {
+                self.partial = text.clone().into();
             }
-            "transcript" => {
+            VoiceEvent::Transcript { text } => {
                 self.phase = Phase::Ready;
-                self.deliver(text(), cx);
+                self.deliver(text.clone(), cx);
             }
-            "cancelled" => self.settle(Phase::Ready),
-            "exited" => {
+            VoiceEvent::Cancelled => self.settle(Phase::Ready),
+            VoiceEvent::Exited => {
                 self.settle(Phase::Off);
                 self.reason =
                     Some("The voice helper stopped. Hold the key again to restart it.".into());
             }
-            "error" => {
-                let message: SharedString = event["message"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_owned()
-                    .into();
-                let lost = matches!(event["reason"].as_str(), Some("offline" | "models"));
+            VoiceEvent::Error { reason, message } => {
+                let message: SharedString = message.clone().into();
+                let lost = reason.stops_dictation();
                 self.settle(if lost { Phase::Off } else { Phase::Ready });
                 if lost {
                     (self.downloading, self.reason) = (None, Some(message.clone()));
                 }
-                if event["reason"] == "offline" {
+                if *reason == Reason::Offline {
                     self.waiting_for_network = true;
                 }
                 cx.emit(Heard::Say(message));
             }
-            _ => return,
+            VoiceEvent::Listening | VoiceEvent::Partial { .. } => return,
         }
         cx.notify();
     }

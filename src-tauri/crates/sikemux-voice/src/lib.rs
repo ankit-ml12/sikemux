@@ -12,8 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use serde::Serialize;
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 use sikemux_process::sync::Locked;
 use tokio::sync::{mpsc, oneshot};
 
@@ -34,6 +33,74 @@ const MODEL_FETCH_VARIABLES: [&str; 5] = [
     "HUGGINGFACEHUB_API_TOKEN",
 ];
 
+/// What dictation reports: the helper's own events, then the download's and the helper's.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum VoiceEvent {
+    Progress {
+        stage: Stage,
+        fraction: f64,
+    },
+    Ready,
+    Listening,
+    Partial {
+        text: String,
+    },
+    Transcript {
+        text: String,
+    },
+    Cancelled,
+    Error {
+        reason: Reason,
+        message: String,
+    },
+    /// The helper stopped without the app asking it to.
+    Exited,
+}
+
+/// What is being made ready while a [`VoiceEvent::Progress`] goes on.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Stage {
+    /// The speech model and the helper are downloading.
+    Download,
+    #[serde(other)]
+    Preparing,
+}
+
+/// Why dictation failed.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Reason {
+    /// The network went away mid-download; it carries on once it is back.
+    Offline,
+    /// The speech model could not be fetched or loaded.
+    Models,
+    /// Something went wrong with one recording, and dictation still works.
+    #[serde(other)]
+    Other,
+}
+
+impl Reason {
+    /// Dictation cannot carry on until the models are in place again.
+    pub fn stops_dictation(self) -> bool {
+        matches!(self, Reason::Offline | Reason::Models)
+    }
+}
+
+/// What the app tells the helper.
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum Command<'a> {
+    #[serde(rename_all = "camelCase")]
+    Prepare {
+        models_dir: &'a Path,
+    },
+    Start,
+    Stop,
+    Cancel,
+}
+
 struct Helper {
     child: Child,
     stdin: ChildStdin,
@@ -50,7 +117,7 @@ struct Download {
 #[derive(Clone)]
 pub struct Voice {
     dir: PathBuf,
-    events: mpsc::UnboundedSender<Value>,
+    events: mpsc::UnboundedSender<VoiceEvent>,
     helper: Arc<Mutex<Option<Helper>>>,
     download: Arc<Mutex<Option<Download>>>,
 }
@@ -64,9 +131,8 @@ pub struct Status {
 }
 
 impl Voice {
-    /// Dictation keeping its models in `dir` and reporting on `events`: the helper's own
-    /// events, then `progress`, `error` and `exited` for the download and the helper.
-    pub fn new(dir: PathBuf, events: mpsc::UnboundedSender<Value>) -> Self {
+    /// Dictation keeping its models in `dir` and reporting on `events`.
+    pub fn new(dir: PathBuf, events: mpsc::UnboundedSender<VoiceEvent>) -> Self {
         Voice {
             dir,
             events,
@@ -106,9 +172,10 @@ impl Voice {
                 .build();
             match runtime {
                 Ok(runtime) => runtime.block_on(voice.fetch(cancelled)),
-                Err(error) => {
-                    voice.failed("models", format!("Could not start the download: {error}"))
-                }
+                Err(error) => voice.failed(
+                    Reason::Models,
+                    format!("Could not start the download: {error}"),
+                ),
             }
         });
         *download = Some(Download {
@@ -125,9 +192,10 @@ impl Voice {
         let fetched = loop {
             let events = self.events.clone();
             let ensure = models::ensure(&self.dir, local_helper().is_none(), |fraction| {
-                let progress =
-                    json!({ "type": "progress", "stage": "download", "fraction": fraction });
-                let _ = events.send(progress);
+                let _ = events.send(VoiceEvent::Progress {
+                    stage: Stage::Download,
+                    fraction,
+                });
             });
             let fetched = tokio::select! {
                 fetched = ensure => fetched,
@@ -139,7 +207,7 @@ impl Voice {
                 Err(Missing::Offline) => {}
             }
             if !std::mem::replace(&mut said_offline, true) {
-                self.failed("offline", DOWNLOAD_OFFLINE.to_owned());
+                self.failed(Reason::Offline, DOWNLOAD_OFFLINE.to_owned());
             }
             tokio::select! {
                 () = tokio::time::sleep(OFFLINE_RETRY) => {}
@@ -147,35 +215,30 @@ impl Voice {
             }
         };
         let sent = match fetched {
-            Err(error) => Err((
-                "models",
-                format!("Could not download the speech model: {error}"),
-            )),
-            Ok(()) => self
-                .send(json!({ "type": "prepare", "modelsDir": self.dir.to_string_lossy() }))
-                .map_err(|error| ("models", error)),
+            Err(error) => Err(format!("Could not download the speech model: {error}")),
+            Ok(()) => self.send(Command::Prepare {
+                models_dir: &self.dir,
+            }),
         };
-        if let Err((reason, message)) = sent {
-            self.failed(reason, message);
+        if let Err(message) = sent {
+            self.failed(Reason::Models, message);
         }
     }
 
-    fn failed(&self, reason: &str, message: String) {
-        let _ = self
-            .events
-            .send(json!({ "type": "error", "reason": reason, "message": message }));
+    fn failed(&self, reason: Reason, message: String) {
+        let _ = self.events.send(VoiceEvent::Error { reason, message });
     }
 
     pub fn start(&self) -> Result<(), String> {
-        self.send(json!({ "type": "start" }))
+        self.send(Command::Start)
     }
 
     pub fn stop(&self) -> Result<(), String> {
-        self.send(json!({ "type": "stop" }))
+        self.send(Command::Stop)
     }
 
     pub fn cancel(&self) -> Result<(), String> {
-        self.send(json!({ "type": "cancel" }))
+        self.send(Command::Cancel)
     }
 
     /// Stops the download and the helper, as the app quits.
@@ -188,7 +251,7 @@ impl Voice {
         }
     }
 
-    fn send(&self, command: Value) -> Result<(), String> {
+    fn send(&self, command: Command) -> Result<(), String> {
         let mut slot = self.helper.locked();
         let running = slot
             .as_mut()
@@ -197,7 +260,7 @@ impl Voice {
             *slot = Some(self.spawn()?);
         }
         let helper = slot.as_mut().expect("helper was just started");
-        let mut line = command.to_string();
+        let mut line = serde_json::to_string(&command).map_err(|error| error.to_string())?;
         line.push('\n');
         helper
             .stdin
@@ -227,12 +290,12 @@ impl Voice {
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
-                if let Ok(event) = serde_json::from_str::<Value>(&line) {
+                if let Ok(event) = serde_json::from_str::<VoiceEvent>(&line) {
                     let _ = events.send(event);
                 }
             }
             if !stopped.load(Ordering::SeqCst) {
-                let _ = events.send(json!({ "type": "exited" }));
+                let _ = events.send(VoiceEvent::Exited);
             }
         });
         Ok(Helper {
