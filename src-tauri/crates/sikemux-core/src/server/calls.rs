@@ -1313,7 +1313,7 @@ async fn edits(core: &Arc<Core>, filter: Filter) -> CoreResult<Vec<Edit>> {
 }
 
 /// What waits on the person, ranked as devices' views list it.
-async fn inbox(core: &Arc<Core>) -> CoreResult<inbox::View> {
+async fn inbox(core: &Arc<Core>) -> CoreResult<sikemux_wire::inbox::Inbox> {
     let core = core.clone();
     blocking(move || {
         let (chats, sessions) = core.ranked_infos();
@@ -1329,7 +1329,10 @@ struct DigestParams {
 }
 
 /// What finished, failed and waits since the person last left, or `since`.
-async fn digest(core: &Arc<Core>, params: DigestParams) -> CoreResult<inbox::Digest> {
+async fn digest(
+    core: &Arc<Core>,
+    params: DigestParams,
+) -> CoreResult<sikemux_wire::inbox::InboxDigest> {
     let core = core.clone();
     blocking(move || Ok(inbox::digest(&core, params.since))).await
 }

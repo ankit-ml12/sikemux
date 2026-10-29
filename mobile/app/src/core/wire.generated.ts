@@ -17,10 +17,7 @@ export interface DeviceView {
   attentions: Attention[];
   /** The newest saved chats in this host's projects, none of them open. */
   recent?: RecentInfo[];
-  /**
-   * What waits on the person, ranked, as the core's inbox JSON. Kept as
-   * JSON so a change to its shape reaches phones over the air.
-   */
+  /** What waits on the person, ranked. */
   inbox?: Inbox;
   /** Which project is in front, and each project's tabs. */
   layout?: Layout;
@@ -635,7 +632,7 @@ export interface InboxHandoff {
   answer?: string;
   /** What it put on its card as the result. */
   result?: string;
-  /** Files it changed in the turn, the first [`MAX_FILES`]. */
+  /** Files it changed in the turn, the first few. */
   files: string[];
   edited: number;
 }
@@ -710,6 +707,8 @@ export interface AgentShown {
    * belong to; none for an agent on its own.
    */
   team?: TeamLink;
+  /** The workspace project it is in, by id; none for one outside every project. */
+  project?: string;
 }
 
 /**

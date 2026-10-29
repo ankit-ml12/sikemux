@@ -398,7 +398,7 @@ pub(crate) struct Core {
     pub(crate) edits: edits::Edits,
     pub(crate) collisions: collisions::Collisions,
     pub(crate) notify: notify::Notifier,
-    pub(crate) inbox: inbox::Inbox,
+    pub(crate) inbox: inbox::Turns,
     /// Hosts linked with this one, and the agents of teams shared with them.
     pub(crate) hosts: hosts::Hosts,
     /// The faces agents wear, and the style the person picked for them.
@@ -523,7 +523,7 @@ impl Core {
             edits: edits::Edits::new(data_dir, me.clone()),
             collisions: collisions::Collisions::new(me.clone()),
             notify: notify::Notifier::default(),
-            inbox: inbox::Inbox::default(),
+            inbox: inbox::Turns::default(),
             hosts,
             faces: faces::Faces::new(data_dir),
             preferences: preferences::Prefs::new(data_dir),
@@ -962,7 +962,7 @@ impl Core {
         let mut attentions = self.chats.attentions();
         attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
         let recent = self.workspaces.recent(&chats);
-        let inbox = serde_json::to_value(inbox::view(self, &chats, &sessions)).ok()?;
+        let inbox = inbox::view(self, &chats, &sessions);
         let workspace = self.workspace_view();
         let layout = Box::new(layout::view(self, &workspace, &sessions, device));
         let view = DeviceView {

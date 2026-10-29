@@ -9,7 +9,7 @@ use gpui_kit::{
     Styled, WeakEntity, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::protocol::{AccountInfo, AgentStatus, PaneKind, ProjectInfo};
+use sikemux_wire::protocol::{AccountInfo, AgentGroup, AgentStatus, PaneKind, ProjectInfo};
 
 use crate::codehost::{Area, OpenArea};
 use crate::hosts::HostChoice;
@@ -842,11 +842,11 @@ fn faces(agents: &[AgentRow], cx: &App) -> impl IntoElement {
 
 /// How a project's open agents stand together, as the core rolls them up; none while all are idle.
 fn rollup(bench: &Workbench, project: &str, cx: &App) -> Option<gpui_kit::AnyElement> {
-    let status = match bench.shown()?.inbox["projects"][project]["group"].as_str()? {
-        "blocked" => AgentStatus::Blocked,
-        "working" => AgentStatus::Working,
-        "done" => AgentStatus::Done,
-        _ => return None,
+    let status = match bench.shown()?.inbox.projects.get(project)?.group {
+        AgentGroup::Blocked => AgentStatus::Blocked,
+        AgentGroup::Working => AgentStatus::Working,
+        AgentGroup::Done => AgentStatus::Done,
+        AgentGroup::Idle => return None,
     };
     ui::status_mark(&format!("project:{project}"), status, cx)
 }

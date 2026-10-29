@@ -451,13 +451,7 @@ pub struct AgentRow {
     pub team: Option<TeamLink>,
 }
 
-/// Where an agent sits on its team: the lead heads it, the last worker ends it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TeamLink {
-    Head,
-    Member,
-    Last,
-}
+pub use sikemux_wire::inbox::TeamLink;
 
 impl Workbench {
     pub fn new(link: Link, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -4462,11 +4456,11 @@ impl Workbench {
         let Some(view) = self.shown() else {
             return Vec::new();
         };
-        let ranked: Vec<&str> = view.inbox["agents"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|agent| agent["agentId"].as_str())
+        let ranked: Vec<&str> = view
+            .inbox
+            .agents
+            .iter()
+            .map(|agent| agent.agent_id.as_str())
             .collect();
         let mut rows: Vec<AgentRow> = view
             .workspace
@@ -4495,21 +4489,16 @@ impl Workbench {
             .sessions
             .iter()
             .find(|session| session.agent_id.as_deref() == Some(agent.id.as_str()));
-        let shown = view.inbox["agents"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|row| row["agentId"] == agent.id.as_str());
+        let shown = view
+            .inbox
+            .agents
+            .iter()
+            .find(|row| row.agent_id == agent.id);
         AgentRow {
-            active_at: shown.and_then(|row| row["activeAt"].as_u64()).unwrap_or(0),
-            next_trigger: shown.and_then(|row| row["nextTrigger"].as_u64()),
-            called_at: shown.and_then(|row| row["calledAt"].as_u64()),
-            team: shown.and_then(|row| match row["team"].as_str()? {
-                "head" => Some(TeamLink::Head),
-                "member" => Some(TeamLink::Member),
-                "last" => Some(TeamLink::Last),
-                _ => None,
-            }),
+            active_at: shown.and_then(|row| row.active_at).unwrap_or(0),
+            next_trigger: shown.and_then(|row| row.next_trigger),
+            called_at: shown.and_then(|row| row.called_at),
+            team: shown.and_then(|row| row.team),
             id: agent.id.clone(),
             provider: agent.provider.clone(),
             title: self.title_of(agent),

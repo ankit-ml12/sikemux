@@ -2160,10 +2160,9 @@ pub struct DeviceView {
     /// The newest saved chats in this host's projects, none of them open.
     #[serde(default)]
     pub recent: Vec<RecentInfo>,
-    /// What waits on the person, ranked, as the core's inbox JSON. Kept as
-    /// JSON so a change to its shape reaches phones over the air.
+    /// What waits on the person, ranked.
     #[serde(default)]
-    pub inbox: Value,
+    pub inbox: crate::inbox::Inbox,
     /// Which project is in front, and each project's tabs.
     #[serde(default)]
     pub layout: Box<Layout>,
@@ -2575,7 +2574,7 @@ mod tests {
             chats: Vec::new(),
             attentions: Vec::new(),
             recent: Vec::new(),
-            inbox: Value::Null,
+            inbox: Default::default(),
             layout: Box::default(),
             account: None,
             face_style: Box::default(),

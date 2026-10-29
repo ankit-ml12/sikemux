@@ -20,11 +20,11 @@ const SOURCES = [
   `${WIRE}/chat.rs`,
   `${WIRE}/theme.rs`,
   `${WIRE}/notch.rs`,
+  `${WIRE}/inbox.rs`,
   `${WIRE}/pty/shell_protocol.rs`,
   `${WIRE}/pty/task.rs`,
   `${WIRE}/accounts/protocol.rs`,
   `${WIRE}/catalog.rs`,
-  `${CORE}/server/inbox.rs`,
   `${CORE}/server/questions.rs`,
   `${CORE}/server/drafts.rs`,
   `${CORE}/server/changed.rs`,
@@ -53,18 +53,6 @@ const SOURCES = [
 
 /** Names the clients know a type by where the Rust one would clash or say too little. */
 const RENAMES = {
-  [`${CORE}/server/inbox.rs`]: {
-    View: "Inbox",
-    Inbox: "InboxTurns",
-    Item: "InboxItem",
-    Tier: "InboxTier",
-    Kind: "InboxKind",
-    Recording: "InboxRecording",
-    Handoff: "InboxHandoff",
-    CardLink: "InboxCard",
-    Shown: "AgentShown",
-    Rollup: "AgentRollup",
-  },
   [`${CORE}/server/questions.rs`]: {
     View: "AgentQuestion",
     Choice: "QuestionChoice",
@@ -97,7 +85,6 @@ const RENAMES = {
 
 /** Fields the Rust keeps as JSON so phones read changes over the air, and the type that JSON has. */
 const JSON_FIELDS = {
-  "DeviceView.inbox": "Inbox",
   "DeviceView.updates": "UpdateStatus",
 };
 

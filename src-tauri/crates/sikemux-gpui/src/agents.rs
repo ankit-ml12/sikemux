@@ -19,6 +19,7 @@ use crate::motion;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Field, Group, IconButton, Row, Segmented};
 use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, TeamLink, Workbench};
+use sikemux_wire::inbox::{InboxTier, RemoteAgent};
 
 pub const TAB_RAIL: RailWidth = RailWidth {
     min: 240.,
@@ -615,14 +616,14 @@ fn team_rows(
     } else {
         Vec::new()
     };
-    let remote_of = |members: &[&AgentRow]| -> Vec<&serde_json::Value> {
+    let remote_of = |members: &[&AgentRow]| -> Vec<&RemoteAgent> {
         remote
             .iter()
             .copied()
             .filter(|worker| {
                 members
                     .iter()
-                    .any(|member| worker["lead"] == member.id.as_str())
+                    .any(|member| worker.lead.as_deref() == Some(member.id.as_str()))
             })
             .collect()
     };
@@ -740,64 +741,48 @@ fn team_lines(team: Option<TeamLink>, open_head: bool, cx: &App) -> Vec<AnyEleme
 }
 
 /// The workers agents here started on linked hosts, as the core lists them in team order.
-fn remote_workers(bench: &Workbench) -> Vec<&serde_json::Value> {
+fn remote_workers(bench: &Workbench) -> Vec<&RemoteAgent> {
     bench
         .shown()
-        .and_then(|view| view.inbox["remoteAgents"].as_array())
         .into_iter()
-        .flatten()
-        .filter(|worker| worker["team"].is_string())
+        .flat_map(|view| &view.inbox.remote_agents)
+        .filter(|worker| worker.team.is_some())
         .collect()
 }
 
 /// A worker on a linked host, in its lead's team. It has no chat here to open.
-fn remote_row(worker: &serde_json::Value, cx: &mut Context<Workbench>) -> AnyElement {
-    let team = match worker["team"].as_str() {
-        Some("last") => Some(TeamLink::Last),
+fn remote_row(worker: &RemoteAgent, cx: &mut Context<Workbench>) -> AnyElement {
+    let team = match worker.team {
+        Some(TeamLink::Last) => Some(TeamLink::Last),
         _ => Some(TeamLink::Member),
     };
-    let reachable = worker["reachable"] == true;
-    let host = worker["host"].as_str().unwrap_or_default();
+    let reachable = worker.reachable;
+    let host = &worker.host;
     let title = format!(
         "@{} on {host}{}",
-        worker["name"].as_str().unwrap_or_default(),
+        worker.name,
         if reachable { "" } else { ", out of reach" }
     );
-    let status = reachable
-        .then(|| {
-            serde_json::from_value::<sikemux_wire::protocol::AgentStatus>(worker["status"].clone())
-                .ok()
-        })
-        .flatten();
+    let status = reachable.then_some(worker.status);
     let tip = if reachable {
         format!("Runs on {host}")
     } else {
         format!("{host} is out of reach")
     };
     div()
-        .id(SharedString::from(format!(
-            "remote-{}",
-            worker["agentId"].as_str().unwrap_or_default()
-        )))
+        .id(SharedString::from(format!("remote-{}", worker.agent_id)))
         .relative()
         .pl(px(18.))
         .tooltip(ui::tooltip(tip))
         .child(
             Row::new(
-                SharedString::from(format!(
-                    "remote-row-{}",
-                    worker["agentId"].as_str().unwrap_or_default()
-                )),
+                SharedString::from(format!("remote-row-{}", worker.agent_id)),
                 title,
             )
-            .mark(
-                22.,
-                ui::mark(worker["cli"].as_str().unwrap_or_default(), 20.),
-            )
+            .mark(22., ui::mark(&worker.cli, 20.))
             .quiet()
             .when_some(status, |row, status| {
-                let agent = worker["agentId"].as_str().unwrap_or_default();
-                row.status(ui::status_mark(agent, status, cx))
+                row.status(ui::status_mark(&worker.agent_id, status, cx))
             }),
         )
         .children(team_lines(team, false, cx))
@@ -1995,19 +1980,20 @@ fn waiting_elsewhere(bench: &Workbench) -> usize {
         return 0;
     };
     let path = here.path.to_string_lossy();
-    view.inbox["items"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|item| item["tier"] == "needs")
+    view.inbox
+        .items
+        .iter()
+        .filter(|item| item.tier == InboxTier::Needs)
         .filter(|item| {
-            let agent = item["agentId"]
-                .as_str()
+            let agent = item
+                .agent_id
+                .as_deref()
                 .and_then(|id| view.workspace.agents.iter().find(|agent| agent.id == id));
             match agent {
                 Some(agent) => agent.project != here.id,
-                None => item["project"]
-                    .as_str()
+                None => item
+                    .project
+                    .as_deref()
                     .is_some_and(|project| project != here.id && project != path),
             }
         })

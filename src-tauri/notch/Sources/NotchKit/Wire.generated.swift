@@ -7,8 +7,7 @@ struct DeviceView: Codable, Hashable {
     let sessions: [SessionInfo]
     let chats: [ChatInfo]
     let attentions: [Attention]
-    /// What waits on the person, ranked, as the core's inbox JSON. Kept as
-    /// JSON so a change to its shape reaches phones over the air.
+    /// What waits on the person, ranked.
     let inbox: Inbox
     let faceStyle: FaceStyle
 }

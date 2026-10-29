@@ -19,12 +19,12 @@ use crate::cli::protocol::HarnessRequest;
 use crate::text::clipped;
 
 use super::connection::blocking;
-use super::inbox::Recording;
 use super::kept::Kept;
 use super::messages;
 use super::names::project_of;
 use super::wake::{sooner, Wake};
 use super::Core;
+use sikemux_wire::inbox::InboxRecording;
 
 mod auto;
 mod blind;
@@ -152,7 +152,7 @@ struct Card {
     auto: Option<Run>,
     /// Browser recordings its owner made while on it, oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    recordings: Vec<Recording>,
+    recordings: Vec<InboxRecording>,
     at: u64,
     updated_at: u64,
 }
@@ -754,7 +754,7 @@ struct CardView {
     ticket_above: Option<String>,
     column: Column,
     auto: Option<RunView>,
-    recordings: Vec<Recording>,
+    recordings: Vec<InboxRecording>,
     at: u64,
     updated_at: u64,
 }
@@ -1568,7 +1568,7 @@ pub(crate) struct Summary {
     pub owner: Option<String>,
     pub owner_name: Option<String>,
     pub result: Option<String>,
-    pub recordings: Vec<Recording>,
+    pub recordings: Vec<InboxRecording>,
     pub waits: Option<Waits>,
     pub updated_at: u64,
 }
@@ -1639,7 +1639,7 @@ pub(crate) fn cards_for_person(core: &Core, done_since: Option<u64>) -> Vec<Summ
 }
 
 /// Keeps a browser recording on the card the agent works.
-pub(crate) fn attach_recording(core: &Core, agent_id: &str, recording: Recording) {
+pub(crate) fn attach_recording(core: &Core, agent_id: &str, recording: InboxRecording) {
     let mut state = core.boards.state.locked();
     let Some((project, card)) = held_card(&mut state, agent_id) else {
         return;
