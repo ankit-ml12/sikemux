@@ -10,7 +10,7 @@ hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
-sikemux-core = { path = "../sikemux-core" }
+sikemux-base = { path = "../sikemux-base" }
 sikemux-plugin-api = { path = "../sikemux-plugin-api" }
 sikemux-process = { path = "../sikemux-process" }
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }

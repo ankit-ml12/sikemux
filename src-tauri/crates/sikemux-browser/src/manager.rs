@@ -1278,7 +1278,7 @@ impl TabEvents for TabListener {
 }
 
 pub(crate) fn validate_agent_id(agent_id: &str) -> BrowserResult<()> {
-    if !sikemux_core::cli::protocol::is_tool_agent_id(agent_id) {
+    if !sikemux_base::cli::protocol::is_tool_agent_id(agent_id) {
         return Err(Error::BadArg("invalid browser agent id"));
     }
     Ok(())

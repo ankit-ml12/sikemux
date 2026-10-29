@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use sikemux_core::cli::protocol::PAGE_REPLY_TIMEOUT;
+use sikemux_base::cli::protocol::PAGE_REPLY_TIMEOUT;
 use sikemux_process::sync::Locked;
 
 use claims::{Claim, Claims};
@@ -386,7 +386,7 @@ impl SimulatorManager {
         let Some(manager) = self.me.upgrade().filter(|_| self.helper.is_none()) else {
             return;
         };
-        sikemux_core::runtime::spawn(async move {
+        sikemux_base::runtime::spawn(async move {
             if stop_logs {
                 let _ = manager.request("stopLogs", json!({ "udid": udid })).await;
             }
@@ -530,7 +530,7 @@ impl SimulatorManager {
         if udids.is_empty() {
             return;
         }
-        sikemux_core::runtime::spawn(async move {
+        sikemux_base::runtime::spawn(async move {
             for udid in udids {
                 let _ = manager
                     .request("logs", json!({ "udid": udid, "limit": 1 }))

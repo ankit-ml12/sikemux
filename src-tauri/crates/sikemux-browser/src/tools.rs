@@ -9,7 +9,7 @@ use sikemux_process::sync::Locked;
 use crate::manager::BrowserManager;
 use crate::viewport::Viewport;
 use crate::{Tab, BLANK_URL};
-use sikemux_core::cli::protocol::HarnessRequest;
+use sikemux_base::cli::protocol::HarnessRequest;
 
 use crate::{PAGE_SCRIPT, RECORDS_SCRIPT};
 const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -72,7 +72,7 @@ pub fn execute(manager: &BrowserManager, request: &HarnessRequest) -> Result<Val
     let before = tab_ids(manager, agent_id);
     let download_mark = manager.download_mark(agent_id);
     let mut result =
-        sikemux_core::runtime::block_on(run(manager, agent_id, &request.method, &request.params))
+        sikemux_base::runtime::block_on(run(manager, agent_id, &request.method, &request.params))
             .map_err(|error| error.to_string());
     if acts_on_a_tab {
         marks.extend(manager.mark_acting(agent_id));
@@ -106,7 +106,7 @@ fn saved_files(manager: &BrowserManager, agent_id: &str, mark: u64) -> Vec<Value
 /// An unloaded tab loads its page again before the agent's tools touch it.
 fn wait_for_reload(manager: &BrowserManager, agent_id: &str) {
     if let Ok((tab_id, _)) = manager.active_view(agent_id) {
-        sikemux_core::runtime::block_on(manager.wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT));
+        sikemux_base::runtime::block_on(manager.wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT));
     }
 }
 
@@ -714,7 +714,7 @@ async fn run(
                 .get("width")
                 .and_then(Value::as_u64)
                 .unwrap_or(PAGE_WIDTH);
-            let html = tokio::task::spawn_blocking(move || sikemux_core::pages::build(&source))
+            let html = tokio::task::spawn_blocking(move || sikemux_base::pages::build(&source))
                 .await
                 .map_err(|error| error.to_string())??;
             let url = manager.host().page_url(agent_id, &html)?;

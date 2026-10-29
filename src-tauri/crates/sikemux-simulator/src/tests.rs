@@ -56,7 +56,7 @@ fn lists_the_real_simulators() {
     let _turn = REAL_DEVICE.locked();
     let (_errors, manager) = real_helper();
     let devices =
-        sikemux_core::runtime::block_on(manager.request("devices", serde_json::json!({})))
+        sikemux_base::runtime::block_on(manager.request("devices", serde_json::json!({})))
             .expect("devices");
     let devices = devices["devices"].as_array().expect("a list of devices");
     assert!(!devices.is_empty(), "Xcode has no simulators");
@@ -75,7 +75,7 @@ fn an_agents_calls_run_one_at_a_time_and_a_cancel_stops_them() {
     let call = |name: &'static str, agent: &'static str| {
         let (manager, order) = (Arc::clone(&manager), Arc::clone(&order));
         std::thread::spawn(move || {
-            sikemux_core::runtime::block_on(manager.in_turn(agent, async {
+            sikemux_base::runtime::block_on(manager.in_turn(agent, async {
                 order.lock().unwrap().push(format!("{name} start"));
                 super::pause(Duration::from_millis(150)).await?;
                 order.lock().unwrap().push(format!("{name} end"));
@@ -97,7 +97,7 @@ fn an_agents_calls_run_one_at_a_time_and_a_cancel_stops_them() {
         let manager = Arc::clone(&manager);
         std::thread::spawn(move || {
             let started = Instant::now();
-            let result = sikemux_core::runtime::block_on(manager.in_turn("agent-1", async {
+            let result = sikemux_base::runtime::block_on(manager.in_turn("agent-1", async {
                 for _ in 0..100 {
                     super::pause(Duration::from_millis(50)).await?;
                 }
@@ -109,7 +109,7 @@ fn an_agents_calls_run_one_at_a_time_and_a_cancel_stops_them() {
     let other = {
         let manager = Arc::clone(&manager);
         std::thread::spawn(move || {
-            sikemux_core::runtime::block_on(manager.in_turn("agent-2", async {
+            sikemux_base::runtime::block_on(manager.in_turn("agent-2", async {
                 super::pause(Duration::from_millis(400)).await
             }))
         })
@@ -124,7 +124,7 @@ fn an_agents_calls_run_one_at_a_time_and_a_cancel_stops_them() {
         "another agent's call goes on"
     );
     let after =
-        sikemux_core::runtime::block_on(manager.in_turn("agent-1", async { Ok::<_, String>(1) }));
+        sikemux_base::runtime::block_on(manager.in_turn("agent-1", async { Ok::<_, String>(1) }));
     assert_eq!(after, Ok(1), "a call after the cancel runs");
 }
 
@@ -187,7 +187,7 @@ mod tools {
         method: &str,
         params: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        sikemux_core::runtime::block_on(run(manager, agent_id, project, method, params))
+        sikemux_base::runtime::block_on(run(manager, agent_id, project, method, params))
     }
 
     fn device(name: &str, os: &str, booted: bool) -> Device {

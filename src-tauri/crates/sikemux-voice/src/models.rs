@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
-use sikemux_core::download::{self, DownloadError, PinnedFile};
+use sikemux_base::download::{self, DownloadError, PinnedFile};
 
 const MANIFEST: &str = include_str!("../../../voice-models.json");
 /// Holds the hash of the manifest the models were last checked against.

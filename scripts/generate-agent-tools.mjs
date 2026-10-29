@@ -10,7 +10,7 @@ const root = resolve(import.meta.dirname, "..");
 const manifestPath = resolve(root, "browser/tools.json");
 const rustOutputPath = resolve(
   root,
-  "src-tauri/crates/sikemux-core/src/cli/methods.rs",
+  "src-tauri/crates/sikemux-base/src/cli/methods.rs",
 );
 const browserHandlersPath = resolve(
   root,
@@ -37,7 +37,7 @@ const coreHandlersPath = resolve(
 );
 const cliProtocolPath = resolve(
   root,
-  "src-tauri/crates/sikemux-core/src/cli/protocol.rs",
+  "src-tauri/crates/sikemux-base/src/cli/protocol.rs",
 );
 const check = process.argv.includes("--check");
 

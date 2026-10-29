@@ -14,7 +14,6 @@ mod backoff;
 pub mod cli;
 #[cfg(unix)]
 pub mod client;
-pub mod download;
 #[cfg(unix)]
 pub mod files;
 mod flights;
@@ -26,24 +25,22 @@ pub mod git;
 pub mod git_guard;
 pub mod harness;
 pub mod host_update;
-pub mod http;
 #[cfg(unix)]
 pub mod join;
 #[cfg(unix)]
 pub mod launch;
+pub use sikemux_base::{download, http, pages, runtime};
 pub use sikemux_wire::grid;
 pub use sikemux_wire::protocol;
 #[cfg(unix)]
 pub mod push;
 pub mod release_feed;
 pub mod releases;
-pub mod runtime;
 #[cfg(unix)]
 pub use sikemux_client::device;
 #[cfg(unix)]
 pub use sikemux_client::remote;
 #[cfg(unix)]
-pub mod pages;
 #[cfg(unix)]
 pub mod server;
 #[cfg(unix)]

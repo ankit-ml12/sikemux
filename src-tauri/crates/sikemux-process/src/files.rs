@@ -58,6 +58,14 @@ pub fn repo_root(dir: &Path) -> Option<&Path> {
         .find(|ancestor| ancestor.join(".git").exists())
 }
 
+/// `path`, taken from `project` with links followed, or `None` when that leads
+/// outside the project.
+pub fn confine_to_project(project: &str, path: &str) -> std::io::Result<Option<PathBuf>> {
+    let root = fs::canonicalize(project)?;
+    let target = fs::canonicalize(root.join(path))?;
+    Ok(target.starts_with(&root).then_some(target))
+}
+
 fn staging_path(parent: &Path, path: &Path) -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let name = path

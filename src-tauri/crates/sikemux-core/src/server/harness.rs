@@ -627,10 +627,11 @@ async fn dispatch(
             if kind.as_deref() == Some("file") {
                 let path = required_text(&request.params, "path")?.to_owned();
                 let project = request.project.clone();
-                let resolved =
-                    blocking(move || Ok(crate::files::confine_to_project(&project, &path)))
-                        .await
-                        .map_err(|error| error.to_string())?;
+                let resolved = blocking(move || {
+                    Ok(sikemux_process::files::confine_to_project(&project, &path))
+                })
+                .await
+                .map_err(|error| error.to_string())?;
                 match resolved {
                     Ok(Some(path)) if path.is_file() => {
                         request.params["path"] = path.to_string_lossy().into_owned().into();

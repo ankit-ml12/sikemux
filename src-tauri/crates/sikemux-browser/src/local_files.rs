@@ -12,7 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use url::Url;
 
-use sikemux_core::http::{content_type, parse_range, percent_decode};
+use sikemux_base::http::{content_type, parse_range, percent_decode};
 
 const MAX_SHARES: usize = 16;
 const MAX_REQUEST_HEAD: usize = 16 * 1024;

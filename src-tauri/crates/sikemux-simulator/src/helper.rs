@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::{json, Map, Value};
-use sikemux_core::download::{self, PinnedFile};
+use sikemux_base::download::{self, PinnedFile};
 use sikemux_process::sync::Locked;
 use tokio::sync::oneshot;
 

@@ -15,7 +15,7 @@ use url::Url;
 
 use crate::manager::BrowserManager;
 use crate::{BLANK_URL, USER_AGENT};
-use sikemux_core::http::{
+use sikemux_base::http::{
     builder, data_url, fetch_image, follow_if, names_private_address, public_client, shared,
 };
 

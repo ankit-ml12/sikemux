@@ -49,7 +49,7 @@ pub use linux_page::give_keyboard_back;
 pub use manager::{BrowserManager, TabPage};
 pub use tab::{Opener, ParentView, Tab, TabSpec};
 
-pub(crate) use sikemux_core::runtime::spawn;
+pub(crate) use sikemux_base::runtime::spawn;
 
 pub const BLANK_URL: &str = "about:blank";
 /// Past this many dialogs in `DIALOG_WINDOW`, a page's dialogs are answered

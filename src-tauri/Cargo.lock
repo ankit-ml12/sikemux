@@ -5225,6 +5225,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sikemux-base"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "futures-util",
+ "hex",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sikemux-process",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "url",
+ "uuid",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sikemux-browser"
 version = "0.1.0"
 dependencies = [
@@ -5252,7 +5273,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sikemux-core",
+ "sikemux-base",
  "sikemux-process",
  "tempfile",
  "tokio",
@@ -5317,6 +5338,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sikemux-base",
  "sikemux-client",
  "sikemux-fold",
  "sikemux-keychain",
@@ -5807,7 +5829,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "sikemux-core",
+ "sikemux-base",
  "sikemux-process",
  "tempfile",
  "tokio",
@@ -5823,7 +5845,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "sikemux-core",
+ "sikemux-base",
  "sikemux-plugin-api",
  "sikemux-process",
  "tempfile",

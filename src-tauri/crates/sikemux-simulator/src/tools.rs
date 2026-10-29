@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use super::claims::Claim;
 use super::{checkpoint, pause, remaining, SimulatorManager};
-use sikemux_core::cli::protocol::{HarnessRequest, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD};
+use sikemux_base::cli::protocol::{HarnessRequest, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD};
 
 /// A cold boot can outlast one call, so it is reported as still going and finishes in the background.
 const BOOT_MARGIN: Duration = Duration::from_secs(12);
@@ -80,7 +80,7 @@ pub fn execute(manager: &SimulatorManager, request: &HarnessRequest) -> Result<V
     if acting {
         manager.emit(ACTING_EVENT, json!({ "agentId": agent_id, "acting": true }));
     }
-    let result = sikemux_core::runtime::block_on(manager.in_turn(
+    let result = sikemux_base::runtime::block_on(manager.in_turn(
         agent_id,
         run(
             manager,
@@ -843,7 +843,7 @@ pub(super) fn frontmost_pid(reply: &Value) -> Option<i64> {
 
 /// A path the agent gave, which must name something inside its project.
 pub(super) fn inside_project(project: &str, path: &str) -> Result<PathBuf, String> {
-    let confined = sikemux_core::files::confine_to_project(project, path).map_err(|error| {
+    let confined = sikemux_process::files::confine_to_project(project, path).map_err(|error| {
         if std::fs::metadata(project).is_ok() {
             format!("no app at {}", Path::new(project).join(path).display())
         } else {

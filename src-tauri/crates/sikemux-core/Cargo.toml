@@ -10,6 +10,7 @@ publish = false
 host-addresses-file = []
 
 [dependencies]
+sikemux-base = { path = "../sikemux-base" }
 sikemux-process = { path = "../sikemux-process" }
 sikemux-fold = { path = "../sikemux-fold" }
 sikemux-markdown = { path = "../sikemux-markdown" }
