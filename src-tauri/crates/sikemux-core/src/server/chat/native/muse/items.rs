@@ -1,7 +1,7 @@
 //! What Muse's view items look like in the chat: the ACP session updates the
 //! other agents send for the same kind of work, so the app reads them alike.
 
-use sikemux_fold::update::compaction;
+use sikemux_fold::update::{agent_text, compaction, text_content, thought};
 use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -54,33 +54,6 @@ fn status(item: &Value) -> &'static str {
 
 fn settled(item: &Value) -> bool {
     status(item) != "in_progress"
-}
-
-pub(super) fn content(block: Value) -> Value {
-    json!({ "type": "content", "content": block })
-}
-
-fn text_content(said: &str) -> Value {
-    content(json!({ "type": "text", "text": said }))
-}
-
-pub(super) fn agent_text(said: &str, message_id: Option<&str>) -> Value {
-    let mut update = json!({
-        "sessionUpdate": UpdateKind::AgentMessageChunk,
-        "content": { "type": "text", "text": said },
-    });
-    if let Some(id) = message_id {
-        update["messageId"] = json!(id);
-    }
-    update
-}
-
-fn thought(said: &str, message_id: &str) -> Value {
-    json!({
-        "sessionUpdate": UpdateKind::AgentThoughtChunk,
-        "content": { "type": "text", "text": said },
-        "messageId": message_id,
-    })
 }
 
 /// A tool's name read as words, such as `cron_create` as "Cron create".
@@ -423,7 +396,7 @@ pub(super) fn replayed(item: &Value, cwd: &str) -> Vec<Value> {
             .map(|said| vec![agent_text(said, Some(id))])
             .unwrap_or_default(),
         "reasoning" => reasoning_text(item)
-            .map(|said| vec![thought(&said, id)])
+            .map(|said| vec![thought(&said, Some(id))])
             .unwrap_or_default(),
         "toolCall" if hidden(text_or_empty(item, "tool")) => Vec::new(),
         "toolCall" => {
@@ -601,7 +574,7 @@ impl Items {
         }
         streaming.said = true;
         if streaming.thought {
-            return Some(thought(delta, id));
+            return Some(thought(delta, Some(id)));
         }
         self.child_spoke(session);
         Some(agent_text(delta, Some(id)))

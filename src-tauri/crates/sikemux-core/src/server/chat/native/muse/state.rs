@@ -12,7 +12,8 @@ use crate::acp::account::{Failure, FailureKind};
 use super::super::super::states::Subagent;
 use super::super::json::{text, text_or_empty};
 use super::super::session::TurnEnd;
-use super::items::{agent_text, Follow, Items};
+use super::items::{Follow, Items};
+use sikemux_fold::update::agent_text;
 
 /// What one notification does to the chat.
 pub(super) enum Effect {

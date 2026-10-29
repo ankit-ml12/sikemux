@@ -138,6 +138,34 @@ pub fn subagent_usage(session: &str, tokens: u64) -> Value {
     json!({ "sessionUpdate": UpdateKind::SubagentUsage, "subagentSessionId": session, "tokens": tokens })
 }
 
+/// A tool call's content holding `block`.
+pub fn content(block: Value) -> Value {
+    json!({ "type": "content", "content": block })
+}
+
+/// A tool call's content holding `text`.
+pub fn text_content(text: &str) -> Value {
+    content(json!({ "type": "text", "text": text }))
+}
+
+/// A piece of what the agent said, in the message `message_id` when it has one.
+pub fn agent_text(text: &str, message_id: Option<&str>) -> Value {
+    chunk(UpdateKind::AgentMessageChunk, text, message_id)
+}
+
+/// A piece of the agent's thinking, in the message `message_id` when it has one.
+pub fn thought(text: &str, message_id: Option<&str>) -> Value {
+    chunk(UpdateKind::AgentThoughtChunk, text, message_id)
+}
+
+fn chunk(kind: UpdateKind, text: &str, message_id: Option<&str>) -> Value {
+    let mut update = json!({ "sessionUpdate": kind, "content": { "type": "text", "text": text } });
+    if let Some(id) = message_id {
+        update["messageId"] = json!(id);
+    }
+    update
+}
+
 /// The tool call row that stands for the agent compacting what it remembers, opened
 /// when `opens`, else brought to `status`, with what went wrong when it failed.
 pub fn compaction(id: &str, opens: bool, status: &str, error: Option<&str>) -> Value {
@@ -151,8 +179,7 @@ pub fn compaction(id: &str, opens: bool, status: &str, error: Option<&str>) -> V
         update["kind"] = json!("think");
     }
     if let Some(error) = error {
-        update["content"] =
-            json!([{ "type": "content", "content": { "type": "text", "text": error } }]);
+        update["content"] = json!([text_content(error)]);
     }
     update
 }

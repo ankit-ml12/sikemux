@@ -2,6 +2,7 @@
 //! prompt, which items are on screen, and its subagents. Each notification
 //! comes back as the effects it has on the chat.
 
+use sikemux_fold::update::{agent_text, text_content, thought};
 use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 
@@ -575,7 +576,7 @@ impl Session {
                         "kind": "other",
                         "title": format!("mcp__{name}__startup"),
                         "status": "failed",
-                        "content": [items::content(json!({ "type": "text", "text": said }))],
+                        "content": [text_content(&said)],
                     }),
                 )]
             }
@@ -639,7 +640,7 @@ impl Session {
                 "sessionUpdate": UpdateKind::SessionInfoUpdate,
                 "title": params["threadName"],
             })],
-            "model/rerouted" => vec![items::thought(
+            "model/rerouted" => vec![thought(
                 &format!(
                     "Model rerouted from {} to {} ({}).\n\n",
                     text(params, "fromModel"),
@@ -648,9 +649,8 @@ impl Session {
                 ),
                 None,
             )],
-            "thread/compacted" => vec![items::agent_text(
+            "thread/compacted" => vec![agent_text(
                 "*Context compacted to fit the model's context window.*\n\n",
-                None,
                 None,
             )],
             "warning" => vec![notice(text(params, "message"), None)],

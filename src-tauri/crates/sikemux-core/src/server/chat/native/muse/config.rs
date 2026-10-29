@@ -2,162 +2,106 @@
 //! own tool servers, in the shapes Muse's session protocol takes them.
 
 use agent_client_protocol::schema::v1::McpServer;
+use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
+use super::super::models::{self, Effort, Model, Models};
 use super::super::servers;
-use crate::acp::pickers;
 use crate::launch::PermissionMode;
 
-/// The app's two permission modes. Muse's sandbox is fixed for the life of
-/// the `muse serve` process, so the mode also decides how it is started.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(super) enum Mode {
-    /// Muse's own default: the sandbox keeps commands inside the folder, and
-    /// Muse asks before going past it.
-    Ask,
-    FullAccess,
-}
-
-impl Mode {
-    pub fn from_app(mode: PermissionMode) -> Self {
-        match mode {
-            PermissionMode::WorkspaceWrite => Self::Ask,
-            PermissionMode::Bypass => Self::FullAccess,
-        }
-    }
-
-    pub fn approval_mode(self) -> &'static str {
-        match self {
-            Self::Ask => "onRequest",
-            Self::FullAccess => "allowAll",
-        }
-    }
-
-    /// `muse serve` and the flags it starts with. The folder's own rules and
-    /// skills load, as they do for a folder the person opened Muse in and
-    /// trusted.
-    pub fn serve_args(self) -> Vec<String> {
-        let sandbox: &[&str] = match self {
-            Self::Ask => &["--sandbox-network", "enabled"],
-            Self::FullAccess => &["--disable-sandbox"],
-        };
-        ["serve", "--trust-workspace"]
-            .iter()
-            .chain(sandbox)
-            .map(|arg| (*arg).to_owned())
-            .collect()
-    }
-
-    pub fn sandbox_name(self) -> &'static str {
-        match self {
-            Self::Ask => "on, network allowed",
-            Self::FullAccess => "off",
-        }
+/// How Muse asks before acting under the app's permission mode. Muse's
+/// sandbox is fixed for the life of the `muse serve` process, so the mode
+/// also decides how it is started, by `serve_args`.
+pub(super) fn approval_mode(mode: PermissionMode) -> &'static str {
+    match mode {
+        PermissionMode::WorkspaceWrite => "onRequest",
+        PermissionMode::Bypass => "allowAll",
     }
 }
 
-/// The models `model/list` offered, newest first.
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-pub(super) struct Models(pub Vec<Value>);
+/// `muse serve` and the flags it starts with. The folder's own rules and
+/// skills load, as they do for a folder the person opened Muse in and
+/// trusted. Asking keeps Muse's own sandbox, with commands inside the
+/// folder.
+pub(super) fn serve_args(mode: PermissionMode) -> Vec<String> {
+    let sandbox: &[&str] = match mode {
+        PermissionMode::WorkspaceWrite => &["--sandbox-network", "enabled"],
+        PermissionMode::Bypass => &["--disable-sandbox"],
+    };
+    ["serve", "--trust-workspace"]
+        .iter()
+        .chain(sandbox)
+        .map(|arg| (*arg).to_owned())
+        .collect()
+}
 
-impl Models {
-    fn find(&self, model: &str) -> Option<&Value> {
-        self.0.iter().find(|entry| entry["modelId"] == model)
+pub(super) fn sandbox_name(mode: PermissionMode) -> &'static str {
+    match mode {
+        PermissionMode::WorkspaceWrite => "on, network allowed",
+        PermissionMode::Bypass => "off",
     }
+}
 
-    pub fn offers(&self, model: &str) -> bool {
-        self.find(model).is_some()
-    }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Listed {
+    model_id: String,
+    display_label: Option<String>,
+    description: Option<String>,
+    #[serde(default)]
+    reasoning_effort_variants: Vec<ListedEffort>,
+    default_reasoning_effort: Option<String>,
+    #[serde(default)]
+    is_active: bool,
+    #[serde(default)]
+    is_default: bool,
+}
 
-    pub fn default_model(&self) -> Option<String> {
-        self.0
-            .iter()
-            .find(|entry| entry["isActive"] == true)
-            .or_else(|| self.0.iter().find(|entry| entry["isDefault"] == true))
-            .or_else(|| self.0.first())
-            .and_then(|entry| entry["modelId"].as_str())
-            .map(str::to_owned)
-    }
+#[derive(Deserialize)]
+struct ListedEffort {
+    tier: String,
+    description: Option<String>,
+}
 
-    /// The model's effort tiers with what each says of itself.
-    fn efforts(&self, model: &str) -> Vec<(String, Value)> {
-        let Some(entry) = self.find(model) else {
-            return Vec::new();
-        };
-        entry["reasoningEffortVariants"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|tier| {
-                Some((
-                    tier["tier"].as_str()?.to_owned(),
-                    tier["description"].clone(),
-                ))
-            })
-            .collect()
-    }
-
-    pub fn supports_effort(&self, model: &str, effort: &str) -> bool {
-        self.efforts(model).iter().any(|(tier, _)| tier == effort)
-    }
-
-    /// The effort to run `model` at: `wanted` when the model offers it,
-    /// otherwise the model's own default.
-    pub fn effort_for(&self, model: &str, wanted: Option<&str>) -> Option<String> {
-        let efforts = self.efforts(model);
-        if efforts.is_empty() {
-            return None;
-        }
-        if let Some(wanted) = wanted.filter(|wanted| self.supports_effort(model, wanted)) {
-            return Some(wanted.to_owned());
-        }
-        self.find(model)
-            .and_then(|entry| entry["defaultReasoningEffort"].as_str())
-            .filter(|effort| self.supports_effort(model, effort))
-            .map(str::to_owned)
-            .or_else(|| {
-                efforts
-                    .iter()
-                    .find(|(tier, _)| tier == "high")
-                    .or(efforts.first())
-                    .map(|(tier, _)| tier.clone())
-            })
-    }
-
-    /// The session's `configOptions`: the model picker, and the effort picker
-    /// when the model has tiers.
-    pub fn options(&self, model: &str, effort: Option<&str>) -> Value {
-        let models = self
-            .0
-            .iter()
-            .filter_map(|entry| {
-                let id = entry["modelId"].as_str()?;
-                let name = entry["displayLabel"].as_str().unwrap_or(id);
-                Some(pickers::choice(id, name, entry["description"].as_str()))
-            })
-            .collect();
-        let mut options = vec![pickers::model_select(
-            Some("Model Muse uses for the session"),
-            model,
-            models,
-        )];
-        if let Some(effort) = effort {
-            let efforts = self
-                .efforts(model)
+/// The models `model/list` offered, newest first. The one the session is
+/// on goes first as Muse's default, before the one Muse calls its default.
+pub(super) fn models(entries: Vec<Value>) -> Models {
+    let listed: Vec<Listed> = models::read_listing("Muse", entries);
+    let active = listed.iter().any(|entry| entry.is_active);
+    let listed = listed
+        .into_iter()
+        .map(|listed| {
+            let efforts: Vec<Effort> = listed
+                .reasoning_effort_variants
                 .into_iter()
-                .map(|(tier, about)| {
-                    pickers::choice(&tier, &pickers::level_name(&tier), about.as_str())
+                .map(|tier| Effort {
+                    value: tier.tier,
+                    description: tier.description,
                 })
                 .collect();
-            options.push(pickers::effort_select(
-                "reasoning_effort",
-                "Reasoning effort",
-                "How much reasoning effort the model should use",
-                effort,
+            Model {
+                name: listed
+                    .display_label
+                    .unwrap_or_else(|| listed.model_id.clone()),
+                id: listed.model_id,
+                description: listed.description,
+                default_effort: models::default_effort(
+                    &efforts,
+                    &[listed.default_reasoning_effort.as_deref(), Some("high")],
+                ),
                 efforts,
-            ));
-        }
-        Value::Array(options)
+                takes_images: true,
+                default: if active {
+                    listed.is_active
+                } else {
+                    listed.is_default
+                },
+            }
+        })
+        .collect();
+    Models {
+        listed,
+        takes_unlisted: false,
     }
 }
 

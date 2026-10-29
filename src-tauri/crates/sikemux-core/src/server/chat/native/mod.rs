@@ -8,6 +8,7 @@ mod claude;
 mod codex;
 mod json;
 mod mcp_calls;
+mod models;
 mod muse;
 mod parts;
 mod patch;

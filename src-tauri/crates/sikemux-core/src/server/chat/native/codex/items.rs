@@ -1,7 +1,7 @@
 //! What Codex's thread items look like in the chat: the ACP session updates
 //! Codex's ACP adapter sends for each, so the app reads them alike.
 
-use sikemux_fold::update::compaction;
+use sikemux_fold::update::{agent_text, compaction, content, thought};
 use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 
@@ -60,31 +60,11 @@ fn without_shell(command: &str) -> Option<&str> {
     Some(rest)
 }
 
-pub(super) fn content(block: Value) -> Value {
-    json!({ "type": "content", "content": block })
-}
-
-pub(super) fn agent_text(text: &str, message_id: Option<&str>, phase: Option<&Value>) -> Value {
-    let mut update = json!({
-        "sessionUpdate": UpdateKind::AgentMessageChunk,
-        "content": { "type": "text", "text": text },
-    });
-    if let Some(id) = message_id {
-        update["messageId"] = json!(id);
-    }
+/// What the agent said, marked with the phase of its answer Codex gave it.
+fn phased_text(text: &str, message_id: Option<&str>, phase: Option<&Value>) -> Value {
+    let mut update = agent_text(text, message_id);
     if let Some(phase) = phase.filter(|phase| !phase.is_null()) {
         update["_meta"] = json!({ "codex": { "phase": phase } });
-    }
-    update
-}
-
-pub(super) fn thought(text: &str, message_id: Option<&str>) -> Value {
-    let mut update = json!({
-        "sessionUpdate": UpdateKind::AgentThoughtChunk,
-        "content": { "type": "text", "text": text },
-    });
-    if let Some(id) = message_id {
-        update["messageId"] = json!(id);
     }
     update
 }
@@ -449,7 +429,7 @@ fn collaboration(item: &Value, session_update: UpdateKind) -> Value {
 
 fn plan_text(item: &Value) -> Option<Value> {
     let text = text(item, "text");
-    (!text.is_empty()).then(|| agent_text(text, item["id"].as_str(), Some(&json!("final_answer"))))
+    (!text.is_empty()).then(|| phased_text(text, item["id"].as_str(), Some(&json!("final_answer"))))
 }
 
 fn reasoning_parts(item: &Value) -> Vec<&str> {
@@ -496,7 +476,7 @@ pub(super) fn user_blocks(item: &Value) -> Vec<Value> {
 /// A finished item as it is replayed from the thread's history.
 pub(super) fn replayed(item: &Value, read: &impl Fn(&str) -> Option<String>) -> Vec<Value> {
     match text(item, "type") {
-        "agentMessage" => vec![agent_text(
+        "agentMessage" => vec![phased_text(
             text(item, "text"),
             item["id"].as_str(),
             Some(&item["phase"]),
@@ -528,7 +508,7 @@ pub(super) fn replayed(item: &Value, read: &impl Fn(&str) -> Option<String>) -> 
                 if entered { "Entered" } else { "Exited" },
                 text(item, "review")
             );
-            vec![agent_text(&said, None, None)]
+            vec![agent_text(&said, None)]
         }
         "contextCompaction" => vec![compaction(text(item, "id"), true, "completed", None)],
         "plan" => plan_text(item).into_iter().collect(),
@@ -547,7 +527,7 @@ pub(super) struct Items {
 
 impl Items {
     pub fn message_delta(&self, item_id: &str, delta: &str) -> Value {
-        agent_text(delta, Some(item_id), self.phases.get(item_id))
+        phased_text(delta, Some(item_id), self.phases.get(item_id))
     }
 
     pub fn thought_delta(&mut self, item_id: &str, delta: &str) -> Value {
@@ -622,7 +602,7 @@ impl Items {
                 return if review.is_empty() {
                     Vec::new()
                 } else {
-                    vec![agent_text(review, None, None)]
+                    vec![agent_text(review, None)]
                 };
             }
             _ => {}

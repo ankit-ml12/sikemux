@@ -112,7 +112,10 @@ fn tell(
                     }
                     _ => {
                         if let Some(result) = subagent_result(item) {
-                            out.push((child.to_owned(), items::agent_text(&result, None)));
+                            out.push((
+                                child.to_owned(),
+                                sikemux_fold::update::agent_text(&result, None),
+                            ));
                         }
                     }
                 }

@@ -25,6 +25,7 @@ use crate::protocol::ChatLaunch;
 use super::super::Respond;
 use super::file_link;
 use super::json::text;
+use super::models::Models;
 use super::parts::{context_text, parts, picture, Part};
 use super::pending::{Answered, Purpose};
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
@@ -33,7 +34,6 @@ use super::servers;
 use super::session::{self, Backend, Opened, Prompt, Sink, TurnEnd};
 use approvals::Question;
 use commands::Command;
-use config::{Mode, Models};
 use items::Follow;
 use state::{Effect, Session};
 
@@ -285,7 +285,7 @@ struct Kept {
     models: Models,
     model: String,
     effort: Option<String>,
-    mode: Mode,
+    mode: PermissionMode,
     /// What `skill/list` answered, for the commands the chat offers.
     skills: Value,
 }
@@ -302,13 +302,13 @@ struct Host {
 impl Host {
     async fn start(
         launch: &ChatLaunch,
-        mode: Mode,
+        mode: PermissionMode,
         sink: Sink,
         session: Arc<Mutex<Session>>,
     ) -> Result<Self, String> {
         // `serve` has to come first, so the launch's own arguments follow it.
         let mut bare = launch.clone();
-        let mut args = mode.serve_args();
+        let mut args = config::serve_args(mode);
         args.splice(1..1, std::mem::take(&mut bare.args));
         let (process, writer, lines) = Process::spawn(&bare, args, Vec::<(String, String)>::new())?;
         let rpc = Rpc::new(writer, true);
@@ -362,7 +362,7 @@ pub(crate) struct Muse {
 
 async fn list_models(rpc: &Rpc) -> Models {
     let listed = rpc.request("model/list", json!({})).await;
-    Models(
+    config::models(
         listed
             .ok()
             .and_then(|listed| listed["models"].as_array().cloned())
@@ -462,9 +462,10 @@ impl Muse {
     }
 
     fn say(&self, said: &str) {
-        self.driver()
-            .sink
-            .update(&self.session_id(), items::agent_text(said, None));
+        self.driver().sink.update(
+            &self.session_id(),
+            sikemux_fold::update::agent_text(said, None),
+        );
     }
 
     fn answered(&self, turn: u64) {
@@ -546,8 +547,8 @@ impl Muse {
                     model: &self.kept.model,
                     effort: self.kept.effort.as_deref(),
                     cwd: &self.kept.cwd,
-                    approval: self.kept.mode.approval_mode(),
-                    sandbox: self.kept.mode.sandbox_name(),
+                    approval: config::approval_mode(self.kept.mode),
+                    sandbox: config::sandbox_name(self.kept.mode),
                     session: &session_id,
                     totals: totals.as_ref(),
                     context: context.as_ref(),
@@ -572,7 +573,7 @@ impl Muse {
     async fn open(
         host: &Host,
         launch: &ChatLaunch,
-        mode: Mode,
+        mode: PermissionMode,
         history: bool,
     ) -> Result<(Value, Vec<Value>), String> {
         let config = host.session_config(launch);
@@ -585,7 +586,7 @@ impl Muse {
                     json!({
                         "commandId": command_id(),
                         "workspaceRoot": launch.cwd,
-                        "approvalMode": mode.approval_mode(),
+                        "approvalMode": config::approval_mode(mode),
                         "config": config,
                     }),
                 )
@@ -609,7 +610,7 @@ impl Muse {
             .map_err(failed)?;
         rpc.request(
             "session/setApprovalMode",
-            json!({ "sessionId": resume_id, "commandId": command_id(), "mode": mode.approval_mode() }),
+            json!({ "sessionId": resume_id, "commandId": command_id(), "mode": config::approval_mode(mode) }),
         )
         .await
         .map_err(failed)?;
@@ -663,7 +664,7 @@ impl Muse {
 
     /// Starts `muse serve` again under `mode`, whose sandbox the running one
     /// cannot change, and takes the session up in it.
-    async fn restart(&mut self, mode: Mode) -> Result<(), String> {
+    async fn restart(&mut self, mode: PermissionMode) -> Result<(), String> {
         let session = self.host.driver.session.clone();
         let sink = self.host.driver.sink.clone();
         let mut launch = self.launch.clone();
@@ -711,7 +712,7 @@ async fn page_history(rpc: &Rpc, session_id: &str) -> Vec<Value> {
 
 impl Backend for Muse {
     async fn start(launch: &ChatLaunch, sink: Sink) -> Result<(Self, Opened), String> {
-        let mode = Mode::from_app(launch.permission_mode);
+        let mode = launch.permission_mode;
         let cwd = launch.cwd.to_string_lossy().into_owned();
         // Muse asks again about approvals left waiting as soon as a session
         // loads, so the session is known by its id before then.
@@ -772,7 +773,7 @@ impl Backend for Muse {
                 "promptCapabilities": { "image": true, "embeddedContext": true },
             }),
             setup: json!({
-                "configOptions": muse.kept.models.options(&muse.kept.model, muse.kept.effort.as_deref()),
+                "configOptions": muse.kept.models.options("Muse", &muse.kept.model, muse.kept.effort.as_deref()),
             }),
         };
         Ok((muse, opened))
@@ -822,14 +823,13 @@ impl Backend for Muse {
     }
 
     async fn set_permission_mode(&mut self, mode: PermissionMode) -> Result<(), String> {
-        let mode = Mode::from_app(mode);
-        if mode.serve_args() != self.kept.mode.serve_args() {
+        if config::serve_args(mode) != config::serve_args(self.kept.mode) {
             self.restart(mode).await?;
         } else {
             self.rpc()
                 .request(
                     "session/setApprovalMode",
-                    json!({ "sessionId": self.session_id(), "commandId": command_id(), "mode": mode.approval_mode() }),
+                    json!({ "sessionId": self.session_id(), "commandId": command_id(), "mode": config::approval_mode(mode) }),
                 )
                 .await?;
         }
@@ -876,7 +876,7 @@ impl Backend for Muse {
         Ok(self
             .kept
             .models
-            .options(&self.kept.model, self.kept.effort.as_deref()))
+            .options("Muse", &self.kept.model, self.kept.effort.as_deref()))
     }
 
     async fn stop_task(&mut self, task_id: &str) -> Result<(), String> {
@@ -930,7 +930,7 @@ impl Backend for Muse {
                         json!({
                             "commandId": command_id(),
                             "workspaceRoot": self.launch.cwd,
-                            "approvalMode": self.kept.mode.approval_mode(),
+                            "approvalMode": config::approval_mode(self.kept.mode),
                             "config": config,
                         }),
                     )
@@ -944,7 +944,7 @@ impl Backend for Muse {
         self.rpc()
             .request(
                 "session/setApprovalMode",
-                json!({ "sessionId": moved, "commandId": command_id(), "mode": self.kept.mode.approval_mode() }),
+                json!({ "sessionId": moved, "commandId": command_id(), "mode": config::approval_mode(self.kept.mode) }),
             )
             .await?;
         if !self.kept.model.is_empty() {

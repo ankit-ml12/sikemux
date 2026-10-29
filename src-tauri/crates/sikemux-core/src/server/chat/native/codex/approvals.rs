@@ -8,6 +8,7 @@ use sikemux_wire::chat::PermissionKind;
 
 use super::items::strip_shell;
 use crate::acp::permission::{allow_first, for_session, kind_of, option};
+use sikemux_fold::update::text_content;
 
 fn request(
     session_id: &str,
@@ -30,10 +31,6 @@ fn request(
         "options": options,
         "_meta": { "permission": permission },
     })
-}
-
-fn text_content(text: &str) -> Value {
-    json!({ "type": "content", "content": { "type": "text", "text": text } })
 }
 
 fn unique(paths: impl IntoIterator<Item = String>) -> Vec<String> {

@@ -25,6 +25,7 @@ use crate::protocol::ChatLaunch;
 use super::super::feed::Reach;
 use super::super::Respond;
 use super::file_link;
+use super::models::Models;
 use super::parts::{context_text, parts, picture, Part};
 use super::pending::{Answered, Purpose};
 use super::process::{Lines, Process, Reading, Reads, Released, Writer};
@@ -33,7 +34,6 @@ use super::servers;
 use super::session::{self, Backend, Opened, Prompt, Sink, TurnEnd};
 use approvals::Question;
 use commands::Command;
-use config::{Mode, Models};
 use state::{user_input_told, Effect, Reply, Session};
 
 /// How long a finished turn waits for the subagents it started.
@@ -177,7 +177,7 @@ struct Kept {
     models: Models,
     model: String,
     effort: Option<String>,
-    mode: Mode,
+    mode: PermissionMode,
     account: Value,
     servers: Vec<String>,
 }
@@ -203,17 +203,10 @@ pub(crate) async fn read_options(command: tokio::process::Command) -> Result<Val
     let params = json!({ "cursor": null, "limit": null, "includeHidden": false });
     let listed =
         crate::agent_accounts::usage::codex_ask(command, "model/list", params, "models").await?;
-    let models = config::Models(listed["data"].as_array().cloned().unwrap_or_default());
-    let model = models
-        .0
-        .iter()
-        .find(|entry| entry["isDefault"] == true)
-        .or_else(|| models.0.first())
-        .and_then(|entry| entry["id"].as_str())
-        .ok_or("Codex named no models")?
-        .to_owned();
+    let models = config::models(listed["data"].as_array().cloned().unwrap_or_default());
+    let model = models.default_model().ok_or("Codex named no models")?;
     let effort = models.effort_for(&model, None);
-    Ok(models.options(&model, effort.as_deref()))
+    Ok(models.options("Codex", &model, effort.as_deref()))
 }
 
 async fn list_models(rpc: &Rpc) -> Result<Models, String> {
@@ -223,7 +216,7 @@ async fn list_models(rpc: &Rpc) -> Result<Models, String> {
             |cursor| json!({ "cursor": cursor, "limit": null, "includeHidden": false }),
         )
         .await?;
-    Ok(Models(data(pages)))
+    Ok(config::models(data(pages)))
 }
 
 async fn list_turns(rpc: &Rpc, thread_id: &str) -> Result<Vec<Value>, String> {
@@ -369,9 +362,10 @@ impl Codex {
     }
 
     fn say(&self, text: &str) {
-        self.driver
-            .sink
-            .update(&self.kept.thread_id, items::agent_text(text, None, None));
+        self.driver.sink.update(
+            &self.kept.thread_id,
+            sikemux_fold::update::agent_text(text, None),
+        );
     }
 
     fn answered(&self, turn: u64) {
@@ -452,8 +446,8 @@ impl Codex {
                 self.say(&commands::status_text(&commands::Status {
                     model: &self.kept.model,
                     cwd: &self.kept.cwd,
-                    approval: self.kept.mode.approval_policy(),
-                    sandbox: self.kept.mode.sandbox_name(),
+                    approval: config::approval_policy(self.kept.mode),
+                    sandbox: config::sandbox_name(self.kept.mode),
                     account: &self.kept.account,
                     session: &self.kept.thread_id,
                     token_usage: token_usage.as_ref(),
@@ -571,7 +565,7 @@ impl Codex {
 
 impl Backend for Codex {
     async fn start(launch: &ChatLaunch, sink: Sink) -> Result<(Self, Opened), String> {
-        let mode = Mode::from_app(launch.permission_mode);
+        let mode = launch.permission_mode;
         let (process, writer, lines) = Process::spawn(
             launch,
             ["app-server".to_owned()],
@@ -679,14 +673,7 @@ impl Backend for Codex {
             .clone()
             .filter(|model| models.offers(model))
             .or_else(|| opened["model"].as_str().map(str::to_owned))
-            .or_else(|| {
-                models
-                    .0
-                    .iter()
-                    .find(|model| model["isDefault"] == true)
-                    .and_then(|model| model["id"].as_str())
-                    .map(str::to_owned)
-            })
+            .or_else(|| models.default_model())
             .unwrap_or_default();
         let wanted = launch
             .effort
@@ -733,7 +720,7 @@ impl Backend for Codex {
             }),
             setup: json!({
                 "modes": config::modes(mode),
-                "configOptions": codex.kept.models.options(&codex.kept.model, codex.kept.effort.as_deref()),
+                "configOptions": codex.kept.models.options("Codex", &codex.kept.model, codex.kept.effort.as_deref()),
             }),
         };
         Ok((codex, opened))
@@ -754,9 +741,9 @@ impl Backend for Codex {
         let params = json!({
             "threadId": self.kept.thread_id,
             "input": input,
-            "approvalPolicy": self.kept.mode.approval_policy(),
+            "approvalPolicy": config::approval_policy(self.kept.mode),
             "approvalsReviewer": "user",
-            "sandboxPolicy": self.kept.mode.sandbox_policy(),
+            "sandboxPolicy": config::sandbox_policy(self.kept.mode),
             "model": self.kept.model,
             "effort": self.kept.effort,
             "summary": summary,
@@ -799,7 +786,7 @@ impl Backend for Codex {
     }
 
     async fn set_permission_mode(&mut self, mode: PermissionMode) -> Result<(), String> {
-        self.kept.mode = Mode::from_app(mode);
+        self.kept.mode = mode;
         Ok(())
     }
 
@@ -829,7 +816,7 @@ impl Backend for Codex {
         Ok(self
             .kept
             .models
-            .options(&self.kept.model, self.kept.effort.as_deref()))
+            .options("Codex", &self.kept.model, self.kept.effort.as_deref()))
     }
 
     async fn stop_task(&mut self, _task_id: &str) -> Result<(), String> {
