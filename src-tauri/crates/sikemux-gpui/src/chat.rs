@@ -884,7 +884,8 @@ impl Chat {
         if seq <= mark.seq {
             return false;
         }
-        if seq != mark.seq + 1 {
+        let follows = changes.pointer("/0/follows").and_then(Value::as_u64);
+        if seq != mark.seq + 1 && follows != Some(mark.seq) {
             return true;
         }
         mark.seq = seq;
@@ -1263,7 +1264,7 @@ impl Chat {
         let mut rows = Vec::new();
         for change in changes {
             match change {
-                ChatChange::Head { set } => {
+                ChatChange::Head { set, .. } => {
                     let mut head = Value::Object(std::mem::take(&mut self.head));
                     merge(&mut head, &set);
                     self.state = serde_json::from_value(head.clone()).ok();
