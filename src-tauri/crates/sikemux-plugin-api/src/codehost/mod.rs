@@ -1,7 +1,6 @@
 //! The shapes every code host hands the Git pane: pull requests, CI runs,
 //! issues, releases and the rest. A host's plugin maps its own API onto these,
-//! the core reads them back to work out what clients show, and
-//! src/codehost/types.generated.ts is written from them. Statuses and
+//! and the core reads them back to work out what clients show. Statuses and
 //! conclusions use GitHub's words, which other hosts map onto. Ids a host may
 //! keep as text are strings everywhere, so a client never tells hosts apart.
 

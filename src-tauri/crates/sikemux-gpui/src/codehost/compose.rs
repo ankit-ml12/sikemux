@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sikemux_core::git::diff::DiffRow;
 use sikemux_core::git::log::GitCommit;
-use sikemux_wire::codehost::ChangedFile;
+use sikemux_plugin_api::codehost::ChangedFile;
 
 use super::diffs::{Changed, Diffs};
 use super::{branch_chip, HostArea, Read, Said};

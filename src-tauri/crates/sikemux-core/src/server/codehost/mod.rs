@@ -12,13 +12,13 @@ use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sikemux_process::sync::Locked;
-use sikemux_wire::codehost::{
+use sikemux_plugin_api::codehost::{
     ChangedFile, Check, CheckTally, Comment, Issue, IssueList, IssuePage, Job, JobLog, Label,
     ListedJob, ListedPull, ListedRun, MergeReadiness, OpenPull, OpenRun, Outcome, PendingApproval,
     Pull, PullCounts, PullList, PullState, Release, ReleaseList, Review, ReviewVerdict, Run,
     RunDetail, RunList, RunPage, RunTiming, TrackedItem, TrackedKind, WorkflowFile,
 };
+use sikemux_process::sync::Locked;
 use tokio::task::JoinSet;
 
 pub(crate) mod ci;

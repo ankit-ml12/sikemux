@@ -10,7 +10,7 @@ use gpui_kit::{
     Styled, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::codehost::{GraphBox, Job, OpenRun, Outcome, RunList, Workflow};
+use sikemux_plugin_api::codehost::{GraphBox, Job, OpenRun, Outcome, RunList, Workflow};
 
 use super::{
     ago, branch_chip, elapsed, event_label, list_head, notice, outcome_label, outcome_word, Area,

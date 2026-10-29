@@ -2245,7 +2245,7 @@ impl Workbench {
     /// The branch's newest commit's checks, while the core is checking it: the latest run of
     /// each workflow a push or pull request started, as the code host counts a commit's checks.
     /// Runs started by hand or on a schedule only happen to sit on the commit, so they are left out.
-    pub fn head_runs(&self) -> Vec<sikemux_wire::codehost::Run> {
+    pub fn head_runs(&self) -> Vec<sikemux_plugin_api::codehost::Run> {
         let (Some(_), Some(head)) = (&self.watched_ci, &self.watched_head) else {
             return Vec::new();
         };
@@ -2258,7 +2258,7 @@ impl Workbench {
             .flatten()
             .filter(|run| run["sha"] == head.as_str())
             .filter_map(|run| {
-                serde_json::from_value::<sikemux_wire::codehost::Run>(run.clone()).ok()
+                serde_json::from_value::<sikemux_plugin_api::codehost::Run>(run.clone()).ok()
             })
             .filter(|run| {
                 matches!(

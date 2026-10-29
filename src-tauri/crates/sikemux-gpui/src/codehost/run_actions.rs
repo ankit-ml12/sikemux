@@ -13,7 +13,7 @@ use gpui_kit::{
 };
 use gpui_transcript::{Markdown, Pen};
 use serde_json::{json, Value};
-use sikemux_wire::codehost::{
+use sikemux_plugin_api::codehost::{
     Annotation, Artifact, Job, JobSummary, OpenRun, Run, Workflow, WorkflowFile,
 };
 

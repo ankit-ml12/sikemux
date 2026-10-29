@@ -10,7 +10,7 @@ use gpui_kit::{
 };
 use gpui_transcript::{Markdown, Pen};
 use serde_json::json;
-use sikemux_wire::codehost::{Release, ReleaseList};
+use sikemux_plugin_api::codehost::{Release, ReleaseList};
 
 use super::{ago, branch_chip, notice, Area, HostArea, Read, Said};
 use crate::icons::Icon;

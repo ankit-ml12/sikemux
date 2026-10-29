@@ -5,7 +5,6 @@
 pub mod accounts;
 pub mod catalog;
 pub mod chat;
-pub mod codehost;
 pub mod grid;
 pub mod inbox;
 pub mod notch;

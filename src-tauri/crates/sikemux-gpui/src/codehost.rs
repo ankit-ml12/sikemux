@@ -27,7 +27,7 @@ use gpui_kit::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
-use sikemux_wire::codehost::{CheckTally, Label, Outcome, PullState};
+use sikemux_plugin_api::codehost::{CheckTally, Label, Outcome, PullState};
 use sikemux_wire::protocol::ProjectCodeHost;
 
 use crate::core::{Target, Watch};

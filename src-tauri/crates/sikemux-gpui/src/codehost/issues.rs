@@ -11,7 +11,7 @@ use gpui_kit::{
     Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::codehost::{Issue, IssueList, TimelineItem};
+use sikemux_plugin_api::codehost::{Issue, IssueList, TimelineItem};
 
 use super::pulls::Listed;
 use super::thread::{self, Block, Post};

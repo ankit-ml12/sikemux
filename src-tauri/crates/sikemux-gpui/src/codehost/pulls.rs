@@ -6,7 +6,7 @@ use gpui_kit::{
     div, px, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
     SharedString, StatefulInteractiveElement, Styled,
 };
-use sikemux_wire::codehost::{ListedPull, PullList};
+use sikemux_plugin_api::codehost::{ListedPull, PullList};
 
 use super::{
     ago, branch_chip, comments, list_head, notice, outcome_word, pull_mark, tally_summary, Area,

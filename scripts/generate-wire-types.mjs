@@ -47,7 +47,6 @@ const SOURCES = [
     "blame",
     "diff",
   ].map((file) => `${CORE}/git/${file}.rs`),
-  `${WIRE}/codehost.rs`,
   `${PLUGIN_API}/ratelimit.rs`,
 ];
 

@@ -14,7 +14,7 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use sikemux_core::git::diff::{DiffRow, ROW_ADDED, ROW_DELETED, ROW_HIDDEN};
-use sikemux_wire::codehost::ChangedFile;
+use sikemux_plugin_api::codehost::ChangedFile;
 
 use super::HostArea;
 use crate::git::{row, Colours, Diff, RowLook};

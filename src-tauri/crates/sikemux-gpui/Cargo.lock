@@ -8997,6 +8997,7 @@ dependencies = [
  "sikemux-keychain",
  "sikemux-linked",
  "sikemux-markdown",
+ "sikemux-plugin-api",
  "sikemux-plugin-aws-views",
  "sikemux-plugin-bruno-views",
  "sikemux-plugin-database-views",

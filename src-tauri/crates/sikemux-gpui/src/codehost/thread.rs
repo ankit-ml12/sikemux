@@ -10,7 +10,7 @@ use gpui_kit::{
     ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use gpui_transcript::{Markdown, Pen};
-use sikemux_wire::codehost::{Mention, PullCommit, TimelineItem};
+use sikemux_plugin_api::codehost::{Mention, PullCommit, TimelineItem};
 
 use super::ago;
 use crate::icons::Icon;

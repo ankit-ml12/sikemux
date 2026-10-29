@@ -59,6 +59,7 @@ sikemux-simulator = { path = "../sikemux-simulator" }
 sikemux-core = { path = "../sikemux-core" }
 sikemux-host = { path = "../sikemux-host", default-features = false }
 sikemux-markdown = { path = "../sikemux-markdown" }
+sikemux-plugin-api = { path = "../sikemux-plugin-api" }
 sikemux-plugin-aws-views = { path = "../../plugins/aws/views" }
 sikemux-plugin-bruno-views = { path = "../../plugins/bruno/views" }
 sikemux-plugin-database-views = { path = "../../plugins/database/views" }

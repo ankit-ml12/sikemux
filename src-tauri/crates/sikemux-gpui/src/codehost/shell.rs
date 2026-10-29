@@ -11,7 +11,7 @@ use gpui_kit::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use sikemux_wire::codehost::RepoListing;
+use sikemux_plugin_api::codehost::RepoListing;
 use sikemux_wire::protocol::CodeHostChoice;
 
 use super::{host_label, HostArea, Said};

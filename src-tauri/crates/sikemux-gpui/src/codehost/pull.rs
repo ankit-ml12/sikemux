@@ -12,7 +12,7 @@ use gpui_kit::{
 use serde::Deserialize;
 use serde_json::json;
 use sikemux_core::git::diff::DiffRow;
-use sikemux_wire::codehost::{
+use sikemux_plugin_api::codehost::{
     ChangedFile, Check, CheckTally, MergeReadiness, OpenPull, Outcome, PullCommit, PullState,
     ReviewVerdict,
 };

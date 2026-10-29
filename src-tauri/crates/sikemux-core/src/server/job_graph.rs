@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
-use sikemux_wire::codehost::{
+use sikemux_plugin_api::codehost::{
     GraphBox, GraphEdge, GraphJob, Job, JobGraph, JobLog, JobLogLine, LogMark, LogSection,
     OpenJobLog, Outcome, Step,
 };
@@ -913,7 +913,7 @@ pub(crate) fn log_of(log: JobLog, steps: &[Step]) -> OpenJobLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sikemux_wire::codehost::LogLine;
+    use sikemux_plugin_api::codehost::LogLine;
 
     fn job(
         id: u32,

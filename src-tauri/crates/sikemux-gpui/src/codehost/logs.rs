@@ -11,7 +11,7 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, StyledText, Subscription, Window,
 };
 use serde_json::Value;
-use sikemux_wire::codehost::{Job, JobLogLine, LogColor, LogMark, OpenJobLog, Outcome, Step};
+use sikemux_plugin_api::codehost::{Job, JobLogLine, LogColor, LogMark, OpenJobLog, Outcome, Step};
 
 use super::{elapsed, notice, outcome_word, HostArea, Read, Said};
 use crate::icons::Icon;

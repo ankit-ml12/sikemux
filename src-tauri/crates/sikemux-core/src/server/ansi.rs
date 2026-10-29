@@ -4,7 +4,7 @@
 use std::sync::LazyLock;
 
 use regex::Regex;
-use sikemux_wire::codehost::{LogColor, LogSpan};
+use sikemux_plugin_api::codehost::{LogColor, LogSpan};
 
 /// Control sequences, operating system commands and lone two-byte escapes.
 static ESCAPE: LazyLock<Regex> = LazyLock::new(|| {

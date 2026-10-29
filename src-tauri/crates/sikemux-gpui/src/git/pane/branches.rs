@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 use sikemux_core::git::branches::GitBranch;
 use sikemux_core::git::remote::{GitRemote, GitRemoteBranch};
-use sikemux_wire::codehost::{PullList, PullState};
+use sikemux_plugin_api::codehost::{PullList, PullState};
 
 use super::{row_button, GitPane, Pick, ROW_HEIGHT};
 use crate::codehost::Area;

@@ -12,7 +12,7 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::codehost::{Outcome, Run};
+use sikemux_plugin_api::codehost::{Outcome, Run};
 
 use crate::avatars::Avatars;
 use crate::codehost::Area;
