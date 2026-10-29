@@ -123,8 +123,12 @@ impl Tail {
     fn take(&mut self, streamed: Streamed) {
         match streamed {
             Streamed::Item(item) => {
-                let Ok(line) = serde_json::from_value::<LogLine>(item) else {
-                    return;
+                let line = match serde_json::from_value::<LogLine>(item) {
+                    Ok(line) => line,
+                    Err(error) => {
+                        eprintln!("sikemux: a CloudWatch log line did not read: {error}");
+                        return;
+                    }
                 };
                 let kept = Rc::make_mut(&mut self.lines);
                 kept.push_back(line);

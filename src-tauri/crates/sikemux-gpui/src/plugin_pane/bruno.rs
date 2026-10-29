@@ -98,8 +98,12 @@ fn request_rows(collection: &Value) -> Vec<crate::palette::Row> {
             }
         }
     }
-    let Ok(collection) = serde_json::from_value::<Collection>(collection.clone()) else {
-        return Vec::new();
+    let collection = match serde_json::from_value::<Collection>(collection.clone()) {
+        Ok(collection) => collection,
+        Err(error) => {
+            eprintln!("sikemux: Bruno's requests did not read for the palette: {error}");
+            return Vec::new();
+        }
     };
     let mut rows = Vec::new();
     walk(&collection.tree, &mut Vec::new(), &mut rows);
@@ -107,8 +111,12 @@ fn request_rows(collection: &Value) -> Vec<crate::palette::Row> {
 }
 
 fn environment_rows(collection: &Value) -> Vec<crate::palette::Row> {
-    let Ok(collection) = serde_json::from_value::<Collection>(collection.clone()) else {
-        return Vec::new();
+    let collection = match serde_json::from_value::<Collection>(collection.clone()) {
+        Ok(collection) => collection,
+        Err(error) => {
+            eprintln!("sikemux: Bruno's environments did not read for the palette: {error}");
+            return Vec::new();
+        }
     };
     let mut owners: Vec<(String, String)> = Vec::new();
     for env in &collection.envs {
@@ -127,8 +135,12 @@ fn environment_rows(collection: &Value) -> Vec<crate::palette::Row> {
 }
 
 fn workspace_rows(known: &Value) -> Vec<crate::palette::Row> {
-    let Ok(known) = serde_json::from_value::<KnownWorkspaces>(known.clone()) else {
-        return Vec::new();
+    let known = match serde_json::from_value::<KnownWorkspaces>(known.clone()) {
+        Ok(known) => known,
+        Err(error) => {
+            eprintln!("sikemux: Bruno's workspaces did not read for the palette: {error}");
+            return Vec::new();
+        }
     };
     known
         .workspaces

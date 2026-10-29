@@ -5,7 +5,7 @@
 
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::rc::Rc;
 
@@ -14,7 +14,8 @@ use gpui_kit::{
     SharedString, Styled, Task, WeakEntity, Window,
 };
 use serde::de::DeserializeOwned;
-use serde_json::{json, Value};
+use serde::Serialize;
+use serde_json::{json, Map, Value};
 
 use crate::core::Target;
 use crate::icons::Icon;
@@ -498,12 +499,63 @@ impl Host {
             .unwrap_or(Value::Null)
     }
 
-    /// Changes the plugin's saved settings as `change` does to their JSON.
-    pub fn save_settings(
+    /// What the plugin's panes saved, read as `T`; a field that does not read keeps its default
+    /// and leaves the others as they were saved.
+    pub fn read_settings<T: Serialize + DeserializeOwned + Default>(&self, cx: &App) -> T {
+        let saved = self.settings(cx);
+        if saved.is_null() {
+            return T::default();
+        }
+        if let Ok(read) = T::deserialize(&saved) {
+            return read;
+        }
+        let Value::Object(saved) = saved else {
+            say_once(format!(
+                "sikemux: {}'s saved settings are not an object, so they are left at their defaults",
+                self.plugin
+            ));
+            return T::default();
+        };
+        let mut read = Map::new();
+        for (key, value) in saved {
+            let mut tried = read.clone();
+            tried.insert(key.clone(), value);
+            match T::deserialize(&Value::Object(tried.clone())) {
+                Ok(_) => read = tried,
+                Err(error) => say_once(format!(
+                    "sikemux: {}'s saved {key} did not read, so it is left at its default: {error}",
+                    self.plugin
+                )),
+            }
+        }
+        T::deserialize(&Value::Object(read)).unwrap_or_default()
+    }
+
+    /// Changes the plugin's saved settings as `change` does to them read as `T`, saving only
+    /// the fields it changed.
+    pub fn update_settings<T: Serialize + DeserializeOwned + Default>(
         &self,
-        change: impl FnOnce(&mut serde_json::Map<String, Value>),
+        change: impl FnOnce(&mut T),
         cx: &mut App,
     ) {
+        let mut settings = self.read_settings::<T>(cx);
+        let before = fields(&settings);
+        change(&mut settings);
+        let after = fields(&settings);
+        self.save_settings(
+            |kept| {
+                for (key, value) in after {
+                    if before.get(&key) != Some(&value) {
+                        kept.insert(key, value);
+                    }
+                }
+            },
+            cx,
+        );
+    }
+
+    /// Changes the plugin's saved settings as `change` does to their JSON.
+    pub fn save_settings(&self, change: impl FnOnce(&mut Map<String, Value>), cx: &mut App) {
         let Some(bench) = self.bench.upgrade() else {
             return;
         };
@@ -790,6 +842,23 @@ impl Render for PluginPane {
 }
 
 /// Copies `text` and says over the window what was copied.
+fn fields(settings: &impl Serialize) -> Map<String, Value> {
+    match serde_json::to_value(settings) {
+        Ok(Value::Object(fields)) => fields,
+        _ => Map::new(),
+    }
+}
+
+/// Logs `said` the first time only, for what is read again on every frame.
+fn say_once(said: String) {
+    thread_local! {
+        static SAID: RefCell<HashSet<String>> = RefCell::default();
+    }
+    if SAID.with(|kept| kept.borrow_mut().insert(said.clone())) {
+        eprintln!("{said}");
+    }
+}
+
 pub fn copy(bench: &WeakEntity<Workbench>, text: String, what: &str, cx: &mut App) {
     cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
     let note = toast::success(format!("Copied {what}"));
