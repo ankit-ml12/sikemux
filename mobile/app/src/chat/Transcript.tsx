@@ -145,11 +145,15 @@ function Subagent({ subagent }: { subagent: SubagentCard }) {
             {subagentTask(subagent.task)}
           </Shimmer>
         ) : (
-          <Text style={styles.subagentTask} numberOfLines={1}>
+          <Text style={[styles.subagentTask, styles.subagentTaskLayout]} numberOfLines={1}>
             {subagentTask(subagent.task)}
           </Text>
         )}
-        {cost ? <Text style={styles.subagentCalls}>{cost}</Text> : null}
+        {cost ? (
+          <Text style={styles.subagentCalls} numberOfLines={1}>
+            {cost}
+          </Text>
+        ) : null}
         <View style={styles.subagentMark}>
           <SubagentMarkView state={subagent.state} />
         </View>
@@ -805,10 +809,10 @@ const makeStyles = (colors: Palette) => {
       backgroundColor: translucent(colors.raised, 0.6),
     },
     chevron: { opacity: 0.7 },
-    subagentName: { flexShrink: 0, maxWidth: '45%', fontFamily: fonts.mono, fontSize: 11.5, color: colors.ink },
-    subagentTask: { flex: 1, fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint },
-    subagentTaskLayout: { flex: 1 },
-    subagentCalls: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.inkFaint },
+    subagentName: { flexShrink: 1, maxWidth: '45%', fontFamily: fonts.mono, fontSize: 11.5, color: colors.ink },
+    subagentTask: { fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint },
+    subagentTaskLayout: { flex: 1, minWidth: 0 },
+    subagentCalls: { flexShrink: 0, fontFamily: fonts.mono, fontSize: 10.5, color: colors.inkFaint },
     subagentMark: { width: 14, alignItems: 'center' },
     subagentBody: { paddingLeft: 14, paddingTop: 4 },
     empty: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkFaint, paddingVertical: 6 },
