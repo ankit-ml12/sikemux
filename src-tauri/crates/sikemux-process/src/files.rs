@@ -7,6 +7,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// whole new one, never half of it. A `private` file is readable only by this user,
 /// as is any folder this call creates for it.
 pub fn write_atomic(path: &Path, bytes: &[u8], private: bool) -> io::Result<()> {
+    write_whole(path, bytes, private, true)
+}
+
+/// [`write_atomic`] without waiting for the disk, for a file whose loss to a power cut
+/// costs little: it is still whole or not there at all.
+pub fn write_atomic_unsynced(path: &Path, bytes: &[u8], private: bool) -> io::Result<()> {
+    write_whole(path, bytes, private, false)
+}
+
+fn write_whole(path: &Path, bytes: &[u8], private: bool, synced: bool) -> io::Result<()> {
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -29,7 +39,10 @@ pub fn write_atomic(path: &Path, bytes: &[u8], private: bool) -> io::Result<()> 
     }
     let written = options.open(&staging).and_then(|mut file| {
         file.write_all(bytes)?;
-        file.sync_all()
+        if synced {
+            file.sync_all()?;
+        }
+        Ok(())
     });
     let result = written.and_then(|()| fs::rename(&staging, path));
     if result.is_err() {

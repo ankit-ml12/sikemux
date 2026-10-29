@@ -103,8 +103,10 @@ pub async fn picture(dir: &Path, hash: &str) -> Option<(&'static str, Vec<u8>)> 
 /// Saves the profile and fetches its picture if it is not cached yet. A picture
 /// that fails to download is left out until the next check.
 pub async fn save(dir: &Path, profile: &Profile) -> std::io::Result<()> {
-    tokio::fs::create_dir_all(dir).await?;
-    tokio::fs::write(dir.join(PROFILE_FILE), serde_json::to_vec(profile)?).await?;
+    let (file, bytes) = (dir.join(PROFILE_FILE), serde_json::to_vec(profile)?);
+    tokio::task::spawn_blocking(move || sikemux_process::files::write_atomic(&file, &bytes, true))
+        .await
+        .map_err(std::io::Error::other)??;
     let keep = profile.picture.as_deref().map(|url| picture_path(dir, url));
     if let (Some(url), Some(path)) = (profile.picture.as_deref(), keep.as_deref()) {
         if tokio::fs::metadata(path).await.is_err() {

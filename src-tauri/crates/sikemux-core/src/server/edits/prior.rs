@@ -6,13 +6,12 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs::Metadata;
-use std::io::Write;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sikemux_process::files::write_atomic_unsynced;
 
 /// Files bigger than this are neither kept nor told line by line.
 pub(super) const MAX_FILE_BYTES: u64 = 1024 * 1024;
@@ -68,26 +67,6 @@ fn modified(meta: &Metadata) -> u128 {
 
 fn digest(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
-}
-
-/// Writes `bytes` whole or not at all, without waiting for the disk: losing
-/// a copy to a power cut only leaves its file's next change unknown.
-fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    if let Some(folder) = path.parent() {
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(folder)?;
-    }
-    let staging = path.with_extension("new");
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&staging)?
-        .write_all(bytes)?;
-    std::fs::rename(&staging, path)
 }
 
 impl Priors {
@@ -174,7 +153,7 @@ impl Priors {
             }
         };
         let blob = folder.join(&digest);
-        if !blob.exists() && write(&blob, text.as_bytes()).is_err() {
+        if !blob.exists() && write_atomic_unsynced(&blob, text.as_bytes(), true).is_err() {
             self.unknown(path);
             return;
         }
@@ -238,7 +217,7 @@ impl Priors {
         } else {
             serde_json::to_vec(&self.kept)
                 .map_err(std::io::Error::other)
-                .and_then(|index| write(&folder.join(INDEX), &index))
+                .and_then(|index| write_atomic_unsynced(&folder.join(INDEX), &index, true))
         };
         if let Err(error) = written {
             eprintln!("sikemux core: what changed files held was not saved: {error}");
