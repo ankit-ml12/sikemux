@@ -106,7 +106,7 @@ type Outgoing = {
 };
 
 /** A message sent behind the running turn, shown in the queue until the host's own queue holds it. */
-type Holding = Held & { key: number; taken: boolean };
+type Holding = Held & { taken: boolean };
 
 const shownPath = (file: Attachment) => file.path ?? file.uri;
 
@@ -115,15 +115,9 @@ type Named = Pick<Outgoing, 'paths' | 'context'>;
 
 const NAMED_NONE: Named = { paths: [], context: [] };
 
-/** The messages in `holding` the host's queue does not hold yet, matched one for one by text. */
+/** The messages in `holding` the host's queue does not hold yet. */
 function notQueued(holding: readonly Holding[], host: readonly Held[]): Holding[] {
-  const left = host.map((held) => held.text);
-  return holding.filter((held) => {
-    const at = left.indexOf(held.text);
-    if (at < 0) return true;
-    left.splice(at, 1);
-    return false;
-  });
+  return holding.filter((held) => !host.some((queued) => queued.id === held.id));
 }
 
 /** Turns of earlier rows asked for at a time. */
@@ -183,8 +177,6 @@ function ownRow(outgoing: Outgoing): ChatMessage {
   };
 }
 
-const sameItems = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((item, index) => item === b[index]);
-
 /**
  * One chat on one host, kept outside React so it outlives the screen: the chat as the host folds it,
  * where its changes got to, what this phone sent and what it still means to send.
@@ -198,7 +190,6 @@ export class ChatSession {
   private notice: string | null = null;
   private outbox: Outgoing[] = [];
   private holding: Holding[] = [];
-  private held = 0;
   /** Messages reach the host in the order they were sent, however long their files take. */
   private line: Promise<void> = Promise.resolve();
   private stoppingTurn = false;
@@ -1001,11 +992,12 @@ export class ChatSession {
 
   /** Of `ids`, the ones in the host's queue rather than still on their way to it. */
   private onHostQueue(ids: readonly string[]) {
-    return ids.filter((id) => !this.holding.some((held) => held.id === id));
+    const onTheirWay = notQueued(this.holding, this.chat.queued);
+    return ids.filter((id) => !onTheirWay.some((held) => held.id === id));
   }
 
   /* The host shows a message as the row that carries its id; one that met a running turn waits in
-     the host's queue instead, under an id of the host's own. Once a turn has ended, nothing the host took is still to come. */
+     the host's queue under it instead. Once a turn has ended, nothing the host took is still to come. */
   private settleOutbox(turnEnded = false) {
     if (!this.outbox.some((outgoing) => outgoing.state === 'sent')) return;
     if (turnEnded) {
@@ -1015,10 +1007,7 @@ export class ChatSession {
     const shown = new Set(this.chat.messages.flatMap((row) => (row.promptId ? [row.promptId] : [])));
     const queued = this.chat.queued;
     const kept = this.outbox.filter(
-      (outgoing) =>
-        outgoing.state !== 'sent' ||
-        (!shown.has(outgoing.messageId) &&
-          !queued.some((held) => held.text === outgoing.text && sameItems(held.paths, pathsOf(outgoing.files)))),
+      (outgoing) => outgoing.state !== 'sent' || (!shown.has(outgoing.messageId) && !queued.some((held) => held.id === outgoing.messageId)),
     );
     if (kept.length !== this.outbox.length) this.outbox = kept;
   }
@@ -1188,31 +1177,31 @@ export class ChatSession {
    * does not go, it goes back to the composer.
    */
   private queue(text: string, files: Attachment[], steers: boolean, named: Named) {
-    const key = (this.held += 1);
+    const id = randomUUID();
     this.showFiles(files);
     const paths = [...files.map(shownPath), ...named.paths];
     const context = named.context.map(({ uri, title }) => ({ uri, title }));
-    this.holding = [...this.holding, { id: `phone-${key}`, key, text, paths, context, taken: false }];
+    this.holding = [...this.holding, { id, text, paths, context, taken: false }];
     this.emit();
     const connection = this.connection;
     this.inOrder(async () => {
       if (!connection?.isOpen()) throw new Error('the host is not connected');
       const sent = await this.putFiles(connection, files, () => {});
       const paths = [...pathsOf(sent), ...named.paths];
-      if (!steers) return this.prompt(connection, randomUUID(), text, paths, named.context);
+      if (!steers) return this.prompt(connection, id, text, paths, named.context);
       const ids = this.onHostQueue(this.chat.queued.map((held) => held.id));
       const message = { text, paths, context: named.context };
       await connection.call('steerQueued', JSON.stringify({ agentId: this.agentId, ids, message }));
     })
       .then(() => {
-        const held = this.holding.find((holding) => holding.key === key);
+        const held = this.holding.find((holding) => holding.id === id);
         if (held && (steers || !notQueued([held], this.chat.queued).length))
           this.holding = this.holding.filter((holding) => holding !== held);
-        else this.holding = this.holding.map((holding) => (holding.key === key ? { ...holding, taken: true } : holding));
+        else this.holding = this.holding.map((holding) => (holding.id === id ? { ...holding, taken: true } : holding));
         this.emit();
       })
       .catch((error: unknown) => {
-        this.holding = this.holding.filter((holding) => holding.key !== key);
+        this.holding = this.holding.filter((holding) => holding.id !== id);
         this.draft = [text, this.draft].filter(Boolean).join('\n\n');
         this.attachments = [...files, ...this.attachments];
         this.notice = `Could not send the message: ${problemOf(error)}`;
