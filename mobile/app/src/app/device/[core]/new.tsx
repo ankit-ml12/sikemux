@@ -3,7 +3,6 @@ import { KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-n
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { File } from 'expo-file-system';
-import type { ConnectionLike } from '@sikemux/native';
 
 import { composerPlaceholder } from '@shared/chat/chatStatus';
 import type { ChatMessage } from '@shared/chat/types';
@@ -12,12 +11,12 @@ import { ComposerAttachments } from '@/chat/Attachments';
 import { ChatTitle } from '@/chat/ChatTitle';
 import { newChatDraft, type NewChatDraft } from '@/chat/kept';
 import { Activity, Message } from '@/chat/Transcript';
-import { chatSession } from '@/chat/useChat';
+import { startChat } from '@/chat/start';
 import { AttachSheet } from '@/chat/AttachSheet';
 import { YoloToggle } from '@/chat/Composer';
 import { WorktreeSwitch } from '@/chat/Worktree';
 import { ComposerInput } from '@/chat/ComposerInput';
-import { fitting, uploadEach, type Attachment } from '@/chat/uploads';
+import { fitting, type Attachment } from '@/chat/uploads';
 import { stashApi, stashPrompt, type StashItem } from '@/stash/api';
 import { downloadedFile, intoMessage, stashIdsOf } from '@/stash/attach';
 import { StashButton } from '@/stash/StashButton';
@@ -304,31 +303,6 @@ export default function NewChat() {
     void takeStash(put.restored);
   };
 
-  /** Answers the files as they ended up, and all of them sent or null when one did not get there. */
-  const upload = async (connection: ConnectionLike, agentId: string, picked: Attachment[]) => {
-    let files = picked;
-    const sent = await uploadEach(
-      picked,
-      async (attachment) => connection.attachFile(agentId, attachment.name, attachment.mime, await new File(attachment.uri).arrayBuffer()),
-      (id, change) => {
-        files = files.map((known) => (known.id === id ? { ...known, ...change } : known));
-      },
-      problemOf,
-    );
-    return { sent, files };
-  };
-
-  /** Puts what was sent back in the composer, to try again. */
-  const giveBack = (shown: Sending, files: Attachment[], why: string) => {
-    busy.current = false;
-    haptics.failure();
-    setProblem(why);
-    setDraft(shown.draft);
-    setAttachments(files);
-    setSending(undefined);
-    setStep(undefined);
-  };
-
   const start = async () => {
     const text = withContext(draft.trim(), chips.map(contextChip));
     if (busy.current || (!text && !attachments.length) || !launcher || !project || live.status !== 'open') return;
@@ -339,38 +313,36 @@ export default function NewChat() {
     setDraft('');
     setAttachments([]);
     setProblem(undefined);
-    try {
-      let agentId = started;
-      if (!agentId) {
-        agentId = await live.connection.startChat(launcher.id, project.id, chosenMode);
-        setStarted(agentId);
-      }
-      if (worktree && !inWorktree) {
-        setStep('Creating worktree');
-        const made = JSON.parse(await live.connection.call('createAgentWorktree', JSON.stringify({ agentId, message: text }))) as {
-          worktree?: { path?: string };
-          setupError?: string;
-        };
-        setInWorktree(true);
-        if (made.setupError) {
-          return giveBack(
-            shown,
-            shown.attachments,
-            `${made.setupError}. The worktree is kept at ${made.worktree?.path}; send again to start there.`,
-          );
-        }
-        setStep('Starting the agent in the worktree');
-      }
-      const { sent, files } = await upload(live.connection, agentId, shown.attachments);
-      if (!sent) return giveBack(shown, files, 'Could not send every file to the host');
-      chatSession(core, agentId).sendWhenAttached(text, sent);
-      void takeStash(stashIdsOf(shown.attachments, chips));
-      setChips([]);
-      kept.clear();
-      router.replace({ pathname: '/device/[core]/chat/[agent]', params: { core, agent: agentId, started: '1' } });
-    } catch (error) {
-      giveBack(shown, shown.attachments, problemOf(error));
+    const outcome = await startChat(
+      live.connection,
+      {
+        core,
+        launcherId: launcher.id,
+        projectId: project.id,
+        mode: chosenMode,
+        text,
+        attachments: shown.attachments,
+        worktree,
+        agentId: started,
+        inWorktree,
+      },
+      { started: setStarted, step: setStep },
+    );
+    if (outcome.kind === 'failed') {
+      busy.current = false;
+      haptics.failure();
+      setInWorktree(outcome.inWorktree);
+      setProblem(outcome.problem);
+      setDraft(shown.draft);
+      setAttachments(outcome.files);
+      setSending(undefined);
+      setStep(undefined);
+      return;
     }
+    void takeStash(stashIdsOf(shown.attachments, chips));
+    setChips([]);
+    kept.clear();
+    router.replace({ pathname: '/device/[core]/chat/[agent]', params: { core, agent: outcome.agentId, started: '1' } });
   };
 
   return (
