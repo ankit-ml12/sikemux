@@ -577,11 +577,7 @@ impl Host {
     /// Whether the person is signed in to the plugin, as the core last listed it.
     pub fn signed_in(&self, cx: &App) -> Option<bool> {
         let bench = self.bench.upgrade()?;
-        let plugins = bench.read(cx).reads.plugins.as_ref()?.as_array()?;
-        plugins
-            .iter()
-            .find(|plugin| plugin["id"] == self.plugin.as_str())
-            .and_then(|plugin| plugin["signedIn"].as_bool())
+        bench.read(cx).reads.plugins.signed_in(&self.plugin)
     }
 
     /// Signs in through the plugin's own browser sign-in, opening the page it names.

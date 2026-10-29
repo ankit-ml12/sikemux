@@ -1304,13 +1304,11 @@ pub fn view_label(bench: &Workbench, pane: &Pane) -> SharedString {
             bench
                 .reads
                 .plugins
-                .as_ref()
-                .and_then(Value::as_array)
-                .and_then(|plugins| plugins.iter().find(|plugin| plugin["id"] == id))
-                .and_then(|plugin| plugin["name"].as_str())
+                .all()
+                .find(|plugin| plugin.id == id)
                 .map_or_else(
                     || "Plugin".into(),
-                    |name| SharedString::from(name.to_owned()),
+                    |plugin| SharedString::from(plugin.name.clone()),
                 )
         }
         Some((kind, _)) => crate::pane_kind::of(kind).label.into(),

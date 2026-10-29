@@ -638,14 +638,10 @@ impl Workbench {
     fn plugin_palette_rows(&self) -> Vec<Row> {
         self.reads
             .plugins
-            .as_ref()
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter(|plugin| plugin["enabled"].as_bool() == Some(true))
+            .on()
             .filter_map(|plugin| {
-                let name = plugin["name"].as_str()?.to_owned();
-                let palettes = crate::plugin_pane::palettes(plugin["id"].as_str()?);
+                let name = plugin.name.clone();
+                let palettes = crate::plugin_pane::palettes(&plugin.id);
                 Some(palettes.iter().map(move |palette| {
                     Row::new(
                         format!("{PLUGIN_PALETTE}{}/{}", palette.plugin, palette.id),

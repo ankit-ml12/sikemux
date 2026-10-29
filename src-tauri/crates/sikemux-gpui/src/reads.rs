@@ -2,6 +2,7 @@
 //! where it arrives, so a screen reads a field rather than looking an answer up by its key.
 
 use serde_json::Value;
+use sikemux_plugin_api::Listed;
 use sikemux_wire::catalog::CatalogAgent;
 
 /// The agents the core can run, as its catalog lists them.
@@ -28,11 +29,35 @@ impl Catalog {
     }
 }
 
+/// The plugins built in, as the core last listed them.
+#[derive(Default, PartialEq)]
+pub struct Plugins(Vec<Listed>);
+
+impl Plugins {
+    pub fn all(&self) -> impl Iterator<Item = &Listed> {
+        self.0.iter()
+    }
+
+    /// Those switched on.
+    pub fn on(&self) -> impl Iterator<Item = &Listed> {
+        self.0.iter().filter(|plugin| plugin.enabled)
+    }
+
+    /// Whether the person is signed in to `id`; none for a plugin with no sign-in.
+    pub fn signed_in(&self, id: &str) -> Option<bool> {
+        self.0.iter().find(|plugin| plugin.id == id)?.signed_in
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 #[derive(Default)]
 pub struct Reads {
     pub catalog: Catalog,
+    pub plugins: Plugins,
     pub hosts: Option<Value>,
-    pub plugins: Option<Value>,
     pub update: Option<Value>,
     pub usage: Option<Value>,
     pub shares: Option<Value>,
@@ -89,7 +114,6 @@ macro_rules! slots {
 
 slots! {
     "hosts" => hosts,
-    "plugins" => plugins,
     "update" => update,
     "usage" => usage,
     "shares" => shares,
@@ -126,6 +150,21 @@ impl Reads {
             }
             Err(error) => {
                 eprintln!("sikemux: the core's agent catalog does not read: {error}");
+                false
+            }
+        }
+    }
+
+    /// Keeps the plugins the core listed, and says whether they differ from those kept.
+    pub fn keep_plugins(&mut self, value: Value) -> bool {
+        match serde_json::from_value::<Vec<Listed>>(value) {
+            Ok(plugins) if plugins == self.plugins.0 => false,
+            Ok(plugins) => {
+                self.plugins = Plugins(plugins);
+                true
+            }
+            Err(error) => {
+                eprintln!("sikemux: the core's plugins do not read: {error}");
                 false
             }
         }

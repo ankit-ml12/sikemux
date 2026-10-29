@@ -454,15 +454,16 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
 fn plugins(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
     let ink = Tokens::get(cx).text_secondary;
     let strip = bench.strip();
-    rows(bench.reads.plugins.as_ref())
-        .filter(|plugin| plugin["enabled"].as_bool() == Some(true))
+    bench
+        .reads
+        .plugins
+        .on()
         .filter_map(|plugin| {
-            let mark = plugin_mark(plugin["id"].as_str()?)?;
-            let tone =
-                plugin["signedIn"]
-                    .as_bool()
-                    .map(|signed_in| if signed_in { Tone::Ok } else { Tone::Idle });
-            let id = plugin["id"].as_str()?;
+            let mark = plugin_mark(&plugin.id)?;
+            let tone = plugin
+                .signed_in
+                .map(|signed_in| if signed_in { Tone::Ok } else { Tone::Idle });
+            let id = plugin.id.as_str();
             let opens =
                 crate::plugin_pane::surface(id)
                     .zip(strip.clone())
@@ -476,7 +477,7 @@ fn plugins(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
             Some(
                 Row::new(
                     SharedString::from(format!("plugin-{id}")),
-                    plugin["name"].as_str()?.to_owned(),
+                    plugin.name.clone(),
                 )
                 .mark(16., ui::picture(mark, 13., ink))
                 .quiet()

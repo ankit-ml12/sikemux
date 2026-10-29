@@ -4,7 +4,7 @@ use gpui_kit::component::switch::Switch;
 use gpui_kit::{
     div, AnyElement, App, Context, Entity, IntoElement, ParentElement, SharedString, Window,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::core::Ask;
 use crate::icons::Icon;
@@ -18,13 +18,9 @@ fn switch(bench: &Workbench, id: &str, on: bool) {
     let mut off: Vec<String> = bench
         .reads
         .plugins
-        .as_ref()
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|plugin| plugin["enabled"].as_bool() == Some(false))
-        .filter_map(|plugin| plugin["id"].as_str().map(str::to_owned))
-        .filter(|known| known != id)
+        .all()
+        .filter(|plugin| !plugin.enabled && plugin.id != id)
+        .map(|plugin| plugin.id.clone())
         .collect();
     if !on {
         off.push(id.to_owned());
@@ -42,21 +38,15 @@ pub fn render(
     cx: &mut Context<Workbench>,
 ) -> Vec<AnyElement> {
     let ink = Tokens::get(cx).text_secondary;
-    let plugins: Vec<Value> = bench
-        .reads
-        .plugins
-        .as_ref()
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    let plugins = &bench.reads.plugins;
     let body = match plugins.is_empty() {
         true => rows::note("No plugins in this build.", cx),
         false => div()
-            .children(plugins.iter().filter_map(|plugin| {
-                let id = plugin["id"].as_str()?.to_owned();
-                let name = plugin["name"].as_str().unwrap_or(&id).to_owned();
-                let on = plugin["enabled"].as_bool() == Some(true);
-                let about: SharedString = match plugin["signedIn"].as_bool() {
+            .children(plugins.all().filter_map(|plugin| {
+                let id = plugin.id.clone();
+                let name = plugin.name.clone();
+                let on = plugin.enabled;
+                let about: SharedString = match plugin.signed_in {
                     Some(true) => format!("{id} · signed in"),
                     Some(false) => format!("{id} · not signed in"),
                     None => id.clone(),

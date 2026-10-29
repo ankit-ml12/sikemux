@@ -44,6 +44,18 @@ pub struct Manifest {
     pub code_host: Option<CodeHostSpec>,
 }
 
+/// A plugin as clients list it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Listed {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    /// Whether its sign-in works; none for a plugin with no sign-in, or one
+    /// switched off.
+    pub signed_in: Option<bool>,
+}
+
 /// A code host as its plugin describes it, so the core and clients reach and
 /// show it without naming it.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

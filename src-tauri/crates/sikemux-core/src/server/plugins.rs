@@ -15,7 +15,7 @@ use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_plugin_api::SignInStatus;
-pub use sikemux_plugin_api::{Category, CodeHostSpec, Manifest};
+pub use sikemux_plugin_api::{Category, CodeHostSpec, Listed, Manifest};
 
 use crate::cli::protocol::HarnessRequest;
 
@@ -280,18 +280,6 @@ pub(crate) fn sign_in_callback(core: &Core, landed: Landed) -> CoreResult<()> {
         .map_err(|failure| CoreError::from(failure.message))?
         .relay_sign_in(&landed.target)
         .map_err(CoreError::from)
-}
-
-/// A plugin as the rail lists it.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Listed {
-    id: String,
-    name: String,
-    enabled: bool,
-    /// Whether its sign-in works; none for a plugin with no sign-in, or one
-    /// switched off.
-    signed_in: Option<bool>,
 }
 
 /// Every plugin built in, each with whether its sign-in works, asked of its

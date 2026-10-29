@@ -996,7 +996,9 @@ impl Workbench {
             }
             Update::Read("skills-added", value) => return self.offer_skills(&value, cx),
             Update::Read("plugins", value) => {
-                self.keep_read("plugins", value);
+                if !self.reads.keep_plugins(value) {
+                    return;
+                }
                 self.watch_ci();
             }
             Update::Read("ci", value) => {
@@ -2237,13 +2239,7 @@ impl Workbench {
             .as_ref()
             .filter(|host| host.host == "github")?;
         let plugin = format!("sikemux.{}", host.host);
-        let signed_in = self
-            .reads
-            .plugins
-            .as_ref()?
-            .as_array()?
-            .iter()
-            .any(|entry| entry["id"] == plugin.as_str() && entry["signedIn"] == true);
+        let signed_in = self.reads.plugins.signed_in(&plugin) == Some(true);
         let (owner, name) = host.repo.split_once('/')?;
         if !signed_in {
             return None;
@@ -2354,8 +2350,8 @@ impl Workbench {
     fn holds(&self, update: &Update) -> bool {
         match update {
             Update::Read(
-                key @ ("hosts" | "plugins" | "tasks" | "usage" | "ci" | "ci-head" | "shares"
-                | "stash" | "update" | "runs" | "ports" | "trust" | "drafts"),
+                key @ ("hosts" | "tasks" | "usage" | "ci" | "ci-head" | "shares" | "stash"
+                | "update" | "runs" | "ports" | "trust" | "drafts"),
                 value,
             ) => self.reads.holds(key, value),
             Update::HostView(host, view) => self.host_views.get(host) == Some(&**view),
@@ -3860,12 +3856,8 @@ impl Workbench {
         let enabled: Vec<String> = self
             .reads
             .plugins
-            .as_ref()
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter(|plugin| plugin["enabled"].as_bool() == Some(true))
-            .filter_map(|plugin| plugin["id"].as_str().map(str::to_owned))
+            .on()
+            .map(|plugin| plugin.id.clone())
             .filter(|id| crate::plugin_pane::has_top_bar(id))
             .collect();
         let core = self.target();
