@@ -46,6 +46,28 @@ pub fn live_message(nonce: &str, key: &str) -> String {
     format!("sikemux-live|{nonce}|{key}")
 }
 
+/// What a host signs to open its share connection. The prefix keeps it from
+/// ever passing for a live connection's hello.
+pub fn share_message(nonce: &str, key: &str) -> String {
+    format!("sikemux-share|{nonce}|{key}")
+}
+
+/// What a host signs to open its webhook connection.
+pub fn hooks_message(nonce: &str, key: &str) -> String {
+    format!("sikemux-hooks|{nonce}|{key}")
+}
+
+/// What a Mac signs to watch a shared chat as the host's account.
+pub fn share_viewer_message(nonce: &str, key: &str) -> String {
+    format!("sikemux-share-viewer|{nonce}|{key}")
+}
+
+/// What a phone signs to register its push token, `token_sha256` being the
+/// token's lowercase hex SHA-256.
+pub fn push_message(nonce: &str, key: &str, token_sha256: &str) -> String {
+    format!("sikemux-push|{nonce}|{key}|{token_sha256}")
+}
+
 /// Accepts only a server challenge: 64 lowercase hex characters.
 pub fn check_live(nonce: &str) -> Result<(), &'static str> {
     let is_challenge = nonce.len() == 64

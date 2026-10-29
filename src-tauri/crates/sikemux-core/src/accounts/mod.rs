@@ -14,6 +14,7 @@ pub use sikemux_client::accounts::{
     check_live, check_registration, check_user_id, live_message, network, registration_message,
     tls_config,
 };
+pub use sikemux_client::accounts::{hooks_message, share_message, share_viewer_message};
 pub use sikemux_wire::accounts::protocol;
 
 /// Where the web app is. A shared chat's link opens there, and it hands the
@@ -24,22 +25,6 @@ pub fn app_base() -> String {
     } else {
         "https://app.sikemux.com".into()
     }
-}
-
-/// What a host signs to open its share connection. The prefix keeps it from
-/// ever passing for a live connection's hello.
-pub fn share_message(nonce: &str, key: &str) -> String {
-    format!("sikemux-share|{nonce}|{key}")
-}
-
-/// What a host signs to open its webhook connection.
-pub fn hooks_message(nonce: &str, key: &str) -> String {
-    format!("sikemux-hooks|{nonce}|{key}")
-}
-
-/// What a Mac signs to watch a shared chat as the host's account.
-pub fn share_viewer_message(nonce: &str, key: &str) -> String {
-    format!("sikemux-share-viewer|{nonce}|{key}")
 }
 
 /// One request a host makes to the accounts API as itself, signed in its

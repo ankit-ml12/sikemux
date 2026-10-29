@@ -165,7 +165,8 @@ fn sign_push(key: &SecretKey, nonce: &str, token_sha256: &str) -> Result<String,
     sikemux_client::accounts::check_live(nonce).map_err(invalid)?;
     sikemux_client::accounts::check_live(token_sha256)
         .map_err(|_| invalid("the token's hash is 64 lowercase hex characters"))?;
-    let message = format!("sikemux-push|{nonce}|{}|{token_sha256}", key.public());
+    let message =
+        sikemux_client::accounts::push_message(nonce, &key.public().to_string(), token_sha256);
     Ok(hex::encode(key.sign(message.as_bytes()).to_bytes()))
 }
 
