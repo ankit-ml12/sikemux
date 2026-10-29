@@ -5,7 +5,7 @@
   origin, which actool ignores).
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 420">
-  <g transform="translate(0, 30)">
+  <g transform="translate(-4.5, 53.5)">
     <polygon points="257,72 331,29 331,114" fill="#FFFFFF"/>
     <polygon points="98,199 172,241 98,284" fill="#FFFFFF"/>
     <path fill="#FFFFFF" d="M108 54
