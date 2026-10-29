@@ -46,7 +46,7 @@ pub fn read_simulator(bench: &Workbench, cx: &mut Context<Workbench>) {
                 fields.device.sim_status = status;
                 fields.device.sim_setup = setup;
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();

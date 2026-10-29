@@ -265,7 +265,7 @@ fn set(bench: &mut Workbench, group: &str, key: &str, value: String, cx: &mut Co
     }
     editor.draft[group][key] = json!(value);
     preview(bench, cx);
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Opens the editor on `draft`, which started as `original`.
@@ -314,7 +314,7 @@ fn open(
         _naming: naming,
     });
     preview(bench, cx);
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Forks the theme `id` into an editable copy.
@@ -388,7 +388,7 @@ pub fn from_picture(
     {
         appearance.reading = Some(picture);
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
     let asks = bench.asks.clone();
     cx.spawn_in(window, async move |bench, cx| {
         let read = cx
@@ -427,7 +427,7 @@ pub fn from_picture(
                 draft["id"] = json!(new_id());
                 open(bench, draft, original, true, window, cx);
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
@@ -461,7 +461,7 @@ fn close(bench: &mut Workbench, cx: &mut Context<Workbench>) {
         appearance.editor = None;
     }
     wear_picked(bench);
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Keeps the draft among the person's themes and wears it.
@@ -497,7 +497,7 @@ fn save(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     {
         appearance.editor = None;
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Shows group `group`'s colours.
@@ -515,7 +515,7 @@ fn show_group(
         editor.group = group;
         editor.fields = shown;
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Puts every colour back as the theme it started from had it, keeping its name.
@@ -539,7 +539,7 @@ fn toggle_dark(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     let dark = editor.draft["dark"] == true;
     editor.draft["dark"] = json!(!dark);
     preview(bench, cx);
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// A few lines of code and the terminal's colours, as the draft draws them.

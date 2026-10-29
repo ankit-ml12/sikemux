@@ -48,7 +48,7 @@ fn make(bench: &mut Workbench, _: &mut Window, cx: &mut Context<Workbench>) {
     }
     let _ = bench.asks.send(Ask::Remote(RemoteAsk::Status));
     read_links(bench, cx);
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn fields_of(bench: &mut Workbench) -> Option<&mut Fields> {
@@ -71,7 +71,7 @@ pub fn read_links(bench: &Workbench, cx: &mut Context<Workbench>) {
             if let Some(fields) = fields_of(bench) {
                 fields.links = Some(links);
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
         for host in hosts {
             let read = core::request_on(&asks, &host, "requireApproval", Value::Null).await;
@@ -80,7 +80,7 @@ pub fn read_links(bench: &Workbench, cx: &mut Context<Workbench>) {
                 if let Some(fields) = fields_of(bench) {
                     fields.approvals.insert(host, on);
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             });
         }
     })
@@ -181,7 +181,7 @@ fn set_require_approval(bench: &Workbench, on: bool, cx: &mut Context<Workbench>
         };
         let _ = bench.update(cx, |bench, cx| {
             bench.remote = Some(status);
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
@@ -412,13 +412,13 @@ fn rename(
             })
             .detach();
         }
-        bench.parts.redraw(&bench.parts.stage, cx);
+        bench.parts.redraw_stage(cx);
     });
     input.update(cx, |input, cx| input.focus(window, cx));
     if let Some(fields) = fields_of(bench) {
         fields.renaming = Some((id, input, done));
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn remove_host(
@@ -464,7 +464,7 @@ fn set_host_approval(bench: &Workbench, host: String, on: bool, cx: &mut Context
             if let Some(fields) = fields_of(bench) {
                 fields.approvals.insert(host, Some(on));
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();

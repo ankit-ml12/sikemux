@@ -274,7 +274,7 @@ pub(super) fn open_find(
             .update(cx, |input, cx| input.select_all(window, cx));
         finding.input.read(cx).focus_handle(cx).focus(window, cx);
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Looks for what the bar holds, as its options say, in the preview as it reads now.
@@ -282,7 +282,7 @@ fn search(bench: &mut Workbench, key: &FileKey, cx: &mut Context<Workbench>) {
     if let Some(document) = bench.editors.open.get_mut(key) {
         refind(document, cx);
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Finds again what the bar holds, as the preview's text changed or the bar did.
@@ -315,7 +315,7 @@ fn step_find(bench: &mut Workbench, key: &FileKey, forward: bool, cx: &mut Conte
             finding.reveal = REVEAL_FRAMES;
         }
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn flip_find(
@@ -346,7 +346,7 @@ fn close_find(
         document.finding = None;
         document.preview_focus.focus(window, cx);
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Scrolls the preview so the place the reader is on sits in view, aimed from where the last
@@ -371,7 +371,7 @@ pub(super) fn reveal(bench: &mut Workbench, key: &FileKey, cx: &mut Context<Work
         }
     }
     if finding.reveal > 0 {
-        bench.parts.redraw(&bench.parts.stage, cx);
+        bench.parts.redraw_stage(cx);
     }
 }
 

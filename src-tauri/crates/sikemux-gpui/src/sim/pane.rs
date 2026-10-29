@@ -294,7 +294,7 @@ impl Workbench {
                 }
             }
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Lets go of the agent's device: the one it attached, or the one the person picked for it.
@@ -352,7 +352,7 @@ impl Workbench {
                     Some(Err(error)) => bench.sims.problem = Some(error.into()),
                     None => {}
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             });
         })
         .detach();
@@ -381,7 +381,7 @@ impl Workbench {
             }
         })
         .detach();
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Starts the device on the agent's desk.
@@ -416,11 +416,11 @@ impl Workbench {
                     Some(Err(error)) => bench.sims.problem = Some(error.into()),
                     None => {}
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             });
         })
         .detach();
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Shuts down the device on the agent's desk, asking first when an agent is using it.
@@ -488,11 +488,11 @@ impl Workbench {
                     Some(Err(error)) => bench.notify(crate::toast::error(error), cx),
                     None => {}
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             });
         })
         .detach();
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Saves the device's screen as a picture on the Desktop.
@@ -639,7 +639,7 @@ impl Workbench {
                     if let Some(screen) = bench.sims.screens.get_mut(&agent) {
                         screen.chrome = read.map(Rc::new);
                     }
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                 });
             })
             .detach();
@@ -693,7 +693,7 @@ impl Workbench {
                         .store(frame::turn_degrees(&orientation), Ordering::Relaxed);
                     screen.orientation = orientation;
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             });
         })
         .detach();
@@ -1356,21 +1356,21 @@ fn framed_device(
                     MouseButton::Left,
                     cx.listener(move |bench, _, _, cx| {
                         bench.side_button(&press.0, &press.1, true);
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     }),
                 )
                 .on_mouse_up(
                     MouseButton::Left,
                     cx.listener(move |bench, _, _, cx| {
                         bench.side_button(&lift.0, &lift.1, false);
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     }),
                 )
                 .on_mouse_up_out(
                     MouseButton::Left,
                     cx.listener(move |bench, _, _, cx| {
                         bench.side_button(&gone.0, &gone.1, false);
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     }),
                 )
                 .child({

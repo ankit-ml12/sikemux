@@ -102,7 +102,7 @@ pub(super) fn diagnostics_changed(
                     true => insights.problems.remove(&path),
                     false => insights.problems.insert(path, problems),
                 };
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             });
         })
         .detach();
@@ -147,10 +147,10 @@ fn read_outline(bench: &mut Workbench, path: &Path, cx: &mut Context<Workbench>)
         .and_then(|document| Some(document.served.as_ref()?.document()))
     else {
         bench.editors.insights.outline = Outline::Unavailable;
-        return bench.parts.redraw(&bench.parts.stage, cx);
+        return bench.parts.redraw_stage(cx);
     };
     bench.editors.insights.outline = Outline::Loading(path.to_owned());
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
     let (asks, path) = (bench.asks.clone(), path.to_owned());
     cx.spawn(async move |bench, cx| {
         let read = core::request(&asks, "lsp.symbols", params).await;
@@ -167,7 +167,7 @@ fn read_outline(bench: &mut Workbench, path: &Path, cx: &mut Context<Workbench>)
                 }
                 Err(_) => Outline::Failed,
             };
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
@@ -282,7 +282,7 @@ pub(super) fn bar(
                     if insights.open && shown == Tab::Outline {
                         read_outline(bench, &path, cx);
                     }
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                 })
             })
             .child(label)
@@ -327,7 +327,7 @@ pub(super) fn bar(
             .on_click(move |_, _, cx| {
                 this.update(cx, |bench, cx| {
                     bench.editors.insights.open ^= true;
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                 })
             })
         });

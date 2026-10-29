@@ -117,7 +117,7 @@ fn blame(
                 document.blame.notes = Rc::new(notes);
                 document.blame.lines = Rc::new(lines);
                 document.blame.typing = false;
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             }
         });
     }));

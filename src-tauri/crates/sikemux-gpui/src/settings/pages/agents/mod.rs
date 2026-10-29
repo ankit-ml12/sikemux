@@ -40,7 +40,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
     device::read_simulator(bench, cx);
     providers::read(bench, cx);
     skills::read(bench, cx);
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 pub fn read_providers(bench: &Workbench, cx: &mut Context<Workbench>) {

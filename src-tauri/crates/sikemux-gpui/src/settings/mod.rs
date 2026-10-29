@@ -99,7 +99,7 @@ pub fn open(bench: &mut Workbench, page: Page, window: &mut Window, cx: &mut Con
         settings.page = page;
         settings.query = SharedString::default();
         reveal(settings);
-        bench.parts.redraw(&bench.parts.stage, cx);
+        bench.parts.redraw_stage(cx);
         return;
     }
     let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search settings"));
@@ -107,7 +107,7 @@ pub fn open(bench: &mut Workbench, page: Page, window: &mut Window, cx: &mut Con
         if let (InputEvent::Change, Some(settings)) = (event, bench.settings.as_mut()) {
             settings.query = search.read(cx).value();
             settings.chosen = 0;
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         }
     });
     search.update(cx, |search, cx| search.focus(window, cx));
@@ -128,9 +128,7 @@ pub fn open(bench: &mut Workbench, page: Page, window: &mut Window, cx: &mut Con
         reveal(settings);
     }
     // The list learns where its groups sit only once it is drawn, so it scrolls on the frame after.
-    cx.on_next_frame(window, |bench, _, cx| {
-        bench.parts.redraw(&bench.parts.stage, cx)
-    });
+    cx.on_next_frame(window, |bench, _, cx| bench.parts.redraw_stage(cx));
     cx.notify();
 }
 
@@ -281,11 +279,11 @@ fn go_to(
             if let Some(settings) = bench.settings.as_mut() {
                 settings.flash = None;
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Settings in the stage's place.
@@ -444,14 +442,14 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                 .on_action(window.listener_for(&this, |bench, _: &ResultUp, _, cx| {
                     if let Some(settings) = bench.settings.as_mut() {
                         settings.chosen = settings.chosen.saturating_sub(1);
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     }
                 }))
                 .on_action(window.listener_for(&this, |bench, _: &ResultDown, _, cx| {
                     if let Some(settings) = bench.settings.as_mut() {
                         let found = index::search(&settings.query, cx).len();
                         settings.chosen = (settings.chosen + 1).min(found.saturating_sub(1));
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     }
                 }))
                 .on_action(

@@ -459,7 +459,7 @@ fn stack(
             .on_click(cx.listener(move |bench, _, window, cx| {
                 bench.focus_pane(lead.clone(), cx);
                 bench.focus_view(&lead, window, cx);
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             })),
         )
     });
@@ -649,7 +649,7 @@ fn split(
                 bench
                     .panes
                     .drag(&divider, kept, event.bounds, event.event.position, across);
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             }),
         );
         row = row
@@ -920,7 +920,7 @@ impl Workbench {
                 {
                     bench.focus_pane(added, cx);
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             });
         })
         .detach();
@@ -936,7 +936,7 @@ impl Workbench {
         };
         self.focus_pane(to.clone(), cx);
         self.focus_view(&to, window, cx);
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Puts the focus on the view `id`, drawing the file tree again when that moves the desk
@@ -1035,7 +1035,7 @@ impl Workbench {
                 .filter(|tab| matches!(tab.pane, Pane::Split { .. }))
                 .and_then(|_| self.focused_view()),
         };
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Puts a view of `kind` showing `target` to the right of the view `pane` of `tab`.
@@ -1107,7 +1107,7 @@ impl Workbench {
                 .is_some_and(|aimed| aimed.pane == pane);
         if (next.is_some() || leaving) && self.panes.aimed != next {
             self.panes.aimed = next;
-            self.parts.redraw(&self.parts.stage, cx);
+            self.parts.redraw_stage(cx);
         }
     }
 
@@ -1128,7 +1128,7 @@ impl Workbench {
             "fromTab": aimed.from,
         });
         self.call("splitPane", dropped.strip.with(params));
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     pub fn close_pane(&self, strip: &Strip, tab: &str, pane: &str) {

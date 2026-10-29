@@ -565,7 +565,7 @@ impl Workbench {
             }),
             cx.observe(&voice, |bench, _, cx| {
                 if bench.settings.is_some() {
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                 }
             }),
         ];
@@ -801,7 +801,7 @@ impl Workbench {
                 } else {
                     self.hosts.reached.remove(&host);
                 }
-                self.parts.redraw(&self.parts.stage, cx);
+                self.parts.redraw_stage(cx);
             }
             Update::HostsUnavailable(reason) => self.hosts.unavailable = Some(reason),
             Update::HostHome(host, home) => {
@@ -923,7 +923,7 @@ impl Workbench {
                                     tracked_context: HashMap::new(),
                                 }));
                         }
-                        return self.parts.redraw(&self.parts.stage, cx);
+                        return self.parts.redraw_stage(cx);
                     }
                 }
                 let restage = self
@@ -932,7 +932,7 @@ impl Workbench {
                     .get_mut(&agent)
                     .is_some_and(Chat::take_head_moved);
                 if restage && self.agent().is_some_and(|front| front.id == agent) {
-                    self.parts.redraw(&self.parts.stage, cx);
+                    self.parts.redraw_stage(cx);
                 }
                 return;
             }
@@ -1046,7 +1046,7 @@ impl Workbench {
                 }
                 if key == crate::settings::ACTIVITY {
                     self.keep_read(key, Value::Null);
-                    self.parts.redraw(&self.parts.stage, cx);
+                    self.parts.redraw_stage(cx);
                     self.parts.activity.update(cx, |_, cx| cx.notify());
                 }
             }
@@ -1257,7 +1257,7 @@ impl Workbench {
                 self.remote = Some(*status);
                 crate::settings::remote_moved(self, cx);
                 crate::pairing::remote_moved(self, cx);
-                return self.parts.redraw(&self.parts.stage, cx);
+                return self.parts.redraw_stage(cx);
             }
             Update::WindowCall(call_id, call) => self.answer_window_call(call_id, call, cx),
             Update::Changed {
@@ -2067,7 +2067,7 @@ impl Workbench {
                 Watch::new("drafts", json!({ "keys": [draft] }), &[Topic::Drafts]),
             );
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Points the watches that follow the project in front at it.
@@ -2744,7 +2744,7 @@ impl Workbench {
             title,
             _events: events,
         });
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
         self.parts.redraw(&self.parts.rail, cx);
     }
 
@@ -2766,7 +2766,7 @@ impl Workbench {
                 json!({ "agentId": retitling.agent, "patch": { "title": title, "renamed": true } }),
             );
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
         self.parts.redraw(&self.parts.rail, cx);
     }
 
@@ -3570,7 +3570,7 @@ impl Workbench {
     pub fn take_keys_when_shown(&self, wants: TakesKeys, cx: &mut App) {
         let from = self.tab().map(|tab| tab.id.clone());
         self.keys.pending.set(Some(PendingKeys { wants, from }));
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Whether `shown`, now drawn, is what waits for the keyboard. It stops waiting once claimed.
@@ -4807,10 +4807,13 @@ impl Parts {
 
     pub fn redraw(&self, part: &Entity<Part>, cx: &mut App) {
         part.update(cx, |_, cx| cx.notify());
-        // What is over the window can show the stage's state too, such as an install's terminal.
-        if part == &self.stage {
-            self.over.update(cx, |_, cx| cx.notify());
-        }
+    }
+
+    /// Draws the stage again, and what is over the window, which shows some of the stage's
+    /// state too, such as an install's terminal under the welcome.
+    pub fn redraw_stage(&self, cx: &mut App) {
+        self.redraw(&self.stage, cx);
+        self.redraw(&self.over, cx);
     }
 }
 
@@ -5073,7 +5076,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|bench, _: &PageForward, _, _| bench.step_front_page(1)))
             .on_action(cx.listener(|bench, _: &NewSimulator, _, cx| {
                 bench.front_simulator(cx);
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             }))
             .on_action(cx.listener(|bench, _: &PreviousTab, _, _| bench.step_tab(-1, |_, _| true)))
             .on_action(cx.listener(|bench, _: &NextTab, _, _| bench.step_tab(1, |_, _| true)))

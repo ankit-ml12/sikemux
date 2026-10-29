@@ -58,7 +58,7 @@ impl Fields {
         });
         let redraw = |bench: &mut Workbench, event: &InputEvent, cx: &mut Context<Workbench>| {
             if matches!(event, InputEvent::Change) {
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             }
         };
         let typing = vec![
@@ -96,7 +96,7 @@ pub fn read(bench: &Workbench, cx: &mut Context<Workbench>) {
             if let (Some(fields), Ok(overview)) = (fields_of(bench), overview) {
                 fields.overview = Some(overview);
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
@@ -133,7 +133,7 @@ fn show(
     if let Some(first) = first {
         first.update(cx, |input, cx| input.focus(window, cx));
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Runs `method`; a failure stays on the row `at`, and `after` runs once it worked.
@@ -149,7 +149,7 @@ fn run(
         fields.busy = true;
         fields.failure = None;
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
     let asks = bench.asks.clone();
     cx.spawn(async move |bench, cx| {
         let answer = core::request(&asks, method, params).await;
@@ -223,7 +223,7 @@ fn choose_folder(_: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
                     .source
                     .update(cx, |input, cx| input.set_value(path, window, cx));
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
@@ -553,7 +553,7 @@ pub fn render(
                             if let Some(fields) = fields_of(bench) {
                                 fields.moving = None;
                             }
-                            bench.parts.redraw(&bench.parts.stage, cx);
+                            bench.parts.redraw_stage(cx);
                         })))
                         .child(button(format!("skill-move-{path}"), "Move", ui::Variant::Primary, busy, this, Rc::new(move |bench, _, cx| {
                             let path = moved.clone();
@@ -567,7 +567,7 @@ pub fn render(
                         if let Some(fields) = fields_of(bench) {
                             fields.moving = Some(asked.clone());
                         }
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     }))
                     .into_any_element()
                 }

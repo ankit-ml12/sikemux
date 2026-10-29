@@ -54,7 +54,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
     });
     let typing = cx.subscribe(&filter, |bench, _, event: &InputEvent, cx| {
         if matches!(event, InputEvent::Change) {
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         }
     });
     settings.pages.keybindings = Some(Fields {
@@ -63,7 +63,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
         message: None,
         _typing: typing,
     });
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn fields_of(bench: &mut Workbench) -> Option<&mut Fields> {
@@ -85,7 +85,7 @@ fn say(bench: &mut Workbench, message: String, cx: &mut Context<Workbench>) {
     if let Some(fields) = fields_of(bench) {
         fields.message = Some(message.into());
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn stop(bench: &mut Workbench, message: String, cx: &mut Context<Workbench>) {

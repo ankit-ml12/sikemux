@@ -187,7 +187,7 @@ pub(super) fn load(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workben
                     if let Some(viewer) = bench.editors.viewers.get_mut(&key) {
                         viewer.failed = Some(error.into());
                     }
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                 });
                 return;
             }
@@ -207,7 +207,7 @@ pub(super) fn load(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workben
                             if let Some(viewer) = bench.editors.viewers.get_mut(&key) {
                                 viewer.failed = Some(error.into());
                             }
-                            bench.parts.redraw(&bench.parts.stage, cx);
+                            bench.parts.redraw_stage(cx);
                         });
                         return;
                     }
@@ -240,7 +240,7 @@ pub(super) fn load(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workben
             if document {
                 show_document(bench, key.clone(), cx);
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
@@ -269,7 +269,7 @@ fn show_document(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workbench
                         let surface = gpui_native_view::NativeSurface::new(Shown(document.clone()));
                         (document, surface, focus)
                     }));
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                 });
             });
         })
@@ -304,7 +304,7 @@ pub(super) fn reopen(bench: &mut Workbench, keys: &[FileKey], cx: &mut Context<W
         forget_picture(&key.path, cx);
     }
     if !pictures.is_empty() {
-        bench.parts.redraw(&bench.parts.stage, cx);
+        bench.parts.redraw_stage(cx);
     }
     #[cfg(target_os = "macos")]
     for key in keys.iter().filter(|key| key.place == Host::This) {
@@ -434,7 +434,7 @@ fn pinch(bench: &mut Workbench, key: &FileKey, factor: f32, cx: &mut Context<Wor
     if let Some(viewer) = bench.editors.viewers.get_mut(key) {
         viewer.zoom = Zoom::Scale((scale * factor).clamp(least, most));
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// A document in macOS's own viewer, once it is open.
@@ -593,7 +593,7 @@ fn bar(
                     if let Some(viewer) = bench.editors.viewers.get_mut(&key) {
                         viewer.zoom = to(viewer.zoom);
                     }
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                 })
             })
             .child(label)

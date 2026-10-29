@@ -54,7 +54,7 @@ pub fn read_names(bench: &Workbench, window: &mut Window, cx: &mut Context<Workb
             if let Some(fields) = super::fields_of(bench) {
                 fields.sessions.names = Some(names);
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();

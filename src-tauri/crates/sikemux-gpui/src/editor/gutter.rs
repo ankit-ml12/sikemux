@@ -79,7 +79,7 @@ pub(super) fn changed(key: &FileKey, bench: &mut Workbench, cx: &mut Context<Wor
     };
     let Some(base) = document.gutter.base.clone() else {
         document.gutter.hunks = Rc::default();
-        return bench.parts.redraw(&bench.parts.stage, cx);
+        return bench.parts.redraw_stage(cx);
     };
     let (state, key) = (document.state.clone(), key.clone());
     document.gutter.refresh = Some(cx.spawn(async move |bench, cx| {
@@ -94,7 +94,7 @@ pub(super) fn changed(key: &FileKey, bench: &mut Workbench, cx: &mut Context<Wor
         let _ = bench.update(cx, |bench, cx| {
             if let Some(document) = bench.editors.open.get_mut(&key) {
                 document.gutter.hunks = Rc::new(hunks);
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             }
         });
     }));

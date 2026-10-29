@@ -475,12 +475,12 @@ pub fn pane(
                     .relative()
                     .flex_1()
                     .min_h_0()
-                    .capture_action(cx.listener(|bench, _: &Search, _, cx| {
-                        bench.parts.redraw(&bench.parts.stage, cx)
-                    }))
-                    .capture_action(cx.listener(|bench, _: &Replace, _, cx| {
-                        bench.parts.redraw(&bench.parts.stage, cx)
-                    }))
+                    .capture_action(
+                        cx.listener(|bench, _: &Search, _, cx| bench.parts.redraw_stage(cx)),
+                    )
+                    .capture_action(
+                        cx.listener(|bench, _: &Replace, _, cx| bench.parts.redraw_stage(cx)),
+                    )
                     .font_family(theme::MONO)
                     .text_size(size)
                     .text_color(t.text_primary)
@@ -553,7 +553,7 @@ pub fn go_in(
         "openTab",
         strip.with(json!({ "kind": "files", "target": target, "title": title })),
     );
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn remember_here(bench: &mut Workbench, cx: &App) {
@@ -677,7 +677,7 @@ fn peek(
         places,
     });
     let target = document.target.clone();
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
     let peeked = key.clone();
     cx.spawn(async move |bench, cx| {
         for file in files {
@@ -702,7 +702,7 @@ fn peek(
                         .unwrap_or_default();
                     place.text = Some(line.trim().to_owned().into());
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             });
         }
     })
@@ -713,7 +713,7 @@ fn close_peeks(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     for document in bench.editors.open.values_mut() {
         document.peek = None;
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// The panel under an editor listing the places a symbol leads to, by file.
@@ -876,7 +876,7 @@ fn open_goto(
     if let Some(document) = bench.editors.open.get_mut(key) {
         document.goto = Some((input, entered));
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Closes the go-to-line field and gives the editor back the keyboard.
@@ -893,7 +893,7 @@ fn close_goto(
         document
             .state
             .update(cx, |state, cx| state.focus(window, cx));
-        bench.parts.redraw(&bench.parts.stage, cx);
+        bench.parts.redraw_stage(cx);
     }
 }
 
@@ -1266,7 +1266,7 @@ fn read(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
             if flipped {
                 bench.parts.redraw(&bench.parts.top, cx);
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
@@ -1317,7 +1317,7 @@ fn save(bench: &mut Workbench, key: &FileKey, window: &mut Window, cx: &mut Cont
             if flipped {
                 bench.parts.redraw(&bench.parts.top, cx);
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
@@ -1603,7 +1603,7 @@ fn place_cursor(
         });
         state.set_cursor_position(Position::new(at.line, column), window, cx);
     });
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Shows the file's text, or how its markdown reads, rendered from what the
@@ -1636,7 +1636,7 @@ fn show_mode(
             .state
             .update(cx, |state, cx| state.focus(window, cx)),
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Renders `text` as the file reads: markdown as a page, DBML as a diagram that keeps

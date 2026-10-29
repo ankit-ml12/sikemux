@@ -995,7 +995,7 @@ impl Workbench {
                 composing.refusal = None;
             }
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
         let answered = self.chat_target(agent).request(method, params);
         let agent = agent.to_owned();
         cx.spawn(async move |bench, cx| {
@@ -1010,7 +1010,7 @@ impl Workbench {
                     if let Some(chat) = bench.chats.open.get_mut(&agent) {
                         chat.took_answers(&ids, error);
                     }
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                 })
                 .ok();
         })

@@ -93,7 +93,7 @@ impl Setup {
 /// Draws the agents and the sheet again, on Settings or the welcome over the stage, and lets
 /// the messages that waited for an install go once it ended.
 fn redraw(bench: &mut Workbench, cx: &mut Context<Workbench>) {
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
     crate::chat::installs_moved(bench, cx);
 }
 

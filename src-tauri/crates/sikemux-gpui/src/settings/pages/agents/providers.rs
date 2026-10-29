@@ -44,7 +44,7 @@ impl Fields {
         let entering = vec![
             cx.subscribe(&key, |bench, _, event: &InputEvent, cx| match event {
                 InputEvent::PressEnter { .. } => connect(bench, cx),
-                InputEvent::Change => bench.parts.redraw(&bench.parts.stage, cx),
+                InputEvent::Change => bench.parts.redraw_stage(cx),
                 _ => {}
             }),
             cx.subscribe(&helper_model, |bench, model, event: &InputEvent, cx| {
@@ -89,7 +89,7 @@ pub fn read(bench: &Workbench, cx: &mut Context<Workbench>) {
                 fields.checking = false;
                 fields.helper_choices = None;
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
@@ -107,7 +107,7 @@ fn change(
         fields.busy = Some(id.clone());
         fields.failure = None;
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
     let asks = bench.asks.clone();
     cx.spawn(async move |bench, cx| {
         let answer = core::request(&asks, method, params).await;
@@ -156,7 +156,7 @@ fn edit(
         key.set_value("", window, cx);
         key.focus(window, cx);
     });
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// The model a check asks about: the provider's coding model, else the first a local runner has.
@@ -577,7 +577,7 @@ fn save_helper(bench: &mut Workbench, helper: Option<Value>, cx: &mut Context<Wo
         method: "setModelHelper",
         params: json!({ "helper": helper }),
     });
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn save_model(bench: &mut Workbench, model: String, cx: &mut Context<Workbench>) {
@@ -711,7 +711,7 @@ fn rebuild_choices(bench: &mut Workbench, window: &mut Window, cx: &mut Context<
         });
         fields.helper_choices = Some((helper, agent_choice, paid));
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn helpers(bench: &Workbench, fields: &Fields, cx: &mut Context<Workbench>) -> AnyElement {

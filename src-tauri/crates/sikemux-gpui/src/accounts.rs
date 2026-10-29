@@ -175,7 +175,7 @@ fn key(profile: &Profile) -> (String, Option<String>) {
 }
 
 fn redraw(bench: &Workbench, cx: &mut Context<Workbench>) {
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 impl Accounts {

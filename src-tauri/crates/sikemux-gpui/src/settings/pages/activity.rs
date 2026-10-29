@@ -52,7 +52,7 @@ fn make(bench: &mut Workbench, _: &mut Window, cx: &mut Context<Workbench>) {
             prices: Vec::new(),
         });
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn fields_of(bench: &mut Workbench) -> Option<&mut Fields> {
@@ -90,7 +90,7 @@ fn edit(
         fields.model = Some(model);
         fields.prices = prices;
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn close_form(bench: &mut Workbench, cx: &mut Context<Workbench>) {
@@ -98,7 +98,7 @@ fn close_form(bench: &mut Workbench, cx: &mut Context<Workbench>) {
         fields.model = None;
         fields.prices.clear();
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn set_price(bench: &Workbench, model: &str, price: Value) {

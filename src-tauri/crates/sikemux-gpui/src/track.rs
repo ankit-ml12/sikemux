@@ -213,7 +213,7 @@ impl Workbench {
                 settle(self, moved, |bench: &mut Self| &mut bench.track, cx);
             }
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
         true
     }
 
@@ -268,7 +268,7 @@ impl Workbench {
             .track
             .travel(vec![(was, -way), (now, 0)], -way as f32, None);
         settle(self, moved, |bench: &mut Self| &mut bench.track, cx);
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 }
 

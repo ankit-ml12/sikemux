@@ -490,7 +490,7 @@ impl Workbench {
                 }
             }
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Closes the pages and lets go of the device of each agent that left the view, and lets go
@@ -910,7 +910,7 @@ impl Workbench {
         match self.desk_of(tab, agent) {
             Some(desk) if self.panes.desk_shutting(&desk) => {
                 self.panes.slide_desk(&desk, true);
-                self.parts.redraw(&self.parts.stage, cx);
+                self.parts.redraw_stage(cx);
             }
             Some(desk) => self.shut_desk(strip, tab.to_owned(), desk, cx),
             None => {
@@ -926,7 +926,7 @@ impl Workbench {
             return self.close_pane(&strip, &tab, &desk);
         }
         let lasts = self.panes.slide_desk(&desk, false);
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(lasts).await;
             let _ = this.update(cx, |bench, _| {
@@ -1022,7 +1022,7 @@ impl Workbench {
             self.split_pane(&strip, &tab, &view, PaneKind::Desk, &agent, false);
         }
         self.new_page(&agent);
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// The front agent, while its desk is open on its pages.
@@ -1099,7 +1099,7 @@ impl Workbench {
         }
         self.open_first_page(&agent);
         self.desks.address_wanted = Some(agent);
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Steps through the pages of the desk holding the keys, and says whether one does.
@@ -1219,7 +1219,7 @@ impl Workbench {
                             bench.open_on_desk(&agent, &url);
                         }
                     }
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                 })
                 .ok();
         })
@@ -1328,7 +1328,7 @@ impl Workbench {
         };
         self.take_off_desk(agent, &held);
         self.show_on_desk(agent, url);
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Hands a watched read to the desks' pull requests, each taking only its own.
@@ -1807,7 +1807,7 @@ pub fn pane(
             .on_click(cx.listener(move |bench, _, _, cx| {
                 bench.desks.front.remove(&switch_agent);
                 bench.with_engine(|engine| engine.switch_tab(&switch_agent, &switch_tab));
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             }))
             .context_menu(ui::menu(tab_menu(
                 cx.weak_entity(),
@@ -1865,7 +1865,7 @@ pub fn pane(
                 cx.listener(move |bench, _, _, cx| {
                     cx.stop_propagation();
                     bench.close_desk_item(&close_agent, close_item.clone(), cx);
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                     bench.parts.redraw(&bench.parts.tabs, cx);
                 }),
                 cx,
@@ -1873,7 +1873,7 @@ pub fn pane(
             .children(ui::spot(|| format!("desk-item-{agent}-{label}")))
             .on_click(cx.listener(move |bench, _, _, cx| {
                 bench.bring_front(&pick_agent, pick_item.clone());
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
                 bench.parts.redraw(&bench.parts.tabs, cx);
             }))
             .context_menu(ui::menu(tab_menu(
@@ -1923,7 +1923,7 @@ pub fn pane(
                         .height(24.)
                         .on_click(cx.listener(move |bench, _, _, cx| {
                             bench.new_page(&new_agent);
-                            bench.parts.redraw(&bench.parts.stage, cx);
+                            bench.parts.redraw_stage(cx);
                         })),
                 ),
             )
@@ -2287,7 +2287,7 @@ fn tab_menu(
                             Err(page) => bench.with_engine(|engine| engine.close_tab(&agent, page)),
                             Ok(item) => bench.close_desk_item(&agent, item.clone(), cx),
                         }
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     });
                 })
         };
@@ -2413,7 +2413,7 @@ fn kinds(
                     })
                     .on_click(cx.listener(move |bench, _, _, cx| {
                         bench.pick_kind(&agent, kind);
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     })),
             ),
         );

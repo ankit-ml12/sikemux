@@ -61,7 +61,7 @@ pub(super) fn permission(
                     if let Some(chat) = bench.chats.open.get_mut(&agent) {
                         chat.replying = Some(request.clone());
                     }
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                     bench.ask_chat(ChatAsk::Permission {
                         agent: agent.clone(),
                         request: request.clone(),

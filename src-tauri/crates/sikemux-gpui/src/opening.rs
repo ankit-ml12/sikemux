@@ -150,7 +150,7 @@ impl Workbench {
                 let line = params["line"].as_u64().map(|line| line as u32);
                 let agent = request.agent_id.clone().unwrap_or_default();
                 self.open_file_on_desk(&agent, PathBuf::from(&path), line, None);
-                self.parts.redraw(&self.parts.stage, cx);
+                self.parts.redraw_stage(cx);
                 answer(Ok(json!({ "kind": kind, "agentId": agent, "path": path })));
             }
             "file" => {
@@ -180,7 +180,7 @@ impl Workbench {
                     .as_u64()
                     .is_some_and(|session| self.show_desk_terminal(session).is_some()) =>
             {
-                self.parts.redraw(&self.parts.stage, cx);
+                self.parts.redraw_stage(cx);
                 answer(Ok(json!({ "kind": kind, "agentId": request.agent_id })));
             }
             "diff" | "terminal" => {

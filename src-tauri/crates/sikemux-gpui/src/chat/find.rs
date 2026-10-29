@@ -138,7 +138,7 @@ impl Workbench {
                 .update(cx, |input, cx| input.select_all(window, cx));
             finding.input.read(cx).focus_handle(cx).focus(window, cx);
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Looks for what the bar holds, as its options say, in the rows held and across the chat.
@@ -174,7 +174,7 @@ impl Workbench {
                 asked,
             });
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Takes what the core found, asks it to go on counting until the count is whole or large,
@@ -220,7 +220,7 @@ impl Workbench {
                 asked,
             });
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     fn finding_mut(&mut self, agent: &str) -> Option<&mut Finding> {
@@ -321,7 +321,7 @@ impl Workbench {
                 around: hit.from_event,
             });
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Closes the bar, takes the marks away, and puts the reader back in the draft.
@@ -336,7 +336,7 @@ impl Workbench {
         if let Some(composing) = &chat.composer {
             composing.draft.read(cx).focus_handle(cx).focus(window, cx);
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 }
 

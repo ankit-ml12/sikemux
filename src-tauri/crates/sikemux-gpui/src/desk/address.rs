@@ -245,7 +245,7 @@ impl Workbench {
                 };
                 floating.found = Some(found);
                 floating.finish(window, cx);
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             });
         }));
     }
@@ -262,7 +262,7 @@ impl Workbench {
         let at = floating.selected.map_or(-1, |at| at as isize);
         let next = (at + by).clamp(first, rows.len() as isize - 1);
         floating.selected = usize::try_from(next).ok();
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 
     /// Opens the row picked, else what the field holds, and hands the page the keys.
@@ -299,7 +299,7 @@ impl Workbench {
         if let Some(page) = self.desks.pages.get(&floating.agent).filter(|_| to_page) {
             page.focus.focus(window, cx);
         }
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 }
 

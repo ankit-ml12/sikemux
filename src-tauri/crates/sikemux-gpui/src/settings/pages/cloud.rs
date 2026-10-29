@@ -59,7 +59,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
             _typing: [typed_browser, typed_shortcut],
         });
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 pub fn render(

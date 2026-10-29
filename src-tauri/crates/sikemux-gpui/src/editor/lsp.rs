@@ -133,7 +133,7 @@ fn attach_trusted(
                         .get_mut(&FileKey::new(Host::This, path.clone()))
                     {
                         document.notice = Some(Notice::Trust(project));
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     }
                 });
                 return;

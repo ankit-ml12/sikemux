@@ -658,7 +658,7 @@ pub(super) fn plan(
                 if let Some(chat) = bench.chats.open.get_mut(&agent) {
                     chat.plan_open = !chat.plan_open;
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             })
             .ok();
         });

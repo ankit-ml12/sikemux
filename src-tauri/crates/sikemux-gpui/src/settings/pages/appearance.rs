@@ -136,7 +136,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
                 .and_then(|settings| settings.pages.appearance.as_mut()),
         ) {
             fields.query = search.read(cx).value();
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         }
     });
     let (strength, moved_strength) = slider(
@@ -250,7 +250,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
             },
         });
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// How the pane picture is dithered: a preview drawn as the panes draw it, then each control.
@@ -577,7 +577,7 @@ pub fn render(
                 if let Some(fields) = appearance_of(bench) {
                     fields.tone = tone;
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             })
         })
     };
@@ -619,7 +619,7 @@ pub fn render(
                 if let Some(fields) = appearance_of(bench) {
                     fields.source = source;
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             })
         })
     };

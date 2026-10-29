@@ -102,7 +102,7 @@ impl Workbench {
                 if let Some(settings) = bench.settings_of(&folder) {
                     settings.config = Some(config);
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             });
         })
         .detach();
@@ -212,7 +212,7 @@ fn make(bench: &mut Workbench, folder: String, window: &mut Window, cx: &mut Con
     };
     let filtering = cx.subscribe(&filter, |bench, _, event: &InputEvent, cx| {
         if let InputEvent::Change = event {
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         }
     });
     let (space, spaces) = space_choice(bench, &folder, window, cx);
@@ -244,11 +244,11 @@ fn make(bench: &mut Workbench, folder: String, window: &mut Window, cx: &mut Con
             if let Some(settings) = bench.settings_of(&folder) {
                 settings.repos = Some(repos.unwrap_or_default());
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
     })
     .detach();
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn space_ids(bench: &Workbench) -> Vec<String> {
@@ -315,7 +315,7 @@ fn remake_space(
         settings.space = space;
         settings.spaces = spaces;
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// The settings tab of the project in `folder`.
@@ -388,7 +388,7 @@ pub fn pane(
                     if let Some(settings) = bench.settings_of(&folder) {
                         settings.page = page;
                     }
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.parts.redraw_stage(cx);
                 })
             })
     });
@@ -723,7 +723,7 @@ fn tasks(
                                 settings.opened.insert(cwd_owned.clone());
                             }
                         }
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     })
                 });
             let tasks = group

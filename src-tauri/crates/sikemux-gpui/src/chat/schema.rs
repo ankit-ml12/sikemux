@@ -218,6 +218,6 @@ fn open_on_desk(code: &SharedString, bench: &WeakEntity<Workbench>, agent: &str,
     }
     let _ = bench.update(cx, |bench, cx| {
         bench.open_file_on_desk(agent, path, None, None);
-        bench.parts.redraw(&bench.parts.stage, cx);
+        bench.parts.redraw_stage(cx);
     });
 }

@@ -496,7 +496,7 @@ fn stop(
             if let Some(chat) = bench.chats.open.get_mut(&agent) {
                 chat.stopping.insert(id.clone());
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
             bench.ask_chat(ChatAsk::StopTask {
                 agent: agent.clone(),
                 task: id.clone(),

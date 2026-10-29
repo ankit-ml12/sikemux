@@ -53,7 +53,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
     let command = cx.new(|cx| TextareaState::new(window, cx).placeholder("shell command"));
     let redraw = |bench: &mut Workbench, event: &InputEvent, cx: &mut Context<Workbench>| {
         if matches!(event, InputEvent::Change) {
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         }
     };
     let typing = vec![
@@ -74,7 +74,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
             _typing: typing,
         });
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn fields_of(bench: &mut Workbench) -> Option<&mut Fields> {
@@ -111,7 +111,7 @@ fn load(
     fields.id = command.id;
     fields.placement = command.placement;
     fields.contexts = command.contexts;
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Changes the person's actions in the core.
@@ -247,7 +247,7 @@ pub fn render(
                 if let Some(fields) = fields_of(bench) {
                     fields.placement = placement;
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             })
         })
     };
@@ -269,7 +269,7 @@ pub fn render(
                                 fields.contexts.push((*context).to_owned());
                             }
                         }
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.parts.redraw_stage(cx);
                     })
                 })
         }));

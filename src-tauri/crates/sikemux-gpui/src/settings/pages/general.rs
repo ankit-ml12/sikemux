@@ -66,7 +66,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
             transfer: Transfer::default(),
         });
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Changes the list of project folders in the core.
@@ -104,7 +104,7 @@ fn add(bench: &mut Workbench, path: String, window: &mut Window, cx: &mut Contex
             });
         }
     });
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 /// Adds the typed folder once the core says it is one.
@@ -297,7 +297,7 @@ pub fn render(
                                 if let Some(fields) = form_of(bench) {
                                     fields.depth = depth;
                                 }
-                                bench.parts.redraw(&bench.parts.stage, cx);
+                                bench.parts.redraw_stage(cx);
                             })
                         },
                         cx,
@@ -346,7 +346,7 @@ pub fn render(
                             if let Some(fields) = form_of(bench) {
                                 fields.itself = on;
                             }
-                            bench.parts.redraw(&bench.parts.stage, cx);
+                            bench.parts.redraw_stage(cx);
                         })
                     }),
             )
@@ -424,7 +424,7 @@ fn set_transfer(this: &Entity<Workbench>, change: impl FnOnce(&mut Transfer), cx
         if let Some(fields) = form_of(bench) {
             change(&mut fields.transfer);
         }
-        bench.parts.redraw(&bench.parts.stage, cx);
+        bench.parts.redraw_stage(cx);
     })
 }
 

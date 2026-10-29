@@ -622,7 +622,7 @@ impl Chat {
         });
         let redraw = |stage: &WeakEntity<Workbench>, cx: &mut App| {
             stage
-                .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
+                .update(cx, |bench, cx| bench.parts.redraw_stage(cx))
                 .ok();
         };
         let found = [
@@ -654,7 +654,7 @@ impl Chat {
         };
         let emptied = cx.subscribe(&transcript, move |_, _: &EmptyChanged, cx| {
             stage
-                .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
+                .update(cx, |bench, cx| bench.parts.redraw_stage(cx))
                 .ok();
         });
         let theming = cx.observe_global::<Tokens>({
@@ -1662,13 +1662,13 @@ impl Workbench {
             if let Some(chat) = bench.chats.open.get_mut(&agent) {
                 chat.file_menu = None;
             }
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.parts.redraw_stage(cx);
         });
         chat.file_menu = Some(files::FileMenu {
             at,
             menu,
             _dismissed: dismissed,
         });
-        self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw_stage(cx);
     }
 }

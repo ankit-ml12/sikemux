@@ -35,7 +35,7 @@ impl Fields {
         let name = cx.new(|cx| InputState::new(window, cx));
         let typing = cx.subscribe(&name, |bench, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             }
         });
         Self {
@@ -106,7 +106,7 @@ fn load(
     );
     fields.id = profile.id;
     fields.provider = profile.provider;
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.parts.redraw_stage(cx);
 }
 
 fn save(bench: &mut Workbench, cx: &mut Context<Workbench>) {
@@ -259,7 +259,7 @@ pub fn render(
                 {
                     fields.provider = kind;
                 }
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.redraw_stage(cx);
             })
         })
     };
