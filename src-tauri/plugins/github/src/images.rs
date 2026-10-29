@@ -5,18 +5,13 @@
 use std::path::Path;
 
 use reqwest::Url;
-use serde::Deserialize;
 use sikemux_plugin_api::account::chosen;
+use sikemux_plugin_api::codehost::asks::ImageRef;
 use sikemux_plugin_api::images;
 
 use crate::client::{self, Session};
 use crate::config::{self, DEFAULT_HOST};
 use crate::error::{GithubError, GithubResult};
-
-#[derive(Deserialize)]
-pub struct ImageRef {
-    pub url: String,
-}
 
 fn authority(url: &Url) -> Option<String> {
     let host = url.host_str()?;

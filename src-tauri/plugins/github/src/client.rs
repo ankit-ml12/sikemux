@@ -96,23 +96,10 @@ pub fn classify(
     headers: &HeaderMap,
     bytes: &[u8],
 ) -> GithubError {
-    let message = error_message(bytes).unwrap_or_else(|| {
-        status
-            .canonical_reason()
-            .unwrap_or("the request failed")
-            .to_string()
-    });
-    match status.as_u16() {
-        401 => GithubError::Auth(message),
-        403 | 429 => match LIMITS.wait_for(account, status, headers, bytes) {
-            Some(resets_in_secs) => GithubError::RateLimited {
-                resets_in_secs: Some(resets_in_secs),
-            },
-            None => GithubError::Forbidden(message),
-        },
-        404 => GithubError::NotFound(message),
-        status => GithubError::Http { status, message },
-    }
+    let spent = matches!(status.as_u16(), 403 | 429)
+        .then(|| LIMITS.wait_for(account, status, headers, bytes))
+        .flatten();
+    http::classify::<Github>(status, error_message(bytes), spent)
 }
 
 fn api_request(
@@ -214,10 +201,7 @@ async fn fetch(
 }
 
 fn parse<T: DeserializeOwned>(bytes: &[u8]) -> GithubResult<T> {
-    if bytes.iter().all(u8::is_ascii_whitespace) {
-        return Ok(serde_json::from_slice(b"null")?);
-    }
-    Ok(serde_json::from_slice(bytes)?)
+    Ok(http::parse(bytes)?)
 }
 
 pub async fn get<T: DeserializeOwned>(

@@ -7,6 +7,9 @@ use std::path::Path;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use sikemux_plugin_api::codehost::asks::{
+    Dispatch, ExcerptQuery, JobRef, RepoRef, Rerun, RunQuery, RunRef, WorkflowRef,
+};
 use sikemux_plugin_api::codehost::{
     Job, JobLog, LogExcerpt, LogLine, Outcome, Run, RunDetail, RunPage, RunTiming, Workflow,
     WorkflowFile,
@@ -14,7 +17,7 @@ use sikemux_plugin_api::codehost::{
 
 use crate::client;
 use crate::error::{BitbucketError, BitbucketResult};
-use crate::repo::{self, avatar_of, login_of, uuid_segment, RepoRef, User};
+use crate::repo::{self, avatar_of, login_of, uuid_segment, Place, User};
 
 pub const PIPELINES_FILE: &str = "bitbucket-pipelines.yml";
 const MAX_LOG_BYTES: usize = 16 * 1024 * 1024;
@@ -162,41 +165,25 @@ fn run_of(repo: &RepoRef, row: &PipelineRow) -> Run {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunQuery {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub workflow_id: Option<String>,
-    pub branch: Option<String>,
-    pub status: Option<String>,
-    pub event: Option<String>,
-    pub actor: Option<String>,
-    pub head_sha: Option<String>,
-    pub page: Option<u32>,
-    pub per_page: Option<u32>,
-}
-
-impl RunQuery {
-    /// Bitbucket filters by few of these itself, so every one is also
-    /// applied here to the page that came back.
-    fn keeps(&self, run: &Run) -> bool {
-        let same = |wanted: &Option<String>, actual: Option<&str>| {
-            wanted
-                .as_deref()
-                .is_none_or(|wanted| Some(wanted) == actual)
-        };
-        same(&self.workflow_id, Some(&run.workflow_id))
-            && same(&self.branch, run.branch.as_deref())
-            && same(&self.event, Some(&run.event))
-            && same(&self.actor, run.actor.as_deref())
-            && self.status.as_deref().is_none_or(|status| {
-                run.status == status || run.conclusion.as_deref() == Some(status)
-            })
-            && self.head_sha.as_deref().is_none_or(|sha| {
-                !run.sha.is_empty() && (run.sha.starts_with(sha) || sha.starts_with(&run.sha))
-            })
-    }
+/// Bitbucket filters by few of these itself, so every one is also applied
+/// here to the page that came back.
+fn keeps(query: &RunQuery, run: &Run) -> bool {
+    let same = |wanted: &Option<String>, actual: Option<&str>| {
+        wanted
+            .as_deref()
+            .is_none_or(|wanted| Some(wanted) == actual)
+    };
+    same(&query.workflow_id, Some(&run.workflow_id))
+        && same(&query.branch, run.branch.as_deref())
+        && same(&query.event, Some(&run.event))
+        && same(&query.actor, run.actor.as_deref())
+        && query
+            .status
+            .as_deref()
+            .is_none_or(|status| run.status == status || run.conclusion.as_deref() == Some(status))
+        && query.head_sha.as_deref().is_none_or(|sha| {
+            !run.sha.is_empty() && (run.sha.starts_with(sha) || sha.starts_with(&run.sha))
+        })
 }
 
 pub async fn list(data_dir: &Path, input: RunQuery) -> BitbucketResult<RunPage> {
@@ -222,21 +209,13 @@ pub async fn list(data_dir: &Path, input: RunQuery) -> BitbucketResult<RunPage> 
         .values
         .iter()
         .map(|row| run_of(&input.repo, row))
-        .filter(|run| input.keeps(run))
+        .filter(|run| keeps(&input, run))
         .collect();
     Ok(RunPage {
         total: found.size.unwrap_or(runs.len() as u64),
         next_page: found.next.is_some().then_some(page + 1),
         runs,
     })
-}
-
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct RunRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub run_id: String,
 }
 
 fn is_build_number(run_id: &str) -> bool {
@@ -371,15 +350,6 @@ fn target_to_repeat(target: &Value) -> Value {
     Value::Object(kept)
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Rerun {
-    #[serde(flatten)]
-    pub run: RunRef,
-    #[serde(default)]
-    pub failed_only: bool,
-}
-
 /// Bitbucket runs a pipeline again as a new one on the same commit.
 pub async fn rerun(data_dir: &Path, input: Rerun) -> BitbucketResult<()> {
     if input.failed_only {
@@ -395,15 +365,6 @@ pub async fn rerun(data_dir: &Path, input: Rerun) -> BitbucketResult<()> {
     )
     .await?;
     Ok(())
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JobRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub job_id: String,
-    pub run_id: Option<String>,
 }
 
 fn lines_of(text: &str, truncated: bool) -> Vec<LogLine> {
@@ -422,20 +383,11 @@ fn lines_of(text: &str, truncated: bool) -> Vec<LogLine> {
         .collect()
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Excerpt {
-    #[serde(flatten)]
-    pub job: JobRef,
-    pub tail: Option<usize>,
-    pub grep: Option<String>,
-}
-
 const DEFAULT_TAIL: usize = 200;
 const MAX_TAIL: usize = 2000;
 
 /// The end of a step's log for an agent, optionally only the lines that mention something.
-pub async fn excerpt(data_dir: &Path, input: Excerpt) -> BitbucketResult<LogExcerpt> {
+pub async fn excerpt(data_dir: &Path, input: ExcerptQuery) -> BitbucketResult<LogExcerpt> {
     let whole = log(data_dir, input.job).await?;
     let needle = input
         .grep
@@ -593,34 +545,18 @@ pub async fn workflows(data_dir: &Path, repo: RepoRef) -> BitbucketResult<Vec<Wo
         .collect())
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-}
-
-pub async fn workflow_file(data_dir: &Path, input: FileRef) -> BitbucketResult<WorkflowFile> {
+pub async fn workflow_file(data_dir: &Path, input: WorkflowRef) -> BitbucketResult<WorkflowFile> {
     Ok(WorkflowFile {
         path: PIPELINES_FILE.into(),
         text: file(data_dir, &input.repo).await?,
     })
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Dispatch {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub workflow_id: String,
-    pub git_ref: String,
-    #[serde(default)]
-    pub inputs: Map<String, Value>,
-}
-
 fn dispatch_body(input: &Dispatch) -> BitbucketResult<Value> {
     let (kind, pattern) = input
         .workflow_id
+        .as_deref()
+        .ok_or_else(|| BitbucketError::BadArg("missing field `workflowId`".into()))?
         .split_once(':')
         .ok_or_else(|| BitbucketError::BadArg("that is not a pipeline in the file".into()))?;
     let git_ref = input.git_ref.trim();
@@ -820,13 +756,13 @@ mod tests {
             value["name"] = json!("api");
             serde_json::from_value(value).expect("a query")
         };
-        assert!(query(json!({ "status": "failure" })).keeps(&run));
-        assert!(query(json!({ "status": "completed" })).keeps(&run));
-        assert!(!query(json!({ "status": "success" })).keeps(&run));
-        assert!(query(json!({ "headSha": "abcdef1234ffff" })).keeps(&run));
-        assert!(!query(json!({ "headSha": "999" })).keeps(&run));
-        assert!(query(json!({ "workflowId": "default:" })).keeps(&run));
-        assert!(!query(json!({ "branch": "dev" })).keeps(&run));
+        assert!(keeps(&query(json!({ "status": "failure" })), &run));
+        assert!(keeps(&query(json!({ "status": "completed" })), &run));
+        assert!(!keeps(&query(json!({ "status": "success" })), &run));
+        assert!(keeps(&query(json!({ "headSha": "abcdef1234ffff" })), &run));
+        assert!(!keeps(&query(json!({ "headSha": "999" })), &run));
+        assert!(keeps(&query(json!({ "workflowId": "default:" })), &run));
+        assert!(!keeps(&query(json!({ "branch": "dev" })), &run));
     }
 
     #[test]

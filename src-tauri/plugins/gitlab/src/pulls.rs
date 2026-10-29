@@ -8,12 +8,14 @@ use std::path::Path;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_plugin_api::codehost::asks::{
+    CommitRef, FilesQuery, Merge, NewPull, NewReview, PatchQuery, PullQuery, PullRef, SetPullState,
+};
 use sikemux_plugin_api::codehost::{ChangedFile, Label, Pull, PullCommit, Review};
 
 use crate::client;
 use crate::error::{GitlabError, GitlabResult};
-use crate::notes::{Thread, ThreadOf};
-use crate::repo::{avatar_of, login_of, RepoRef, User};
+use crate::repo::{avatar_of, login_of, ApiPath, User};
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -172,21 +174,8 @@ pub fn pull_of(row: MergeRequestRow) -> Pull {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListQuery {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(default = "open")]
-    pub state: String,
-}
-
-fn open() -> String {
-    "open".into()
-}
-
-pub async fn list(data_dir: &Path, input: ListQuery) -> GitlabResult<Vec<Pull>> {
-    let state = match input.state.as_str() {
+pub async fn list(data_dir: &Path, input: PullQuery) -> GitlabResult<Vec<Pull>> {
+    let state = match input.state.as_deref().unwrap_or("open") {
         "open" => "opened",
         "closed" => "closed",
         "merged" => "merged",
@@ -206,22 +195,6 @@ pub async fn list(data_dir: &Path, input: ListQuery) -> GitlabResult<Vec<Pull>> 
     Ok(rows.into_iter().map(pull_of).collect())
 }
 
-fn pull_thread(repo: RepoRef, number: u64) -> Thread {
-    Thread {
-        repo,
-        number,
-        of: ThreadOf::Pull,
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub sha: String,
-}
-
 /// The merge requests that hold the commit `sha`, the merged one first.
 pub async fn of_commit(data_dir: &Path, input: CommitRef) -> GitlabResult<Vec<Pull>> {
     if input.sha.len() < 7 || !input.sha.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -237,20 +210,6 @@ pub async fn of_commit(data_dir: &Path, input: CommitRef) -> GitlabResult<Vec<Pu
     let mut pulls: Vec<Pull> = rows.into_iter().map(pull_of).collect();
     pulls.sort_by_key(|pull| pull.state != "merged");
     Ok(pulls)
-}
-
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct PullRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub number: u64,
-}
-
-impl PullRef {
-    pub fn path(&self, rest: &str) -> GitlabResult<String> {
-        pull_thread(self.repo.clone(), self.number).path(rest)
-    }
 }
 
 pub async fn get(data_dir: &Path, input: PullRef) -> GitlabResult<Pull> {
@@ -316,29 +275,6 @@ const PATCH_LINES: usize = 400;
 const MAX_PATCH_LINES: usize = 1000;
 const PATCH_BYTES: usize = 32 * 1024;
 
-/// Agents get the file list alone unless they name `paths`, and then a window
-/// of each patch. The merge request view asks for `fullPatches`.
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PatchQuery {
-    #[serde(default)]
-    pub paths: Vec<String>,
-    #[serde(default)]
-    pub offset: usize,
-    pub lines: Option<usize>,
-    #[serde(default)]
-    pub full_patches: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FilesQuery {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    #[serde(flatten)]
-    pub patches: PatchQuery,
-}
-
 fn cut_at_char(text: &str, most: usize) -> &str {
     text.get(..text.floor_char_boundary(most))
         .unwrap_or_default()
@@ -397,7 +333,9 @@ fn is_named(file: &ChangedFile, path: &str) -> bool {
     file.path == path || file.previous_path.as_deref() == Some(path)
 }
 
-/// The files to answer with, carrying the patches `query` asks for.
+/// The files to answer with, carrying the patches `query` asks for. Agents get
+/// the file list alone unless they name `paths`, and then a window of each
+/// patch. The merge request view asks for `fullPatches`.
 pub fn pick(files: Vec<ChangedFile>, query: &PatchQuery) -> GitlabResult<Vec<ChangedFile>> {
     if query.full_patches {
         return Ok(files);
@@ -493,15 +431,6 @@ pub async fn reviews(data_dir: &Path, input: PullRef) -> GitlabResult<Vec<Review
         .collect())
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Merge {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    pub method: String,
-    pub sha: Option<String>,
-}
-
 /// `sha` is the head the person saw: GitLab refuses the merge if the branch has moved since.
 pub fn merge_body(method: &str, sha: Option<&str>) -> GitlabResult<Value> {
     let squash = match method {
@@ -521,7 +450,10 @@ pub fn merge_body(method: &str, sha: Option<&str>) -> GitlabResult<Value> {
 }
 
 pub async fn merge(data_dir: &Path, input: Merge) -> GitlabResult<()> {
-    let body = merge_body(&input.method, input.sha.as_deref())?;
+    let method = input
+        .method
+        .ok_or_else(|| GitlabError::BadArg("missing field `method`".into()))?;
+    let body = merge_body(&method, input.sha.as_deref())?;
     client::write(
         data_dir,
         Method::PUT,
@@ -529,20 +461,6 @@ pub async fn merge(data_dir: &Path, input: Merge) -> GitlabResult<()> {
         Some(&body),
     )
     .await
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NewPull {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub title: String,
-    pub head: String,
-    pub base: String,
-    #[serde(default)]
-    pub body: String,
-    #[serde(default)]
-    pub draft: bool,
 }
 
 /// GitLab marks a draft by its title.
@@ -575,15 +493,7 @@ pub async fn create(data_dir: &Path, input: NewPull) -> GitlabResult<Pull> {
     Ok(pull_of(row))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetState {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    pub state: String,
-}
-
-pub async fn set_state(data_dir: &Path, input: SetState) -> GitlabResult<()> {
+pub async fn set_state(data_dir: &Path, input: SetPullState) -> GitlabResult<()> {
     let event = if input.state == "open" {
         "reopen"
     } else {
@@ -598,19 +508,9 @@ pub async fn set_state(data_dir: &Path, input: SetState) -> GitlabResult<()> {
     .await
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReviewInput {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    pub event: String,
-    #[serde(default)]
-    pub body: String,
-}
-
 /// Approving is GitLab's approval; a written verdict goes on as a comment
 /// beside it, once the verdict itself has gone through.
-pub async fn review(data_dir: &Path, input: ReviewInput) -> GitlabResult<()> {
+pub async fn review(data_dir: &Path, input: NewReview) -> GitlabResult<()> {
     let body = input.body.trim();
     match input.event.as_str() {
         "APPROVE" => {

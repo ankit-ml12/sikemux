@@ -7,6 +7,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use sikemux_plugin_api::account::{as_account, chosen};
+use sikemux_plugin_api::codehost::asks::AccountQuery;
 use sikemux_plugin_api::http;
 use sikemux_plugin_api::store::{self, Accounts};
 use sikemux_plugin_api::SignInStatus;
@@ -14,7 +15,7 @@ use sikemux_plugin_api::SignInStatus;
 use crate::client::{self, Session};
 use crate::config::{self, Account, GitlabConfig, GITLAB_COM};
 use crate::error::{GitlabError, GitlabResult};
-use crate::repo::{RepoRef, User};
+use crate::repo::{ApiPath, User};
 
 /// The server's host name from whatever was typed: `gitlab.acme.dev`, a whole
 /// address, or nothing for gitlab.com. Only https servers are taken, since the
@@ -255,20 +256,11 @@ pub async fn set_default(data_dir: &Path, input: DefaultChoice) -> GitlabResult<
     .await
 }
 
-#[derive(Deserialize)]
-pub struct ProjectOnHost {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    /// The remote's server, so only accounts there are tried.
-    #[serde(default)]
-    pub host: Option<String>,
-}
-
 /// The first account, default first, on the project's server that can see it,
 /// so a project on a work server opens as the work account by itself. When none
 /// can, the first on that server still answers, so the project is never looked
 /// for on another server.
-pub async fn account_for(data_dir: &Path, input: ProjectOnHost) -> GitlabResult<Option<String>> {
+pub async fn account_for(data_dir: &Path, input: AccountQuery) -> GitlabResult<Option<String>> {
     let path = input.repo.path("")?;
     let on_server: Vec<Account> = config::load(data_dir)?
         .in_order()

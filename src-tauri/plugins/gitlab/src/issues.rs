@@ -6,13 +6,15 @@ use std::path::Path;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::json;
+use sikemux_plugin_api::codehost::asks::{
+    InboxQuery, IssueQuery, IssueRef, NewIssue, NotificationRef, RepoRef, SetIssueState,
+};
 use sikemux_plugin_api::codehost::{Issue, IssuePage, Notification, Release};
 
 use crate::client;
 use crate::error::{GitlabError, GitlabResult};
-use crate::notes::{Thread, ThreadOf};
 use crate::pulls::{label_of, LabelRow};
-use crate::repo::{avatar_of, login_of, RepoRef, User};
+use crate::repo::{avatar_of, login_of, ApiPath, User};
 
 #[derive(Deserialize)]
 pub struct IssueRow {
@@ -59,23 +61,8 @@ pub fn issue_of(row: IssueRow) -> Issue {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IssueQuery {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(default)]
-    pub state: String,
-    #[serde(default = "first_page")]
-    pub page: u32,
-}
-
-fn first_page() -> u32 {
-    1
-}
-
 pub async fn list(data_dir: &Path, input: IssueQuery) -> GitlabResult<IssuePage> {
-    let state = match input.state.as_str() {
+    let state = match input.state.as_deref().unwrap_or_default() {
         "closed" => "closed",
         "all" => "all",
         _ => "opened",
@@ -88,7 +75,7 @@ pub async fn list(data_dir: &Path, input: IssueQuery) -> GitlabResult<IssuePage>
             ("order_by", "updated_at".into()),
             ("with_labels_details", "true".into()),
         ],
-        input.page,
+        input.page.unwrap_or(1),
         30,
     )
     .await?;
@@ -100,25 +87,6 @@ pub async fn list(data_dir: &Path, input: IssueQuery) -> GitlabResult<IssuePage>
     })
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IssueRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub number: u64,
-}
-
-impl IssueRef {
-    fn path(&self, rest: &str) -> GitlabResult<String> {
-        Thread {
-            repo: self.repo.clone(),
-            number: self.number,
-            of: ThreadOf::Issue,
-        }
-        .path(rest)
-    }
-}
-
 pub async fn get(data_dir: &Path, input: IssueRef) -> GitlabResult<Issue> {
     let row: IssueRow = client::get(
         data_dir,
@@ -127,15 +95,6 @@ pub async fn get(data_dir: &Path, input: IssueRef) -> GitlabResult<Issue> {
     )
     .await?;
     Ok(issue_of(row))
-}
-
-#[derive(Deserialize)]
-pub struct NewIssue {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub title: String,
-    #[serde(default)]
-    pub body: String,
 }
 
 pub async fn create(data_dir: &Path, input: NewIssue) -> GitlabResult<Issue> {
@@ -152,14 +111,7 @@ pub async fn create(data_dir: &Path, input: NewIssue) -> GitlabResult<Issue> {
     Ok(issue_of(row))
 }
 
-#[derive(Deserialize)]
-pub struct SetState {
-    #[serde(flatten)]
-    pub issue: IssueRef,
-    pub state: String,
-}
-
-pub async fn set_state(data_dir: &Path, input: SetState) -> GitlabResult<()> {
+pub async fn set_state(data_dir: &Path, input: SetIssueState) -> GitlabResult<()> {
     let event = if input.state == "open" {
         "reopen"
     } else {
@@ -274,12 +226,6 @@ pub fn notification(row: TodoRow) -> Notification {
     }
 }
 
-#[derive(Deserialize)]
-pub struct InboxQuery {
-    #[serde(default)]
-    pub all: bool,
-}
-
 /// GitLab lists To-Do items by one state at a time, and has no word for both.
 fn todo_states(all: bool) -> &'static [&'static str] {
     if all {
@@ -300,12 +246,7 @@ pub async fn inbox(data_dir: &Path, input: InboxQuery) -> GitlabResult<Vec<Notif
     Ok(notes)
 }
 
-#[derive(Deserialize)]
-pub struct TodoRef {
-    pub id: String,
-}
-
-pub async fn mark_read(data_dir: &Path, input: TodoRef) -> GitlabResult<()> {
+pub async fn mark_read(data_dir: &Path, input: NotificationRef) -> GitlabResult<()> {
     let id: u64 = input
         .id
         .parse()

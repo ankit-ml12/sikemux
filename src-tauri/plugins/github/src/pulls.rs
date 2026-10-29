@@ -6,6 +6,10 @@ use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::json;
+use sikemux_plugin_api::codehost::asks::{
+    CommitRef, CommitsQuery, FilesQuery, Merge, NewPull, NewReview, PatchQuery, PullQuery, PullRef,
+    RepoRef, SetPullState,
+};
 use sikemux_plugin_api::codehost::{
     ChangedFile, CommitAuthor, Label, Pull, PullCommit, PullCounts, Review,
 };
@@ -15,7 +19,7 @@ use crate::common::{
     avatar_of, login_of, ActorRow, LabelRow, FILE_PAGES, LIST_PAGES, MAX_PER_PAGE,
 };
 use crate::error::{GithubError, GithubResult};
-use crate::workflows::RepoRef;
+use crate::repo::{required, RepoPath};
 
 const DEFAULT_PER_PAGE: u32 = 30;
 
@@ -127,17 +131,7 @@ impl From<PullRow> for Pull {
 
 const STATES: [&str; 3] = ["open", "closed", "all"];
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Query {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub state: Option<String>,
-    pub page: Option<u32>,
-    pub per_page: Option<u32>,
-}
-
-pub async fn list(data_dir: &Path, input: Query) -> GithubResult<Vec<Pull>> {
+pub async fn list(data_dir: &Path, input: PullQuery) -> GithubResult<Vec<Pull>> {
     let state = input.state.unwrap_or_else(|| "open".into());
     if !STATES.contains(&state.as_str()) {
         return Err(GithubError::BadArg(format!(
@@ -251,25 +245,10 @@ async fn comment_counts(
         .collect())
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PullRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub number: u64,
-}
-
 pub async fn get(data_dir: &Path, input: PullRef) -> GithubResult<Pull> {
     let path = input.repo.path(&format!("/pulls/{}", input.number))?;
     let row: PullRow = client::get(data_dir, &path, &[]).await?;
     Ok(Pull::from(row))
-}
-
-#[derive(Deserialize)]
-pub struct CommitRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub sha: String,
 }
 
 /// The pull requests that hold the commit `sha`, the merged one first.
@@ -300,29 +279,6 @@ struct FileRow {
 const PATCH_LINES: usize = 400;
 const MAX_PATCH_LINES: usize = 1000;
 const PATCH_BYTES: usize = 32 * 1024;
-
-/// Agents get the file list alone unless they name `paths`, and then a window
-/// of each patch. The pull request view asks for `fullPatches`.
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PatchQuery {
-    #[serde(default)]
-    pub paths: Vec<String>,
-    #[serde(default)]
-    pub offset: usize,
-    pub lines: Option<usize>,
-    #[serde(default)]
-    pub full_patches: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FilesQuery {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    #[serde(flatten)]
-    pub patches: PatchQuery,
-}
 
 fn cut_at_char(text: &str, most: usize) -> &str {
     text.get(..text.floor_char_boundary(most))
@@ -385,7 +341,9 @@ fn is_named(file: &ChangedFile, path: &str) -> bool {
     file.path == path || file.previous_path.as_deref() == Some(path)
 }
 
-/// The files to answer with, carrying the patches `query` asks for.
+/// The files to answer with, carrying the patches `query` asks for. Agents get
+/// the file list alone unless they name `paths`, and then a window of each
+/// patch; the pull request view asks for `fullPatches`.
 fn pick(files: Vec<ChangedFile>, query: &PatchQuery) -> GithubResult<Vec<ChangedFile>> {
     if query.full_patches {
         return Ok(files);
@@ -493,18 +451,12 @@ pub async fn commits(data_dir: &Path, input: PullRef) -> GithubResult<Vec<PullCo
         .collect())
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitsRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    /// A branch, tag or commit to list from; the default branch when absent.
-    pub git_ref: Option<String>,
-}
-
 /// The accounts behind the latest hundred commits' emails, so a git history
 /// read locally, which has only names and emails, can show who they are.
-pub async fn commit_authors(data_dir: &Path, input: CommitsRef) -> GithubResult<Vec<CommitAuthor>> {
+pub async fn commit_authors(
+    data_dir: &Path,
+    input: CommitsQuery,
+) -> GithubResult<Vec<CommitAuthor>> {
     let path = input.repo.path("/commits")?;
     let query: Vec<(&str, String)> = input
         .git_ref
@@ -563,30 +515,21 @@ pub async fn reviews(data_dir: &Path, input: PullRef) -> GithubResult<Vec<Review
 
 const MERGE_METHODS: [&str; 3] = ["merge", "squash", "rebase"];
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Merge {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    /// `merge`, `squash` or `rebase`.
-    pub method: String,
-    /// The head commit the person was looking at. GitHub refuses the merge if
-    /// the branch has moved since, so nothing unseen lands.
-    pub sha: String,
-}
-
 fn is_commit(sha: &str) -> bool {
     (40..=64).contains(&sha.len()) && sha.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+/// The merge is pinned to the head commit the person was looking at. GitHub
+/// refuses it if the branch has moved since, so nothing unseen lands.
 pub async fn merge(data_dir: &Path, input: Merge) -> GithubResult<()> {
-    if !MERGE_METHODS.contains(&input.method.as_str()) {
+    let method = required(input.method, "method")?;
+    let sha = required(input.sha, "sha")?;
+    if !MERGE_METHODS.contains(&method.as_str()) {
         return Err(GithubError::BadArg(format!(
-            "`{}` is not merge, squash or rebase",
-            input.method
+            "`{method}` is not merge, squash or rebase"
         )));
     }
-    if !is_commit(&input.sha) {
+    if !is_commit(&sha) {
         return Err(GithubError::BadArg(
             "a merge needs the full head commit it was checked against".into(),
         ));
@@ -595,7 +538,7 @@ pub async fn merge(data_dir: &Path, input: Merge) -> GithubResult<()> {
         .pull
         .repo
         .path(&format!("/pulls/{}/merge", input.pull.number))?;
-    let body = json!({ "merge_method": input.method, "sha": input.sha });
+    let body = json!({ "merge_method": method, "sha": sha });
     match client::act(data_dir, reqwest::Method::PUT, &path, Some(&body)).await {
         Err(GithubError::Http { status: 409, .. }) => Err(GithubError::Http {
             status: 409,
@@ -613,22 +556,6 @@ pub async fn merge(data_dir: &Path, input: Merge) -> GithubResult<()> {
         }
         outcome => outcome,
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NewPull {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub title: String,
-    /// The branch the changes are on.
-    pub head: String,
-    /// The branch they are meant to land in.
-    pub base: String,
-    #[serde(default)]
-    pub body: String,
-    #[serde(default)]
-    pub draft: bool,
 }
 
 pub async fn create(data_dir: &Path, input: NewPull) -> GithubResult<Pull> {
@@ -658,16 +585,7 @@ pub async fn create(data_dir: &Path, input: NewPull) -> GithubResult<Pull> {
     Ok(Pull::from(row))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetState {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    /// `open` or `closed`.
-    pub state: String,
-}
-
-pub async fn set_state(data_dir: &Path, input: SetState) -> GithubResult<()> {
+pub async fn set_state(data_dir: &Path, input: SetPullState) -> GithubResult<()> {
     if !matches!(input.state.as_str(), "open" | "closed") {
         return Err(GithubError::BadArg(format!(
             "`{}` is not open or closed",
@@ -683,17 +601,6 @@ pub async fn set_state(data_dir: &Path, input: SetState) -> GithubResult<()> {
 }
 
 const REVIEW_EVENTS: [&str; 3] = ["APPROVE", "REQUEST_CHANGES", "COMMENT"];
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NewReview {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    /// `APPROVE`, `REQUEST_CHANGES` or `COMMENT`.
-    pub event: String,
-    #[serde(default)]
-    pub body: String,
-}
 
 pub async fn review(data_dir: &Path, input: NewReview) -> GithubResult<()> {
     if !REVIEW_EVENTS.contains(&input.event.as_str()) {
@@ -892,8 +799,9 @@ mod tests {
                 },
                 number: 1,
             },
-            method: "squash".into(),
-            sha: String::new(),
+            method: Some("squash".into()),
+            sha: Some(String::new()),
+            message: None,
         };
         assert!(matches!(
             merge(&std::env::temp_dir(), unseen_head).await,

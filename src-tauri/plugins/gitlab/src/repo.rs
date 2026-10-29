@@ -5,18 +5,11 @@
 use std::path::Path;
 
 use serde::Deserialize;
+use sikemux_plugin_api::codehost::asks::RepoRef;
 use sikemux_plugin_api::codehost::{Repo, RepoListing};
 
 use crate::client;
 use crate::error::{GitlabError, GitlabResult};
-
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct RepoRef {
-    /// The group path, `group` or `group/subgroup`.
-    pub owner: String,
-    pub name: String,
-}
 
 fn valid_segment(segment: &str) -> bool {
     !segment.is_empty()
@@ -37,18 +30,24 @@ pub fn encoded(full_path: &str) -> String {
     full_path.replace('/', "%2F")
 }
 
-impl RepoRef {
-    pub fn full_path(&self) -> GitlabResult<String> {
-        if !valid_owner(&self.owner) || !valid_segment(&self.name) {
-            return Err(GitlabError::BadArg(
-                "that is not a GitLab group and project".into(),
-            ));
-        }
-        Ok(format!("{}/{}", self.owner, self.name))
-    }
+/// Where what a call names sits in GitLab's API, below `/api/v4`.
+pub trait ApiPath {
+    fn path(&self, rest: &str) -> GitlabResult<String>;
+}
 
-    pub fn path(&self, rest: &str) -> GitlabResult<String> {
-        Ok(format!("/projects/{}{rest}", encoded(&self.full_path()?)))
+/// The owner is the group path, `group` or `group/subgroup`.
+fn full_path(repo: &RepoRef) -> GitlabResult<String> {
+    if !valid_owner(&repo.owner) || !valid_segment(&repo.name) {
+        return Err(GitlabError::BadArg(
+            "that is not a GitLab group and project".into(),
+        ));
+    }
+    Ok(format!("{}/{}", repo.owner, repo.name))
+}
+
+impl ApiPath for RepoRef {
+    fn path(&self, rest: &str) -> GitlabResult<String> {
+        Ok(format!("/projects/{}{rest}", encoded(&full_path(self)?)))
     }
 }
 

@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use serde::Deserialize;
+use sikemux_plugin_api::codehost::asks::RepoRef;
 pub use sikemux_plugin_api::codehost::Repo;
 use sikemux_plugin_api::codehost::RepoListing;
 
@@ -36,6 +37,35 @@ pub fn validate(owner: &str, name: &str) -> GithubResult<()> {
     Err(GithubError::BadArg(format!(
         "`{owner}/{name}` is not a repository name"
     )))
+}
+
+/// A repository named in a call, checked before it goes into an API path.
+pub trait RepoPath {
+    fn checked(&self) -> GithubResult<&Self>;
+    fn path(&self, rest: &str) -> GithubResult<String>;
+}
+
+impl RepoPath for RepoRef {
+    fn checked(&self) -> GithubResult<&Self> {
+        validate(&self.owner, &self.name)?;
+        Ok(self)
+    }
+
+    fn path(&self, rest: &str) -> GithubResult<String> {
+        let checked = self.checked()?;
+        Ok(format!("/repos/{}/{}{rest}", checked.owner, checked.name))
+    }
+}
+
+/// An id GitHub's API takes as a number, refused before it reaches a path.
+pub fn number(id: &str) -> GithubResult<u64> {
+    id.parse()
+        .map_err(|_| GithubError::BadArg(format!("`{id}` is not an id")))
+}
+
+/// A field this plugin needs that the shared shape leaves optional.
+pub fn required<T>(field: Option<T>, name: &str) -> GithubResult<T> {
+    field.ok_or_else(|| GithubError::BadArg(format!("missing field `{name}`")))
 }
 
 fn split_path(path: &str) -> Option<(String, String)> {

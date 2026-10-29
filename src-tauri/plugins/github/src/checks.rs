@@ -6,24 +6,15 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use serde::Deserialize;
+use sikemux_plugin_api::codehost::asks::ChecksQuery;
 use sikemux_plugin_api::codehost::{Check, Outcome};
 
 use crate::client;
 use crate::error::GithubResult;
-use crate::workflows::RepoRef;
+use crate::repo::RepoPath;
 
 /// GitHub lists at most 300 of a commit's checks this way.
 const CHECK_PAGES: u32 = 3;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Request {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub sha: String,
-    /// The branch the pull request merges into, whose rules say which checks are required.
-    pub base: Option<String>,
-}
 
 #[derive(Deserialize)]
 struct CheckRunPage {
@@ -95,7 +86,7 @@ struct RequiredChecks {
     contexts: Vec<String>,
 }
 
-pub async fn list(data_dir: &Path, input: Request) -> GithubResult<Vec<Check>> {
+pub async fn list(data_dir: &Path, input: ChecksQuery) -> GithubResult<Vec<Check>> {
     let runs_path = input
         .repo
         .path(&format!("/commits/{}/check-runs", input.sha))?;
@@ -163,9 +154,9 @@ pub async fn list(data_dir: &Path, input: Request) -> GithubResult<Vec<Check>> {
     Ok(checks)
 }
 
-/// The checks the base branch's rules require, from its rulesets and its
-/// protection, as far as the signed-in account may read them.
-async fn required(data_dir: &Path, input: &Request) -> HashSet<String> {
+/// The checks the base branch, the one the pull request merges into, requires
+/// by its rulesets and its protection, as far as the signed-in account may read them.
+async fn required(data_dir: &Path, input: &ChecksQuery) -> HashSet<String> {
     let Some(base) = input.base.as_deref().filter(|base| !base.is_empty()) else {
         return HashSet::new();
     };

@@ -7,6 +7,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 use sikemux_plugin_api::account::chosen;
+use sikemux_plugin_api::codehost::asks::{InboxQuery, NotificationRef};
 use sikemux_plugin_api::codehost::Notification;
 
 use crate::client;
@@ -86,17 +87,7 @@ async fn release_page(data_dir: &Path, api_url: &str) -> Option<String> {
     Some(release.html_url)
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Query {
-    /// Include the ones already read, which the inbox hides by default.
-    #[serde(default)]
-    pub all: bool,
-    #[serde(default)]
-    pub per_page: Option<u32>,
-}
-
-pub async fn list(data_dir: &Path, input: Query) -> GithubResult<Vec<Notification>> {
+pub async fn list(data_dir: &Path, input: InboxQuery) -> GithubResult<Vec<Notification>> {
     let host = crate::config::load(data_dir)?.host_of(chosen().as_deref());
     let rows: Vec<NotificationRow> = client::get(
         data_dir,
@@ -141,19 +132,13 @@ pub async fn list(data_dir: &Path, input: Query) -> GithubResult<Vec<Notificatio
         .collect())
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadRef {
-    pub id: String,
-}
-
 /// Thread ids are numbers GitHub hands out, so anything else is refused rather
 /// than pasted into a path.
 fn valid_thread(id: &str) -> bool {
     !id.is_empty() && id.len() <= 32 && id.chars().all(|c| c.is_ascii_digit())
 }
 
-pub async fn mark_read(data_dir: &Path, input: ThreadRef) -> GithubResult<()> {
+pub async fn mark_read(data_dir: &Path, input: NotificationRef) -> GithubResult<()> {
     if !valid_thread(&input.id) {
         return Err(crate::error::GithubError::BadArg(
             "that is not a notification".into(),

@@ -5,16 +5,11 @@
 use std::path::Path;
 
 use reqwest::Url;
-use serde::Deserialize;
+use sikemux_plugin_api::codehost::asks::ImageRef;
 use sikemux_plugin_api::images;
 
 use crate::client::{self, Session};
 use crate::error::{BitbucketError, BitbucketResult};
-
-#[derive(Deserialize)]
-pub struct ImageRef {
-    pub url: String,
-}
 
 /// Whether an image may be fetched, and if so whether it gets the credential.
 /// Avatars live on Atlassian's and Gravatar's hosts, which need none.

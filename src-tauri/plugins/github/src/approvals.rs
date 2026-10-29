@@ -6,12 +6,12 @@ use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::json;
+use sikemux_plugin_api::codehost::asks::{DeploymentReview, RunRef};
 use sikemux_plugin_api::codehost::PendingApproval;
 
 use crate::client;
 use crate::error::{GithubError, GithubResult};
-use crate::runs::RunRef;
-use crate::workflows::RepoRef;
+use crate::runs::run_path;
 
 #[derive(Deserialize)]
 struct EnvironmentRow {
@@ -56,10 +56,7 @@ fn reviewer_name(row: &ReviewerRow) -> Option<String> {
 }
 
 pub async fn pending(data_dir: &Path, input: RunRef) -> GithubResult<Vec<PendingApproval>> {
-    let path = input.repo.path(&format!(
-        "/actions/runs/{}/pending_deployments",
-        input.run_id
-    ))?;
+    let path = run_path(&input, "/pending_deployments")?;
     let rows: Vec<PendingRow> = client::get(data_dir, &path, &[]).await?;
     Ok(rows
         .into_iter()
@@ -73,21 +70,8 @@ pub async fn pending(data_dir: &Path, input: RunRef) -> GithubResult<Vec<Pending
         .collect())
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Review {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(deserialize_with = "sikemux_plugin_api::codehost::numeric_id")]
-    pub run_id: u64,
-    pub environment_ids: Vec<u64>,
-    /// `approved` or `rejected`; GitHub accepts nothing else.
-    pub state: String,
-    #[serde(default)]
-    pub comment: String,
-}
-
-pub async fn review(data_dir: &Path, input: Review) -> GithubResult<()> {
+/// `state` is `approved` or `rejected`; GitHub accepts nothing else.
+pub async fn review(data_dir: &Path, input: DeploymentReview) -> GithubResult<()> {
     if !matches!(input.state.as_str(), "approved" | "rejected") {
         return Err(GithubError::BadArg(format!(
             "`{}` is not approved or rejected",
@@ -99,10 +83,7 @@ pub async fn review(data_dir: &Path, input: Review) -> GithubResult<()> {
             "no environment was named to sign off".into(),
         ));
     }
-    let path = input.repo.path(&format!(
-        "/actions/runs/{}/pending_deployments",
-        input.run_id
-    ))?;
+    let path = run_path(&input.run, "/pending_deployments")?;
     let body = json!({
         "environment_ids": input.environment_ids,
         "state": input.state,

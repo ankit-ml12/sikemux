@@ -4,21 +4,13 @@
 use std::path::Path;
 
 use serde::Deserialize;
+use sikemux_plugin_api::codehost::asks::RepoRef;
 use sikemux_plugin_api::codehost::{Repo, RepoListing};
 
 use crate::client;
 use crate::error::{BitbucketError, BitbucketResult};
 
 pub const HOST: &str = "bitbucket.org";
-
-/// A workspace and a repository in it. Bitbucket's own word for the first is
-/// workspace; the Git pane calls it the owner, as every host does.
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct RepoRef {
-    pub owner: String,
-    pub name: String,
-}
 
 fn valid_slug(slug: &str) -> bool {
     !slug.is_empty()
@@ -30,8 +22,15 @@ fn valid_slug(slug: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
-impl RepoRef {
-    pub fn path(&self, rest: &str) -> BitbucketResult<String> {
+/// Where a repository lives on Bitbucket. Bitbucket's own word for its owner
+/// is workspace.
+pub trait Place {
+    fn path(&self, rest: &str) -> BitbucketResult<String>;
+    fn web(&self, rest: &str) -> String;
+}
+
+impl Place for RepoRef {
+    fn path(&self, rest: &str) -> BitbucketResult<String> {
         if !valid_slug(&self.owner) || !valid_slug(&self.name) {
             return Err(BitbucketError::BadArg(
                 "that is not a Bitbucket workspace and repository".into(),
@@ -40,7 +39,7 @@ impl RepoRef {
         Ok(format!("/repositories/{}/{}{rest}", self.owner, self.name))
     }
 
-    pub fn web(&self, rest: &str) -> String {
+    fn web(&self, rest: &str) -> String {
         format!("https://{HOST}/{}/{}{rest}", self.owner, self.name)
     }
 }

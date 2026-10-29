@@ -7,14 +7,15 @@ use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
+use sikemux_plugin_api::codehost::asks::{RepoRef, RunRef};
 use sikemux_plugin_api::codehost::{Artifact, SavedArtifact};
 use sikemux_plugin_api::{reply, PluginResult, StreamSink};
 
 use crate::client;
 use crate::common::LIST_PAGES;
 use crate::error::{GithubError, GithubResult};
-use crate::runs::RunRef;
-use crate::workflows::RepoRef;
+use crate::repo::RepoPath;
+use crate::runs::run_path;
 
 #[derive(Deserialize)]
 struct ArtifactRow {
@@ -32,9 +33,7 @@ struct ArtifactList {
 }
 
 pub async fn list(data_dir: &Path, input: RunRef) -> GithubResult<Vec<Artifact>> {
-    let path = input
-        .repo
-        .path(&format!("/actions/runs/{}/artifacts", input.run_id))?;
+    let path = run_path(&input, "/artifacts")?;
     let artifacts = client::get_all(data_dir, &path, &[], LIST_PAGES, |list: ArtifactList| {
         list.artifacts
     })

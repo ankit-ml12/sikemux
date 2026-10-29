@@ -4,12 +4,13 @@ use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use sikemux_plugin_api::codehost::asks::{Dispatch, FileAt, RepoRef, WorkflowRef};
 use sikemux_plugin_api::codehost::{Workflow, WorkflowFile};
 
 use crate::client;
 use crate::common::LIST_PAGES;
 use crate::error::{GithubError, GithubResult};
-use crate::repo::{self, Repo};
+use crate::repo::{number, required, RepoPath};
 
 #[derive(Deserialize)]
 struct WorkflowRow {
@@ -23,34 +24,6 @@ struct WorkflowRow {
 #[derive(Deserialize)]
 struct WorkflowList {
     workflows: Vec<WorkflowRow>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RepoRef {
-    pub owner: String,
-    pub name: String,
-}
-
-impl RepoRef {
-    pub fn checked(&self) -> GithubResult<&Self> {
-        repo::validate(&self.owner, &self.name)?;
-        Ok(self)
-    }
-
-    pub fn path(&self, rest: &str) -> GithubResult<String> {
-        let checked = self.checked()?;
-        Ok(format!("/repos/{}/{}{rest}", checked.owner, checked.name))
-    }
-}
-
-impl From<&Repo> for RepoRef {
-    fn from(repo: &Repo) -> Self {
-        Self {
-            owner: repo.owner.clone(),
-            name: repo.name.clone(),
-        }
-    }
 }
 
 pub async fn list(data_dir: &Path, repo: RepoRef) -> GithubResult<Vec<Workflow>> {
@@ -73,19 +46,6 @@ pub async fn list(data_dir: &Path, repo: RepoRef) -> GithubResult<Vec<Workflow>>
             url: row.html_url,
         })
         .collect())
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Dispatch {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(deserialize_with = "sikemux_plugin_api::codehost::numeric_id")]
-    pub workflow_id: u64,
-    /// The branch or tag to run on.
-    pub git_ref: String,
-    #[serde(default)]
-    pub inputs: Map<String, Value>,
 }
 
 /// Every `workflow_dispatch` input reaches GitHub as a string, whatever the
@@ -116,28 +76,23 @@ fn valid_ref(value: &str) -> bool {
         })
 }
 
+fn workflow_id(id: Option<String>) -> GithubResult<u64> {
+    number(&required(id, "workflowId")?)
+}
+
 pub async fn dispatch(data_dir: &Path, input: Dispatch) -> GithubResult<()> {
+    let workflow_id = workflow_id(input.workflow_id)?;
     let git_ref = input.git_ref.trim();
     if !valid_ref(git_ref) {
         return Err(GithubError::BadArg(format!(
             "`{git_ref}` is not a branch or tag name"
         )));
     }
-    let path = input.repo.path(&format!(
-        "/actions/workflows/{}/dispatches",
-        input.workflow_id
-    ))?;
+    let path = input
+        .repo
+        .path(&format!("/actions/workflows/{workflow_id}/dispatches"))?;
     let body = json!({ "ref": git_ref, "inputs": as_strings(input.inputs) });
     client::post_empty(data_dir, &path, Some(&body)).await
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(deserialize_with = "sikemux_plugin_api::codehost::numeric_id")]
-    pub workflow_id: u64,
 }
 
 /// A workflow somebody wrote lives under `.github`. GitHub's own, such as code
@@ -162,12 +117,13 @@ pub(crate) fn encode_path(path: &str) -> String {
 
 /// The YAML a run came from, read at the default branch. A workflow's own
 /// record carries the path, so the file is fetched in two steps.
-pub async fn file(data_dir: &Path, input: FileRef) -> GithubResult<WorkflowFile> {
+pub async fn file(data_dir: &Path, input: WorkflowRef) -> GithubResult<WorkflowFile> {
+    let workflow_id = workflow_id(input.workflow_id)?;
     let row: WorkflowRow = client::get(
         data_dir,
         &input
             .repo
-            .path(&format!("/actions/workflows/{}", input.workflow_id))?,
+            .path(&format!("/actions/workflows/{workflow_id}"))?,
         &[],
     )
     .await?;
@@ -180,15 +136,6 @@ pub async fn file(data_dir: &Path, input: FileRef) -> GithubResult<WorkflowFile>
         .repo
         .path(&format!("/contents/{}", encode_path(&row.path)))?;
     read(data_dir, &contents, row.path).await
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileAt {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub path: String,
-    pub git_ref: String,
 }
 
 /// A workflow file as it was at one commit, such as the one a run came from,

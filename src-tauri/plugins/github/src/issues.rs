@@ -6,12 +6,13 @@ use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::json;
+use sikemux_plugin_api::codehost::asks::{IssueQuery, IssueRef, NewIssue, SetIssueState};
 use sikemux_plugin_api::codehost::{Issue, IssuePage, Label};
 
 use crate::client;
 use crate::common::{avatar_of, login_of, ActorRow, LabelRow, MAX_PER_PAGE};
 use crate::error::{GithubError, GithubResult};
-use crate::workflows::RepoRef;
+use crate::repo::RepoPath;
 
 const DEFAULT_PER_PAGE: u32 = 30;
 const STATES: [&str; 3] = ["open", "closed", "all"];
@@ -57,19 +58,6 @@ impl From<IssueRow> for Issue {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Query {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub state: Option<String>,
-    /// A GitHub login, or `@me` for whoever is signed in.
-    pub assignee: Option<String>,
-    pub labels: Option<String>,
-    pub page: Option<u32>,
-    pub per_page: Option<u32>,
-}
-
-#[derive(Deserialize)]
 struct SearchPage {
     total_count: u64,
     items: Vec<IssueRow>,
@@ -82,8 +70,9 @@ fn quoted(value: &str) -> String {
 }
 
 /// Search, because the issues endpoint mixes pull requests into its pages and
-/// a page can come back with few issues or none.
-fn search_terms(input: &Query, state: &str) -> GithubResult<String> {
+/// a page can come back with few issues or none. The assignee is a GitHub
+/// login, or `@me` for whoever is signed in.
+fn search_terms(input: &IssueQuery, state: &str) -> GithubResult<String> {
     input.repo.checked()?;
     let mut terms = vec![
         format!("repo:{}/{}", input.repo.owner, input.repo.name),
@@ -117,7 +106,7 @@ fn search_terms(input: &Query, state: &str) -> GithubResult<String> {
     Ok(terms.join(" "))
 }
 
-pub async fn list(data_dir: &Path, input: Query) -> GithubResult<IssuePage> {
+pub async fn list(data_dir: &Path, input: IssueQuery) -> GithubResult<IssuePage> {
     let state = input.state.clone().unwrap_or_else(|| "open".into());
     if !STATES.contains(&state.as_str()) {
         return Err(GithubError::BadArg(format!(
@@ -149,30 +138,13 @@ pub async fn list(data_dir: &Path, input: Query) -> GithubResult<IssuePage> {
     })
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IssueRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub number: u64,
-}
-
 pub async fn get(data_dir: &Path, input: IssueRef) -> GithubResult<Issue> {
     let path = input.repo.path(&format!("/issues/{}", input.number))?;
     let row: IssueRow = client::get(data_dir, &path, &[]).await?;
     Ok(Issue::from(row))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetState {
-    #[serde(flatten)]
-    pub issue: IssueRef,
-    /// `open` or `closed`.
-    pub state: String,
-}
-
-pub async fn set_state(data_dir: &Path, input: SetState) -> GithubResult<()> {
+pub async fn set_state(data_dir: &Path, input: SetIssueState) -> GithubResult<()> {
     if !matches!(input.state.as_str(), "open" | "closed") {
         return Err(GithubError::BadArg(format!(
             "`{}` is not open or closed",
@@ -185,16 +157,6 @@ pub async fn set_state(data_dir: &Path, input: SetState) -> GithubResult<()> {
         .path(&format!("/issues/{}", input.issue.number))?;
     let body = json!({ "state": input.state });
     client::act(data_dir, reqwest::Method::PATCH, &path, Some(&body)).await
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NewIssue {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub title: String,
-    #[serde(default)]
-    pub body: String,
 }
 
 pub async fn create(data_dir: &Path, input: NewIssue) -> GithubResult<Issue> {

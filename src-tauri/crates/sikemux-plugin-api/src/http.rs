@@ -199,6 +199,41 @@ where
     Ok(all)
 }
 
+/// What a refused request means. `message` is what the service's body said,
+/// when it said anything; `spent` is how long until a spent rate limit
+/// resets, when the service says one is.
+pub fn classify<S: Service>(
+    status: reqwest::StatusCode,
+    message: Option<String>,
+    spent: Option<u64>,
+) -> ServiceError<S> {
+    if let Some(resets_in_secs) = spent {
+        return ServiceError::RateLimited {
+            resets_in_secs: Some(resets_in_secs),
+        };
+    }
+    let message = message.unwrap_or_else(|| {
+        status
+            .canonical_reason()
+            .unwrap_or("the request failed")
+            .to_string()
+    });
+    match status.as_u16() {
+        401 => ServiceError::Auth(message),
+        403 | 429 => ServiceError::Forbidden(message),
+        404 => ServiceError::NotFound(message),
+        status => ServiceError::Http { status, message },
+    }
+}
+
+/// A JSON answer, an empty one read as null.
+pub fn parse<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, serde_json::Error> {
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return serde_json::from_slice(b"null");
+    }
+    serde_json::from_slice(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,12 +6,12 @@ use std::path::Path;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_plugin_api::codehost::asks::{Answers, FeedbackQuery};
 use sikemux_plugin_api::codehost::ReviewFeedback;
 
 use crate::client;
 use crate::error::{GitlabError, GitlabResult};
-use crate::pulls::PullRef;
-use crate::repo::{login_of, User};
+use crate::repo::{login_of, ApiPath, User};
 
 #[derive(Deserialize)]
 struct Author {
@@ -53,15 +53,6 @@ struct Reviewer {
     user: Option<User>,
     state: Option<String>,
     created_at: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FeedbackQuery {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    /// Only what changed at or after this time, as an earlier answer gave it.
-    pub since: Option<String>,
 }
 
 const DISCUSSION_PAGES: u32 = 10;
@@ -124,19 +115,6 @@ pub async fn feedback(data_dir: &Path, input: FeedbackQuery) -> GitlabResult<Vec
         })
     });
     Ok(notes.chain(asked).collect())
-}
-
-#[derive(Deserialize)]
-pub struct Reply {
-    to: String,
-    body: String,
-}
-
-#[derive(Deserialize)]
-pub struct Answers {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    pub replies: Vec<Reply>,
 }
 
 /// The discussion a feedback id names, which only hex digits make up.

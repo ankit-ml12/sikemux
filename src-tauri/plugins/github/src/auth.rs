@@ -8,13 +8,14 @@ use std::path::Path;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use sikemux_plugin_api::account::{as_account, chosen};
+use sikemux_plugin_api::codehost::asks::RepoRef;
 use sikemux_plugin_api::store::{self, Accounts};
 use sikemux_plugin_api::SignInStatus;
 
 use crate::client::{self, Session};
 use crate::config::{self, Account, GithubConfig, TokenSource};
 use crate::error::{GithubError, GithubResult};
-use crate::workflows::RepoRef;
+use crate::repo::RepoPath;
 
 #[derive(Deserialize)]
 struct Viewer {

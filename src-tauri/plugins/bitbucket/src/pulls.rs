@@ -7,13 +7,17 @@ use std::path::Path;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_plugin_api::codehost::asks::{
+    CommitRef, CommitsQuery, FilesQuery, Merge, NewPull, NewReview, PatchQuery, PullEdit,
+    PullQuery, PullRef, RepoRef, SetPullState,
+};
 use sikemux_plugin_api::codehost::{
     ChangedFile, Comment, CommitAuthor, Pull, PullCommit, Review, TimelineItem,
 };
 
 use crate::client;
 use crate::error::{BitbucketError, BitbucketResult};
-use crate::repo::{self, avatar_of, login_of, Links, RepoRef, User};
+use crate::repo::{self, avatar_of, login_of, Links, Place, User};
 
 #[derive(Deserialize, Default)]
 struct Commit {
@@ -186,19 +190,6 @@ fn merge_state(
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListQuery {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(default = "open")]
-    pub state: String,
-}
-
-fn open() -> String {
-    "open".into()
-}
-
 fn states_for(state: &str) -> &'static [&'static str] {
     match state {
         "closed" => &["MERGED", "DECLINED", "SUPERSEDED"],
@@ -207,8 +198,8 @@ fn states_for(state: &str) -> &'static [&'static str] {
     }
 }
 
-pub async fn list(data_dir: &Path, input: ListQuery) -> BitbucketResult<Vec<Pull>> {
-    let mut query: Vec<(&str, String)> = states_for(&input.state)
+pub async fn list(data_dir: &Path, input: PullQuery) -> BitbucketResult<Vec<Pull>> {
+    let mut query: Vec<(&str, String)> = states_for(input.state.as_deref().unwrap_or("open"))
         .iter()
         .map(|state| ("state", state.to_string()))
         .collect();
@@ -220,14 +211,6 @@ pub async fn list(data_dir: &Path, input: ListQuery) -> BitbucketResult<Vec<Pull
         .into_iter()
         .map(|row| pull_of(&input.repo, row))
         .collect())
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub sha: String,
 }
 
 /// The pull requests that hold the commit `sha`, the merged one first.
@@ -248,14 +231,6 @@ pub async fn of_commit(data_dir: &Path, input: CommitRef) -> BitbucketResult<Vec
         .collect();
     pulls.sort_by_key(|pull| pull.state != "merged");
     Ok(pulls)
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Thread {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub number: u64,
 }
 
 fn pull_path(repo: &RepoRef, number: u64, rest: &str) -> BitbucketResult<String> {
@@ -303,7 +278,7 @@ async fn row(data_dir: &Path, repo: &RepoRef, number: u64) -> BitbucketResult<Pu
     client::get(data_dir, &pull_path(repo, number, "")?, &[]).await
 }
 
-pub async fn get(data_dir: &Path, input: Thread) -> BitbucketResult<PullWithBuilds> {
+pub async fn get(data_dir: &Path, input: PullRef) -> BitbucketResult<PullWithBuilds> {
     let statuses_path = pull_path(&input.repo, input.number, "/statuses")?;
     let statuses_query = [("pagelen", "100".to_string())];
     let (row, stats, builds) = futures::try_join!(
@@ -340,29 +315,6 @@ pub async fn get(data_dir: &Path, input: Thread) -> BitbucketResult<PullWithBuil
 const PATCH_LINES: usize = 400;
 const MAX_PATCH_LINES: usize = 1000;
 const PATCH_BYTES: usize = 32 * 1024;
-
-/// Agents get the file list alone unless they name `paths`, and then a window
-/// of each patch. The pull request view asks for `fullPatches`.
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PatchQuery {
-    #[serde(default)]
-    pub paths: Vec<String>,
-    #[serde(default)]
-    pub offset: usize,
-    pub lines: Option<usize>,
-    #[serde(default)]
-    pub full_patches: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FilesQuery {
-    #[serde(flatten)]
-    pub pull: Thread,
-    #[serde(flatten)]
-    pub patches: PatchQuery,
-}
 
 fn cut_at_char(text: &str, most: usize) -> &str {
     text.get(..text.floor_char_boundary(most))
@@ -515,6 +467,8 @@ fn changed_file(stat: DiffStat) -> Option<ChangedFile> {
     })
 }
 
+/// Agents get the file list alone unless they name `paths`, and then a window
+/// of each patch. The pull request view asks for `fullPatches`.
 pub async fn files(data_dir: &Path, input: FilesQuery) -> BitbucketResult<Vec<ChangedFile>> {
     let FilesQuery {
         pull,
@@ -603,15 +557,6 @@ fn email_of_raw(raw: &str) -> Option<String> {
     email.contains('@').then(|| email.to_ascii_lowercase())
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitsRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    /// A branch, tag or commit to list from; every branch when absent.
-    pub git_ref: Option<String>,
-}
-
 fn known_authors(rows: Vec<CommitRow>) -> Vec<CommitAuthor> {
     let mut known: Vec<CommitAuthor> = Vec::new();
     for author in rows.into_iter().filter_map(|row| row.author) {
@@ -638,7 +583,7 @@ fn known_authors(rows: Vec<CommitRow>) -> Vec<CommitAuthor> {
 /// pull requests and pipelines do.
 pub async fn commit_authors(
     data_dir: &Path,
-    input: CommitsRef,
+    input: CommitsQuery,
 ) -> BitbucketResult<Vec<CommitAuthor>> {
     let mut query = vec![("pagelen", "100".to_string())];
     if let Some(git_ref) = input.git_ref.filter(|git_ref| !git_ref.is_empty()) {
@@ -650,7 +595,7 @@ pub async fn commit_authors(
 }
 
 /// Oldest first, as the other hosts list them; Bitbucket gives them newest first.
-pub async fn commits(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<PullCommit>> {
+pub async fn commits(data_dir: &Path, input: PullRef) -> BitbucketResult<Vec<PullCommit>> {
     commit_rows(data_dir, &input.repo, input.number).await
 }
 
@@ -665,7 +610,7 @@ fn verdict(approved: bool, state: Option<&str>) -> Option<&'static str> {
 
 /// Bitbucket keeps where each reviewer stands now rather than a history of
 /// reviews, so each reviewer has one.
-pub async fn reviews(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<Review>> {
+pub async fn reviews(data_dir: &Path, input: PullRef) -> BitbucketResult<Vec<Review>> {
     let row = row(data_dir, &input.repo, input.number).await?;
     Ok(row
         .participants
@@ -699,7 +644,7 @@ struct CommentRow {
     links: Links,
 }
 
-pub async fn comments(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<Comment>> {
+pub async fn comments(data_dir: &Path, input: PullRef) -> BitbucketResult<Vec<Comment>> {
     let rows: Vec<CommentRow> = client::get_all(
         data_dir,
         &pull_path(&input.repo, input.number, "/comments")?,
@@ -725,20 +670,13 @@ pub async fn comments(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<Com
         .collect())
 }
 
-#[derive(Deserialize)]
-pub struct NewComment {
-    #[serde(flatten)]
-    pub thread: Thread,
-    pub body: String,
-}
-
-pub async fn add_comment(data_dir: &Path, input: NewComment) -> BitbucketResult<()> {
-    let path = pull_path(&input.thread.repo, input.thread.number, "/comments")?;
+pub async fn add_comment(data_dir: &Path, pull: &PullRef, body: &str) -> BitbucketResult<()> {
+    let path = pull_path(&pull.repo, pull.number, "/comments")?;
     let _: Value = client::send_json(
         data_dir,
         Method::POST,
         &path,
-        &json!({ "content": { "raw": input.body } }),
+        &json!({ "content": { "raw": body } }),
     )
     .await?;
     Ok(())
@@ -833,7 +771,7 @@ fn timeline_of(activity: Activity, merge_sha: Option<&str>) -> Option<TimelineIt
 
 /// What happened on a pull request, oldest first, with its commits among the
 /// comments and verdicts the way the other hosts tell it.
-pub async fn timeline(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<TimelineItem>> {
+pub async fn timeline(data_dir: &Path, input: PullRef) -> BitbucketResult<Vec<TimelineItem>> {
     let activity_path = pull_path(&input.repo, input.number, "/activity")?;
     let activity_query = [("pagelen", "50".to_string())];
     let (row, activity, commits) = futures::try_join!(
@@ -856,17 +794,6 @@ pub async fn timeline(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<Tim
         .collect();
     items.sort_by(|a, b| a.at.cmp(&b.at));
     Ok(items)
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Merge {
-    #[serde(flatten)]
-    pub thread: Thread,
-    pub method: Option<String>,
-    /// The head commit the person saw; the merge is refused if the branch has moved since.
-    pub sha: String,
-    pub message: Option<String>,
 }
 
 fn strategy_of(method: &str) -> BitbucketResult<&'static str> {
@@ -901,16 +828,20 @@ fn merge_body(input: &Merge) -> BitbucketResult<Value> {
 /// That leaves a moment in which a push can still slip in, which is the most
 /// its API allows.
 pub async fn merge(data_dir: &Path, input: Merge) -> BitbucketResult<()> {
+    let sha = input
+        .sha
+        .as_deref()
+        .ok_or_else(|| BitbucketError::BadArg("missing field `sha`".into()))?;
     let body = merge_body(&input)?;
-    let current = row(data_dir, &input.thread.repo, input.thread.number).await?;
+    let current = row(data_dir, &input.pull.repo, input.pull.number).await?;
     let head = current.source.commit.hash.unwrap_or_default();
-    if head.is_empty() || !input.sha.starts_with(&head) {
+    if head.is_empty() || !sha.starts_with(&head) {
         return Err(BitbucketError::Http {
             status: 409,
             message: "the branch has moved since you looked; read the new commits first".into(),
         });
     }
-    let path = pull_path(&input.thread.repo, input.thread.number, "/merge")?;
+    let path = pull_path(&input.pull.repo, input.pull.number, "/merge")?;
     match client::post_empty(data_dir, &path, Some(&body)).await {
         Err(BitbucketError::Http {
             status: 400,
@@ -920,22 +851,6 @@ pub async fn merge(data_dir: &Path, input: Merge) -> BitbucketResult<()> {
         }
         outcome => outcome,
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NewPull {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub title: String,
-    pub head: String,
-    pub base: String,
-    #[serde(default)]
-    pub body: String,
-    #[serde(default)]
-    pub draft: bool,
-    #[serde(default)]
-    pub close_branch: bool,
 }
 
 pub async fn create(data_dir: &Path, input: NewPull) -> BitbucketResult<Pull> {
@@ -957,22 +872,13 @@ pub async fn create(data_dir: &Path, input: NewPull) -> BitbucketResult<Pull> {
     Ok(pull_of(&input.repo, row))
 }
 
-#[derive(Deserialize)]
-pub struct PullEdit {
-    #[serde(flatten)]
-    pub thread: Thread,
-    pub title: Option<String>,
-    pub body: Option<String>,
-    pub base: Option<String>,
-}
-
 /// Only the fields given change. Bitbucket wants the title on every update,
 /// so one left out is sent as it stands.
 pub async fn edit(data_dir: &Path, input: PullEdit) -> BitbucketResult<Pull> {
     let title = match input.title {
         Some(title) => title,
         None => {
-            row(data_dir, &input.thread.repo, input.thread.number)
+            row(data_dir, &input.pull.repo, input.pull.number)
                 .await?
                 .title
         }
@@ -986,41 +892,25 @@ pub async fn edit(data_dir: &Path, input: PullEdit) -> BitbucketResult<Pull> {
         body.insert("destination".into(), json!({ "branch": { "name": base } }));
     }
     let body = Value::Object(body);
-    let path = pull_path(&input.thread.repo, input.thread.number, "")?;
+    let path = pull_path(&input.pull.repo, input.pull.number, "")?;
     let row: PullRow = client::send_json(data_dir, Method::PUT, &path, &body).await?;
-    Ok(pull_of(&input.thread.repo, row))
-}
-
-#[derive(Deserialize)]
-pub struct SetState {
-    #[serde(flatten)]
-    pub thread: Thread,
-    pub state: String,
+    Ok(pull_of(&input.pull.repo, row))
 }
 
 /// Closing a pull request is declining it, which Bitbucket does not undo.
-pub async fn set_state(data_dir: &Path, input: SetState) -> BitbucketResult<()> {
+pub async fn set_state(data_dir: &Path, input: SetPullState) -> BitbucketResult<()> {
     if input.state != "closed" {
         return Err(BitbucketError::Unsupported(
             "reopen a declined pull request",
         ));
     }
-    let path = pull_path(&input.thread.repo, input.thread.number, "/decline")?;
+    let path = pull_path(&input.pull.repo, input.pull.number, "/decline")?;
     client::post_empty(data_dir, &path, None).await
-}
-
-#[derive(Deserialize)]
-pub struct ReviewInput {
-    #[serde(flatten)]
-    pub thread: Thread,
-    pub event: String,
-    #[serde(default)]
-    pub body: String,
 }
 
 /// A verdict and a comment are separate things on Bitbucket, so a review
 /// with words is the verdict followed by a comment.
-pub async fn review(data_dir: &Path, input: ReviewInput) -> BitbucketResult<()> {
+pub async fn review(data_dir: &Path, input: NewReview) -> BitbucketResult<()> {
     let action = match input.event.as_str() {
         "APPROVE" => Some("/approve"),
         "REQUEST_CHANGES" => Some("/request-changes"),
@@ -1032,18 +922,11 @@ pub async fn review(data_dir: &Path, input: ReviewInput) -> BitbucketResult<()> 
         }
     };
     if let Some(action) = action {
-        let path = pull_path(&input.thread.repo, input.thread.number, action)?;
+        let path = pull_path(&input.pull.repo, input.pull.number, action)?;
         client::post_empty(data_dir, &path, None).await?;
     }
     if !input.body.trim().is_empty() {
-        add_comment(
-            data_dir,
-            NewComment {
-                thread: input.thread,
-                body: input.body,
-            },
-        )
-        .await?;
+        add_comment(data_dir, &input.pull, &input.body).await?;
     }
     Ok(())
 }

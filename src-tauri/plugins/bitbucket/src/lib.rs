@@ -25,12 +25,24 @@ mod pulls;
 mod repo;
 mod review;
 
+use std::path::Path;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::de::IgnoredAny;
 use serde_json::Value;
 use sikemux_plugin_api::account::{as_account, chosen};
-use sikemux_plugin_api::codehost::Resolved;
+use sikemux_plugin_api::codehost::asks::{
+    AccountQuery, Answers, CommitRef, CommitsQuery, Dispatch, ExcerptQuery, FeedbackQuery,
+    FilesQuery, ImageRef, InboxQuery, IssueQuery, IssueRef, JobRef, Merge, MineQuery, NewComment,
+    NewIssue, NewPull, NewReview, NotificationRef, PullEdit, PullQuery, PullRef, RemoteQuery,
+    RepoRef, Rerun, RunQuery, RunRef, SetIssueState, SetPullState, ThreadOf, ThreadRef,
+    WorkflowRef,
+};
+use sikemux_plugin_api::codehost::{
+    self, work, ChangedFile, CodeHost, Comment, CommitAuthor, Issue, IssuePage, JobLog, LogExcerpt,
+    Notification, Pull, PullCommit, Release, RepoListing, Resolved, Review, ReviewFeedback,
+    RunDetail, RunPage, RunTiming, TimelineItem, Workflow, WorkflowFile,
+};
 use sikemux_plugin_api::store::Accounts;
 use sikemux_plugin_api::{
     answer, params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
@@ -48,11 +60,6 @@ struct Bitbucket {
     manifest: Manifest,
 }
 
-#[derive(Deserialize)]
-struct RemoteQuery {
-    url: String,
-}
-
 fn resolve(query: RemoteQuery) -> Resolved {
     let found = repo::from_remote(&query.url);
     Resolved {
@@ -62,19 +69,9 @@ fn resolve(query: RemoteQuery) -> Resolved {
     }
 }
 
-#[derive(Deserialize)]
-struct MineQuery {
-    #[serde(default = "default_limit")]
-    limit: u32,
-}
-
-fn default_limit() -> u32 {
-    50
-}
-
 /// The status of the account that just signed in.
 async fn signed_in(
-    data_dir: &std::path::Path,
+    data_dir: &Path,
     outcome: BitbucketResult<String>,
 ) -> Result<Value, PluginError> {
     let id = outcome?;
@@ -82,17 +79,12 @@ async fn signed_in(
 }
 
 /// Whether the repository has a remote on Bitbucket, and an account is signed in.
-fn works_in(data_dir: &std::path::Path, remotes: &[String]) -> bool {
+fn works_in(data_dir: &Path, remotes: &[String]) -> bool {
     let on_bitbucket = remotes
         .iter()
         .filter_map(|remote| repo::from_remote(remote))
         .any(|repo| repo.host == repo::HOST);
     on_bitbucket && config::load(data_dir).is_ok_and(|config| !config.accounts.is_empty())
-}
-
-/// Whether a thread call is about an issue; Bitbucket numbers issues apart from pull requests.
-fn is_issue(input: &Value) -> bool {
-    input.get("of").and_then(Value::as_str) == Some("issue")
 }
 
 /// Which account a call is for; with none named, the default one.
@@ -116,7 +108,7 @@ impl Plugin for Bitbucket {
         input: Value,
     ) -> PluginFuture<'a, Value> {
         let account = account_of(&input);
-        Box::pin(as_account(account, dispatch(ctx, method, input)))
+        Box::pin(as_account(account, dispatch(self, ctx, method, input)))
     }
 
     fn stream<'a>(
@@ -139,13 +131,17 @@ impl Plugin for Bitbucket {
     }
 }
 
-async fn dispatch(ctx: &PluginContext, method: &str, input: Value) -> Result<Value, PluginError> {
+async fn dispatch(
+    host: &Bitbucket,
+    ctx: &PluginContext,
+    method: &str,
+    input: Value,
+) -> Result<Value, PluginError> {
     let data_dir = ctx.data_dir();
     match method {
         "status" => reply(auth::status(data_dir).await),
         "accounts" => reply(auth::accounts(data_dir)?),
         "setDefaultAccount" => answer(auth::set_default(data_dir, params(input)?)).await,
-        "accountFor" => answer(auth::account_for(data_dir, params(input)?)).await,
         "rateLimit" => {
             let id = config::load(data_dir)?
                 .account(chosen().as_deref())
@@ -161,59 +157,223 @@ async fn dispatch(ctx: &PluginContext, method: &str, input: Value) -> Result<Val
             .await
         }
         "signOut" => answer(auth::sign_out(data_dir)).await,
-
-        "resolveRemote" => reply(resolve(params(input)?)),
-        "myRepos" => {
-            let query: MineQuery = params(input)?;
-            answer(repo::mine(data_dir, query.limit)).await
-        }
-        "branches" => answer(repo::branches(data_dir, params(input)?)).await,
-        "image" => answer(images::image(data_dir, params(input)?)).await,
-
-        "workflows" => answer(pipelines::workflows(data_dir, params(input)?)).await,
-        "workflowFile" => answer(pipelines::workflow_file(data_dir, params(input)?)).await,
-        "dispatch" => answer(pipelines::dispatch(data_dir, params(input)?)).await,
-        "runs" => answer(pipelines::list(data_dir, params(input)?)).await,
-        "run" => answer(pipelines::detail(data_dir, params(input)?)).await,
-        "runTiming" => answer(pipelines::timing(data_dir, params(input)?)).await,
-        "rerun" => answer(pipelines::rerun(data_dir, params(input)?)).await,
-        "cancel" => answer(pipelines::cancel(data_dir, params(input)?)).await,
-        "jobLog" => answer(pipelines::log(data_dir, params(input)?)).await,
-        "jobLogExcerpt" => answer(pipelines::excerpt(data_dir, params(input)?)).await,
-
-        "pulls" => answer(pulls::list(data_dir, params(input)?)).await,
+        // Agents read a pull request's builds beside it, which the shared answer has no room for.
         "pull" => answer(pulls::get(data_dir, params(input)?)).await,
-        "pullFiles" => answer(pulls::files(data_dir, params(input)?)).await,
-        "pullCommits" => answer(pulls::commits(data_dir, params(input)?)).await,
-        "commitPulls" => answer(pulls::of_commit(data_dir, params(input)?)).await,
-        "commitAuthors" => answer(pulls::commit_authors(data_dir, params(input)?)).await,
-        "pullReviews" => answer(pulls::reviews(data_dir, params(input)?)).await,
-        "timeline" if is_issue(&input) => answer(issues::timeline(data_dir, params(input)?)).await,
-        "comments" if is_issue(&input) => answer(issues::comments(data_dir, params(input)?)).await,
-        "addComment" if is_issue(&input) => {
-            answer(issues::add_comment(data_dir, params(input)?)).await
+        _ => codehost::dispatch(host, data_dir, method, input).await,
+    }
+}
+
+impl CodeHost for Bitbucket {
+    fn resolve_remote<'a>(
+        &'a self,
+        _dir: &'a Path,
+        ask: RemoteQuery,
+    ) -> PluginFuture<'a, Resolved> {
+        Box::pin(async move { Ok(resolve(ask)) })
+    }
+
+    fn account_for<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: AccountQuery,
+    ) -> PluginFuture<'a, Option<String>> {
+        work(auth::account_for(dir, ask.repo))
+    }
+
+    fn my_repos<'a>(&'a self, dir: &'a Path, ask: MineQuery) -> PluginFuture<'a, Vec<RepoListing>> {
+        work(repo::mine(dir, ask.limit))
+    }
+
+    fn branches<'a>(&'a self, dir: &'a Path, ask: RepoRef) -> PluginFuture<'a, Vec<String>> {
+        work(repo::branches(dir, ask))
+    }
+
+    fn image<'a>(&'a self, dir: &'a Path, ask: ImageRef) -> PluginFuture<'a, String> {
+        work(images::image(dir, ask))
+    }
+
+    fn workflows<'a>(&'a self, dir: &'a Path, ask: RepoRef) -> PluginFuture<'a, Vec<Workflow>> {
+        work(pipelines::workflows(dir, ask))
+    }
+
+    fn workflow_file<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: WorkflowRef,
+    ) -> PluginFuture<'a, WorkflowFile> {
+        work(pipelines::workflow_file(dir, ask))
+    }
+
+    fn dispatch_workflow<'a>(&'a self, dir: &'a Path, ask: Dispatch) -> PluginFuture<'a, ()> {
+        work(pipelines::dispatch(dir, ask))
+    }
+
+    fn runs<'a>(&'a self, dir: &'a Path, ask: RunQuery) -> PluginFuture<'a, RunPage> {
+        work(pipelines::list(dir, ask))
+    }
+
+    fn run<'a>(&'a self, dir: &'a Path, ask: RunRef) -> PluginFuture<'a, RunDetail> {
+        work(pipelines::detail(dir, ask))
+    }
+
+    fn run_timing<'a>(&'a self, dir: &'a Path, ask: RunRef) -> PluginFuture<'a, RunTiming> {
+        work(pipelines::timing(dir, ask))
+    }
+
+    fn rerun<'a>(&'a self, dir: &'a Path, ask: Rerun) -> PluginFuture<'a, ()> {
+        work(pipelines::rerun(dir, ask))
+    }
+
+    fn cancel<'a>(&'a self, dir: &'a Path, ask: RunRef) -> PluginFuture<'a, ()> {
+        work(pipelines::cancel(dir, ask))
+    }
+
+    fn job_log<'a>(&'a self, dir: &'a Path, ask: JobRef) -> PluginFuture<'a, JobLog> {
+        work(pipelines::log(dir, ask))
+    }
+
+    fn job_log_excerpt<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: ExcerptQuery,
+    ) -> PluginFuture<'a, LogExcerpt> {
+        work(pipelines::excerpt(dir, ask))
+    }
+
+    fn pulls<'a>(&'a self, dir: &'a Path, ask: PullQuery) -> PluginFuture<'a, Vec<Pull>> {
+        work(pulls::list(dir, ask))
+    }
+
+    fn pull_files<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: FilesQuery,
+    ) -> PluginFuture<'a, Vec<ChangedFile>> {
+        work(pulls::files(dir, ask))
+    }
+
+    fn pull_commits<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: PullRef,
+    ) -> PluginFuture<'a, Vec<PullCommit>> {
+        work(pulls::commits(dir, ask))
+    }
+
+    fn pull_reviews<'a>(&'a self, dir: &'a Path, ask: PullRef) -> PluginFuture<'a, Vec<Review>> {
+        work(pulls::reviews(dir, ask))
+    }
+
+    fn commit_pulls<'a>(&'a self, dir: &'a Path, ask: CommitRef) -> PluginFuture<'a, Vec<Pull>> {
+        work(pulls::of_commit(dir, ask))
+    }
+
+    fn commit_authors<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: CommitsQuery,
+    ) -> PluginFuture<'a, Vec<CommitAuthor>> {
+        work(pulls::commit_authors(dir, ask))
+    }
+
+    fn merge_pull<'a>(&'a self, dir: &'a Path, ask: Merge) -> PluginFuture<'a, ()> {
+        work(pulls::merge(dir, ask))
+    }
+
+    fn create_pull<'a>(&'a self, dir: &'a Path, ask: NewPull) -> PluginFuture<'a, Pull> {
+        work(pulls::create(dir, ask))
+    }
+
+    fn edit_pull<'a>(&'a self, dir: &'a Path, ask: PullEdit) -> PluginFuture<'a, Pull> {
+        work(pulls::edit(dir, ask))
+    }
+
+    fn set_pull_state<'a>(&'a self, dir: &'a Path, ask: SetPullState) -> PluginFuture<'a, ()> {
+        work(pulls::set_state(dir, ask))
+    }
+
+    fn review_pull<'a>(&'a self, dir: &'a Path, ask: NewReview) -> PluginFuture<'a, ()> {
+        work(pulls::review(dir, ask))
+    }
+
+    fn review_feedback<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: FeedbackQuery,
+    ) -> PluginFuture<'a, Vec<ReviewFeedback>> {
+        work(review::feedback(dir, ask))
+    }
+
+    fn answer_review<'a>(&'a self, dir: &'a Path, ask: Answers) -> PluginFuture<'a, ()> {
+        work(review::answer(dir, ask))
+    }
+
+    fn issues<'a>(&'a self, dir: &'a Path, ask: IssueQuery) -> PluginFuture<'a, IssuePage> {
+        work(issues::list(dir, ask))
+    }
+
+    fn issue<'a>(&'a self, dir: &'a Path, ask: IssueRef) -> PluginFuture<'a, Issue> {
+        work(issues::get(dir, ask))
+    }
+
+    fn create_issue<'a>(&'a self, dir: &'a Path, ask: NewIssue) -> PluginFuture<'a, Issue> {
+        work(issues::create(dir, ask))
+    }
+
+    fn set_issue_state<'a>(&'a self, dir: &'a Path, ask: SetIssueState) -> PluginFuture<'a, ()> {
+        work(issues::set_state(dir, ask))
+    }
+
+    /// Bitbucket numbers issues apart from pull requests, so a thread says which it is.
+    fn comments<'a>(&'a self, dir: &'a Path, ask: ThreadRef) -> PluginFuture<'a, Vec<Comment>> {
+        let ThreadRef { repo, number, of } = ask;
+        match of {
+            ThreadOf::Issue => work(issues::comments(dir, IssueRef { repo, number })),
+            ThreadOf::Pull => work(pulls::comments(dir, PullRef { repo, number })),
         }
-        "timeline" => answer(pulls::timeline(data_dir, params(input)?)).await,
-        "comments" => answer(pulls::comments(data_dir, params(input)?)).await,
-        "addComment" => answer(pulls::add_comment(data_dir, params(input)?)).await,
+    }
 
-        "issues" => answer(issues::list(data_dir, params(input)?)).await,
-        "issue" => answer(issues::get(data_dir, params(input)?)).await,
-        "createIssue" => answer(issues::create(data_dir, params(input)?)).await,
-        "setIssueState" => answer(issues::set_state(data_dir, params(input)?)).await,
-        "releases" => answer(issues::releases(data_dir, params(input)?)).await,
-        "inbox" => answer(issues::inbox(data_dir, params(input)?)).await,
-        "markRead" => reply(issues::mark_read(data_dir, params(input)?)?),
-        "markAllRead" => answer(issues::mark_all_read(data_dir)).await,
-        "mergePull" => answer(pulls::merge(data_dir, params(input)?)).await,
-        "createPull" => answer(pulls::create(data_dir, params(input)?)).await,
-        "editPull" => answer(pulls::edit(data_dir, params(input)?)).await,
-        "setPullState" => answer(pulls::set_state(data_dir, params(input)?)).await,
-        "reviewPull" => answer(pulls::review(data_dir, params(input)?)).await,
-        "reviewFeedback" => answer(review::feedback(data_dir, params(input)?)).await,
-        "answerReview" => answer(review::answer(data_dir, params(input)?)).await,
+    fn timeline<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: ThreadRef,
+    ) -> PluginFuture<'a, Vec<TimelineItem>> {
+        let ThreadRef { repo, number, of } = ask;
+        match of {
+            ThreadOf::Issue => work(issues::timeline(dir, IssueRef { repo, number })),
+            ThreadOf::Pull => work(pulls::timeline(dir, PullRef { repo, number })),
+        }
+    }
 
-        _ => Err(PluginError::unknown_method(method)),
+    fn add_comment<'a>(&'a self, dir: &'a Path, ask: NewComment) -> PluginFuture<'a, ()> {
+        let NewComment {
+            thread: ThreadRef { repo, number, of },
+            body,
+        } = ask;
+        work(async move {
+            match of {
+                ThreadOf::Issue => {
+                    issues::add_comment(dir, &IssueRef { repo, number }, &body).await
+                }
+                ThreadOf::Pull => pulls::add_comment(dir, &PullRef { repo, number }, &body).await,
+            }
+        })
+    }
+
+    fn releases<'a>(&'a self, dir: &'a Path, ask: RepoRef) -> PluginFuture<'a, Vec<Release>> {
+        work(issues::releases(dir, ask))
+    }
+
+    fn inbox<'a>(&'a self, dir: &'a Path, ask: InboxQuery) -> PluginFuture<'a, Vec<Notification>> {
+        work(issues::inbox(dir, ask))
+    }
+
+    fn mark_read<'a>(&'a self, dir: &'a Path, ask: NotificationRef) -> PluginFuture<'a, ()> {
+        work(async move { issues::mark_read(dir, ask) })
+    }
+
+    fn mark_all_read<'a>(&'a self, dir: &'a Path, _ask: IgnoredAny) -> PluginFuture<'a, ()> {
+        work(issues::mark_all_read(dir))
     }
 }
 

@@ -4,12 +4,12 @@
 
 use std::path::Path;
 
-use serde::Deserialize;
+use sikemux_plugin_api::codehost::asks::{ExcerptQuery, JobRef};
 use sikemux_plugin_api::codehost::{JobLog, LogExcerpt, LogLine};
 
 use crate::client;
 use crate::error::{GithubError, GithubResult};
-use crate::runs::{self, JobRef};
+use crate::runs;
 
 /// Every log line carries the time the runner wrote it, ahead of a space.
 /// Fractional seconds are usually there but not always, so only the part
@@ -62,18 +62,8 @@ fn parse(text: &str) -> Vec<LogLine> {
         .collect()
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LogRequest {
-    #[serde(flatten)]
-    pub job: JobRef,
-}
-
-pub async fn job(data_dir: &Path, input: LogRequest) -> GithubResult<JobLog> {
-    let path = input
-        .job
-        .repo
-        .path(&format!("/actions/jobs/{}/logs", input.job.job_id))?;
+pub async fn job(data_dir: &Path, input: JobRef) -> GithubResult<JobLog> {
+    let path = runs::job_path(&input, "/logs")?;
     match client::download_as(data_dir, &path, "application/vnd.github+json", true).await {
         Ok((bytes, truncated)) => Ok(JobLog {
             lines: parse(&text_of(&bytes, truncated)),
@@ -85,7 +75,7 @@ pub async fn job(data_dir: &Path, input: LogRequest) -> GithubResult<JobLog> {
             expired: true,
             truncated: false,
         }),
-        Err(GithubError::NotFound(_)) => missing(data_dir, input.job).await,
+        Err(GithubError::NotFound(_)) => missing(data_dir, input).await,
         Err(error) => Err(error),
     }
 }
@@ -93,18 +83,9 @@ pub async fn job(data_dir: &Path, input: LogRequest) -> GithubResult<JobLog> {
 const DEFAULT_TAIL: usize = 200;
 const MAX_TAIL: usize = 2000;
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Excerpt {
-    #[serde(flatten)]
-    pub job: JobRef,
-    pub tail: Option<usize>,
-    pub grep: Option<String>,
-}
-
 /// The end of a job's log, optionally only the lines that mention something.
-pub async fn excerpt(data_dir: &Path, input: Excerpt) -> GithubResult<LogExcerpt> {
-    let whole = job(data_dir, LogRequest { job: input.job }).await?;
+pub async fn excerpt(data_dir: &Path, input: ExcerptQuery) -> GithubResult<LogExcerpt> {
+    let whole = job(data_dir, input.job).await?;
     let needle = input
         .grep
         .map(|grep| grep.to_lowercase())

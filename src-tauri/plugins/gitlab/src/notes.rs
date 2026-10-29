@@ -8,38 +8,39 @@ use std::path::Path;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::json;
+use sikemux_plugin_api::codehost::asks::{
+    IssueRef, NewComment, PullRef, RepoRef, ThreadOf, ThreadRef,
+};
 use sikemux_plugin_api::codehost::{Comment, TimelineItem};
 
 use crate::client;
 use crate::error::{GitlabError, GitlabResult};
-use crate::repo::{avatar_of, login_of, RepoRef, User};
+use crate::repo::{avatar_of, login_of, ApiPath, User};
 
-/// Which thread a number names: merge requests and issues are numbered apart.
-#[derive(Deserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-pub enum ThreadOf {
-    #[default]
-    Pull,
-    Issue,
+/// Merge requests and issues are numbered apart, so a number is read in its kind's list.
+fn thread_path(repo: &RepoRef, of: ThreadOf, number: u64, rest: &str) -> GitlabResult<String> {
+    let kind = match of {
+        ThreadOf::Pull => "merge_requests",
+        ThreadOf::Issue => "issues",
+    };
+    repo.path(&format!("/{kind}/{number}{rest}"))
 }
 
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Thread {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub number: u64,
-    #[serde(default)]
-    pub of: ThreadOf,
+impl ApiPath for ThreadRef {
+    fn path(&self, rest: &str) -> GitlabResult<String> {
+        thread_path(&self.repo, self.of, self.number, rest)
+    }
 }
 
-impl Thread {
-    pub fn path(&self, rest: &str) -> GitlabResult<String> {
-        let kind = match self.of {
-            ThreadOf::Pull => "merge_requests",
-            ThreadOf::Issue => "issues",
-        };
-        self.repo.path(&format!("/{kind}/{}{rest}", self.number))
+impl ApiPath for PullRef {
+    fn path(&self, rest: &str) -> GitlabResult<String> {
+        thread_path(&self.repo, ThreadOf::Pull, self.number, rest)
+    }
+}
+
+impl ApiPath for IssueRef {
+    fn path(&self, rest: &str) -> GitlabResult<String> {
+        thread_path(&self.repo, ThreadOf::Issue, self.number, rest)
     }
 }
 
@@ -178,7 +179,7 @@ pub fn timeline_of(rows: Vec<NoteRow>) -> Vec<TimelineItem> {
 
 /// Oldest first. Read newest first, so a thread longer than the pages read
 /// loses its oldest notes rather than its newest.
-async fn notes(data_dir: &Path, thread: &Thread) -> GitlabResult<Vec<NoteRow>> {
+async fn notes(data_dir: &Path, thread: &ThreadRef) -> GitlabResult<Vec<NoteRow>> {
     let mut rows: Vec<NoteRow> = client::get_all(
         data_dir,
         &thread.path("/notes")?,
@@ -190,11 +191,11 @@ async fn notes(data_dir: &Path, thread: &Thread) -> GitlabResult<Vec<NoteRow>> {
     Ok(rows)
 }
 
-pub async fn timeline(data_dir: &Path, thread: Thread) -> GitlabResult<Vec<TimelineItem>> {
+pub async fn timeline(data_dir: &Path, thread: ThreadRef) -> GitlabResult<Vec<TimelineItem>> {
     Ok(timeline_of(notes(data_dir, &thread).await?))
 }
 
-pub async fn comments(data_dir: &Path, thread: Thread) -> GitlabResult<Vec<Comment>> {
+pub async fn comments(data_dir: &Path, thread: ThreadRef) -> GitlabResult<Vec<Comment>> {
     Ok(notes(data_dir, &thread)
         .await?
         .into_iter()
@@ -209,13 +210,6 @@ pub async fn comments(data_dir: &Path, thread: Thread) -> GitlabResult<Vec<Comme
             url: None,
         })
         .collect())
-}
-
-#[derive(Deserialize)]
-pub struct NewComment {
-    #[serde(flatten)]
-    pub thread: Thread,
-    pub body: String,
 }
 
 pub async fn add_comment(data_dir: &Path, input: NewComment) -> GitlabResult<()> {

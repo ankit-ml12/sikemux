@@ -5,19 +5,14 @@
 use std::path::Path;
 
 use reqwest::Url;
-use serde::Deserialize;
 use sikemux_plugin_api::account::{as_account, chosen};
+use sikemux_plugin_api::codehost::asks::ImageRef;
 use sikemux_plugin_api::images;
 use sikemux_plugin_api::store::Accounts;
 
 use crate::client::{self, Session};
 use crate::config::{self, Account};
 use crate::error::{GitlabError, GitlabResult};
-
-#[derive(Deserialize)]
-pub struct ImageRef {
-    pub url: String,
-}
 
 /// Whether an image may be fetched, and if so with which account's token: only
 /// an account on the image's own server sends one. Gravatar and GitLab's own

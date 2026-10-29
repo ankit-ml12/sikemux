@@ -140,21 +140,11 @@ fn error_message(bytes: &[u8]) -> Option<String> {
 }
 
 pub fn classify(status: StatusCode, bytes: &[u8]) -> BitbucketError {
-    let message = error_message(bytes).unwrap_or_else(|| {
-        status
-            .canonical_reason()
-            .unwrap_or("the request failed")
-            .to_string()
-    });
-    match status.as_u16() {
-        401 => BitbucketError::Auth(message),
-        403 => BitbucketError::Forbidden(message),
-        404 => BitbucketError::NotFound(message),
-        429 => BitbucketError::RateLimited {
-            resets_in_secs: Some(LIMITS.latest_wait()),
-        },
-        status => BitbucketError::Http { status, message },
-    }
+    http::classify::<Bitbucket>(
+        status,
+        error_message(bytes),
+        (status == StatusCode::TOO_MANY_REQUESTS).then(|| LIMITS.latest_wait()),
+    )
 }
 
 pub enum Body<'a> {
@@ -257,10 +247,7 @@ async fn fetch(
 }
 
 fn parse<T: DeserializeOwned>(bytes: &[u8]) -> BitbucketResult<T> {
-    if bytes.iter().all(u8::is_ascii_whitespace) {
-        return Ok(serde_json::from_slice(b"null")?);
-    }
-    Ok(serde_json::from_slice(bytes)?)
+    Ok(http::parse(bytes)?)
 }
 
 pub async fn get<T: DeserializeOwned>(

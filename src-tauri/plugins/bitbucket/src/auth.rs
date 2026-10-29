@@ -7,6 +7,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sikemux_plugin_api::account::{as_account, chosen};
+use sikemux_plugin_api::codehost::asks::RepoRef;
 use sikemux_plugin_api::http;
 use sikemux_plugin_api::oauth::Tokens;
 use sikemux_plugin_api::store::{self, Accounts};
@@ -16,7 +17,7 @@ use crate::client::{self, Credential, Session};
 use crate::config::{self, Account, BitbucketConfig, Method};
 use crate::error::{BitbucketError, BitbucketResult};
 use crate::oauth;
-use crate::repo::{RepoRef, User};
+use crate::repo::{Place, User};
 
 /// Long enough to sign in to Atlassian from scratch, two-step login included.
 const PIPELINE_WRITE: &str = "pipeline:write";

@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use serde::Deserialize;
+use sikemux_plugin_api::codehost::asks::RepoRef;
 use sikemux_plugin_api::codehost::{Release, ReleaseAsset};
 use sikemux_plugin_api::{PluginResult, StreamSink};
 
@@ -10,7 +11,7 @@ use crate::artifacts;
 use crate::client;
 use crate::common::{avatar_of, login_of, ActorRow, RELEASE_PAGES};
 use crate::error::GithubResult;
-use crate::workflows::RepoRef;
+use crate::repo::RepoPath;
 
 #[derive(Deserialize)]
 struct AssetRow {

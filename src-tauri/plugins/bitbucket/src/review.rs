@@ -6,12 +6,12 @@ use std::path::Path;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_plugin_api::codehost::asks::{Answers, FeedbackQuery, PullRef};
 use sikemux_plugin_api::codehost::ReviewFeedback;
 
 use crate::client;
 use crate::error::{BitbucketError, BitbucketResult};
-use crate::pulls::Thread;
-use crate::repo::{Links, User};
+use crate::repo::{Links, Place, User};
 
 #[derive(Deserialize)]
 struct Author {
@@ -60,19 +60,9 @@ struct PullRow {
     participants: Vec<Participant>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FeedbackQuery {
-    #[serde(flatten)]
-    pub thread: Thread,
-    /// Only what changed at or after this time, as an earlier answer gave it.
-    pub since: Option<String>,
-}
-
-fn pull_path(thread: &Thread, rest: &str) -> BitbucketResult<String> {
-    thread
-        .repo
-        .path(&format!("/pullrequests/{}{rest}", thread.number))
+fn pull_path(pull: &PullRef, rest: &str) -> BitbucketResult<String> {
+    pull.repo
+        .path(&format!("/pullrequests/{}{rest}", pull.number))
 }
 
 pub async fn feedback(
@@ -86,8 +76,8 @@ pub async fn feedback(
     if let Some(since) = &input.since {
         query.push(("q", format!("updated_on >= {since}")));
     }
-    let comments_path = pull_path(&input.thread, "/comments")?;
-    let pull_path = pull_path(&input.thread, "")?;
+    let comments_path = pull_path(&input.pull, "/comments")?;
+    let pull_path = pull_path(&input.pull, "")?;
     let (comments, pull) = futures::try_join!(
         client::get_all::<CommentRow>(data_dir, &comments_path, &query, 10),
         client::get::<PullRow>(data_dir, &pull_path, &[]),
@@ -146,23 +136,10 @@ pub async fn feedback(
     Ok(comments.chain(asked).collect())
 }
 
-#[derive(Deserialize)]
-pub struct Reply {
-    to: String,
-    body: String,
-}
-
-#[derive(Deserialize)]
-pub struct Answers {
-    #[serde(flatten)]
-    pub thread: Thread,
-    pub replies: Vec<Reply>,
-}
-
 /// Bitbucket has no asking for a review again, so a reply in each thread is
 /// what tells reviewers to look.
 pub async fn answer(data_dir: &Path, input: Answers) -> BitbucketResult<()> {
-    let path = pull_path(&input.thread, "/comments")?;
+    let path = pull_path(&input.pull, "/comments")?;
     for reply in &input.replies {
         let parent = match reply.to.split_once('/') {
             Some(("comment" | "inline", id)) => Some(id.parse::<u64>().map_err(|_| {

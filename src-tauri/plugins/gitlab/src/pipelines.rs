@@ -10,7 +10,10 @@ use std::sync::Mutex;
 use futures::future::join_all;
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
+use sikemux_plugin_api::codehost::asks::{
+    Dispatch, ExcerptQuery, JobRef, RepoRef, Rerun, RerunJob, RunQuery, RunRef, WorkflowRef,
+};
 use sikemux_plugin_api::codehost::{
     Job, JobLog, LogExcerpt, LogLine, Outcome, Run, RunDetail, RunPage, RunTiming, Workflow,
     WorkflowFile,
@@ -19,7 +22,7 @@ use sikemux_process::sync::Locked;
 
 use crate::client;
 use crate::error::{GitlabError, GitlabResult};
-use crate::repo::{self, avatar_of, encoded, login_of, RepoRef, User};
+use crate::repo::{self, avatar_of, encoded, login_of, ApiPath, User};
 
 pub const PIPELINE_FILE: &str = ".gitlab-ci.yml";
 pub const WORKFLOW_ID: &str = "pipeline";
@@ -166,20 +169,6 @@ async fn commit_title(data_dir: &Path, repo: &RepoRef, sha: &str) -> Option<Stri
     Some(title)
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunQuery {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub branch: Option<String>,
-    pub status: Option<String>,
-    pub event: Option<String>,
-    pub actor: Option<String>,
-    pub head_sha: Option<String>,
-    pub page: Option<u32>,
-    pub per_page: Option<u32>,
-}
-
 /// GitLab's own status names for one of the Git pane's, so the server filters.
 fn gitlab_status(wanted: &str) -> Option<&'static str> {
     Some(match wanted {
@@ -256,14 +245,6 @@ pub async fn list(data_dir: &Path, input: RunQuery) -> GitlabResult<RunPage> {
         next_page: found.next,
         runs,
     })
-}
-
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct RunRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub run_id: String,
 }
 
 fn number(raw: &str, what: &str) -> GitlabResult<u64> {
@@ -365,15 +346,6 @@ pub async fn delete(data_dir: &Path, input: RunRef) -> GitlabResult<()> {
     .await
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Rerun {
-    #[serde(flatten)]
-    pub run: RunRef,
-    #[serde(default)]
-    pub failed_only: bool,
-}
-
 /// Re-running the failed jobs is GitLab's Retry. Running everything again
 /// starts a new pipeline on the same branch, or for a merge request, on it.
 pub async fn rerun(data_dir: &Path, input: Rerun) -> GitlabResult<()> {
@@ -411,18 +383,11 @@ pub async fn rerun(data_dir: &Path, input: Rerun) -> GitlabResult<()> {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JobRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub job_id: String,
-}
-
-pub async fn rerun_job(data_dir: &Path, input: JobRef) -> GitlabResult<()> {
-    let path = input
+pub async fn rerun_job(data_dir: &Path, input: RerunJob) -> GitlabResult<()> {
+    let job = input.job;
+    let path = job
         .repo
-        .path(&format!("/jobs/{}/retry", number(&input.job_id, "job")?))?;
+        .path(&format!("/jobs/{}/retry", number(&job.job_id, "job")?))?;
     let _: Value = client::send_json(data_dir, Method::POST, &path, &json!({})).await?;
     Ok(())
 }
@@ -500,20 +465,11 @@ pub async fn log(data_dir: &Path, input: JobRef) -> GitlabResult<JobLog> {
     })
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Excerpt {
-    #[serde(flatten)]
-    pub job: JobRef,
-    pub tail: Option<usize>,
-    pub grep: Option<String>,
-}
-
 const DEFAULT_TAIL: usize = 200;
 const MAX_TAIL: usize = 2000;
 
 /// The end of a job's log for an agent, optionally only the lines that mention something.
-pub async fn excerpt(data_dir: &Path, input: Excerpt) -> GitlabResult<LogExcerpt> {
+pub async fn excerpt(data_dir: &Path, input: ExcerptQuery) -> GitlabResult<LogExcerpt> {
     let whole = log(data_dir, input.job).await?;
     let needle = input
         .grep
@@ -537,13 +493,6 @@ pub async fn excerpt(data_dir: &Path, input: Excerpt) -> GitlabResult<LogExcerpt
         lines,
         truncated: cut || whole.truncated,
     })
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
 }
 
 async fn file(data_dir: &Path, repo: &RepoRef) -> GitlabResult<String> {
@@ -593,21 +542,11 @@ pub async fn workflows(data_dir: &Path, repo: RepoRef) -> GitlabResult<Vec<Workf
     }])
 }
 
-pub async fn workflow_file(data_dir: &Path, input: FileRef) -> GitlabResult<WorkflowFile> {
+pub async fn workflow_file(data_dir: &Path, input: WorkflowRef) -> GitlabResult<WorkflowFile> {
     Ok(WorkflowFile {
         path: PIPELINE_FILE.into(),
         text: file(data_dir, &input.repo).await?,
     })
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Dispatch {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub git_ref: String,
-    #[serde(default)]
-    pub inputs: Map<String, Value>,
 }
 
 /// A pipeline started by hand: the branch, and the inputs as CI variables.

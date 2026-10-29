@@ -125,21 +125,11 @@ pub fn error_message(bytes: &[u8]) -> Option<String> {
 }
 
 pub fn classify(status: StatusCode, bytes: &[u8]) -> GitlabError {
-    let message = error_message(bytes).unwrap_or_else(|| {
-        status
-            .canonical_reason()
-            .unwrap_or("the request failed")
-            .to_string()
-    });
-    match status.as_u16() {
-        401 => GitlabError::Auth(message),
-        403 => GitlabError::Forbidden(message),
-        404 => GitlabError::NotFound(message),
-        429 => GitlabError::RateLimited {
-            resets_in_secs: Some(LIMITS.latest_wait()),
-        },
-        status => GitlabError::Http { status, message },
-    }
+    http::classify::<Gitlab>(
+        status,
+        error_message(bytes),
+        (status == StatusCode::TOO_MANY_REQUESTS).then(|| LIMITS.latest_wait()),
+    )
 }
 
 /// An answer: its status, headers, body, and whether the body's start was cut.
@@ -229,10 +219,7 @@ async fn fetch(
 }
 
 pub fn parse<T: DeserializeOwned>(bytes: &[u8]) -> GitlabResult<T> {
-    if bytes.iter().all(u8::is_ascii_whitespace) {
-        return Ok(serde_json::from_slice(b"null")?);
-    }
-    Ok(serde_json::from_slice(bytes)?)
+    Ok(http::parse(bytes)?)
 }
 
 pub async fn get<T: DeserializeOwned>(

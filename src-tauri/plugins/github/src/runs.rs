@@ -9,6 +9,7 @@ use std::sync::{LazyLock, Mutex};
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::json;
+use sikemux_plugin_api::codehost::asks::{AttemptRef, JobRef, Rerun, RerunJob, RunQuery, RunRef};
 use sikemux_plugin_api::codehost::{
     Billable, Job, Outcome, Run, RunDetail, RunPage, RunTiming, Step,
 };
@@ -18,7 +19,7 @@ use sikemux_plugin_api::account::chosen;
 use crate::client;
 use crate::common::LIST_PAGES;
 use crate::error::{GithubError, GithubResult};
-use crate::workflows::RepoRef;
+use crate::repo::{number, RepoPath};
 
 /// Runs whose last read is kept, so reading one again while it is unchanged
 /// costs nothing against the rate limit.
@@ -119,27 +120,6 @@ impl From<RunRow> for Run {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunQuery {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(
-        default,
-        deserialize_with = "sikemux_plugin_api::codehost::numeric_id_if_any"
-    )]
-    pub workflow_id: Option<u64>,
-    pub branch: Option<String>,
-    /// One of GitHub's run statuses or conclusions, which it filters by interchangeably.
-    pub status: Option<String>,
-    pub event: Option<String>,
-    pub actor: Option<String>,
-    /// Only the runs for one commit, which is how a pull request's checks are found.
-    pub head_sha: Option<String>,
-    pub page: Option<u32>,
-    pub per_page: Option<u32>,
-}
-
 /// Filters only ever reach GitHub as query values it recognises, so a typed
 /// one that is not a status is dropped rather than sent.
 const STATUSES: [&str; 13] = [
@@ -162,7 +142,21 @@ fn known_status(value: &str) -> bool {
     STATUSES.contains(&value)
 }
 
+pub fn run_path(run: &RunRef, rest: &str) -> GithubResult<String> {
+    let id = number(&run.run_id)?;
+    run.repo.path(&format!("/actions/runs/{id}{rest}"))
+}
+
+pub fn job_path(job: &JobRef, rest: &str) -> GithubResult<String> {
+    let id = number(&job.job_id)?;
+    job.repo.path(&format!("/actions/jobs/{id}{rest}"))
+}
+
+/// `status` is one of GitHub's run statuses or conclusions, which it filters by
+/// interchangeably; `head_sha` keeps only one commit's runs, which is how a pull
+/// request's checks are found.
 pub async fn list(data_dir: &Path, input: RunQuery) -> GithubResult<RunPage> {
+    let workflow_id = input.workflow_id.as_deref().map(number).transpose()?;
     let per_page = input
         .per_page
         .unwrap_or(DEFAULT_PER_PAGE)
@@ -220,7 +214,7 @@ pub async fn list(data_dir: &Path, input: RunQuery) -> GithubResult<RunPage> {
         }
         query.push(("head_sha", sha.to_string()));
     }
-    let path = match input.workflow_id {
+    let path = match workflow_id {
         Some(id) => input.repo.path(&format!("/actions/workflows/{id}/runs"))?,
         None => input.repo.path("/actions/runs")?,
     };
@@ -232,15 +226,6 @@ pub async fn list(data_dir: &Path, input: RunQuery) -> GithubResult<RunPage> {
         total: list.total_count,
         runs,
     })
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(deserialize_with = "sikemux_plugin_api::codehost::numeric_id")]
-    pub run_id: u64,
 }
 
 #[derive(Deserialize)]
@@ -326,13 +311,7 @@ fn latest() -> [(&'static str, String); 1] {
 /// A run and its jobs. The core reads a run that is going every few seconds,
 /// so each read asks GitHub only for what changed since the last.
 pub async fn detail(data_dir: &Path, input: RunRef) -> GithubResult<RunDetail> {
-    let key = format!(
-        "{}|{}",
-        chosen().unwrap_or_default(),
-        input
-            .repo
-            .path(&format!("/actions/runs/{}", input.run_id))?
-    );
+    let key = format!("{}|{}", chosen().unwrap_or_default(), run_path(&input, "")?);
     let taken = FOLLOWED
         .lock()
         .ok()
@@ -377,7 +356,6 @@ async fn follow(
     input: &RunRef,
     held: &mut Followed,
 ) -> GithubResult<(RunDetail, Option<u64>)> {
-    let base = format!("/actions/runs/{}", input.run_id);
     let run_etag = held.run.as_ref().and_then(|(_, etag)| etag.clone());
     let jobs_etag = held.jobs.as_ref().and_then(|(_, etag)| etag.clone());
     let jobs_query = [
@@ -388,8 +366,8 @@ async fn follow(
         .jobs
         .as_ref()
         .is_some_and(|(jobs, _)| jobs.len() >= MAX_PER_PAGE as usize);
-    let run_path = input.repo.path(&base)?;
-    let jobs_path = input.repo.path(&format!("{base}/jobs"))?;
+    let jobs_path = run_path(input, "/jobs")?;
+    let run_path = run_path(input, "")?;
     let (run, jobs) = futures::future::join(
         client::get_if_changed::<RunRow>(data_dir, &run_path, &[], run_etag.as_deref()),
         client::get_if_changed::<JobList>(data_dir, &jobs_path, &jobs_query, jobs_etag.as_deref()),
@@ -423,51 +401,29 @@ async fn follow(
     Ok((RunDetail { run, jobs }, remaining))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Rerun {
-    #[serde(flatten)]
-    pub run: RunRef,
-    /// Re-run only the jobs that did not pass, rather than the whole run.
-    #[serde(default)]
-    pub failed_only: bool,
-    /// Turn on the runner's own debug logging for the new attempt.
-    #[serde(default)]
-    pub debug: bool,
-}
-
 pub async fn rerun(data_dir: &Path, input: Rerun) -> GithubResult<()> {
     let tail = if input.failed_only {
         "rerun-failed-jobs"
     } else {
         "rerun"
     };
-    let path = input
-        .run
-        .repo
-        .path(&format!("/actions/runs/{}/{tail}", input.run.run_id))?;
+    let path = run_path(&input.run, &format!("/{tail}"))?;
     let body = json!({ "enable_debug_logging": input.debug });
     client::post_empty(data_dir, &path, Some(&body)).await
 }
 
 pub async fn cancel(data_dir: &Path, input: RunRef) -> GithubResult<()> {
-    let path = input
-        .repo
-        .path(&format!("/actions/runs/{}/cancel", input.run_id))?;
+    let path = run_path(&input, "/cancel")?;
     client::post_empty(data_dir, &path, None).await
 }
 
 pub async fn delete_logs(data_dir: &Path, input: RunRef) -> GithubResult<()> {
-    let path = input
-        .repo
-        .path(&format!("/actions/runs/{}/logs", input.run_id))?;
+    let path = run_path(&input, "/logs")?;
     client::act(data_dir, Method::DELETE, &path, None).await
 }
 
 pub async fn delete(data_dir: &Path, input: RunRef) -> GithubResult<()> {
-    let path = input
-        .repo
-        .path(&format!("/actions/runs/{}", input.run_id))?;
+    let path = run_path(&input, "")?;
     client::act(data_dir, Method::DELETE, &path, None).await
 }
 
@@ -485,9 +441,7 @@ struct TimingRow {
 }
 
 pub async fn timing(data_dir: &Path, input: RunRef) -> GithubResult<RunTiming> {
-    let path = input
-        .repo
-        .path(&format!("/actions/runs/{}/timing", input.run_id))?;
+    let path = run_path(&input, "/timing")?;
     let row: TimingRow = client::get(data_dir, &path, &[]).await?;
     Ok(RunTiming {
         run_duration_ms: row.run_duration_ms,
@@ -503,59 +457,26 @@ pub async fn timing(data_dir: &Path, input: RunRef) -> GithubResult<RunTiming> {
     })
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JobRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(deserialize_with = "sikemux_plugin_api::codehost::numeric_id")]
-    pub job_id: u64,
-}
-
 pub async fn job_status(data_dir: &Path, input: JobRef) -> GithubResult<String> {
-    let path = input
-        .repo
-        .path(&format!("/actions/jobs/{}", input.job_id))?;
+    let path = job_path(&input, "")?;
     let row: JobRow = client::get(data_dir, &path, &[]).await?;
     Ok(row.status.unwrap_or_else(|| "queued".into()))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RerunJob {
-    #[serde(flatten)]
-    pub job: JobRef,
-    #[serde(default)]
-    pub debug: bool,
-}
-
 pub async fn rerun_job(data_dir: &Path, input: RerunJob) -> GithubResult<()> {
-    let path = input
-        .job
-        .repo
-        .path(&format!("/actions/jobs/{}/rerun", input.job.job_id))?;
+    let path = job_path(&input.job, "/rerun")?;
     let body = json!({ "enable_debug_logging": input.debug });
     client::post_empty(data_dir, &path, Some(&body)).await
 }
 
 /// An earlier try of the same run, which GitHub keeps whole.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AttemptRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(deserialize_with = "sikemux_plugin_api::codehost::numeric_id")]
-    pub run_id: u64,
-    pub attempt: u64,
-}
-
 pub async fn attempt(data_dir: &Path, input: AttemptRef) -> GithubResult<RunDetail> {
-    let base = format!("/actions/runs/{}/attempts/{}", input.run_id, input.attempt);
+    let base = format!("/attempts/{}", input.attempt);
     // Neither answer needs the other, so they are asked for together the way
     // the current attempt's are.
-    let jobs_path = input.repo.path(&format!("{base}/jobs"))?;
+    let jobs_path = run_path(&input.run, &format!("{base}/jobs"))?;
     let (run, jobs): (GithubResult<RunRow>, _) = futures::future::join(
-        client::get(data_dir, &input.repo.path(&base)?, &[]),
+        client::get(data_dir, &run_path(&input.run, &base)?, &[]),
         job_rows(data_dir, &jobs_path, &[]),
     )
     .await;

@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_plugin_api::codehost::asks::{
+    InboxQuery, IssueQuery, IssueRef, NewIssue, NotificationRef, RepoRef, SetIssueState,
+};
 use sikemux_plugin_api::codehost::{
     Comment, Issue, IssuePage, Label, Notification, Release, TimelineItem,
 };
@@ -17,7 +20,7 @@ use sikemux_plugin_api::store;
 use crate::client;
 use crate::error::{BitbucketError, BitbucketResult};
 use crate::pulls::timeline_item;
-use crate::repo::{avatar_of, login_of, Links, RepoRef, User};
+use crate::repo::{avatar_of, login_of, Links, Place, User};
 
 #[derive(Deserialize, Default)]
 struct Content {
@@ -100,21 +103,6 @@ fn no_tracker(error: BitbucketError) -> BitbucketError {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IssueQuery {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(default)]
-    pub state: String,
-    #[serde(default = "first_page")]
-    pub page: u32,
-}
-
-fn first_page() -> u32 {
-    1
-}
-
 /// The `q` filter for a list: open ones, closed ones, or every one.
 pub fn state_filter(state: &str) -> Option<String> {
     let open = OPEN_STATES
@@ -136,13 +124,13 @@ struct IssueRows {
 }
 
 pub async fn list(data_dir: &Path, input: IssueQuery) -> BitbucketResult<IssuePage> {
-    let page = input.page.max(1);
+    let page = input.page.unwrap_or(1).max(1);
     let mut query = vec![
         ("sort", "-updated_on".to_string()),
         ("page", page.to_string()),
         ("pagelen", "30".to_string()),
     ];
-    if let Some(filter) = state_filter(&input.state) {
+    if let Some(filter) = state_filter(input.state.as_deref().unwrap_or_default()) {
         query.push(("q", filter));
     }
     let found: IssueRows = client::get(data_dir, &input.repo.path("/issues")?, &query)
@@ -160,36 +148,17 @@ pub async fn list(data_dir: &Path, input: IssueQuery) -> BitbucketResult<IssuePa
     })
 }
 
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct IssueRef {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub number: u64,
-}
-
-impl IssueRef {
-    fn path(&self, rest: &str) -> BitbucketResult<String> {
-        self.repo.path(&format!("/issues/{}{rest}", self.number))
-    }
+fn issue_path(issue: &IssueRef, rest: &str) -> BitbucketResult<String> {
+    issue.repo.path(&format!("/issues/{}{rest}", issue.number))
 }
 
 pub async fn get(data_dir: &Path, input: IssueRef) -> BitbucketResult<Issue> {
-    let row: IssueRow = client::get(data_dir, &input.path("")?, &[])
+    let row: IssueRow = client::get(data_dir, &issue_path(&input, "")?, &[])
         .await
         .map_err(no_tracker)?;
     let mut issue = issue_of(&input.repo, row);
     issue.comments = comment_rows(data_dir, &input).await?.len() as u64;
     Ok(issue)
-}
-
-#[derive(Deserialize)]
-pub struct NewIssue {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub title: String,
-    #[serde(default)]
-    pub body: String,
 }
 
 pub async fn create(data_dir: &Path, input: NewIssue) -> BitbucketResult<Issue> {
@@ -207,16 +176,9 @@ pub async fn create(data_dir: &Path, input: NewIssue) -> BitbucketResult<Issue> 
     Ok(issue_of(&input.repo, row))
 }
 
-#[derive(Deserialize)]
-pub struct SetState {
-    #[serde(flatten)]
-    pub issue: IssueRef,
-    pub state: String,
-}
-
 /// Closing marks an issue resolved; reopening marks it open again. Bitbucket
 /// records either as a change on the issue.
-pub async fn set_state(data_dir: &Path, input: SetState) -> BitbucketResult<()> {
+pub async fn set_state(data_dir: &Path, input: SetIssueState) -> BitbucketResult<()> {
     let state = if input.state == "open" {
         "open"
     } else {
@@ -225,7 +187,7 @@ pub async fn set_state(data_dir: &Path, input: SetState) -> BitbucketResult<()> 
     let _: Value = client::send_json(
         data_dir,
         Method::POST,
-        &input.issue.path("/changes")?,
+        &issue_path(&input.issue, "/changes")?,
         &json!({ "changes": { "state": { "new": state } } }),
     )
     .await
@@ -246,7 +208,7 @@ struct CommentRow {
 async fn comment_rows(data_dir: &Path, issue: &IssueRef) -> BitbucketResult<Vec<CommentRow>> {
     let rows: Vec<CommentRow> = client::get_all(
         data_dir,
-        &issue.path("/comments")?,
+        &issue_path(issue, "/comments")?,
         &[("pagelen", "100".into()), ("sort", "created_on".into())],
         10,
     )
@@ -282,22 +244,15 @@ pub async fn comments(data_dir: &Path, input: IssueRef) -> BitbucketResult<Vec<C
         .collect())
 }
 
-#[derive(Deserialize)]
-pub struct NewComment {
-    #[serde(flatten)]
-    pub issue: IssueRef,
-    pub body: String,
-}
-
-pub async fn add_comment(data_dir: &Path, input: NewComment) -> BitbucketResult<()> {
-    let body = input.body.trim();
+pub async fn add_comment(data_dir: &Path, issue: &IssueRef, body: &str) -> BitbucketResult<()> {
+    let body = body.trim();
     if body.is_empty() {
         return Err(BitbucketError::BadArg("a comment needs some text".into()));
     }
     let _: Value = client::send_json(
         data_dir,
         Method::POST,
-        &input.issue.path("/comments")?,
+        &issue_path(issue, "/comments")?,
         &json!({ "content": { "raw": body } }),
     )
     .await
@@ -344,7 +299,7 @@ fn state_event(change: ChangeRow) -> Option<TimelineItem> {
 
 /// An issue's history: its comments, and each time it was closed or reopened.
 pub async fn timeline(data_dir: &Path, input: IssueRef) -> BitbucketResult<Vec<TimelineItem>> {
-    let changes_path = input.path("/changes")?;
+    let changes_path = issue_path(&input, "/changes")?;
     let changes_query = [("pagelen", "100".to_string())];
     let (comments, changes) = futures::try_join!(
         comment_rows(data_dir, &input),
@@ -484,12 +439,6 @@ fn notification(row: WaitingRow, reason: &str, done: &Dismissed) -> Option<Notif
     })
 }
 
-#[derive(Deserialize)]
-pub struct InboxQuery {
-    #[serde(default)]
-    pub all: bool,
-}
-
 /// Open pull requests that ask the person for a review in the repositories
 /// they work in, then their own open ones. Bitbucket keeps no read state, so
 /// marking one done is kept here until the pull request changes again.
@@ -530,12 +479,7 @@ pub async fn inbox(data_dir: &Path, input: InboxQuery) -> BitbucketResult<Vec<No
     Ok(found)
 }
 
-#[derive(Deserialize)]
-pub struct DoneRef {
-    pub id: String,
-}
-
-pub fn mark_read(data_dir: &Path, input: DoneRef) -> BitbucketResult<()> {
+pub fn mark_read(data_dir: &Path, input: NotificationRef) -> BitbucketResult<()> {
     let mut done = dismissed(data_dir)?;
     done.insert(input.id, now_iso());
     save_dismissed(data_dir, &done)
@@ -543,7 +487,14 @@ pub fn mark_read(data_dir: &Path, input: DoneRef) -> BitbucketResult<()> {
 
 /// Marks done everything the inbox shows now.
 pub async fn mark_all_read(data_dir: &Path) -> BitbucketResult<()> {
-    let waiting = inbox(data_dir, InboxQuery { all: false }).await?;
+    let waiting = inbox(
+        data_dir,
+        InboxQuery {
+            all: false,
+            per_page: None,
+        },
+    )
+    .await?;
     let mut done = dismissed(data_dir)?;
     let at = now_iso();
     for item in waiting {

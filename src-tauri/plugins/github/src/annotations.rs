@@ -5,12 +5,13 @@
 use std::path::Path;
 
 use serde::Deserialize;
+use sikemux_plugin_api::codehost::asks::CheckRunRef;
 use sikemux_plugin_api::codehost::{Annotation, JobSummary};
 
 use crate::client;
 use crate::common::LIST_PAGES;
 use crate::error::GithubResult;
-use crate::workflows::RepoRef;
+use crate::repo::{number, RepoPath};
 
 #[derive(Deserialize)]
 struct AnnotationRow {
@@ -38,19 +39,13 @@ impl From<AnnotationRow> for Annotation {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Request {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    #[serde(deserialize_with = "sikemux_plugin_api::codehost::numeric_id")]
-    pub check_run_id: u64,
+fn check_run_path(input: &CheckRunRef, rest: &str) -> GithubResult<String> {
+    let id = number(&input.check_run_id)?;
+    input.repo.path(&format!("/check-runs/{id}{rest}"))
 }
 
-pub async fn list(data_dir: &Path, input: Request) -> GithubResult<Vec<Annotation>> {
-    let path = input
-        .repo
-        .path(&format!("/check-runs/{}/annotations", input.check_run_id))?;
+pub async fn list(data_dir: &Path, input: CheckRunRef) -> GithubResult<Vec<Annotation>> {
+    let path = check_run_path(&input, "/annotations")?;
     let rows: Vec<AnnotationRow> =
         client::get_all(data_dir, &path, &[], LIST_PAGES, |rows| rows).await?;
     Ok(rows.into_iter().map(Annotation::from).collect())
@@ -70,10 +65,8 @@ struct CheckRunRow {
 
 /// What a job wrote to `$GITHUB_STEP_SUMMARY`: the test report, the coverage
 /// table, whatever it wanted read rather than dug out of the log.
-pub async fn summary(data_dir: &Path, input: Request) -> GithubResult<Option<JobSummary>> {
-    let path = input
-        .repo
-        .path(&format!("/check-runs/{}", input.check_run_id))?;
+pub async fn summary(data_dir: &Path, input: CheckRunRef) -> GithubResult<Option<JobSummary>> {
+    let path = check_run_path(&input, "")?;
     let row: CheckRunRow = client::get(data_dir, &path, &[]).await?;
     let output = match row.output {
         Some(output) => output,

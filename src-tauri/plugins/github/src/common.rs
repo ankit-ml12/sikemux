@@ -5,11 +5,12 @@ use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_plugin_api::codehost::asks::{NewComment, ThreadRef};
 use sikemux_plugin_api::codehost::{Comment, Label, Mention, TimelineItem};
 
 use crate::client;
 use crate::error::GithubResult;
-use crate::workflows::RepoRef;
+use crate::repo::RepoPath;
 
 pub const MAX_PER_PAGE: u32 = 100;
 /// How many pages of a hundred a list is read to before it stops.
@@ -58,18 +59,12 @@ struct CommentRow {
     html_url: Option<String>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Thread {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub number: u64,
-}
-
 /// Pull requests and issues share one comment thread in GitHub's API, which is
 /// why both reach it through the issues path.
-pub async fn comments(data_dir: &Path, repo: &RepoRef, number: u64) -> GithubResult<Vec<Comment>> {
-    let path = repo.path(&format!("/issues/{number}/comments"))?;
+pub async fn comments(data_dir: &Path, thread: ThreadRef) -> GithubResult<Vec<Comment>> {
+    let path = thread
+        .repo
+        .path(&format!("/issues/{}/comments", thread.number))?;
     let rows: Vec<CommentRow> =
         client::get_all(data_dir, &path, &[], LIST_PAGES, |rows| rows).await?;
     Ok(rows
@@ -149,23 +144,12 @@ fn timeline_item(row: Value) -> TimelineItem {
     }
 }
 
-pub async fn timeline(
-    data_dir: &Path,
-    repo: &RepoRef,
-    number: u64,
-) -> GithubResult<Vec<TimelineItem>> {
-    let path = repo.path(&format!("/issues/{number}/timeline"))?;
+pub async fn timeline(data_dir: &Path, thread: ThreadRef) -> GithubResult<Vec<TimelineItem>> {
+    let path = thread
+        .repo
+        .path(&format!("/issues/{}/timeline", thread.number))?;
     let rows: Vec<Value> = client::get_all(data_dir, &path, &[], LIST_PAGES, |rows| rows).await?;
     Ok(rows.into_iter().map(timeline_item).collect())
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NewComment {
-    #[serde(flatten)]
-    pub repo: RepoRef,
-    pub number: u64,
-    pub body: String,
 }
 
 pub async fn add_comment(data_dir: &Path, input: NewComment) -> GithubResult<()> {
@@ -175,9 +159,10 @@ pub async fn add_comment(data_dir: &Path, input: NewComment) -> GithubResult<()>
             "a comment cannot be empty".into(),
         ));
     }
-    let path = input
+    let thread = &input.thread;
+    let path = thread
         .repo
-        .path(&format!("/issues/{}/comments", input.number))?;
+        .path(&format!("/issues/{}/comments", thread.number))?;
     client::post_empty(data_dir, &path, Some(&json!({ "body": body }))).await
 }
 

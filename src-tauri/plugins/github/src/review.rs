@@ -5,12 +5,13 @@ use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_plugin_api::codehost::asks::{Answers, FeedbackQuery, PullRef, Reply};
 use sikemux_plugin_api::codehost::ReviewFeedback;
 
 use crate::client;
 use crate::common::LIST_PAGES;
 use crate::error::{GithubError, GithubResult};
-use crate::pulls::PullRef;
+use crate::repo::RepoPath;
 
 #[derive(Deserialize)]
 struct Author {
@@ -52,15 +53,6 @@ impl Row {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FeedbackQuery {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    /// Only what changed at or after this time, as an earlier answer gave it.
-    pub since: Option<String>,
-}
-
 pub async fn feedback(data_dir: &Path, input: FeedbackQuery) -> GithubResult<Vec<ReviewFeedback>> {
     let PullRef { repo, number } = &input.pull;
     let since: Vec<(&str, String)> = input.since.iter().map(|at| ("since", at.clone())).collect();
@@ -93,26 +85,6 @@ pub async fn feedback(data_dir: &Path, input: FeedbackQuery) -> GithubResult<Vec
         .chain(inline.into_iter().map(|row| row.feedback("inline")))
         .chain(reviews.map(|row| row.feedback("review")))
         .collect())
-}
-
-#[derive(Deserialize)]
-pub struct Reply {
-    to: String,
-    body: String,
-    /// What the reply answers, quoted where it cannot sit in that thread.
-    #[serde(default)]
-    quote: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Answers {
-    #[serde(flatten)]
-    pub pull: PullRef,
-    pub replies: Vec<Reply>,
-    /// Asked to review again, once every reply is in.
-    #[serde(default)]
-    pub reviewers: Vec<String>,
 }
 
 fn quoted(reply: &Reply) -> String {

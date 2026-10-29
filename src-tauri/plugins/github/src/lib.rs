@@ -39,12 +39,20 @@ mod review;
 mod runs;
 mod workflows;
 
+use std::path::Path;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::de::IgnoredAny;
 use serde_json::Value;
 use sikemux_plugin_api::account::{as_account, chosen};
-use sikemux_plugin_api::codehost::Resolved;
+use sikemux_plugin_api::codehost::asks::*;
+use sikemux_plugin_api::codehost::{self, work, CodeHost};
+use sikemux_plugin_api::codehost::{
+    Annotation, Artifact, ChangedFile, Check, Comment, CommitAuthor, Issue, IssuePage, JobLog,
+    JobSummary, LogExcerpt, Notification, PendingApproval, Pull, PullCommit, PullCounts, Release,
+    RepoListing, Resolved, Review, ReviewFeedback, RunDetail, RunPage, RunTiming, TimelineItem,
+    Workflow, WorkflowFile,
+};
 use sikemux_plugin_api::store::Accounts;
 use sikemux_plugin_api::{
     answer, params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
@@ -62,16 +70,10 @@ struct Github {
     manifest: Manifest,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RemoteQuery {
-    url: String,
-}
-
 /// What a git remote points at, and whether it is the GitHub this is signed in
 /// to. A repository on another host is still described, so the view can say so
 /// rather than showing nothing.
-fn resolve(data_dir: &std::path::Path, query: RemoteQuery) -> Resolved {
+fn resolve(data_dir: &Path, query: RemoteQuery) -> Resolved {
     let config = config::load(data_dir).unwrap_or_default();
     let found = repo::from_remote(&query.url);
     Resolved {
@@ -81,22 +83,8 @@ fn resolve(data_dir: &std::path::Path, query: RemoteQuery) -> Resolved {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MineQuery {
-    #[serde(default = "default_limit")]
-    limit: u32,
-}
-
-fn default_limit() -> u32 {
-    50
-}
-
 /// Everything the sign-in screen needs about the account that just signed in.
-async fn signed_in(
-    data_dir: &std::path::Path,
-    outcome: GithubResult<String>,
-) -> Result<Value, PluginError> {
+async fn signed_in(data_dir: &Path, outcome: GithubResult<String>) -> Result<Value, PluginError> {
     let id = outcome?;
     reply(as_account(Some(id), auth::status(data_dir)).await)
 }
@@ -122,7 +110,7 @@ impl Plugin for Github {
         input: Value,
     ) -> PluginFuture<'a, Value> {
         let account = account_of(&input);
-        Box::pin(as_account(account, dispatch(ctx, method, input)))
+        Box::pin(as_account(account, self.dispatch(ctx, method, input)))
     }
 
     fn stream<'a>(
@@ -140,94 +128,291 @@ impl Plugin for Github {
     }
 }
 
-async fn dispatch(ctx: &PluginContext, method: &str, input: Value) -> Result<Value, PluginError> {
-    let data_dir = ctx.data_dir();
-    match method {
-        "status" => reply(auth::status(data_dir).await),
-        "accounts" => reply(auth::accounts(data_dir)?),
-        "setDefaultAccount" => answer(auth::set_default(data_dir, params(input)?)).await,
-        "accountFor" => answer(auth::account_for(data_dir, params(input)?)).await,
-        "rateLimit" => {
-            let id = config::load(data_dir)?
-                .account(chosen().as_deref())
-                .map(|account| account.id.clone())
-                .unwrap_or_default();
-            reply(client::LIMITS.budget(&id))
+impl Github {
+    async fn dispatch(
+        &self,
+        ctx: &PluginContext,
+        method: &str,
+        input: Value,
+    ) -> Result<Value, PluginError> {
+        let data_dir = ctx.data_dir();
+        match method {
+            "status" => reply(auth::status(data_dir).await),
+            "accounts" => reply(auth::accounts(data_dir)?),
+            "setDefaultAccount" => answer(auth::set_default(data_dir, params(input)?)).await,
+            "rateLimit" => {
+                let id = config::load(data_dir)?
+                    .account(chosen().as_deref())
+                    .map(|account| account.id.clone())
+                    .unwrap_or_default();
+                reply(client::LIMITS.budget(&id))
+            }
+            "signIn" => signed_in(data_dir, auth::sign_in(data_dir, params(input)?).await).await,
+            "signOut" => answer(auth::sign_out(data_dir)).await,
+            _ => codehost::dispatch(self, data_dir, method, input).await,
         }
-        "signIn" => signed_in(data_dir, auth::sign_in(data_dir, params(input)?).await).await,
-        "signOut" => answer(auth::sign_out(data_dir)).await,
+    }
+}
 
-        "resolveRemote" => reply(resolve(data_dir, params(input)?)),
-        "myRepos" => {
-            let query: MineQuery = params(input)?;
-            answer(repo::mine(data_dir, query.limit)).await
-        }
-        "workflows" => answer(workflows::list(data_dir, params(input)?)).await,
-        "branches" => answer(workflows::branches(data_dir, params(input)?)).await,
-        "dispatch" => answer(workflows::dispatch(data_dir, params(input)?)).await,
+impl CodeHost for Github {
+    fn resolve_remote<'a>(&'a self, dir: &'a Path, ask: RemoteQuery) -> PluginFuture<'a, Resolved> {
+        Box::pin(async move { Ok(resolve(dir, ask)) })
+    }
 
-        "runs" => answer(runs::list(data_dir, params(input)?)).await,
-        "run" => answer(runs::detail(data_dir, params(input)?)).await,
-        "rerun" => answer(runs::rerun(data_dir, params(input)?)).await,
-        "rerunJob" => answer(runs::rerun_job(data_dir, params(input)?)).await,
-        "cancel" => answer(runs::cancel(data_dir, params(input)?)).await,
-        "deleteRunLogs" => answer(runs::delete_logs(data_dir, params(input)?)).await,
-        "deleteRun" => answer(runs::delete(data_dir, params(input)?)).await,
-        "runAttempt" => answer(runs::attempt(data_dir, params(input)?)).await,
+    fn account_for<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: AccountQuery,
+    ) -> PluginFuture<'a, Option<String>> {
+        work(auth::account_for(dir, ask.repo))
+    }
 
-        "jobLog" => answer(logs::job(data_dir, params(input)?)).await,
-        "jobLogExcerpt" => answer(logs::excerpt(data_dir, params(input)?)).await,
-        "annotations" => answer(annotations::list(data_dir, params(input)?)).await,
-        "jobSummary" => answer(annotations::summary(data_dir, params(input)?)).await,
-        "runTiming" => answer(runs::timing(data_dir, params(input)?)).await,
-        "checks" => answer(checks::list(data_dir, params(input)?)).await,
-        "workflowFile" => answer(workflows::file(data_dir, params(input)?)).await,
-        "workflowFileAt" => answer(workflows::file_at(data_dir, params(input)?)).await,
+    fn my_repos<'a>(&'a self, dir: &'a Path, ask: MineQuery) -> PluginFuture<'a, Vec<RepoListing>> {
+        work(repo::mine(dir, ask.limit))
+    }
 
-        "artifacts" => answer(artifacts::list(data_dir, params(input)?)).await,
+    fn branches<'a>(&'a self, dir: &'a Path, ask: RepoRef) -> PluginFuture<'a, Vec<String>> {
+        work(workflows::branches(dir, ask))
+    }
 
-        "pendingApprovals" => answer(approvals::pending(data_dir, params(input)?)).await,
-        "reviewDeployment" => answer(approvals::review(data_dir, params(input)?)).await,
+    fn image<'a>(&'a self, dir: &'a Path, ask: ImageRef) -> PluginFuture<'a, String> {
+        work(images::image(dir, ask))
+    }
 
-        "pulls" => answer(pulls::list(data_dir, params(input)?)).await,
-        "pullCounts" => answer(pulls::counts(data_dir, params(input)?)).await,
-        "issueCounts" => answer(pulls::issue_counts(data_dir, params(input)?)).await,
-        "pull" => answer(pulls::get(data_dir, params(input)?)).await,
-        "pullFiles" => answer(pulls::files(data_dir, params(input)?)).await,
-        "pullCommits" => answer(pulls::commits(data_dir, params(input)?)).await,
-        "commitPulls" => answer(pulls::of_commit(data_dir, params(input)?)).await,
-        "commitAuthors" => answer(pulls::commit_authors(data_dir, params(input)?)).await,
-        "pullReviews" => answer(pulls::reviews(data_dir, params(input)?)).await,
-        "mergePull" => answer(pulls::merge(data_dir, params(input)?)).await,
-        "createPull" => answer(pulls::create(data_dir, params(input)?)).await,
-        "setPullState" => answer(pulls::set_state(data_dir, params(input)?)).await,
-        "reviewPull" => answer(pulls::review(data_dir, params(input)?)).await,
-        "reviewFeedback" => answer(review::feedback(data_dir, params(input)?)).await,
-        "answerReview" => answer(review::answer(data_dir, params(input)?)).await,
+    fn workflows<'a>(&'a self, dir: &'a Path, ask: RepoRef) -> PluginFuture<'a, Vec<Workflow>> {
+        work(workflows::list(dir, ask))
+    }
 
-        "issues" => answer(issues::list(data_dir, params(input)?)).await,
-        "issue" => answer(issues::get(data_dir, params(input)?)).await,
-        "setIssueState" => answer(issues::set_state(data_dir, params(input)?)).await,
-        "createIssue" => answer(issues::create(data_dir, params(input)?)).await,
+    fn workflow_file<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: WorkflowRef,
+    ) -> PluginFuture<'a, WorkflowFile> {
+        work(workflows::file(dir, ask))
+    }
 
-        "addComment" => answer(common::add_comment(data_dir, params(input)?)).await,
+    fn workflow_file_at<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: FileAt,
+    ) -> PluginFuture<'a, WorkflowFile> {
+        work(workflows::file_at(dir, ask))
+    }
 
-        "releases" => answer(releases::list(data_dir, params(input)?)).await,
+    fn dispatch_workflow<'a>(&'a self, dir: &'a Path, ask: Dispatch) -> PluginFuture<'a, ()> {
+        work(workflows::dispatch(dir, ask))
+    }
 
-        "inbox" => answer(inbox::list(data_dir, params(input)?)).await,
-        "markRead" => answer(inbox::mark_read(data_dir, params(input)?)).await,
-        "comments" => {
-            let thread: common::Thread = params(input)?;
-            answer(common::comments(data_dir, &thread.repo, thread.number)).await
-        }
-        "timeline" => {
-            let thread: common::Thread = params(input)?;
-            answer(common::timeline(data_dir, &thread.repo, thread.number)).await
-        }
-        "image" => answer(images::image(data_dir, params(input)?)).await,
-        "markAllRead" => answer(inbox::mark_all_read(data_dir)).await,
+    fn runs<'a>(&'a self, dir: &'a Path, ask: RunQuery) -> PluginFuture<'a, RunPage> {
+        work(runs::list(dir, ask))
+    }
 
-        _ => Err(PluginError::unknown_method(method)),
+    fn run<'a>(&'a self, dir: &'a Path, ask: RunRef) -> PluginFuture<'a, RunDetail> {
+        work(runs::detail(dir, ask))
+    }
+
+    fn run_attempt<'a>(&'a self, dir: &'a Path, ask: AttemptRef) -> PluginFuture<'a, RunDetail> {
+        work(runs::attempt(dir, ask))
+    }
+
+    fn run_timing<'a>(&'a self, dir: &'a Path, ask: RunRef) -> PluginFuture<'a, RunTiming> {
+        work(runs::timing(dir, ask))
+    }
+
+    fn rerun<'a>(&'a self, dir: &'a Path, ask: Rerun) -> PluginFuture<'a, ()> {
+        work(runs::rerun(dir, ask))
+    }
+
+    fn rerun_job<'a>(&'a self, dir: &'a Path, ask: RerunJob) -> PluginFuture<'a, ()> {
+        work(runs::rerun_job(dir, ask))
+    }
+
+    fn cancel<'a>(&'a self, dir: &'a Path, ask: RunRef) -> PluginFuture<'a, ()> {
+        work(runs::cancel(dir, ask))
+    }
+
+    fn delete_run<'a>(&'a self, dir: &'a Path, ask: RunRef) -> PluginFuture<'a, ()> {
+        work(runs::delete(dir, ask))
+    }
+
+    fn delete_run_logs<'a>(&'a self, dir: &'a Path, ask: RunRef) -> PluginFuture<'a, ()> {
+        work(runs::delete_logs(dir, ask))
+    }
+
+    fn job_log<'a>(&'a self, dir: &'a Path, ask: JobRef) -> PluginFuture<'a, JobLog> {
+        work(logs::job(dir, ask))
+    }
+
+    fn job_log_excerpt<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: ExcerptQuery,
+    ) -> PluginFuture<'a, LogExcerpt> {
+        work(logs::excerpt(dir, ask))
+    }
+
+    fn annotations<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: CheckRunRef,
+    ) -> PluginFuture<'a, Vec<Annotation>> {
+        work(annotations::list(dir, ask))
+    }
+
+    fn job_summary<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: CheckRunRef,
+    ) -> PluginFuture<'a, Option<JobSummary>> {
+        work(annotations::summary(dir, ask))
+    }
+
+    fn checks<'a>(&'a self, dir: &'a Path, ask: ChecksQuery) -> PluginFuture<'a, Vec<Check>> {
+        work(checks::list(dir, ask))
+    }
+
+    fn artifacts<'a>(&'a self, dir: &'a Path, ask: RunRef) -> PluginFuture<'a, Vec<Artifact>> {
+        work(artifacts::list(dir, ask))
+    }
+
+    fn pending_approvals<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: RunRef,
+    ) -> PluginFuture<'a, Vec<PendingApproval>> {
+        work(approvals::pending(dir, ask))
+    }
+
+    fn review_deployment<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: DeploymentReview,
+    ) -> PluginFuture<'a, ()> {
+        work(approvals::review(dir, ask))
+    }
+
+    fn pulls<'a>(&'a self, dir: &'a Path, ask: PullQuery) -> PluginFuture<'a, Vec<Pull>> {
+        work(pulls::list(dir, ask))
+    }
+
+    fn pull_counts<'a>(&'a self, dir: &'a Path, ask: RepoRef) -> PluginFuture<'a, PullCounts> {
+        work(pulls::counts(dir, ask))
+    }
+
+    fn issue_counts<'a>(&'a self, dir: &'a Path, ask: RepoRef) -> PluginFuture<'a, PullCounts> {
+        work(pulls::issue_counts(dir, ask))
+    }
+
+    fn pull<'a>(&'a self, dir: &'a Path, ask: PullRef) -> PluginFuture<'a, Pull> {
+        work(pulls::get(dir, ask))
+    }
+
+    fn pull_files<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: FilesQuery,
+    ) -> PluginFuture<'a, Vec<ChangedFile>> {
+        work(pulls::files(dir, ask))
+    }
+
+    fn pull_commits<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: PullRef,
+    ) -> PluginFuture<'a, Vec<PullCommit>> {
+        work(pulls::commits(dir, ask))
+    }
+
+    fn pull_reviews<'a>(&'a self, dir: &'a Path, ask: PullRef) -> PluginFuture<'a, Vec<Review>> {
+        work(pulls::reviews(dir, ask))
+    }
+
+    fn commit_pulls<'a>(&'a self, dir: &'a Path, ask: CommitRef) -> PluginFuture<'a, Vec<Pull>> {
+        work(pulls::of_commit(dir, ask))
+    }
+
+    fn commit_authors<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: CommitsQuery,
+    ) -> PluginFuture<'a, Vec<CommitAuthor>> {
+        work(pulls::commit_authors(dir, ask))
+    }
+
+    fn merge_pull<'a>(&'a self, dir: &'a Path, ask: Merge) -> PluginFuture<'a, ()> {
+        work(pulls::merge(dir, ask))
+    }
+
+    fn create_pull<'a>(&'a self, dir: &'a Path, ask: NewPull) -> PluginFuture<'a, Pull> {
+        work(pulls::create(dir, ask))
+    }
+
+    fn set_pull_state<'a>(&'a self, dir: &'a Path, ask: SetPullState) -> PluginFuture<'a, ()> {
+        work(pulls::set_state(dir, ask))
+    }
+
+    fn review_pull<'a>(&'a self, dir: &'a Path, ask: NewReview) -> PluginFuture<'a, ()> {
+        work(pulls::review(dir, ask))
+    }
+
+    fn review_feedback<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: FeedbackQuery,
+    ) -> PluginFuture<'a, Vec<ReviewFeedback>> {
+        work(review::feedback(dir, ask))
+    }
+
+    fn answer_review<'a>(&'a self, dir: &'a Path, ask: Answers) -> PluginFuture<'a, ()> {
+        work(review::answer(dir, ask))
+    }
+
+    fn issues<'a>(&'a self, dir: &'a Path, ask: IssueQuery) -> PluginFuture<'a, IssuePage> {
+        work(issues::list(dir, ask))
+    }
+
+    fn issue<'a>(&'a self, dir: &'a Path, ask: IssueRef) -> PluginFuture<'a, Issue> {
+        work(issues::get(dir, ask))
+    }
+
+    fn create_issue<'a>(&'a self, dir: &'a Path, ask: NewIssue) -> PluginFuture<'a, Issue> {
+        work(issues::create(dir, ask))
+    }
+
+    fn set_issue_state<'a>(&'a self, dir: &'a Path, ask: SetIssueState) -> PluginFuture<'a, ()> {
+        work(issues::set_state(dir, ask))
+    }
+
+    fn comments<'a>(&'a self, dir: &'a Path, ask: ThreadRef) -> PluginFuture<'a, Vec<Comment>> {
+        work(common::comments(dir, ask))
+    }
+
+    fn timeline<'a>(
+        &'a self,
+        dir: &'a Path,
+        ask: ThreadRef,
+    ) -> PluginFuture<'a, Vec<TimelineItem>> {
+        work(common::timeline(dir, ask))
+    }
+
+    fn add_comment<'a>(&'a self, dir: &'a Path, ask: NewComment) -> PluginFuture<'a, ()> {
+        work(common::add_comment(dir, ask))
+    }
+
+    fn releases<'a>(&'a self, dir: &'a Path, ask: RepoRef) -> PluginFuture<'a, Vec<Release>> {
+        work(releases::list(dir, ask))
+    }
+
+    fn inbox<'a>(&'a self, dir: &'a Path, ask: InboxQuery) -> PluginFuture<'a, Vec<Notification>> {
+        work(inbox::list(dir, ask))
+    }
+
+    fn mark_read<'a>(&'a self, dir: &'a Path, ask: NotificationRef) -> PluginFuture<'a, ()> {
+        work(inbox::mark_read(dir, ask))
+    }
+
+    fn mark_all_read<'a>(&'a self, dir: &'a Path, _ask: IgnoredAny) -> PluginFuture<'a, ()> {
+        work(inbox::mark_all_read(dir))
     }
 }
 
