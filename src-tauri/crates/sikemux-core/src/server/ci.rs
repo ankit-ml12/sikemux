@@ -45,6 +45,9 @@ impl Shown {
 struct Seen {
     runs: u64,
     going: bool,
+    /// Its runs moved at the last check. A code host's narrower lists, such as one commit's
+    /// runs, can lag behind the one checked here, so the next check tells clients again.
+    moved: bool,
     at: Instant,
 }
 
@@ -113,7 +116,7 @@ async fn serve(core: Arc<Core>) {
                 .into_iter()
                 .filter(|repo| {
                     state.seen.get(repo).is_none_or(|seen| {
-                        seen.at.elapsed() >= if seen.going { LIVE } else { IDLE }
+                        seen.at.elapsed() >= if seen.going || seen.moved { LIVE } else { IDLE }
                     })
                 })
                 .collect::<Vec<_>>()
@@ -144,23 +147,29 @@ async fn check(core: &Arc<Core>, repo: Shown) {
         runs.iter()
             .any(|run| run.get("status").and_then(Value::as_str) != Some("completed"))
     });
-    let moved = {
+    let (moved, moved_before) = {
         let mut state = core.ci.0.locked();
-        let before = state.seen.insert(
+        let before = state.seen.get(&repo);
+        let moved = before.is_some_and(|before| before.runs != fingerprint);
+        let moved_before = before.is_some_and(|before| before.moved);
+        state.seen.insert(
             repo.clone(),
             Seen {
                 runs: fingerprint,
                 going,
+                moved,
                 at: Instant::now(),
             },
         );
-        before.is_some_and(|before| before.runs != fingerprint)
+        (moved, moved_before)
     };
     if moved {
-        core.changes
-            .changed(Topic::Ci, None, Some(vec![repo.key()]));
         super::board::ci_moved(core, &repo);
         super::git::ci_moved(core, &repo);
+    }
+    if moved || moved_before {
+        core.changes
+            .changed(Topic::Ci, None, Some(vec![repo.key()]));
         super::codehost::ci_moved(core, &repo.key());
     }
 }
