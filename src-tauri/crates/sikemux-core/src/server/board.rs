@@ -130,17 +130,14 @@ struct Card {
     acceptance: String,
     status: Status,
     /// The agent working it, or that did.
-    owner: Option<String>,
-    /// What the owner was called and which CLI it ran when it claimed the
-    /// card, for after it has gone.
-    owner_name: Option<String>,
-    owner_cli: Option<String>,
+    #[serde(flatten)]
+    owner: Option<Owner>,
     parent: Option<u64>,
     #[serde(default)]
     depends_on: Vec<u64>,
     /// The agent that added it, or none when the person did.
-    created_by: Option<String>,
-    created_by_name: Option<String>,
+    #[serde(flatten)]
+    created_by: Option<Maker>,
     /// The team it was last seen in, for after the team's agents close.
     #[serde(skip_serializing_if = "Option::is_none")]
     team: Option<Team>,
@@ -653,23 +650,71 @@ fn may_change(core: &Core, agent_id: &str, owner: Option<&str>) -> bool {
     }
 }
 
+/// The agent on a card, with what it was called and which CLI it ran when it
+/// claimed the card, for after it has gone.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Owner {
+    #[serde(rename = "owner")]
+    id: String,
+    #[serde(rename = "ownerName", default)]
+    name: Option<String>,
+    #[serde(rename = "ownerCli", default)]
+    cli: Option<String>,
+}
+
+impl Owner {
+    fn of(core: &Core, agent: &str) -> Self {
+        Self {
+            id: agent.to_owned(),
+            name: Some(name_of(core, agent)),
+            cli: cli_of(core, agent),
+        }
+    }
+
+    /// An agent Auto is about to start, which has no name or CLI yet.
+    fn starting(agent: &str) -> Self {
+        Self {
+            id: agent.to_owned(),
+            name: None,
+            cli: None,
+        }
+    }
+}
+
+/// The agent that added a card, with what it was called then.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Maker {
+    #[serde(rename = "createdBy")]
+    id: String,
+    #[serde(rename = "createdByName", default)]
+    name: Option<String>,
+}
+
 impl Card {
+    fn owner_id(&self) -> Option<&str> {
+        self.owner.as_ref().map(|owner| owner.id.as_str())
+    }
+
+    fn maker_id(&self) -> Option<&str> {
+        self.created_by.as_ref().map(|maker| maker.id.as_str())
+    }
+
     fn owner_name(&self, core: &Core) -> Option<String> {
-        let owner = self.owner.as_deref()?;
+        let owner = self.owner.as_ref()?;
         core.names
-            .name(owner)
-            .or_else(|| self.owner_name.clone())
-            .or_else(|| Some(owner.to_owned()))
+            .name(&owner.id)
+            .or_else(|| owner.name.clone())
+            .or_else(|| Some(owner.id.clone()))
     }
 
     fn creator_name(&self, core: &Core) -> String {
         match &self.created_by {
             None => "the person".to_owned(),
-            Some(agent) => core
+            Some(maker) => core
                 .names
-                .name(agent)
-                .or_else(|| self.created_by_name.clone())
-                .unwrap_or_else(|| agent.clone()),
+                .name(&maker.id)
+                .or_else(|| maker.name.clone())
+                .unwrap_or_else(|| maker.id.clone()),
         }
     }
 
@@ -685,7 +730,7 @@ fn team_of(core: &Core, board: &Board, card: &Card) -> Option<Team> {
     let mut current = Some(card);
     let mut steps = 0;
     while let Some(card) = current {
-        if let Some(agent) = card.owner.as_deref().or(card.created_by.as_deref()) {
+        if let Some(agent) = card.owner_id().or(card.maker_id()) {
             if core.names.name(agent).is_none() {
                 return card.team.clone().or_else(|| {
                     Some(Team {
@@ -777,8 +822,7 @@ fn column_of(core: &Core, card: &Card) -> Column {
         .is_some_and(|run| matches!(run.stage, Stage::Review | Stage::Held))
         || (card.status == Status::Progress
             && card
-                .owner
-                .as_deref()
+                .owner_id()
                 .is_some_and(|owner| core.harness.questions.blocks_on_person(owner)));
     match card.status {
         Status::Done => Column::Done,
@@ -826,20 +870,19 @@ fn card_view(core: &Core, board: &Board, card: &Card) -> CardView {
         details: card.details.clone(),
         acceptance: card.acceptance.clone(),
         status: card.status,
-        owner: card.owner.clone(),
+        owner: card.owner_id().map(str::to_owned),
         owner_name: card.owner_name(core),
         owner_cli: card
             .owner
-            .as_deref()
-            .and_then(|owner| cli_of(core, owner))
-            .or_else(|| card.owner_cli.clone()),
-        paid_by: card.owner.as_deref().and_then(|owner| paid_by(core, owner)),
+            .as_ref()
+            .and_then(|owner| cli_of(core, &owner.id).or_else(|| owner.cli.clone())),
+        paid_by: card.owner_id().and_then(|owner| paid_by(core, owner)),
         team: team.as_ref().map(|team| team.lead.clone()),
         team_name: team.map(|team| team.name),
         parent: card.parent,
         depends_on: card.depends_on.clone(),
         waits_on: board.waits_on(card),
-        created_by: card.created_by.clone(),
+        created_by: card.maker_id().map(str::to_owned),
         created_by_name: card.creator_name(core),
         result: card.result.clone(),
         ticket: card.ticket.clone(),
@@ -916,8 +959,7 @@ fn agent_view(core: &Core, board: &Board, card: &Card, full: bool) -> Value {
         fields.insert("result".into(), text(result).into());
     }
     if card
-        .owner
-        .as_deref()
+        .owner_id()
         .is_some_and(|owner| core.harness.questions.blocks_on_person(owner))
     {
         fields.insert("waitingOnThePerson".into(), true.into());
@@ -988,12 +1030,12 @@ fn add_card(
         acceptance: adding.acceptance,
         status: Status::Open,
         owner: None,
-        owner_name: None,
-        owner_cli: None,
         parent: adding.parent,
         depends_on: adding.depends_on,
-        created_by_name: maker.as_deref().map(|agent| name_of(core, agent)),
-        created_by: maker,
+        created_by: maker.map(|agent| Maker {
+            name: Some(name_of(core, &agent)),
+            id: agent,
+        }),
         team: None,
         result: None,
         ticket: adding.ticket,
@@ -1052,9 +1094,7 @@ pub(crate) fn triggers_changed(core: &Core, project: &str) {
 }
 
 fn take(core: &Core, card: &mut Card, agent: &str) {
-    card.owner = Some(agent.to_owned());
-    card.owner_name = Some(name_of(core, agent));
-    card.owner_cli = cli_of(core, agent);
+    card.owner = Some(Owner::of(core, agent));
     card.status = Status::Progress;
     card.updated_at = epoch_ms();
 }
@@ -1067,13 +1107,13 @@ fn claim_card(core: &Core, project: &str, agent: &str, id: u64) -> Result<Value,
         .get_mut(project)
         .ok_or_else(|| format!("There is no card #{id} on this project's board"))?;
     let card = board.card(id)?;
-    if card.owner.as_deref() == Some(agent) && card.status == Status::Progress {
+    if card.owner_id() == Some(agent) && card.status == Status::Progress {
         return Ok(agent_view(core, board, card, true));
     }
     if card.status == Status::Done {
         return Err(format!("#{id} is done already"));
     }
-    if let Some(owner) = card.owner.as_deref().filter(|owner| *owner != agent) {
+    if let Some(owner) = card.owner_id().filter(|owner| *owner != agent) {
         return Err(format!(
             "{} has #{id} already; pick another card, or message {} about it",
             name_of(core, owner),
@@ -1120,8 +1160,8 @@ fn change_card(
         .ok_or_else(|| format!("There is no card #{id} on this project's board"))?;
     let before = board.card(id)?.clone();
     if let By::Agent(agent) = by {
-        if !may_change(core, agent, before.owner.as_deref()) {
-            let owner = name_of(core, before.owner.as_deref().unwrap_or_default());
+        if !may_change(core, agent, before.owner_id()) {
+            let owner = name_of(core, before.owner_id().unwrap_or_default());
             return Err(format!(
                 "#{id} is {owner}'s; message {owner} with agent_send to change it"
             ));
@@ -1169,8 +1209,6 @@ fn change_card(
         Some(Status::Open) => {
             card.status = Status::Open;
             card.owner = None;
-            card.owner_name = None;
-            card.owner_cli = None;
             card.team = None;
             card.auto = None;
         }
@@ -1180,9 +1218,7 @@ fn change_card(
                 run.stage = Stage::Closed;
             }
             if let (None, By::Agent(agent)) = (&card.owner, by) {
-                card.owner = Some(agent.clone());
-                card.owner_name = Some(name_of(core, agent));
-                card.owner_cli = cli_of(core, agent);
+                card.owner = Some(Owner::of(core, agent));
             }
         }
         Some(Status::Progress) => card.status = Status::Progress,
@@ -1195,13 +1231,11 @@ fn change_card(
     let changer = match by {
         By::Person => Some("The person".to_owned()),
         By::Auto(who) => Some((*who).to_owned()),
-        By::Agent(agent) if before.owner.as_deref() != Some(agent.as_str()) => {
-            Some(name_of(core, agent))
-        }
+        By::Agent(agent) if before.owner_id() != Some(agent.as_str()) => Some(name_of(core, agent)),
         By::Agent(_) => None,
     };
     if let (Some(changer), Some(owner), Status::Progress, None) =
-        (changer, before.owner.as_deref(), before.status, &dropping)
+        (changer, before.owner_id(), before.status, &dropping)
     {
         let text = if after.owner.is_none() {
             format!(
@@ -1276,9 +1310,11 @@ fn remove_card(core: &Core, project: &str, id: u64) -> Result<Vec<Notice>, Strin
         });
     }
     boards.save(&mut state, project);
-    if let (Some(owner), Status::Progress, false) =
-        (removed.owner.clone(), removed.status, dropping)
-    {
+    if let (Some(owner), Status::Progress, false) = (
+        removed.owner_id().map(str::to_owned),
+        removed.status,
+        dropping,
+    ) {
         notices.push(Notice {
             to: owner,
             text: format!(
@@ -1302,7 +1338,7 @@ fn unblocked(board: &Board, blocked_before: &[u64], by: &By) -> Vec<Notice> {
                 && board.waits_on(card).is_empty()
         })
         .filter_map(|card| {
-            let owner = card.owner.as_deref()?;
+            let owner = card.owner_id()?;
             if matches!(by, By::Agent(agent) if agent == owner) {
                 return None;
             }
@@ -1450,7 +1486,7 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         }
         let team = core.names.team_of(&agent);
         let rank = |card: &Card| {
-            let mine = card.owner.as_deref() == Some(agent.as_str());
+            let mine = card.owner_id() == Some(agent.as_str());
             let ours = team_of(&core, board, card).is_some_and(|ours| ours.lead == team);
             let place = if mine {
                 0
@@ -1509,7 +1545,7 @@ fn held_card<'a>(state: &'a mut State, agent_id: &str) -> Option<(&'a String, &'
         .boards
         .iter_mut()
         .flat_map(|(project, board)| board.cards.iter_mut().map(move |card| (project, card)))
-        .filter(|(_, card)| card.owner.as_deref() == Some(agent_id))
+        .filter(|(_, card)| card.owner_id() == Some(agent_id))
         .max_by_key(|(_, card)| (card.status == Status::Progress, card.updated_at))
 }
 
@@ -1532,7 +1568,7 @@ pub(crate) fn ticket_of_agent(core: &Core, agent_id: &str) -> Option<String> {
         let card = board
             .cards
             .iter()
-            .filter(|card| card.owner.as_deref() == Some(agent_id) && card.status != Status::Done)
+            .filter(|card| card.owner_id() == Some(agent_id) && card.status != Status::Done)
             .max_by_key(|card| card.updated_at)?;
         let mut current = Some(card);
         let mut steps = 0;
@@ -1588,7 +1624,7 @@ impl Card {
             id: self.id,
             title: self.title.clone(),
             done: self.status == Status::Done,
-            owner: self.owner.clone(),
+            owner: self.owner_id().map(str::to_owned),
             owner_name: self.owner_name(core),
             result: self.result.clone(),
             recordings: self.recordings.clone(),
@@ -2006,7 +2042,7 @@ fn offer(core: &Arc<Core>) -> Option<u64> {
                 continue;
             };
             let busy = board.cards.iter().any(|card| {
-                card.owner.as_deref() == Some(agent.as_str()) && card.status == Status::Progress
+                card.owner_id() == Some(agent.as_str()) && card.status == Status::Progress
             });
             if busy {
                 continue;

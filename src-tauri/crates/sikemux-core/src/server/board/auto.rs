@@ -12,7 +12,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use super::review::Review;
-use super::{blind, finish, Board, Card, Status, Team};
+use super::{blind, finish, Board, Card, Owner, Status, Team};
 use crate::protocol::Event;
 use crate::server::connection::blocking;
 use crate::server::names::Starting;
@@ -416,9 +416,7 @@ pub(super) fn start_free(core: &Arc<Core>) {
             for id in picks {
                 let agent = format!("agent-{}", uuid::Uuid::new_v4().simple());
                 if let Ok(card) = board.card_mut(id) {
-                    card.owner = Some(agent.clone());
-                    card.owner_name = None;
-                    card.owner_cli = None;
+                    card.owner = Some(Owner::starting(&agent));
                     card.team = None;
                     card.status = Status::Progress;
                     card.auto = Some(Run::starting(agent.clone()));
@@ -547,8 +545,11 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
     let provider = launch.provider.clone();
     let text = task(&card, &tree, &settings, ticket);
     let placed = finish::change_run(core, project, id, agent, |card, run| {
-        card.owner_name = Some(name.clone());
-        card.owner_cli = Some(provider.clone());
+        card.owner = Some(Owner {
+            id: agent.to_owned(),
+            name: Some(name.clone()),
+            cli: Some(provider.clone()),
+        });
         card.team = Some(Team {
             lead: agent.to_owned(),
             name: name.clone(),

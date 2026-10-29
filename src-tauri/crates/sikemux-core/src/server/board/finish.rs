@@ -80,8 +80,6 @@ pub(crate) fn hold(core: &Core, project: &str, id: u64, agent: &str, why: String
         run.verdict = None;
         if run.worktree.is_empty() {
             card.owner = None;
-            card.owner_name = None;
-            card.owner_cli = None;
             card.team = None;
             card.status = Status::Open;
         }
@@ -197,7 +195,7 @@ impl Step {
     pub(super) fn name(&self, core: &Core) -> String {
         core.names
             .name(self.agent())
-            .or_else(|| self.card.owner_name.clone())
+            .or_else(|| self.card.owner.as_ref()?.name.clone())
             .unwrap_or_else(|| "Its agent".to_owned())
     }
 
