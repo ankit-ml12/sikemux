@@ -11,6 +11,7 @@ mod board;
 mod boot;
 mod buddy_picker;
 mod chat;
+mod ci;
 pub use chat::changes as chat_changes;
 pub use chat::composer;
 mod ci_card;

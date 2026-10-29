@@ -78,9 +78,6 @@ pub struct Reads {
     /// The composer drafts kept on this host, and on the account host in front.
     pub drafts: Option<Value>,
     pub host_drafts: Option<Value>,
-    /// The CI runs of the branch in front, and of the commit its newest run is for.
-    pub ci: Option<Value>,
-    pub ci_head: Option<Value>,
     /// What the project in front holds: its tasks, their runs, what listens on its ports,
     /// its activity, and the repository its git pane shows.
     pub tasks: Option<Value>,
@@ -132,8 +129,6 @@ slots! {
     "host-trust" => host_trust,
     "drafts" => drafts,
     "host-drafts" => host_drafts,
-    "ci" => ci,
-    "ci-head" => ci_head,
     "tasks" => tasks,
     "runs" => runs,
     "ports" => ports,

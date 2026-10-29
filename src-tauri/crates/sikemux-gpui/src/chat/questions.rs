@@ -23,6 +23,29 @@ impl std::ops::Deref for Question {
     }
 }
 
+impl Chats {
+    /// Keeps the questions the core listed: this host's, or with `host_read` those of the
+    /// account host `host` in front.
+    pub fn questions_read(&mut self, value: Value, host_read: bool, host: Option<String>) {
+        match serde_json::from_value::<Vec<AgentQuestion>>(value) {
+            Ok(asked) => {
+                let questions = asked.into_iter().map(|asked| Question {
+                    asked,
+                    host: host.clone(),
+                });
+                if host_read {
+                    self.host_questions = questions.collect();
+                } else {
+                    self.questions = questions.collect();
+                }
+            }
+            Err(error) => eprintln!("sikemux: the core's questions do not read: {error}"),
+        }
+        self.questions.retain(|question| question.host.is_none());
+        self.questions.extend(self.host_questions.iter().cloned());
+    }
+}
+
 impl Question {
     /// Who asked and what, while `agent_id` waits on the person's answer.
     pub(crate) fn open_from(&self, agent_id: &str) -> Option<(&str, &str)> {

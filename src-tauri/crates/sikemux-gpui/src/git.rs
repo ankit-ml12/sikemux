@@ -44,6 +44,37 @@ pub struct GitTab {
     pub(crate) behind: bool,
 }
 
+impl GitTab {
+    /// Hands the repository's overview to the Git pane, or marks it behind while it is out of
+    /// sight.
+    pub fn overview(&mut self, overview: &Value, in_front: bool, cx: &mut App) {
+        match (&self.pane, in_front) {
+            (Some(pane), true) => pane.update(cx, |pane, cx| pane.overview(overview, cx)),
+            (Some(_), false) => self.behind = true,
+            (None, _) => {}
+        }
+    }
+
+    pub fn drafts(&self, drafts: &Value, cx: &mut App) {
+        if let Some(pane) = &self.pane {
+            pane.update(cx, |pane, cx| pane.drafts(drafts, cx));
+        }
+    }
+
+    pub fn catalog(&self, catalog: &crate::reads::Catalog, cx: &mut App) {
+        if let Some(pane) = &self.pane {
+            pane.update(cx, |pane, cx| pane.catalog(catalog, cx));
+        }
+    }
+
+    /// Hands the code host's areas what the core read for them under `key`.
+    pub fn host_read(&self, key: &str, value: &Value, cx: &mut App) {
+        if let Some(host) = &self.host {
+            host.update(cx, |host, cx| host.read(key, value, cx));
+        }
+    }
+}
+
 pub use crate::codehost::{Area, OpenArea};
 pub use pane::{FocusGit, GitPane};
 pub use sikemux_core::git::diff::DiffKind;

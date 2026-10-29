@@ -36,7 +36,7 @@ use sikemux_wire::questions::{AgentQuestion, QuestionState};
 
 use crate::agents::setup::Installing;
 use crate::chat::composer::{Act, Composer, Notice, Strip};
-use crate::core::{Ask, ChatAsk, Target};
+use crate::core::{Ask, ChatAsk, ChatNews, Target};
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::motion;
@@ -722,7 +722,7 @@ impl Chat {
 
     /// What the core answered an attach with. A chat that can't be attached to while it holds
     /// rows from its middle, such as one asleep, asks for its latest rows instead.
-    pub fn attached(
+    fn attached(
         &mut self,
         agent: &str,
         attachment: ChatAttachment,
@@ -766,12 +766,7 @@ impl Chat {
     /// Takes the core's changes numbered `seq`, and says whether some before them went missing.
     /// Applies the changes numbered `seq`, and says whether the chat must attach again from
     /// its mark: some came before them, or they did not read.
-    pub fn changed(
-        &mut self,
-        seq: u64,
-        changes: Result<Vec<Changed>, String>,
-        cx: &mut App,
-    ) -> bool {
+    fn changed(&mut self, seq: u64, changes: Result<Vec<Changed>, String>, cx: &mut App) -> bool {
         let changes = match changes {
             Ok(changes) => changes,
             Err(error) => {
@@ -820,7 +815,7 @@ impl Chat {
     }
 
     /// What the core sent of a tool call the reader opened.
-    pub fn detail(&mut self, tool: String, detail: Value, cx: &mut App) {
+    fn detail(&mut self, tool: String, detail: Value, cx: &mut App) {
         if let Ok(detail) = serde_json::from_value(detail) {
             self.reader.update(cx, |reading, cx| {
                 reading.tools.held(tool, detail);
@@ -829,8 +824,82 @@ impl Chat {
         }
     }
 
+    /// Takes what the core sent about this chat, other than what a find found, and asks it
+    /// for what that leaves missing.
+    pub fn hear(&mut self, agent: &str, news: ChatNews, cx: &mut App) {
+        let ask = |chat: &Self, ask: ChatAsk| chat.target.ask(Ask::Chat(ask));
+        match news {
+            ChatNews::Attached(attachment) => {
+                if let Some(next) = self.attached(agent, attachment, cx) {
+                    ask(self, next);
+                }
+            }
+            ChatNews::Taken(attachment) => {
+                if let Some(composing) = self.composer.as_mut() {
+                    if matches!(composing.stage, ComposeStage::Sent(_)) {
+                        composing.stage = ComposeStage::Writing;
+                    }
+                }
+                if let Some(next) = attachment.and_then(|it| self.attached(agent, it, cx)) {
+                    ask(self, next);
+                }
+            }
+            ChatNews::Changes { seq, changes } => {
+                if self.changed(seq, changes, cx) {
+                    let since = self.mark.clone();
+                    ask(
+                        self,
+                        ChatAsk::Attach {
+                            agent: agent.to_owned(),
+                            since,
+                        },
+                    );
+                }
+                for tool in self.wanted() {
+                    ask(
+                        self,
+                        ChatAsk::Detail {
+                            agent: agent.to_owned(),
+                            tool,
+                        },
+                    );
+                }
+            }
+            ChatNews::Page(page) => self.page(page, cx),
+            ChatNews::Later(page) => {
+                if let Some(next) = self.later_page(agent, page, cx) {
+                    ask(self, next);
+                }
+            }
+            ChatNews::Around(page) => self.around_page(page, cx),
+            ChatNews::Latest(page) => self.latest_page(page, cx),
+            ChatNews::Found { .. } => {}
+            ChatNews::Detail { tool, detail } => self.detail(tool, detail, cx),
+            ChatNews::Replied { request, error } => self.replied(&request, error),
+            ChatNews::TaskStopped { task, error } => self.task_stopped(&task, error),
+            ChatNews::Refused { error, text } => {
+                if let Some(composing) = self.composer.as_mut() {
+                    composing.refusal = Some(error.into());
+                    let held = match std::mem::take(&mut composing.stage) {
+                        ComposeStage::Sent(sent) if sent.content.text().trim() == text => {
+                            Some(sent)
+                        }
+                        _ => None,
+                    };
+                    composing.stage = ComposeStage::Returned(held.unwrap_or_else(|| Sent {
+                        content: text.into(),
+                        attachments: Vec::new(),
+                        context: Vec::new(),
+                        tracked_context: HashMap::new(),
+                    }));
+                }
+                self.head_moved = true;
+            }
+        }
+    }
+
     /// The tool calls whose detail to ask the core for again.
-    pub fn wanted(&mut self) -> Vec<String> {
+    fn wanted(&mut self) -> Vec<String> {
         std::mem::take(&mut self.wanted)
     }
 
@@ -877,7 +946,7 @@ impl Chat {
 
     /// The core took the reply to `request`, or says why not; a request that went
     /// meanwhile needs no telling.
-    pub fn replied(&mut self, request: &str, error: Option<String>) {
+    fn replied(&mut self, request: &str, error: Option<String>) {
         if self.replying.as_deref() == Some(request) {
             self.replying = None;
         }
@@ -898,7 +967,7 @@ impl Chat {
     }
 
     /// The core took the ask to stop `task`, or says why not.
-    pub fn task_stopped(&mut self, task: &str, error: Option<String>) {
+    fn task_stopped(&mut self, task: &str, error: Option<String>) {
         self.stopping.remove(task);
         self.failed(error);
     }
@@ -975,7 +1044,7 @@ impl Chat {
         })
     }
 
-    pub fn page(&mut self, page: Value, cx: &mut App) {
+    fn page(&mut self, page: Value, cx: &mut App) {
         self.asked_earlier = false;
         let Ok(page) = serde_json::from_value::<ChatPage>(page) else {
             return;
@@ -1028,7 +1097,7 @@ impl Chat {
 
     /// A later page, a `ChatPage` as JSON, whose `newer_after` is none once it reached the live
     /// rows; the chat then attaches again from its mark, which it answers.
-    pub fn later_page(&mut self, agent: &str, page: Value, cx: &mut App) -> Option<ChatAsk> {
+    fn later_page(&mut self, agent: &str, page: Value, cx: &mut App) -> Option<ChatAsk> {
         self.asked_later = false;
         let page = serde_json::from_value::<ChatPage>(page).ok()?;
         let newer_after = page.newer_after;
@@ -1045,7 +1114,7 @@ impl Chat {
 
     /// The rows around a place found, which take the place of those held; the chat follows only
     /// its head until the reader pages back down to its live rows.
-    pub fn around_page(&mut self, page: Value, cx: &mut App) {
+    fn around_page(&mut self, page: Value, cx: &mut App) {
         let Ok(page) = serde_json::from_value::<ChatPage>(page) else {
             return;
         };
@@ -1059,7 +1128,7 @@ impl Chat {
     }
 
     /// The chat's latest rows, which take the place of those held.
-    pub fn latest_page(&mut self, page: Value, cx: &mut App) {
+    fn latest_page(&mut self, page: Value, cx: &mut App) {
         let Ok(page) = serde_json::from_value::<ChatPage>(page) else {
             return;
         };

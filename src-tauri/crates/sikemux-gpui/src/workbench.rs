@@ -28,6 +28,7 @@ use tokio::sync::mpsc;
 
 use crate::battery::Battery;
 use crate::chat::{Chat, ComposeStage, Composing, Question, Sent};
+use crate::ci::{Ci, CiRepo};
 use crate::codehost::{Area, HostArea, OpenArea};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Target, Update, Watch};
 use crate::desk::{
@@ -46,7 +47,6 @@ use crate::terminal::NewTerminal;
 use crate::theme::{self, Tokens, SPACE_1, SPACE_2H, TEXT_SM};
 use crate::toast;
 use crate::{agents, home, rail, tabs, terminal};
-use sikemux_wire::questions::AgentQuestion;
 
 /// A click in the app's own window takes the keyboard back from a page holding it. On
 /// Linux a page is a window of another connection, which X would otherwise leave it with.
@@ -225,26 +225,6 @@ pub struct Workbench {
     pub sims: crate::sim::pane::Simulators,
     _filtering: Option<Subscription>,
     pub(crate) _older: Option<Task<()>>,
-}
-
-/// The CI the top bar's chip shows: the repository and branch watched, the commit its newest
-/// run is for, and the chip.
-pub struct Ci {
-    /// The repository and branch whose latest CI run the top bar shows.
-    pub(crate) watched: Option<CiRepo>,
-    pub(crate) card: Entity<crate::ci_card::CiCard>,
-    /// The commit whose runs from every workflow, tags' included, the glyph sums up.
-    pub(crate) head: Option<String>,
-}
-
-#[derive(Clone, PartialEq)]
-pub struct CiRepo {
-    /// The plugin that speaks for the code host, such as `sikemux.github`.
-    pub plugin: String,
-    pub owner: String,
-    pub name: String,
-    pub account: Option<String>,
-    pub branch: String,
 }
 
 /// Whose tabs a strip holds: a project's, those of an SSH host shown instead of one, or
@@ -616,14 +596,10 @@ impl Workbench {
             on_screen: None,
             watched_project: None,
             watched_place: crate::hosts::Place::This,
-            ci: Ci {
-                watched: None,
-                card: {
-                    let bench = cx.weak_entity();
-                    cx.new(|_| crate::ci_card::CiCard::new(bench))
-                },
-                head: None,
-            },
+            ci: Ci::new({
+                let bench = cx.weak_entity();
+                cx.new(|_| crate::ci_card::CiCard::new(bench))
+            }),
             battery: crate::battery::read(),
             agent_setup: Default::default(),
             overlays: Overlays::default(),
@@ -859,72 +835,12 @@ impl Workbench {
                 self.publish_on_screen();
             }
             Update::Chat(agent, news) => {
-                let Some(chat) = self.chats.open.get_mut(&agent) else {
-                    return;
-                };
                 match news {
-                    ChatNews::Attached(attachment) => {
-                        if let Some(ask) = chat.attached(&agent, attachment, cx) {
-                            self.ask_chat(ask);
-                        }
-                    }
-                    ChatNews::Taken(attachment) => {
-                        if let Some(composing) = chat.composer.as_mut() {
-                            if matches!(composing.stage, ComposeStage::Sent(_)) {
-                                composing.stage = ComposeStage::Writing;
-                            }
-                        }
-                        if let Some(ask) = attachment.and_then(|it| chat.attached(&agent, it, cx)) {
-                            self.ask_chat(ask);
-                        }
-                    }
-                    ChatNews::Changes { seq, changes } => {
-                        let gap = chat.changed(seq, changes, cx);
-                        let (since, wanted) = (chat.mark.clone(), chat.wanted());
-                        if gap {
-                            self.ask_chat(ChatAsk::Attach {
-                                agent: agent.clone(),
-                                since,
-                            });
-                        }
-                        for tool in wanted {
-                            self.ask_chat(ChatAsk::Detail {
-                                agent: agent.clone(),
-                                tool,
-                            });
-                        }
-                    }
-                    ChatNews::Page(page) => chat.page(page, cx),
-                    ChatNews::Later(page) => {
-                        if let Some(ask) = chat.later_page(&agent, page, cx) {
-                            self.ask_chat(ask);
-                        }
-                    }
-                    ChatNews::Around(page) => chat.around_page(page, cx),
-                    ChatNews::Latest(page) => chat.latest_page(page, cx),
                     ChatNews::Found { asked, found } => self.found(&agent, asked, found, cx),
-                    ChatNews::Detail { tool, detail } => chat.detail(tool, detail, cx),
-                    ChatNews::Replied { request, error } => chat.replied(&request, error),
-                    ChatNews::TaskStopped { task, error } => chat.task_stopped(&task, error),
-                    ChatNews::Refused { error, text } => {
-                        if let Some(composing) = chat.composer.as_mut() {
-                            composing.refusal = Some(error.into());
-                            let held = match std::mem::take(&mut composing.stage) {
-                                ComposeStage::Sent(sent) if sent.content.text().trim() == text => {
-                                    Some(sent)
-                                }
-                                _ => None,
-                            };
-                            composing.stage =
-                                ComposeStage::Returned(held.unwrap_or_else(|| Sent {
-                                    content: text.into(),
-                                    attachments: Vec::new(),
-                                    context: Vec::new(),
-                                    tracked_context: HashMap::new(),
-                                }));
-                        }
-                        return self.parts.redraw_stage(cx);
-                    }
+                    news => match self.chats.open.get_mut(&agent) {
+                        Some(chat) => chat.hear(&agent, news, cx),
+                        None => return,
+                    },
                 }
                 let restage = self
                     .chats
@@ -944,8 +860,14 @@ impl Workbench {
                 self.watch_ci();
             }
             Update::Read("ci", value) => {
-                self.keep_read("ci", value);
-                self.watch_head_runs();
+                if !self.ci.newest_read(value, &self.asks) {
+                    return;
+                }
+            }
+            Update::Read("ci-head", value) => {
+                if !self.ci.head_read(value) {
+                    return;
+                }
             }
             Update::Read("update", value) => {
                 let ready = |value: &Value| {
@@ -978,29 +900,9 @@ impl Workbench {
                 }
             }
             Update::Read(key @ ("questions" | "host-questions"), value) => {
-                let host = (key == "host-questions")
-                    .then(|| self.trust_host.clone())
-                    .flatten();
-                match serde_json::from_value::<Vec<AgentQuestion>>(value) {
-                    Ok(asked) => {
-                        let questions = asked.into_iter().map(|asked| Question {
-                            asked,
-                            host: host.clone(),
-                        });
-                        if key == "host-questions" {
-                            self.chats.host_questions = questions.collect();
-                        } else {
-                            self.chats.questions = questions.collect();
-                        }
-                    }
-                    Err(error) => eprintln!("sikemux: the core's questions do not read: {error}"),
-                }
-                self.chats
-                    .questions
-                    .retain(|question| question.host.is_none());
-                self.chats
-                    .questions
-                    .extend(self.chats.host_questions.iter().cloned());
+                let host_read = key == "host-questions";
+                let host = host_read.then(|| self.trust_host.clone()).flatten();
+                self.chats.questions_read(value, host_read, host);
             }
             Update::Read("theme", value) => {
                 if let Ok(palette) = serde_json::from_value(value) {
@@ -1062,11 +964,8 @@ impl Workbench {
             }
             Update::Read("git-overview", value) => {
                 self.files.mark(&value);
-                match (&self.git.pane, self.git_in_front()) {
-                    (Some(pane), true) => pane.update(cx, |pane, cx| pane.overview(&value, cx)),
-                    (Some(_), false) => self.git.behind = true,
-                    (None, _) => {}
-                }
+                let in_front = self.git_in_front();
+                self.git.overview(&value, in_front, cx);
                 self.keep_read("git-overview", value);
                 self.parts.redraw(&self.parts.top, cx);
                 return self.parts.redraw(&self.parts.tabs, cx);
@@ -1105,9 +1004,7 @@ impl Workbench {
                 crate::notifications::kept_running(self, cx);
             }
             Update::Read("git-draft", value) => {
-                if let Some(pane) = &self.git.pane {
-                    pane.update(cx, |pane, cx| pane.drafts(&value, cx));
-                }
+                self.git.drafts(&value, cx);
                 self.keep_read("git-draft", value);
             }
             Update::Read("stash", mut value) => {
@@ -1137,10 +1034,7 @@ impl Workbench {
                 if !self.reads.keep_catalog(value) {
                     return;
                 }
-                if let Some(pane) = &self.git.pane {
-                    let catalog = &self.reads.catalog;
-                    pane.update(cx, |pane, cx| pane.catalog(catalog, cx));
-                }
+                self.git.catalog(&self.reads.catalog, cx);
             }
             Update::Read(key @ ("trust" | "host-trust"), value) => {
                 self.keep_read(key, value);
@@ -1163,9 +1057,7 @@ impl Workbench {
                 self.read_desk_pulls(key, &value, cx);
             }
             Update::Read(key, value) if crate::codehost::watches(key) => {
-                if let Some(host) = &self.git.host {
-                    host.update(cx, |host, cx| host.read(key, &value, cx));
-                }
+                self.git.host_read(key, &value, cx);
             }
             Update::Read(key, value) => {
                 self.keep_read(key, value);
@@ -2196,25 +2088,7 @@ impl Workbench {
     /// and the window shows; a hidden window has it check none.
     fn watch_ci(&mut self) {
         let shown = self.ci_repo().filter(|_| self.window_shown);
-        if shown == self.ci.watched {
-            return;
-        }
-        let repos: Vec<Value> = shown
-            .iter()
-            .map(|ci| json!({ "provider": ci.plugin, "owner": ci.owner, "name": ci.name, "account": ci.account, "host": null }))
-            .collect();
-        let _ = self.asks.send(Ask::Watch(
-            "ci-shown",
-            Watch::new("showCi", json!({ "repos": repos }), &[]),
-        ));
-        if let Some(ci) = &shown {
-            let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "branch": ci.branch, "perPage": 1 });
-            let call = json!({ "plugin": ci.plugin, "method": "runs", "params": runs });
-            let _ = self
-                .asks
-                .send(Ask::Watch("ci", Watch::new("plugin", call, &[Topic::Ci])));
-        }
-        self.ci.watched = shown;
+        self.ci.watch(shown, &self.asks);
     }
 
     fn ci_repo(&self) -> Option<CiRepo> {
@@ -2240,55 +2114,8 @@ impl Workbench {
         })
     }
 
-    /// Watches every run of the commit the branch's newest run is for, which also finds those
-    /// a tag on it started.
-    fn watch_head_runs(&mut self) {
-        let head = self
-            .reads
-            .ci
-            .as_ref()
-            .and_then(|ci| ci["value"]["runs"][0]["sha"].as_str());
-        let Some(ci) = self.ci.watched.as_ref().filter(|_| head.is_some()) else {
-            return;
-        };
-        if head == self.ci.head.as_deref() {
-            return;
-        }
-        let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "headSha": head, "perPage": 20 });
-        let call = json!({ "plugin": ci.plugin, "method": "runs", "params": runs });
-        let _ = self.asks.send(Ask::Watch(
-            "ci-head",
-            Watch::new("plugin", call, &[Topic::Ci]),
-        ));
-        self.ci.head = head.map(str::to_owned);
-    }
-
-    /// The branch's newest commit's checks, while the core is checking it: the latest run of
-    /// each workflow a push or pull request started, as the code host counts a commit's checks.
-    /// Runs started by hand or on a schedule only happen to sit on the commit, so they are left out.
     pub fn head_runs(&self) -> Vec<sikemux_plugin_api::codehost::Run> {
-        let (Some(_), Some(head)) = (&self.ci.watched, &self.ci.head) else {
-            return Vec::new();
-        };
-        let mut seen = HashSet::new();
-        self.reads
-            .ci_head
-            .as_ref()
-            .and_then(|runs| runs["value"]["runs"].as_array())
-            .into_iter()
-            .flatten()
-            .filter(|run| run["sha"] == head.as_str())
-            .filter_map(|run| {
-                serde_json::from_value::<sikemux_plugin_api::codehost::Run>(run.clone()).ok()
-            })
-            .filter(|run| {
-                matches!(
-                    run.event.as_str(),
-                    "push" | "pull_request" | "pull_request_target" | "merge_group"
-                )
-            })
-            .filter(|run| seen.insert((run.workflow_id.clone(), run.branch.clone())))
-            .collect()
+        self.ci.head_runs().to_vec()
     }
 
     /// Asks for the account's picture when it is one this window has not got.
@@ -2333,8 +2160,8 @@ impl Workbench {
     fn holds(&self, update: &Update) -> bool {
         match update {
             Update::Read(
-                key @ ("hosts" | "tasks" | "usage" | "ci" | "ci-head" | "shares" | "stash"
-                | "update" | "runs" | "ports" | "trust" | "drafts"),
+                key @ ("hosts" | "tasks" | "usage" | "shares" | "stash" | "update" | "runs"
+                | "ports" | "trust" | "drafts"),
                 value,
             ) => self.reads.holds(key, value),
             Update::HostView(host, view) => self.hosts.views.get(host) == Some(&**view),
