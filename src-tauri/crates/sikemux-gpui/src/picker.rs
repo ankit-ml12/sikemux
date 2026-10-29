@@ -4,7 +4,8 @@
 use std::path::Path;
 
 use gpui_kit::{Context, PathPromptOptions, Window};
-use serde_json::{json, Value};
+use serde_json::json;
+use sikemux_core::server::SshHost;
 
 use crate::core::Ask;
 use crate::icons::Icon;
@@ -64,22 +65,19 @@ impl Picking {
     }
 }
 
-fn listed(value: Option<&Value>) -> impl Iterator<Item = &Value> {
-    value.and_then(Value::as_array).into_iter().flatten()
-}
-
-fn host_line(host: &Value) -> String {
-    let alias = host["alias"].as_str().unwrap_or_default();
-    let user = host["user"]
-        .as_str()
+fn host_line(host: &SshHost) -> String {
+    let user = host
+        .user
+        .as_deref()
         .map(|user| format!("{user}@"))
         .unwrap_or_default();
-    let port = host["port"]
-        .as_u64()
+    let port = host
+        .port
         .filter(|port| *port != 22)
         .map(|port| format!(":{port}"))
         .unwrap_or_default();
-    format!("{user}{}{port}", host["hostname"].as_str().unwrap_or(alias))
+    let name = host.hostname.as_deref().unwrap_or(&host.alias);
+    format!("{user}{name}{port}")
 }
 
 impl Workbench {
@@ -247,11 +245,8 @@ impl Workbench {
                     .iter()
                     .any(|project| project.path == Path::new(path))
             };
-            for folder in listed(self.reads.picker_folders.as_ref()) {
-                let (Some(name), Some(path)) = (folder["name"].as_str(), folder["path"].as_str())
-                else {
-                    continue;
-                };
+            for folder in &self.reads.picker_folders {
+                let (name, path) = (folder.name.as_str(), folder.path.as_str());
                 if added(path) {
                     continue;
                 }
@@ -271,10 +266,8 @@ impl Workbench {
             }
         }
         if picking.hosts() {
-            for host in listed(self.reads.ssh_hosts.as_ref()) {
-                let Some(alias) = host["alias"].as_str() else {
-                    continue;
-                };
+            for host in &self.reads.ssh_hosts {
+                let alias = host.alias.as_str();
                 let line = host_line(host);
                 rows.push(
                     Row::new(format!("{HOST}{alias}"), alias.to_owned())

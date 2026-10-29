@@ -3,6 +3,7 @@
 
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use sikemux_core::server::{ProjectEntry, SshHost};
 use sikemux_plugin_api::{Listed, TokenForm};
 use sikemux_wire::catalog::CatalogAgent;
 use sikemux_wire::theme::ThemeSummary;
@@ -95,8 +96,8 @@ pub struct Reads {
     pub worktree_pulls: Option<Value>,
     pub worktree_merged: Option<Value>,
     /// What the project and host pickers offer: folders under the project roots, and SSH hosts.
-    pub picker_folders: Option<Value>,
-    pub ssh_hosts: Option<Value>,
+    pub picker_folders: Vec<ProjectEntry>,
+    pub ssh_hosts: Vec<SshHost>,
 }
 
 /// Which field keeps the answer to each watch, by the watch's key.
@@ -140,8 +141,6 @@ slots! {
     crate::settings::ACTIVITY => activity_everywhere,
     crate::worktree_head::PULLS => worktree_pulls,
     crate::worktree_head::MERGED => worktree_merged,
-    "pickerFolders" => picker_folders,
-    "sshHosts" => ssh_hosts,
 }
 
 impl Reads {
@@ -158,6 +157,15 @@ impl Reads {
     /// Keeps the themes the core listed, and says whether they differ from those kept.
     pub fn keep_themes(&mut self, value: Value) -> bool {
         keep_decoded(&mut self.themes, value, "themes")
+    }
+
+    /// Keeps what the pickers were answered: the folders under the project roots, or this
+    /// host's SSH hosts.
+    pub fn keep_picked(&mut self, key: &str, value: Value) {
+        match key {
+            "pickerFolders" => keep_decoded(&mut self.picker_folders, value, "project folders"),
+            _ => keep_decoded(&mut self.ssh_hosts, value, "SSH hosts"),
+        };
     }
 
     /// Keeps what `key`'s watch answered. Gives the answer back when no field holds `key`.

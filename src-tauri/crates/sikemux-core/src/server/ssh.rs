@@ -6,16 +6,16 @@ use std::path::PathBuf;
 use std::sync::Weak;
 
 use notify::{RecursiveMode, Watcher};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sikemux_pty::shell_protocol::SshLink;
 
 use super::changed::Topic;
 use super::Core;
 
 /// How a host's terminals reach it, the best of them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum Reach {
+pub enum Reach {
     /// No terminal is open to it.
     Idle,
     Failed,
@@ -23,17 +23,17 @@ pub(crate) enum Reach {
     Ok,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SshHost {
+pub struct SshHost {
     /// What `ssh` is given, and what the host is called.
-    alias: String,
-    hostname: Option<String>,
-    user: Option<String>,
-    port: Option<u16>,
+    pub alias: String,
+    pub hostname: Option<String>,
+    pub user: Option<String>,
+    pub port: Option<u16>,
     /// The config's line, from 0, whose `Host` names it.
-    line: usize,
-    status: Reach,
+    pub line: usize,
+    pub status: Reach,
 }
 
 fn config_path() -> Option<PathBuf> {

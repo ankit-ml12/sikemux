@@ -1031,12 +1031,11 @@ impl Workbench {
             Update::Read(key, value) if crate::codehost::watches(key) => {
                 self.git.host_read(key, &value, cx);
             }
-            Update::Read(key, value) => {
-                self.keep_read(key, value);
-                if matches!(key, "pickerFolders" | "sshHosts") {
-                    self.picker_answered(cx);
-                }
+            Update::Read(key @ ("pickerFolders" | "sshHosts"), value) => {
+                self.reads.keep_picked(key, value);
+                self.picker_answered(cx);
             }
+            Update::Read(key, value) => self.keep_read(key, value),
             Update::Terminal(session, screenful) => {
                 let key = self.terminals.key(&Place::This, session);
                 self.terminals.apply(key, screenful, cx);

@@ -17,10 +17,10 @@ const MAX_PROJECT_ROOTS: usize = 32;
 const MAX_VISITED_DIRECTORIES: usize = 50_000;
 const MAX_DISCOVERED_PROJECTS: usize = 4_096;
 
-#[derive(Serialize)]
-pub(crate) struct ProjectEntry {
-    name: String,
-    path: String,
+#[derive(Serialize, Deserialize, PartialEq)]
+pub struct ProjectEntry {
+    pub name: String,
+    pub path: String,
 }
 
 fn name_of(p: &Path) -> String {
