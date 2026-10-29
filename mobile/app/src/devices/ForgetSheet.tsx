@@ -35,7 +35,9 @@ export function useForget(device: PairedDevice | undefined, done?: () => void) {
     }
     try {
       forgetBackdrop(device.core, device.backdrop);
-    } catch {}
+    } catch (error) {
+      console.warn("sikemux: could not delete the host's backdrop", error);
+    }
     haptics.success();
     done?.();
     goHome();

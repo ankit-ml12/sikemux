@@ -54,7 +54,9 @@ export function keptChat(core: string, agentId: string): ChatStore {
           folder.create({ idempotent: true, intermediates: true });
           writeWhole(file, text);
           evictOldest();
-        } catch {}
+        } catch (error) {
+          console.warn('sikemux: could not keep the chat on this phone', error);
+        }
       }),
   };
 }
@@ -81,12 +83,16 @@ function documentFile<T>(name: string) {
       try {
         drafts.create({ idempotent: true, intermediates: true });
         writeWhole(file, JSON.stringify(value));
-      } catch {}
+      } catch (error) {
+        console.warn('sikemux: could not keep the draft on this phone', error);
+      }
     },
     clear: () => {
       try {
         if (file.exists) file.delete();
-      } catch {}
+      } catch (error) {
+        console.warn('sikemux: could not let go of a saved draft', error);
+      }
     },
   };
 }

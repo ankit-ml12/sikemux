@@ -25,7 +25,7 @@ export function useShareIntake() {
           waiting = shared;
           router.push('/stash');
         })
-        .catch(() => {});
+        .catch((error: unknown) => console.warn('sikemux: could not take what was shared to the stash', error));
     look();
     const listening = native.addListener?.('onShare', look);
     return () => listening?.remove();

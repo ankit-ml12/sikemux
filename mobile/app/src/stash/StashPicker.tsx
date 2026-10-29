@@ -170,7 +170,7 @@ export function useBearer(): string | undefined {
   useEffect(() => {
     stashToken()?.()
       .then((token) => setBearer(token ?? undefined))
-      .catch(() => {});
+      .catch((error: unknown) => console.warn('sikemux: could not sign in to draw stashed photos', error));
   }, []);
   return bearer;
 }

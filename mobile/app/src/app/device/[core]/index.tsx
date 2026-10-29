@@ -542,7 +542,7 @@ export default function Device() {
     setPicking(false);
     updateDevice(core, { project: project ?? undefined })
       .then(reloadDevices)
-      .catch(() => {});
+      .catch((error: unknown) => console.warn('sikemux: could not keep the project this host shows', error));
   };
   const [scrolled] = useState(() => new Animated.Value(0));
   const [headHeight, setHeadHeight] = useState(0);

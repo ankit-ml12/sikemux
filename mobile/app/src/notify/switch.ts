@@ -37,7 +37,7 @@ export function useNotificationsAllowed(): boolean | undefined {
     const check = () => {
       notificationsAllowed()
         .then(setAllowed)
-        .catch(() => {});
+        .catch((error: unknown) => console.warn('sikemux: could not read whether notifications are allowed', error));
     };
     check();
     const following = AppState.addEventListener('change', (state) => {

@@ -205,7 +205,7 @@ function BringItIn() {
   const copy = () => {
     Clipboard.setStringAsync(DOWNLOAD)
       .then(() => setCopied(true))
-      .catch(() => {});
+      .catch((error: unknown) => console.warn('sikemux: could not copy the download link', error));
   };
 
   return (
@@ -257,9 +257,7 @@ export function DevicesList({ devices }: { devices: PairedDevice[] }) {
     setRefreshing(true);
     devices.forEach((device) => retry(device.core));
     retryHosts();
-    reloadDevices()
-      .catch(() => {})
-      .finally(() => setRefreshing(false));
+    void reloadDevices().finally(() => setRefreshing(false));
   };
 
   return (

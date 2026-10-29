@@ -25,7 +25,7 @@ export function useShareExtension() {
     }
     deviceKeyHex()
       .then((key) => native.setDeviceKey?.(key))
-      .catch(() => {});
+      .catch((error: unknown) => console.warn('sikemux: could not hand the share extension the key of this phone', error));
     let written = '';
     const write = (chats: ShareChats) => {
       // Hosts not reached yet since launch know no chats; the last ones written stay until one is.
