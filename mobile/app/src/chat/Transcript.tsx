@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Animated, Easing, Image, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 
 import { durationLabel } from '@shared/chat/durationLabel';
 import { recordOf } from '@shared/lib/guards';
@@ -37,7 +37,7 @@ import { AgentIcon, Icon } from '@/ui/Icon';
 import type { IconName } from '@/ui/icons.generated';
 import { Working } from '@/ui/status';
 import { fonts, italic, mixed, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
-import { useAnimating } from '@/ui/motion';
+import { useAnimating, useStill } from '@/ui/motion';
 import { Shimmer } from '@/ui/Shimmer';
 import { FoldsContext, useFold } from './folds';
 import { Markdown, plainBlocks } from './Markdown';
@@ -513,9 +513,43 @@ export function Message({
   }
   return (
     <Pressable onPress={tap} onLongPress={keepLongPress} accessibilityHint={tap ? 'Tap for copy and how long it took' : undefined}>
-      <Parts id={message.id} parts={shownParts(message.parts, from)} live={live} />
-      {strip ? <Strip meta={strip} mine={false} /> : null}
+      <Grow id={message.id} live={live}>
+        <Parts id={message.id} parts={shownParts(message.parts, from)} live={live} />
+        {strip ? <Strip meta={strip} mine={false} /> : null}
+      </Grow>
     </Pressable>
+  );
+}
+
+/** How long the answer being written takes to open up to a new line. */
+const GROW_MS = 220;
+
+/**
+ * The answer being written opens up to each new line rather than stepping, so the chat slides up
+ * and what is drawn under it, such as the activity line, holds still.
+ */
+function Grow({ id, live, children }: { id: string; live: boolean; children: ReactNode }) {
+  const still = useStill();
+  const [height] = useState(() => new Animated.Value(0));
+  // The list hands this row to other messages, so the height it holds counts only for the message it measured.
+  const [measured, setMeasured] = useState<string | null>(null);
+  const growing = live && !still && measured === id;
+  const onLayout = ({ nativeEvent }: LayoutChangeEvent) => {
+    const next = nativeEvent.layout.height;
+    if (!growing) {
+      height.setValue(next);
+      setMeasured(id);
+      return;
+    }
+    height.stopAnimation((shown) => {
+      if (next <= shown) height.setValue(next);
+      else Animated.timing(height, { toValue: next, duration: GROW_MS, easing: Easing.out(Easing.quad), useNativeDriver: false }).start();
+    });
+  };
+  return (
+    <Animated.View style={growing ? { height, overflow: 'hidden' } : undefined}>
+      <View onLayout={onLayout}>{children}</View>
+    </Animated.View>
   );
 }
 
