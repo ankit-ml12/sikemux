@@ -55,7 +55,7 @@ final class NotchStore {
 
     func connect() {
         guard link == nil, waitForCore() else { return }
-        let link = CoreLink(socket: options.socket, protocolVersion: options.protocolVersion)
+        let link = CoreLink(socket: options.socket)
         link.onReady = { [weak self, weak link] in
             link?.request(["op": "call", "method": "agentCatalog", "params": [String: Any]()]) { result in
                 if case .success(let response) = result, let raw = response["result"],

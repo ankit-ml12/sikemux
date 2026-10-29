@@ -120,8 +120,6 @@ mod mac {
         command
             .arg("--socket")
             .arg(socket)
-            .arg("--protocol-version")
-            .arg(crate::protocol::PROTOCOL_VERSION.to_string())
             .arg("--state-dir")
             .arg(state_dir)
             .arg("--core-binary")

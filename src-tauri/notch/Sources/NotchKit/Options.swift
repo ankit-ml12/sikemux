@@ -4,7 +4,6 @@ import Foundation
 /// app's own, whose `start` runs the core exactly as the app would.
 struct Options {
     var socket = ""
-    var protocolVersion = 0
     var coreBinary: String?
     var dev = false
     /// A dev build's app: its island goes away with it, so a stable build's comes back.
@@ -31,7 +30,6 @@ struct Options {
             guard let value = rest.next() else { return nil }
             switch flag {
             case "--socket": options.socket = value
-            case "--protocol-version": options.protocolVersion = Int(value) ?? 0
             case "--core-binary": options.coreBinary = value
             case "--app": options.app = value
             case "--app-pid": options.appPid = pid_t(value)
@@ -40,7 +38,7 @@ struct Options {
             default: return nil
             }
         }
-        guard !options.socket.isEmpty, options.protocolVersion > 0, !options.stateDir.isEmpty
+        guard !options.socket.isEmpty, !options.stateDir.isEmpty
         else { return nil }
         return options
     }

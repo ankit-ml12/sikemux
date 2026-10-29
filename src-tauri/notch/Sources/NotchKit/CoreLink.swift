@@ -17,15 +17,14 @@ enum CoreLinkError: Error {
 final class CoreLink {
     typealias Reply = (Result<[String: Any], CoreLinkError>) -> Void
 
-    /// The kind byte and the core's largest payload, `MAX_FRAME_BYTES` in sikemux-wire.
-    private static let maxFrameLength = 1 + 16 * 1024 * 1024
+    /// The kind byte and the core's largest payload.
+    private static let maxFrameLength = 1 + WireProtocol.maxFrameBytes
 
     var onReady: (() -> Void)?
     var onEvent: (([String: Any]) -> Void)?
     var onClose: ((String?) -> Void)?
 
     private let socketPath: String
-    private let protocolVersion: Int
     private let queue = DispatchQueue(label: "com.nodelike.sikemux.notch.core")
     private var fd: Int32 = -1
     private var source: DispatchSourceRead?
@@ -34,9 +33,8 @@ final class CoreLink {
     private var replies: [UInt64: Reply] = [:]
     private var closed = false
 
-    init(socket: String, protocolVersion: Int) {
+    init(socket: String) {
         socketPath = socket
-        self.protocolVersion = protocolVersion
     }
 
     /// False when nothing listens on the socket.
@@ -61,7 +59,7 @@ final class CoreLink {
         source.resume()
         self.source = source
         queue.async {
-            self.write(["type": "hello", "protocol": "sikemux-core", "version": self.protocolVersion])
+            self.write(["type": "hello", "protocol": WireProtocol.name, "version": WireProtocol.version])
         }
         return true
     }
