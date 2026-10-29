@@ -82,3 +82,134 @@ export function chooseFactor(
       };
   return undefined;
 }
+
+/** Why an emailed code is asked for: a device new to the account, a new account, or a new password. */
+export type CodePurpose = "trust" | "verify" | "reset";
+
+/** Where signing in with an email address has got to. */
+export type SignInStep =
+  | { kind: "email" }
+  | { kind: "password" }
+  | { kind: "create" }
+  | { kind: "code"; purpose: CodePurpose }
+  | { kind: "new-password" };
+
+type Answer = Promise<{ error: unknown }>;
+
+/** How Clerk moves on once the person is signed in; a navigate that does nothing keeps them where they are. */
+export type Finalize = { navigate?: () => undefined };
+
+/** The parts of Clerk's sign-in the flow uses, as @clerk/react and @clerk/expo both shape them. */
+export interface ClerkSignIn {
+  readonly status: string | null;
+  create(params: { identifier: string }): Answer;
+  password(params: { password: string }): Answer;
+  finalize(params?: Finalize): Answer;
+  mfa: {
+    sendEmailCode(): Answer;
+    verifyEmailCode(params: { code: string }): Answer;
+  };
+  resetPasswordEmailCode: {
+    sendCode(): Answer;
+    verifyCode(params: { code: string }): Answer;
+    submitPassword(params: { password: string }): Answer;
+  };
+}
+
+export interface ClerkSignUp {
+  readonly status: string | null;
+  password(params: { emailAddress: string; password: string }): Answer;
+  finalize(params?: Finalize): Answer;
+  verifications: {
+    sendEmailCode(): Answer;
+    verifyEmailCode(params: { code: string }): Answer;
+  };
+}
+
+type Flow = {
+  signIn: ClerkSignIn;
+  signUp: ClerkSignUp;
+  /** Moves to the next step, which asks the person for something new. */
+  go: (step: SignInStep) => void;
+  /** How Clerk moves on once the person is signed in. */
+  finalize?: () => Finalize | undefined;
+  /** Runs once the person is signed in, such as to take them home. */
+  done?: () => void;
+  /** Why the screen cannot go on: the account needs a step it does not do, or more than it asks for. */
+  unsupported: { signIn: string; signUp: string };
+};
+
+function check({ error }: { error: unknown }) {
+  if (error) throw error;
+}
+
+/**
+ * Signing in with an email address and a password or emailed code, the same on the web app and the
+ * phone: each step's Clerk calls, throwing Clerk's problem when one refuses, and `go` to the next.
+ */
+export function signInFlow({
+  signIn,
+  signUp,
+  go,
+  finalize,
+  done,
+  unsupported,
+}: Flow) {
+  const finished = async (who: ClerkSignIn | ClerkSignUp) => {
+    check(await who.finalize(finalize?.()));
+    done?.();
+  };
+
+  /** After a password, a device new to the account confirms with an emailed code. */
+  const afterPassword = async () => {
+    if (signIn.status === "complete") return finished(signIn);
+    if (
+      signIn.status === "needs_client_trust" ||
+      signIn.status === "needs_second_factor"
+    ) {
+      check(await signIn.mfa.sendEmailCode());
+      return go({ kind: "code", purpose: "trust" });
+    }
+    throw new Error(unsupported.signIn);
+  };
+
+  return {
+    async submitEmail(email: string) {
+      const { error } = await signIn.create({ identifier: email.trim() });
+      if (errorCode(error) === "form_identifier_not_found")
+        return go({ kind: "create" });
+      check({ error });
+      go({ kind: "password" });
+    },
+    async submitPassword(password: string) {
+      check(await signIn.password({ password }));
+      await afterPassword();
+    },
+    async submitNewAccount(email: string, password: string) {
+      check(await signUp.password({ emailAddress: email.trim(), password }));
+      check(await signUp.verifications.sendEmailCode());
+      go({ kind: "code", purpose: "verify" });
+    },
+    async submitNewPassword(password: string) {
+      check(await signIn.resetPasswordEmailCode.submitPassword({ password }));
+      await afterPassword();
+    },
+    async forgot() {
+      check(await signIn.resetPasswordEmailCode.sendCode());
+      go({ kind: "code", purpose: "reset" });
+    },
+    async submitCode(purpose: CodePurpose, code: string) {
+      if (purpose === "trust") {
+        check(await signIn.mfa.verifyEmailCode({ code }));
+        return finished(signIn);
+      }
+      if (purpose === "reset") {
+        check(await signIn.resetPasswordEmailCode.verifyCode({ code }));
+        return go({ kind: "new-password" });
+      }
+      check(await signUp.verifications.verifyEmailCode({ code }));
+      if (signUp.status !== "complete") throw new Error(unsupported.signUp);
+      await finished(signUp);
+    },
+  };
+}

@@ -1,5 +1,10 @@
 import { useSignIn, useSignUp } from "@clerk/react";
-import { errorCode, explain } from "@sikemux/protocol/account";
+import {
+  explain,
+  signInFlow,
+  type CodePurpose,
+  type SignInStep,
+} from "@sikemux/protocol/account";
 import { useEffect, useRef, useState, type SubmitEvent } from "react";
 
 import {
@@ -11,16 +16,6 @@ import {
   Logo,
 } from "./icons.tsx";
 import { HOST, isSharePath, rememberReturn } from "./navigation.ts";
-
-/** Why an emailed code is asked for: a browser new to the account, a new account, or a new password. */
-type CodePurpose = "trust" | "verify" | "reset";
-
-type Step =
-  | { kind: "start" }
-  | { kind: "password" }
-  | { kind: "create" }
-  | { kind: "code"; purpose: CodePurpose }
-  | { kind: "new-password" };
 
 type Provider = "oauth_apple" | "oauth_google" | "oauth_github";
 
@@ -48,7 +43,7 @@ function staying() {
 export function SignIn({ ready }: { ready: boolean }) {
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
-  const [step, setStep] = useState<Step>({ kind: "start" });
+  const [step, setStep] = useState<SignInStep>({ kind: "email" });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -56,7 +51,7 @@ export function SignIn({ ready }: { ready: boolean }) {
   const [problem, setProblem] = useState<string>();
   const queued = useRef<{ action: Action; work: () => Promise<void> }>(null);
 
-  const go = (next: Step) => {
+  const go = (next: SignInStep) => {
     setProblem(undefined);
     setPassword("");
     setCode("");
@@ -89,90 +84,45 @@ export function SignIn({ ready }: { ready: boolean }) {
     void run(action, work);
   }, [ready]);
 
-  const check = (result: { error: unknown }) => {
-    if (result.error) throw result.error;
-  };
-
-  const afterPassword = async () => {
-    if (signIn.status === "complete")
-      return check(await signIn.finalize(staying()));
-    if (
-      signIn.status === "needs_client_trust" ||
-      signIn.status === "needs_second_factor"
-    ) {
-      check(await signIn.mfa.sendEmailCode());
-      return go({ kind: "code", purpose: "trust" });
-    }
-    throw new Error(
-      "This account needs a sign-in step this page does not do yet.",
-    );
-  };
+  const flow = signInFlow({
+    signIn,
+    signUp,
+    go,
+    finalize: staying,
+    unsupported: {
+      signIn: "This account needs a sign-in step this page does not do yet.",
+      signUp: "The account needs more than this page asks for; try again.",
+    },
+  });
 
   const withProvider = (strategy: Provider) =>
     attempt(ACTIONS[strategy], async () => {
       rememberReturn();
-      check(
-        await signIn.sso({
-          strategy,
-          redirectUrl: new URL("/", location.href).href,
-          redirectCallbackUrl: new URL("/sso-callback", location.href).href,
-        }),
-      );
+      const { error } = await signIn.sso({
+        strategy,
+        redirectUrl: new URL("/", location.href).href,
+        redirectCallbackUrl: new URL("/sso-callback", location.href).href,
+      });
+      if (error) throw error;
     });
 
-  const submitEmail = () =>
-    attempt("submit", async () => {
-      const { error } = await signIn.create({ identifier: email.trim() });
-      if (errorCode(error) === "form_identifier_not_found")
-        return go({ kind: "create" });
-      check({ error });
-      go({ kind: "password" });
-    });
+  const submitEmail = () => attempt("submit", () => flow.submitEmail(email));
 
   const submitPassword = () =>
-    attempt("submit", async () => {
-      check(await signIn.password({ password }));
-      await afterPassword();
-    });
+    attempt("submit", () => flow.submitPassword(password));
 
   const submitNewAccount = () =>
-    attempt("submit", async () => {
-      check(await signUp.password({ emailAddress: email.trim(), password }));
-      check(await signUp.verifications.sendEmailCode());
-      go({ kind: "code", purpose: "verify" });
-    });
+    attempt("submit", () => flow.submitNewAccount(email, password));
 
   const submitNewPassword = () =>
-    attempt("submit", async () => {
-      check(await signIn.resetPasswordEmailCode.submitPassword({ password }));
-      await afterPassword();
-    });
+    attempt("submit", () => flow.submitNewPassword(password));
 
-  const forgot = () =>
-    attempt("submit", async () => {
-      check(await signIn.resetPasswordEmailCode.sendCode());
-      go({ kind: "code", purpose: "reset" });
-    });
+  const forgot = () => attempt("submit", flow.forgot);
 
   const submitCode = (purpose: CodePurpose, typed: string) =>
     attempt("submit", async () => {
       try {
-        if (purpose === "trust") {
-          check(await signIn.mfa.verifyEmailCode({ code: typed }));
-          return check(await signIn.finalize(staying()));
-        }
-        if (purpose === "reset") {
-          check(
-            await signIn.resetPasswordEmailCode.verifyCode({ code: typed }),
-          );
-          return go({ kind: "new-password" });
-        }
-        check(await signUp.verifications.verifyEmailCode({ code: typed }));
-        if (signUp.status !== "complete")
-          throw new Error(
-            "The account needs more than this page asks for; try again.",
-          );
-        check(await signUp.finalize(staying()));
+        await flow.submitCode(purpose, typed);
       } catch (error) {
         setCode("");
         throw error;
@@ -187,19 +137,19 @@ export function SignIn({ ready }: { ready: boolean }) {
 
   const back = () => {
     void signIn.reset();
-    go({ kind: "start" });
+    go({ kind: "email" });
   };
 
   const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
-    if (step.kind === "start") return submitEmail();
+    if (step.kind === "email") return submitEmail();
     if (step.kind === "password") return submitPassword();
     if (step.kind === "create") return submitNewAccount();
     if (step.kind === "new-password") return submitNewPassword();
   };
 
-  if (step.kind === "start")
+  if (step.kind === "email")
     return (
       <section className="panel">
         <div className="brand">

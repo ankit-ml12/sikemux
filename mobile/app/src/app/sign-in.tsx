@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSignIn, useSignUp } from '@clerk/expo';
-import { errorCode, explain } from '@protocol/account';
+import { explain, signInFlow, type CodePurpose, type SignInStep } from '@protocol/account';
 
 import { CodeEntry } from '@/ui/CodeEntry';
 import { goBack, goHome } from '@/ui/navigate';
@@ -10,13 +10,7 @@ import { Prompt } from '@/ui/prompt';
 import { Nav, Screen } from '@/ui/screen';
 import { fonts, type Palette, typeFor, useStyles } from '@/ui/theme';
 
-/** Why an emailed code is asked for: a phone new to the account, a new account, or a new password. */
-type CodePurpose = 'trust' | 'verify' | 'reset';
-
-type Step =
-  { kind: 'email' } | { kind: 'password' } | { kind: 'create' } | { kind: 'code'; purpose: CodePurpose } | { kind: 'new-password' };
-
-const TITLES: Record<Step['kind'], string> = {
+const TITLES: Record<SignInStep['kind'], string> = {
   email: 'Continue with email',
   password: 'Enter your password',
   create: 'Choose a password',
@@ -30,14 +24,14 @@ export default function SignIn() {
   const styles = useStyles(makeStyles);
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
-  const [step, setStep] = useState<Step>({ kind: 'email' });
+  const [step, setStep] = useState<SignInStep>({ kind: 'email' });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
 
-  const go = (next: Step) => {
+  const go = (next: SignInStep) => {
     setProblem(undefined);
     setPassword('');
     setCode('');
@@ -56,73 +50,23 @@ export default function SignIn() {
       setBusy(false);
     }
   };
-  const check = (result: { error: unknown }) => {
-    if (result.error) throw result.error;
-  };
+  const flow = signInFlow({
+    signIn,
+    signUp,
+    go,
+    done: goHome,
+    unsupported: {
+      signIn: 'This account needs a sign-in step the app does not do yet; sign in on the web first.',
+      signUp: 'The account needs more than this app asks for; finish signing up on the web.',
+    },
+  });
 
-  const finishSignIn = async () => {
-    check(await signIn.finalize());
-    goHome();
-  };
-
-  /** After a password, a phone new to the account confirms with an emailed code. */
-  const afterPassword = async () => {
-    if (signIn.status === 'complete') return finishSignIn();
-    if (signIn.status === 'needs_client_trust' || signIn.status === 'needs_second_factor') {
-      check(await signIn.mfa.sendEmailCode());
-      return go({ kind: 'code', purpose: 'trust' });
-    }
-    throw new Error('This account needs a sign-in step the app does not do yet; sign in on the web first.');
-  };
-
-  const submitEmail = () =>
-    attempt(async () => {
-      const { error } = await signIn.create({ identifier: email.trim() });
-      if (errorCode(error) === 'form_identifier_not_found') return go({ kind: 'create' });
-      check({ error });
-      go({ kind: 'password' });
-    });
-
-  const submitPassword = () =>
-    attempt(async () => {
-      check(await signIn.password({ password }));
-      await afterPassword();
-    });
-
-  const submitNewAccount = () =>
-    attempt(async () => {
-      check(await signUp.password({ emailAddress: email.trim(), password }));
-      check(await signUp.verifications.sendEmailCode());
-      go({ kind: 'code', purpose: 'verify' });
-    });
-
-  const forgot = () =>
-    attempt(async () => {
-      check(await signIn.resetPasswordEmailCode.sendCode());
-      go({ kind: 'code', purpose: 'reset' });
-    });
-
-  const submitNewPassword = () =>
-    attempt(async () => {
-      check(await signIn.resetPasswordEmailCode.submitPassword({ password }));
-      await afterPassword();
-    });
-
-  const submitCode = (purpose: CodePurpose, typed: string) =>
-    attempt(async () => {
-      if (purpose === 'trust') {
-        check(await signIn.mfa.verifyEmailCode({ code: typed }));
-        return finishSignIn();
-      }
-      if (purpose === 'reset') {
-        check(await signIn.resetPasswordEmailCode.verifyCode({ code: typed }));
-        return go({ kind: 'new-password' });
-      }
-      check(await signUp.verifications.verifyEmailCode({ code: typed }));
-      if (signUp.status !== 'complete') throw new Error('The account needs more than this app asks for; finish signing up on the web.');
-      check(await signUp.finalize());
-      goHome();
-    }).finally(() => setCode(''));
+  const submitEmail = () => attempt(() => flow.submitEmail(email));
+  const submitPassword = () => attempt(() => flow.submitPassword(password));
+  const submitNewAccount = () => attempt(() => flow.submitNewAccount(email, password));
+  const forgot = () => attempt(flow.forgot);
+  const submitNewPassword = () => attempt(() => flow.submitNewPassword(password));
+  const submitCode = (purpose: CodePurpose, typed: string) => attempt(() => flow.submitCode(purpose, typed)).finally(() => setCode(''));
 
   const typeCode = (typed: string) => {
     setCode(typed);
