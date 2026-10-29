@@ -379,7 +379,7 @@ export default function NewChat() {
                 ))}
               />
             ) : null}
-            <ComposerInput value={draft} onChangeText={setDraft} placeholder={IDLE} editable={!starting} />
+            <ComposerInput value={draft} onChangeText={setDraft} placeholder={IDLE} editable={!starting} autoFocus />
             <View style={styles.bar}>
               <Pressable
                 onPress={() => setSheet('attach')}
