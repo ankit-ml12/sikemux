@@ -13,8 +13,9 @@ use crate::acp::account::{Failure, FailureKind};
 use super::super::super::states::{self, Outcome, Subagent};
 use super::super::json::{text, text_or_empty};
 use super::super::session::TurnEnd;
-use super::super::turns::{self, Ended, Started, Turns};
+use super::super::turns::{self, Ended, Prompted, Started, Turns};
 use super::items::{Follow, Items};
+use super::notifications::{Notification, Stage, Todo, Totals, TurnCompleted, TurnUsage, Window};
 
 /// What one notification does to the chat.
 pub(super) enum Effect {
@@ -34,9 +35,9 @@ pub(super) struct Session {
     pub turns: Turns,
     items: Items,
     /// The latest running token totals.
-    pub totals: Option<Value>,
+    pub totals: Option<Totals>,
     /// How full the context window is.
-    pub context: Option<Value>,
+    pub context: Option<Window>,
     /// The approval stages already put to the person.
     asked: HashSet<(String, String)>,
 }
@@ -59,32 +60,27 @@ pub(super) fn failure(error: &Value) -> Failure {
 }
 
 /// The tokens a turn used, as the chat reads a prompt's answer.
-fn turn_usage(usage: &Value) -> Option<Value> {
-    let count = |key: &str| usage[key].as_u64().unwrap_or(0);
-    usage.is_object().then(|| {
-        json!({
-            "totalTokens": count("inputTokens") + count("outputTokens"),
-            "inputTokens": count("inputTokens").saturating_sub(count("cachedTokens")),
-            "cachedReadTokens": count("cachedTokens"),
-            "outputTokens": count("outputTokens"),
-            "thoughtTokens": count("reasoningTokens"),
-        })
+fn turn_usage(usage: &TurnUsage) -> Value {
+    json!({
+        "totalTokens": usage.input_tokens + usage.output_tokens,
+        "inputTokens": usage.input_tokens.saturating_sub(usage.cached_tokens),
+        "cachedReadTokens": usage.cached_tokens,
+        "outputTokens": usage.output_tokens,
+        "thoughtTokens": usage.reasoning_tokens,
     })
 }
 
 /// Muse's to-do list as the chat's plan.
-fn plan(params: &Value) -> Value {
-    let entries: Vec<Value> = params["items"]
-        .as_array()
-        .into_iter()
-        .flatten()
+fn plan(todos: &[Todo]) -> Value {
+    let entries: Vec<Value> = todos
+        .iter()
         .map(|todo| {
-            let status = match text_or_empty(todo, "status") {
+            let status = match todo.status.as_str() {
                 "inProgress" => "in_progress",
                 "completed" | "cancelled" => "completed",
                 _ => "pending",
             };
-            json!({ "content": todo["text"], "status": status, "priority": "medium" })
+            json!({ "content": todo.text, "status": status, "priority": "medium" })
         })
         .collect();
     json!({ "sessionUpdate": UpdateKind::Plan, "entries": entries })
@@ -154,10 +150,9 @@ impl Session {
             .collect()
     }
 
-    fn turn_completed(&mut self, params: &Value) -> Vec<Effect> {
-        let terminal = text_or_empty(params, "terminal");
-        let outcome = states::outcome(terminal).unwrap_or(Outcome::Failed);
-        match self.turns.completed(text_or_empty(params, "turnId")) {
+    fn turn_completed(&mut self, ended: &TurnCompleted) -> Vec<Effect> {
+        let outcome = states::outcome(&ended.terminal).unwrap_or(Outcome::Failed);
+        match self.turns.completed(&ended.turn_id) {
             Ended::Unprompted => {
                 let (subagents, reason) = turns::unprompted_end(outcome);
                 let mut effects = subagents
@@ -166,105 +161,106 @@ impl Session {
                 effects.push(Effect::WorkEnded(reason));
                 effects
             }
-            Ended::Prompted(mut turn) => {
-                let mut effects: Vec<Effect> = self
-                    .turns
-                    .title(&mut turn)
-                    .map(|title| Effect::Update(self.session_id.clone(), title))
-                    .into_iter()
-                    .collect();
+            Ended::Prompted(turn) => {
                 let mut payload = json!({ "stopReason": "end_turn" });
-                if let Some(usage) = turn_usage(&params["usage"]) {
-                    payload["usage"] = usage;
+                if let Some(usage) = &ended.usage {
+                    payload["usage"] = turn_usage(usage);
                 }
-                let (subagents, end) = turns::prompted_end(outcome, payload, || {
-                    let error = Some(params["error"].clone())
-                        .filter(|error| error.is_object())
+                self.end_prompted(turn, outcome, payload, || {
+                    let error = ended
+                        .error
+                        .clone()
+                        .filter(Value::is_object)
                         .unwrap_or_else(|| {
                             json!({
                                 "kind": "hostDeath",
-                                "message": text(params, "reason").unwrap_or("Turn failed"),
+                                "message": ended.reason.as_deref().unwrap_or("Turn failed"),
                                 "retryable": true,
                             })
                         });
                     failure(&error)
-                });
-                if let Some(state) = subagents {
-                    effects.extend(self.finish_subagents(state));
-                }
-                effects.push(Effect::End(turn.number, end));
-                effects
+                })
             }
             Ended::Neither => Vec::new(),
         }
     }
 
+    fn end_prompted(
+        &mut self,
+        mut turn: Prompted,
+        outcome: Outcome,
+        payload: Value,
+        failure: impl FnOnce() -> Failure,
+    ) -> Vec<Effect> {
+        let mut effects: Vec<Effect> = self
+            .turns
+            .title(&mut turn)
+            .map(|title| Effect::Update(self.session_id.clone(), title))
+            .into_iter()
+            .collect();
+        let (subagents, end) = turns::prompted_end(outcome, payload, failure);
+        if let Some(state) = subagents {
+            effects.extend(self.finish_subagents(state));
+        }
+        effects.push(Effect::End(turn.number, end));
+        effects
+    }
+
     /// The effects of one notification from Muse.
-    pub fn handle(&mut self, method: &str, params: &Value) -> Vec<Effect> {
-        let session = text_or_empty(params, "sessionId").to_owned();
+    pub fn handle(&mut self, notification: Notification) -> Vec<Effect> {
+        let Some(session) = notification.session_id().map(str::to_owned) else {
+            return self.unreadable(notification);
+        };
         let root = session == self.session_id;
         if !root && !self.items.is_child(&session) {
             return Vec::new();
         }
-        let stale = params["turnId"]
-            .as_str()
-            .or_else(|| params["item"]["turnId"].as_str())
-            .is_some_and(|turn| root && self.turns.is_stale(turn));
+        let stale = |turn: Option<&str>| turn.is_some_and(|turn| root && self.turns.is_stale(turn));
         let mut effects = Vec::new();
         let mut follow = Vec::new();
         let cwd = self.cwd.clone();
-        match method {
-            "item/started" | "item/updated" if !stale => {
-                let item = &params["item"];
-                if item["kind"] != "userMessage" {
+        match notification {
+            Notification::Item { stage, params } if !stale(params.turn_id()) => {
+                if params.item["kind"] != "userMessage" {
+                    let shown = match stage {
+                        Stage::Opened => {
+                            self.items.opened(&session, &params.item, &cwd, &mut follow)
+                        }
+                        Stage::Completed => {
+                            self.items
+                                .completed(&session, &params.item, &cwd, &mut follow)
+                        }
+                    };
                     effects.extend(
-                        self.items
-                            .opened(&session, item, &cwd, &mut follow)
+                        shown
                             .into_iter()
                             .map(|(session, update)| Effect::Update(session, update)),
                     );
                 }
             }
-            "item/completed" if !stale => {
-                let item = &params["item"];
-                if item["kind"] != "userMessage" {
-                    effects.extend(
-                        self.items
-                            .completed(&session, item, &cwd, &mut follow)
-                            .into_iter()
-                            .map(|(session, update)| Effect::Update(session, update)),
-                    );
+            Notification::ItemDelta(delta) if !stale(delta.turn_id.as_deref()) => {
+                if let Some(update) = self.items.delta(&session, &delta) {
+                    effects.push(Effect::Update(session, update));
                 }
             }
-            "item/delta" if !stale => {
-                if let Some(update) = self.items.delta(&session, params) {
-                    effects.push(Effect::Update(session.clone(), update));
-                }
-            }
-            "turn/started" if root => {
-                if let Started::Unprompted = self.turns.began(text_or_empty(params, "turnId")) {
+            Notification::TurnStarted(started) if root => {
+                if let Started::Unprompted = self.turns.began(&started.turn_id) {
                     effects.push(Effect::WorkStarted);
                 }
             }
-            "turn/completed" if root => effects.extend(self.turn_completed(params)),
-            "turn/retryScheduled" if root && !stale => {
-                effects.push(Effect::Update(
-                    session.clone(),
-                    notice(
-                        "warning",
-                        &format!(
-                            "Retrying (attempt {} of {}): {}",
-                            params["nextAttempt"],
-                            params["maxAttempts"],
-                            text_or_empty(params, "reason")
-                        ),
-                        None,
-                    ),
-                ));
+            Notification::TurnCompleted(ended) if root => {
+                effects.extend(self.turn_completed(&ended))
             }
-            "session/modelRouteUnserved" if root => {
+            Notification::RetryScheduled(retry) if root && !stale(retry.turn_id.as_deref()) => {
+                let said = format!(
+                    "Retrying (attempt {} of {}): {}",
+                    retry.next_attempt, retry.max_attempts, retry.reason
+                );
+                effects.push(Effect::Update(session, notice("warning", &said, None)));
+            }
+            Notification::ModelRouteUnserved(_) if root => {
                 effects.push(Effect::Update(
-                    session.clone(),
+                    session,
                     notice(
                         "warning",
                         "Muse could not reach the chosen model and used another",
@@ -272,37 +268,55 @@ impl Session {
                     ),
                 ));
             }
-            "session/tokenUsage" if root => {
-                self.totals = Some(params["cumulative"].clone());
-            }
-            "session/contextUsage" if root => {
-                self.context = Some(params.clone());
-                if let (Some(used), Some(size)) = (
-                    params["usedTokens"].as_u64(),
-                    params["windowTokens"].as_u64(),
-                ) {
+            Notification::TokenUsage(usage) if root => self.totals = Some(usage.cumulative),
+            Notification::ContextUsage(usage) if root => {
+                if let (Some(used), Some(size)) =
+                    (usage.window.used_tokens, usage.window.window_tokens)
+                {
                     effects.push(Effect::Update(
-                        session.clone(),
+                        session,
                         json!({ "sessionUpdate": UpdateKind::UsageUpdate, "used": used, "size": size }),
                     ));
                 }
+                self.context = Some(usage.window);
             }
-            "session/nameChanged" if root => {
-                if let Some(name) = text(params, "name") {
+            Notification::NameChanged(named) if root => {
+                if let Some(name) = named.name {
                     self.turns.titled = true;
                     effects.push(Effect::Update(
-                        session.clone(),
+                        session,
                         json!({ "sessionUpdate": UpdateKind::SessionInfoUpdate, "title": name }),
                     ));
                 }
             }
-            "session/todoListChanged" => {
-                effects.push(Effect::Update(session.clone(), plan(params)));
+            Notification::TodoListChanged(todos) => {
+                effects.push(Effect::Update(session, plan(&todos.items)));
             }
             _ => {}
         }
         effects.extend(follow.into_iter().map(Effect::Follow));
         effects
+    }
+
+    /// A turn whose end Muse sent unreadably ends for the chat as failed,
+    /// rather than leaving it waiting on an end it cannot read.
+    fn unreadable(&mut self, notification: Notification) -> Vec<Effect> {
+        let Notification::Unreadable { method, error } = notification else {
+            return Vec::new();
+        };
+        if method != "turn/completed" {
+            return Vec::new();
+        }
+        let Some(turn) = self.turns.give_up() else {
+            return Vec::new();
+        };
+        let payload = json!({ "stopReason": "end_turn" });
+        self.end_prompted(turn, Outcome::Failed, payload, || Failure {
+            kind: FailureKind::Other,
+            title: "Muse ended the turn in a way Sikemux could not read".to_owned(),
+            details: Some(error),
+            resets_at: None,
+        })
     }
 
     /// Tells a subagent's card its conversation, read after it ended.

@@ -7,6 +7,7 @@ mod commands;
 mod config;
 mod history;
 mod items;
+mod notifications;
 mod state;
 
 use sikemux_fold::UpdateKind;
@@ -208,12 +209,15 @@ impl Driver {
         });
     }
 
-    fn notification(&self, method: &str, params: &Value) {
+    fn notification(&self, method: &str, params: Value) {
         if matches!(method, "approval/requested" | "approval/updated") {
-            self.ask(params);
+            self.ask(&params);
             return;
         }
-        let effects = self.session.locked().handle(method, params);
+        let Some(notification) = notifications::read(method, params) else {
+            return;
+        };
+        let effects = self.session.locked().handle(notification);
         self.apply(effects);
     }
 
@@ -253,7 +257,7 @@ impl Reads for Driver {
 
     fn message(&mut self, message: Value) {
         match self.rpc.read(message) {
-            Some(Incoming::Notification { method, params }) => self.notification(&method, &params),
+            Some(Incoming::Notification { method, params }) => self.notification(&method, params),
             Some(Incoming::Request { id, method, params }) => self.request(id, &method, &params),
             Some(Incoming::Answer { purpose, result }) => self.purpose_answered(purpose, result),
             None => {}

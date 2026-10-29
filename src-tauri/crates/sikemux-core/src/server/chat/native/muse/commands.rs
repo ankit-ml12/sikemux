@@ -3,6 +3,8 @@
 
 use serde_json::{json, Value};
 
+use super::notifications::{Totals, Window};
+
 #[derive(Debug, PartialEq)]
 pub(super) enum Command {
     Compact,
@@ -103,30 +105,29 @@ pub(super) struct Status<'a> {
     pub sandbox: &'a str,
     pub session: &'a str,
     /// The latest `session/tokenUsage` running totals.
-    pub totals: Option<&'a Value>,
+    pub totals: Option<&'a Totals>,
     /// The latest `session/contextUsage`.
-    pub context: Option<&'a Value>,
+    pub context: Option<&'a Window>,
 }
 
 /// `/status`: the session's settings and what it has used.
 pub(super) fn status_text(status: &Status) -> String {
-    let tokens = |usage: &Value, key: &str| usage[key].as_u64().unwrap_or(0);
     let used = status.totals.map_or_else(
         || "data not available yet".to_owned(),
         |totals| {
             format!(
                 "{} total  ({} prompt, {} output)",
-                count(tokens(totals, "totalTokens")),
-                count(tokens(totals, "promptTokens")),
-                count(tokens(totals, "outputTokens")),
+                count(totals.total_tokens),
+                count(totals.prompt_tokens),
+                count(totals.output_tokens),
             )
         },
     );
     let window = status
         .context
         .and_then(|context| {
-            let size = context["windowTokens"].as_u64().filter(|size| *size > 0)?;
-            let used = context["usedTokens"].as_u64()?;
+            let size = context.window_tokens.filter(|size| *size > 0)?;
+            let used = context.used_tokens?;
             let left = (size.saturating_sub(used) as f64 / size as f64 * 100.0).round();
             Some(format!(
                 "{left}% left ({} used / {})",

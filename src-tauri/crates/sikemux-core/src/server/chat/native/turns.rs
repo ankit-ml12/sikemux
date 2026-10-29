@@ -213,6 +213,15 @@ impl Turns {
         self.prompted.take().map_or(Ended::Neither, Ended::Prompted)
     }
 
+    /// The prompted turn ends now whatever the agent says of it later.
+    pub fn give_up(&mut self) -> Option<Prompted> {
+        let turn = self.prompted.take()?;
+        if let Some(id) = &turn.id {
+            self.stale.insert(id.clone());
+        }
+        Some(turn)
+    }
+
     /// Whether what the agent says of turn `id` comes too late to show.
     pub fn is_stale(&self, id: &str) -> bool {
         self.stale.contains(id)

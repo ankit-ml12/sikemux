@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use super::super::super::states::{self, Subagent, Task};
 use super::super::json::{text, text_or_empty};
 use super::super::patch;
+use super::notifications::ItemDelta;
 
 /// A tool call's argument JSON. Muse hands it over as the model wrote it,
 /// which is not always valid JSON.
@@ -564,10 +565,10 @@ impl Items {
         }
     }
 
-    pub fn delta(&mut self, session: &str, params: &Value) -> Option<Value> {
-        let id = text_or_empty(params, "itemId");
-        let delta = text_or_empty(params, "delta");
-        let field = text(params, "field").unwrap_or("text");
+    pub fn delta(&mut self, session: &str, said: &ItemDelta) -> Option<Value> {
+        let id = said.item_id.as_str();
+        let delta = said.delta.as_str();
+        let field = said.field.as_deref().unwrap_or("text");
         let streaming = self.streaming.get_mut(id)?;
         if delta.is_empty() || !(field == "text" || field.starts_with("summary")) {
             return None;
