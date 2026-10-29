@@ -59,6 +59,7 @@ mod installing;
 mod link;
 pub(crate) mod live;
 mod mention;
+pub(crate) use attach::{named, named_agents, pill, site_icon, Mention};
 pub use mention::Tray;
 mod meta;
 mod page;

@@ -12,7 +12,8 @@ use std::time::Duration;
 use gpui_kit::base::input::InlineToken;
 use gpui_kit::component::input::TextareaState;
 use gpui_kit::{
-    px, App, AppContext, Context, Focusable, IntoElement, SharedString, Styled, Task, Window,
+    px, App, AppContext, Context, Focusable, IntoElement, ScrollHandle, SharedString, Styled, Task,
+    Window,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -192,6 +193,8 @@ pub struct Menu {
     pinned: bool,
     /// The stash items that were new when the tray opened.
     fresh: Rc<[String]>,
+    /// Where the tray's rows are scrolled, so the keys keep the picked one in sight.
+    scroll: ScrollHandle,
     _ranking: Option<Task<()>>,
 }
 
@@ -202,6 +205,7 @@ pub struct Tray<'a> {
     pub selected: usize,
     pub fresh: &'a [String],
     pub needle: &'a str,
+    pub scroll: ScrollHandle,
 }
 
 impl Menu {
@@ -224,6 +228,7 @@ impl Menu {
             selected: self.selected,
             fresh: &self.fresh,
             needle: &self.typed.needle,
+            scroll: self.scroll.clone(),
         })
     }
 }
@@ -385,6 +390,7 @@ impl Workbench {
             empty,
             pinned: false,
             fresh,
+            scroll: ScrollHandle::new(),
             _ranking: ranking,
         }
     }
@@ -698,6 +704,7 @@ impl Workbench {
             let count = menu.choices.len() as isize;
             if count > 0 {
                 menu.selected = (menu.selected as isize + by).rem_euclid(count) as usize;
+                menu.scroll.scroll_to_item(menu.selected);
                 cx.notify();
             }
         }

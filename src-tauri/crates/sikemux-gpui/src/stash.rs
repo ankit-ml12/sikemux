@@ -16,6 +16,7 @@ use crate::picture::{Picture, Remote};
 use crate::theme::{self, Tokens};
 use crate::ui::{self, IconButton};
 use crate::workbench::Workbench;
+use sikemux_wire::chat::SentContext;
 use sikemux_wire::protocol::PaneKind;
 
 /// How long a stashed prompt can be put back from its composer.
@@ -26,6 +27,15 @@ const GAP: f32 = 14.;
 const PREVIEW: f32 = 132.;
 /// How wide a card's picture is decoded, enough for the widest a card stretches to.
 const PICTURE: f32 = 440.;
+/// A tray row's square, and how tall the tray's rows grow before they scroll.
+const THUMB: f32 = 44.;
+const TRAY_TALL: f32 = 380.;
+/// A tray row's words: their size, the height of each of their two lines, how many are laid out
+/// at most, and the widest a pill among them grows.
+const WORDS: f32 = 13.;
+const LINE: f32 = 19.;
+const WORDS_LAID: usize = 48;
+const PILL_WIDEST: f32 = 260.;
 
 /// A stash item being dragged onto a chat.
 #[derive(Clone)]
@@ -123,19 +133,20 @@ pub fn title(item: &Value) -> String {
     .unwrap_or_else(|| "Untitled".to_owned())
 }
 
-/// Where a link goes or what the item is, then how long ago it was stashed.
+/// Where a link goes, how many files a prompt carries or how large a file is, then how long ago it
+/// was stashed.
 pub fn place(item: &Value) -> String {
     let what = match item["kind"].as_str() {
         Some("link") => (item["preview"]["site"].as_str())
             .filter(|site| !site.is_empty())
             .map(str::to_owned)
             .or_else(|| site_of(item["url"].as_str()?)),
-        Some("text") => Some("Text".to_owned()),
-        Some("prompt") => Some(match item["attachments"].as_array().map_or(0, Vec::len) {
-            0 => "Prompt".to_owned(),
-            1 => "Prompt · 1 file".to_owned(),
-            files => format!("Prompt · {files} files"),
-        }),
+        Some("text") => None,
+        Some("prompt") => match item["attachments"].as_array().map_or(0, Vec::len) {
+            0 => None,
+            1 => Some("1 file".to_owned()),
+            files => Some(format!("{files} files")),
+        },
         _ => item["size"].as_u64().map(crate::codehost::bytes),
     };
     let ago = item["createdAt"].as_str().map(crate::codehost::ago);
@@ -430,8 +441,8 @@ impl Workbench {
     }
 }
 
-/// Docked on a chat's composer, opened by its Stash button or by `&`: the newest items first as small
-/// cards, the new ones tagged, to attach with a click or the keys; everything new at once; the
+/// Docked on a chat's composer, opened by its Stash button or by `&`: the newest items first, one
+/// row each, the new ones tagged, to attach with a click or the keys; everything new at once; the
 /// whole Stash; and stashing the prompt being written.
 pub fn tray(
     bench: &Workbench,
@@ -481,8 +492,8 @@ pub fn tray(
         ))
     };
     let head = div()
-        .px(px(2.))
-        .pb(px(10.))
+        .px(px(6.))
+        .pb(px(8.))
         .flex()
         .items_center()
         .gap(px(8.))
@@ -492,6 +503,12 @@ pub fn tray(
                 .letter_spacing(0.1)
                 .text_color(t.text_tertiary),
         )
+        .when(!tray.items.is_empty(), |head| {
+            head.child(
+                ui::text(tray.items.len().to_string(), 10.5, FontWeight::NORMAL)
+                    .text_color(t.text_tertiary),
+            )
+        })
         .when(!tray.needle.is_empty(), |head| {
             head.child(
                 ui::text(
@@ -519,26 +536,32 @@ pub fn tray(
             .child(words)
             .into_any_element()
     } else {
-        let cards = tray.items.iter().enumerate().map(|(index, item)| {
+        let agents = crate::chat::named_agents(bench);
+        let rows = tray.items.iter().enumerate().map(|(index, item)| {
             let new = item["id"]
                 .as_str()
                 .is_some_and(|id| fresh.iter().any(|fresh| fresh == id));
-            tray_card(bench, agent, index, item, index == tray.selected, new, cx)
+            let picked = index == tray.selected;
+            tray_row(bench, agent, index, item, picked, new, &agents, cx)
         });
         div()
-            .grid()
-            .grid_cols(4)
-            .gap(px(10.))
-            .children(cards)
+            .id("stash-tray-rows")
+            .track_scroll(&tray.scroll)
+            .max_h(px(TRAY_TALL))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .children(rows)
             .into_any_element()
     };
     let stash_prompt = {
         let agent = agent.to_owned();
         div()
             .id("stash-tray-prompt")
-            .mt(px(10.))
+            .mt(px(8.))
+            .mx(px(6.))
             .pt(px(9.))
-            .px(px(2.))
             .border_t_1()
             .border_color(t.line)
             .flex()
@@ -558,7 +581,8 @@ pub fn tray(
             .child(ui::kbd("⌘S", cx))
     };
     div()
-        .p(px(12.))
+        .px(px(8.))
+        .py(px(12.))
         .flex()
         .flex_col()
         .child(head)
@@ -567,120 +591,457 @@ pub fn tray(
         .into_any_element()
 }
 
-/// One item in the tray: its picture, a text's opening words, or its glyph over its title and
-/// where it is from, tagged when it is new.
-fn tray_card(
+/// A page an item links to, and what the server read of it.
+#[derive(Clone, Copy)]
+struct Page<'a> {
+    url: &'a str,
+    preview: &'a Value,
+}
+
+impl Page<'_> {
+    fn title(&self) -> String {
+        (self.preview["title"].as_str().map(str::trim))
+            .filter(|title| !title.is_empty())
+            .map_or_else(|| bare_url(self.url), str::to_owned)
+    }
+
+    fn site(&self) -> String {
+        (self.preview["site"].as_str().map(str::trim))
+            .filter(|site| !site.is_empty())
+            .map(str::to_owned)
+            .or_else(|| site_of(self.url))
+            .unwrap_or_else(|| bare_url(self.url))
+    }
+}
+
+fn bare_url(url: &str) -> String {
+    url.trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .to_owned()
+}
+
+/// A word of an item's text, or something it names, drawn as the chat draws its chip.
+enum Piece {
+    Word(String),
+    Pill { id: String, label: String },
+}
+
+/// What a row shows of an item: its words, and what it carries besides them.
+struct Said<'a> {
+    words: Vec<Piece>,
+    /// The page shown under the words, unless photos come first.
+    lead: Option<Page<'a>>,
+    /// The other pages, not to a pull request or issue, which the words name.
+    pages: Vec<Page<'a>>,
+    photos: Vec<&'a Value>,
+    /// The files the words do not name.
+    files: Vec<&'a Value>,
+    /// The first agent the words name.
+    agent: Option<String>,
+}
+
+fn said<'a>(item: &'a Value, agents: &[(String, String)]) -> Said<'a> {
+    let attachments: Vec<&Value> = item["attachments"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .collect();
+    let pages: Vec<Page> = match item["kind"].as_str() {
+        Some("link") => (item["url"].as_str())
+            .map(|url| Page {
+                url,
+                preview: &item["preview"],
+            })
+            .into_iter()
+            .collect(),
+        _ => (item["links"].as_array().into_iter().flatten())
+            .filter_map(|link| {
+                Some(Page {
+                    url: link["url"].as_str()?,
+                    preview: &link["preview"],
+                })
+            })
+            .collect(),
+    };
+    let text = match item["kind"].as_str() {
+        Some("text" | "prompt") => item["text"].as_str().unwrap_or_default(),
+        _ => "",
+    };
+    let names: Vec<String> = (attachments.iter())
+        .filter_map(|file| file["name"].as_str().map(str::to_owned))
+        .collect();
+    let context: Vec<SentContext> = (pages.iter())
+        .map(|page| SentContext {
+            uri: page.url.to_owned(),
+            title: String::new(),
+        })
+        .collect();
+    let named = crate::chat::named(text, &names, &context, agents, &[]);
+    let words = pieces(text, &named, &pages);
+    let (photos, files): (Vec<&Value>, Vec<&Value>) =
+        (attachments.into_iter()).partition(|file| file["kind"].as_str() == Some("image"));
+    let files = (files.into_iter())
+        .filter(|file| {
+            !(named.iter()).any(|mention| file["name"].as_str() == Some(mention.carried.as_str()))
+        })
+        .collect();
+    let mut pages: Vec<Page> = (pages.into_iter())
+        .filter(|page| sikemux_markdown::reference(page.url).is_none())
+        .collect();
+    let lead = (photos.is_empty() && !pages.is_empty()).then(|| pages.remove(0));
+    let agent =
+        (named.iter()).find_map(|mention| mention.id.strip_prefix("agent:").map(str::to_owned));
+    Said {
+        words,
+        lead,
+        pages,
+        photos,
+        files,
+        agent,
+    }
+}
+
+/// The words of `text` with what `named` names in them as pills, and its links taken out, but for
+/// one to a pull request or issue that nothing named, which reads as GitHub writes it.
+fn pieces(text: &str, named: &[crate::chat::Mention], pages: &[Page]) -> Vec<Piece> {
+    let mut marks: Vec<(usize, usize, Option<(String, String)>)> = Vec::new();
+    for mention in named {
+        let id = match mention.id.strip_prefix("image:") {
+            Some(name) => format!("file:{name}"),
+            None => mention.id.clone(),
+        };
+        let pill = Some((id, mention.label.clone()));
+        let found = text.match_indices(mention.written.as_str());
+        marks.extend(found.map(|(at, written)| (at, at + written.len(), pill.clone())));
+    }
+    for page in pages {
+        let carried = named.iter().any(|mention| mention.carried == page.url);
+        let pill = sikemux_markdown::reference(page.url)
+            .filter(|_| !carried)
+            .map(|reference| {
+                let kind = match page.url.contains("/pull") || reference.contains('!') {
+                    true => "pull",
+                    false => "issue",
+                };
+                (format!("tracked:{kind}:{}", page.url), reference)
+            });
+        let found = text.match_indices(page.url);
+        marks.extend(found.map(|(at, url)| (at, at + url.len(), pill.clone())));
+    }
+    marks.sort_by_key(|(at, end, _)| (*at, std::cmp::Reverse(*end)));
+    let words = |text: &str| {
+        text.split_whitespace()
+            .map(|word| Piece::Word(word.to_owned()))
+            .collect::<Vec<_>>()
+    };
+    let mut pieces = Vec::new();
+    let mut from = 0;
+    for (at, end, pill) in marks {
+        if at < from || pieces.len() >= WORDS_LAID {
+            continue;
+        }
+        pieces.extend(words(&text[from..at]));
+        pieces.extend(pill.map(|(id, label)| Piece::Pill { id, label }));
+        from = end;
+    }
+    pieces.extend(words(&text[from..]));
+    pieces.truncate(WORDS_LAID);
+    pieces
+}
+
+/// One item in the tray: a square with its picture or mark, its words over what it carries, and
+/// how long ago it was stashed.
+#[allow(clippy::too_many_arguments)]
+fn tray_row(
     bench: &Workbench,
     agent: &str,
     index: usize,
     item: &Value,
     selected: bool,
     new: bool,
+    agents: &[(String, String)],
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let thumb = div()
-        .h(px(72.))
-        .w_full()
-        .flex()
-        .items_center()
-        .justify_center()
-        .overflow_hidden()
-        .bg(t.surface_sunken);
-    let words_of = |text: &str| {
+    let said = said(item, agents);
+    let words = match (said.words.is_empty(), said.lead) {
+        (false, _) => sentence(&said.words, bench, &t, cx),
+        (true, Some(page)) => sentence(&[Piece::Word(page.title())], bench, &t, cx),
+        (true, None) => sentence(&[Piece::Word(name_of(item, &said))], bench, &t, cx),
+    };
+    let under = match (said.lead, item["kind"].as_str()) {
+        (Some(page), _) => {
+            let said_more = !said.words.is_empty();
+            Some(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    .min_w_0()
+                    .child(favicon_small(bench, page.url, &t))
+                    .child(
+                        ui::text(
+                            if said_more { page.title() } else { page.site() },
+                            11.5,
+                            FontWeight::NORMAL,
+                        )
+                        .text_color(t.text_tertiary)
+                        .truncate(),
+                    ),
+            )
+        }
+        (None, Some("file" | "video")) => item["size"].as_u64().map(|size| {
+            div().child(
+                ui::text(crate::codehost::bytes(size), 11.5, FontWeight::NORMAL)
+                    .text_color(t.text_tertiary),
+            )
+        }),
+        _ => None,
+    };
+    let files = said.files.iter().map(|file| file_chip(file, &t));
+    let pages = (!said.pages.is_empty()).then(|| pages_chip(bench, &said, &t));
+    let chips = (!said.files.is_empty() || pages.is_some()).then(|| {
         div()
-            .size_full()
-            .p(px(9.))
-            .overflow_hidden()
-            .text_size(theme::ui_text(11.))
-            .line_height(theme::ui_text(15.))
-            .text_color(t.text_secondary)
-            .child(text.trim().to_owned())
-    };
-    let thumb = match item["kind"].as_str() {
-        Some("text") => thumb.child(words_of(item["text"].as_str().unwrap_or_default())),
-        Some("prompt") => thumb.child(prompt_preview(bench, item, 9., 11., 20., &t, cx)),
-        _ => match picture(bench, item) {
-            Some(shown) => {
-                let fallback = std::cell::RefCell::new(Some(glyph(item, 20., cx)));
-                thumb.child(
-                    img(shown.source_at(px(220.)))
-                        .size_full()
-                        .object_fit(ObjectFit::Cover)
-                        .with_fallback(move || {
-                            fallback
-                                .borrow_mut()
-                                .take()
-                                .unwrap_or_else(|| div().into_any_element())
-                        }),
-                )
-            }
-            None if item["kind"].as_str() == Some("link") => {
-                thumb.child(favicon(bench, item, &t, cx))
-            }
-            None => thumb.child(glyph(item, 22., cx)),
-        },
-    };
-    let worded = !matches!(item["kind"].as_str(), Some("text" | "prompt"));
+            .pt(px(4.))
+            .flex()
+            .flex_wrap()
+            .gap(px(5.))
+            .children(files)
+            .children(pages)
+    });
+    let ago = item["createdAt"].as_str().map(crate::codehost::ago);
     let agent = agent.to_owned();
     div()
-        .id(("stash-tray-card", index))
-        .relative()
-        .min_w_0()
+        .id(("stash-tray-row", index))
         .flex()
-        .flex_col()
-        .rounded(theme::RADIUS_3)
-        .overflow_hidden()
-        .border_1()
-        .border_color(if selected { t.border_strong } else { t.line })
-        .bg(if selected {
-            t.surface_chosen
-        } else {
-            t.surface_raised
-        })
+        .items_start()
+        .gap(px(12.))
+        .p(px(8.))
+        .rounded(theme::RADIUS_2)
         .cursor_pointer()
-        .hover(move |card| card.border_color(t.border_strong))
+        .when(selected, |row| row.bg(t.surface_chosen))
+        .hover(move |row| row.bg(t.surface_chosen))
         .on_click(cx.listener(move |bench, _, window, cx| {
             bench.take_choice(&agent, Some(index), window, cx)
         }))
-        .child(thumb)
+        .child(square(bench, item, &said, &t, cx))
         .child(
             div()
-                .px(px(9.))
-                .py(px(7.))
+                .flex_1()
+                .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(1.))
-                .when(worded, |meta| {
-                    meta.child(
-                        ui::text(title(item), 12., FontWeight::MEDIUM)
-                            .text_color(t.text_primary)
-                            .truncate(),
+                .gap(px(2.))
+                .child(words)
+                .children(under)
+                .children(chips),
+        )
+        .child(
+            div()
+                .flex_none()
+                .pt(px(2.))
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .when(new, |aside| {
+                    aside.child(
+                        div()
+                            .px(px(5.))
+                            .rounded(theme::RADIUS_1)
+                            .bg(t.accent)
+                            .text_size(theme::ui_text(9.))
+                            .font_weight(FontWeight::BOLD)
+                            .letter_spacing(0.08)
+                            .text_color(t.on_accent)
+                            .child("NEW"),
                     )
                 })
-                .child(
-                    ui::text(place(item), 10.5, FontWeight::NORMAL)
-                        .text_color(t.text_tertiary)
-                        .truncate(),
+                .children(
+                    ago.map(|ago| {
+                        ui::text(ago, 11., FontWeight::NORMAL).text_color(t.text_tertiary)
+                    }),
                 ),
         )
-        .when(new, |card| {
-            card.child(
-                div()
-                    .absolute()
-                    .top(px(6.))
-                    .left(px(6.))
-                    .px(px(5.))
-                    .rounded(theme::RADIUS_1)
-                    .bg(t.accent)
-                    .text_size(theme::ui_text(9.))
-                    .font_weight(FontWeight::BOLD)
-                    .letter_spacing(0.08)
-                    .text_color(t.on_accent)
-                    .child("NEW"),
-            )
-        })
         .into_any_element()
+}
+
+/// What to call an item with no words of its own: its file's name, or how many photos it holds.
+fn name_of(item: &Value, said: &Said) -> String {
+    match (said.photos.len(), said.files.first()) {
+        (0, Some(file)) => file["name"].as_str().unwrap_or_default().to_owned(),
+        (0, None) => title(item),
+        (1, _) => "1 photo".to_owned(),
+        (photos, _) => format!("{photos} photos"),
+    }
+}
+
+/// Up to two lines of words, with what they name as the chat's chips.
+fn sentence(pieces: &[Piece], bench: &Workbench, t: &Tokens, cx: &App) -> AnyElement {
+    let space = px(3.5);
+    let laid = pieces.iter().enumerate().map(|(at, piece)| {
+        let held = matches!(
+            pieces.get(at + 1),
+            Some(Piece::Word(next)) if next.starts_with([',', '.', ';', ':', '!', '?', ')'])
+        );
+        let gap = if held { px(0.) } else { space };
+        match piece {
+            Piece::Word(word) => div().mr(gap).child(word.clone()).into_any_element(),
+            Piece::Pill { id, label } => crate::chat::pill(id, label, bench, cx)
+                .mr(gap)
+                .h(theme::ui_text(LINE - 3.))
+                .max_w(px(PILL_WIDEST))
+                .text_size(theme::ui_text(12.))
+                .into_any_element(),
+        }
+    });
+    div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .max_h(theme::ui_text(LINE * 2.))
+        .overflow_hidden()
+        .text_size(theme::ui_text(WORDS))
+        .line_height(theme::ui_text(LINE))
+        .text_color(t.text_primary)
+        .children(laid)
+        .into_any_element()
+}
+
+/// The row's square: its first photo, counted when there are more; its own picture or its page's;
+/// the mark of the first agent it names; or its glyph.
+fn square(bench: &Workbench, item: &Value, said: &Said, t: &Tokens, cx: &App) -> AnyElement {
+    let asks = bench.asks.clone();
+    let shown = (said.photos.first())
+        .and_then(|photo| photo["id"].as_str())
+        .map(|id| Picture::Remote(Remote::stashed(id.to_owned(), asks.clone())))
+        .or_else(|| picture(bench, item))
+        .or_else(|| {
+            let url = said.lead?.preview["imageUrl"].as_str()?;
+            Some(Picture::Remote(Remote::new(url.to_owned(), asks)))
+        });
+    let named = said.agent.as_deref().and_then(|id| bench.agent_by_id(id));
+    let mark = |cx: &App| match &named {
+        Some(agent) => ui::agent_mark(agent, 20., cx),
+        None => glyph(item, 20., cx),
+    };
+    let tile = div()
+        .size(px(THUMB))
+        .flex_none()
+        .relative()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(theme::RADIUS_2)
+        .overflow_hidden()
+        .bg(t.surface_raised);
+    let tile = match shown {
+        Some(shown) => {
+            let fallback = std::cell::RefCell::new(Some(mark(cx)));
+            tile.child(
+                img(shown.source_at(px(THUMB * 2.)))
+                    .size(px(THUMB))
+                    .object_fit(ObjectFit::Cover)
+                    .with_fallback(move || {
+                        fallback
+                            .borrow_mut()
+                            .take()
+                            .unwrap_or_else(|| div().into_any_element())
+                    }),
+            )
+        }
+        None => tile.child(mark(cx)),
+    };
+    tile.when(said.photos.len() > 1, |tile| {
+        tile.child(
+            div()
+                .absolute()
+                .right(px(2.))
+                .bottom(px(2.))
+                .px(px(4.))
+                .rounded(theme::RADIUS_1)
+                .bg(gpui_kit::black().opacity(0.6))
+                .text_size(theme::ui_text(9.5))
+                .font_weight(FontWeight::BOLD)
+                .text_color(gpui_kit::white())
+                .child(said.photos.len().to_string()),
+        )
+    })
+    .into_any_element()
+}
+
+fn chip(t: &Tokens) -> Div {
+    div()
+        .h(px(22.))
+        .px(px(6.))
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .rounded(theme::RADIUS_1)
+        .bg(t.surface_chosen)
+        .text_size(theme::ui_text(11.5))
+        .text_color(t.text_secondary)
+        .whitespace_nowrap()
+}
+
+/// A file the words do not name: its type, then its name.
+fn file_chip(file: &Value, t: &Tokens) -> Div {
+    let name = file["name"].as_str().unwrap_or("file");
+    let (stem, kind) = name
+        .rsplit_once('.')
+        .filter(|(stem, kind)| !stem.is_empty() && (1..=4).contains(&kind.len()))
+        .map_or((name, None), |(stem, kind)| {
+            (stem, Some(kind.to_uppercase()))
+        });
+    chip(t)
+        .pl(px(3.))
+        .children(kind.map(|kind| {
+            div()
+                .h(px(16.))
+                .px(px(4.))
+                .flex()
+                .items_center()
+                .rounded(px(3.))
+                .bg(t.surface_raised)
+                .border_1()
+                .border_color(t.line)
+                .text_size(theme::ui_text(8.5))
+                .font_weight(FontWeight::BOLD)
+                .letter_spacing(0.04)
+                .text_color(t.text_primary)
+                .child(kind)
+        }))
+        .child(div().max_w(px(180.)).truncate().child(stem.to_owned()))
+}
+
+/// The pages beyond the one under the words: their sites' icons, stacked, and how many.
+fn pages_chip(bench: &Workbench, said: &Said, t: &Tokens) -> Div {
+    let count = said.pages.len();
+    let words = match (said.lead.is_some(), count) {
+        (true, 1) => "+1 link".to_owned(),
+        (true, count) => format!("+{count} links"),
+        (false, 1) => "1 link".to_owned(),
+        (false, count) => format!("{count} links"),
+    };
+    let icons = said.pages.iter().take(3).enumerate().map(|(at, page)| {
+        div()
+            .when(at > 0, |icon| icon.ml(px(-4.)))
+            .size(px(16.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(4.))
+            .bg(t.surface_raised)
+            .border_1()
+            .border_color(t.line)
+            .overflow_hidden()
+            .child(favicon_small(bench, page.url, t))
+    });
+    chip(t).child(div().flex().children(icons)).child(words)
+}
+
+/// A page's site icon, small, else a globe.
+fn favicon_small(bench: &Workbench, url: &str, t: &Tokens) -> AnyElement {
+    crate::chat::site_icon(url, true, Icon::Globe, Some(&bench.asks), t)
 }
 
 /// A prompt's opening words over a row of its files' thumbnails.

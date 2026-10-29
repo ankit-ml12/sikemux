@@ -10,6 +10,7 @@ mod reference;
 mod url;
 
 pub use doc::{diff, Doc, Op, Patch};
+pub use reference::name as reference;
 
 use pulldown_cmark::{
     Alignment, CodeBlockKind, Event, LinkType, Options as ParserOptions, Parser, Tag, TagEnd,

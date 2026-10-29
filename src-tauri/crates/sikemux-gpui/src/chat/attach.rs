@@ -18,7 +18,7 @@ use gpui_kit::{
 use gpui_transcript::FilePress;
 use sikemux_core::acp::MAX_ATTACHMENTS;
 use sikemux_core::protocol::MAX_ATTACHMENT_BYTES;
-use sikemux_wire::chat::ChatMessage;
+use sikemux_wire::chat::{ChatMessage, SentContext};
 use sikemux_wire::protocol::ChatContext;
 use tokio::sync::oneshot;
 
@@ -29,7 +29,7 @@ use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
-use crate::workbench::Workbench;
+use crate::workbench::{AgentRow, Workbench};
 
 const IMAGE_EXTENSIONS: [&str; 13] = [
     "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif", "tif", "tiff", "heic", "heif",
@@ -79,6 +79,13 @@ const MAX_KEPT: u64 = MAX_ATTACHMENT_BYTES as u64;
 /// The glyph a tag in the draft wears: the picture itself, a named agent's face or mark, or a
 /// file's or folder's.
 fn mark(id: &str, tint: Hsla, bench: &WeakEntity<Workbench>, cx: &App) -> gpui_kit::AnyElement {
+    let named =
+        (id.strip_prefix("agent:")).and_then(|agent| bench.upgrade()?.read(cx).agent_by_id(agent));
+    mark_of(id, tint, named, cx)
+}
+
+/// The glyph a tag wears, with the agent it names, when it names one the app knows.
+fn mark_of(id: &str, tint: Hsla, named: Option<AgentRow>, cx: &App) -> gpui_kit::AnyElement {
     if let Some(path) = id.strip_prefix(IMAGE) {
         return gpui_kit::img(
             crate::picture::Picture::File(PathBuf::from(path)).source_at(px(96.)),
@@ -89,8 +96,6 @@ fn mark(id: &str, tint: Hsla, bench: &WeakEntity<Workbench>, cx: &App) -> gpui_k
         .object_fit(gpui_kit::ObjectFit::Cover)
         .into_any_element();
     }
-    let named =
-        (id.strip_prefix("agent:")).and_then(|agent| bench.upgrade()?.read(cx).agent_by_id(agent));
     if let Some(agent) = named {
         return ui::agent_mark(&agent, 14., cx);
     }
@@ -566,11 +571,10 @@ fn drawn_chip(
     let (key, title) = chip_words(token.token().id(), token.token().label());
     div().h(token.line_height()).flex().items_center().child(
         chip_face(
-            token.token().id(),
             key,
             title,
             token.is_selected(),
-            bench,
+            mark(token.token().id(), Tokens::get(cx).text_tertiary, bench, cx),
             cx,
         )
         .h(token.line_height() - px(4.))
@@ -589,11 +593,10 @@ const CHIP_TITLE_GAP: f32 = 5.;
 /// A chip as the draft and a sent message both draw it: its mark, its handle, and the title
 /// after it a step quieter, on a slightly rounded grey lift.
 fn chip_face(
-    id: &str,
     key: SharedString,
     title: Option<SharedString>,
     selected: bool,
-    bench: &WeakEntity<Workbench>,
+    mark: gpui_kit::AnyElement,
     cx: &App,
 ) -> Div {
     let t = Tokens::get(cx).clone();
@@ -620,7 +623,7 @@ fn chip_face(
                 .flex_none()
                 .flex()
                 .justify_center()
-                .child(mark(id, t.text_tertiary, bench, cx)),
+                .child(mark),
         )
         .child(div().flex_none().child(key))
         .when_some(title, |chip, title| {
@@ -633,6 +636,14 @@ fn chip_face(
                     .child(title),
             )
         })
+}
+
+/// A mention as the draft draws its chip, on a line of the size around it.
+pub(crate) fn pill(id: &str, label: &str, bench: &Workbench, cx: &App) -> Div {
+    let (key, title) = chip_words(id, &label.to_owned().into());
+    let named = (id.strip_prefix("agent:")).and_then(|agent| bench.agent_by_id(agent));
+    let mark = mark_of(id, Tokens::get(cx).text_tertiary, named, cx);
+    chip_face(key, title, false, mark, cx)
 }
 
 /// A sent message's look with the chips it wrote drawn in its text as the draft drew them.
@@ -698,9 +709,15 @@ pub fn with_chips(
                         .text_size(size)
                         .font_family(font.clone())
                         .child(
-                            chip_face(&mention.id, key.clone(), title.clone(), false, &bench, cx)
-                                .w_full()
-                                .h(height),
+                            chip_face(
+                                key.clone(),
+                                title.clone(),
+                                false,
+                                mark(&mention.id, Tokens::get(cx).text_tertiary, &bench, cx),
+                                cx,
+                            )
+                            .w_full()
+                            .h(height),
                         )
                         .into_any_element()
                 }),
@@ -715,15 +732,15 @@ pub fn with_chips(
 
 /// Something a sent message names in its text: the words it wrote, the chip they stood for
 /// in the draft, and the file or address it carried for it.
-struct Mention {
-    written: String,
-    id: String,
-    label: String,
-    carried: String,
+pub(crate) struct Mention {
+    pub written: String,
+    pub id: String,
+    pub label: String,
+    pub carried: String,
 }
 
 /// Every named agent the app knows, by name and id, for the `@` mentions sent messages wrote.
-fn named_agents(bench: &Workbench) -> Vec<(String, String)> {
+pub(crate) fn named_agents(bench: &Workbench) -> Vec<(String, String)> {
     bench
         .projects()
         .iter()
@@ -740,6 +757,23 @@ fn mentions(
     commands: &[String],
 ) -> Vec<Mention> {
     let written = super::edit::written(message);
+    named(
+        &written,
+        &message.attachments,
+        &message.context,
+        agents,
+        commands,
+    )
+}
+
+/// What `written` names, as a draft's chips wrote it, of the files and context it went with.
+pub(crate) fn named(
+    written: &str,
+    attachments: &[String],
+    context: &[SentContext],
+    agents: &[(String, String)],
+    commands: &[String],
+) -> Vec<Mention> {
     let mut found: Vec<Mention> = agents
         .iter()
         .map(|(name, id)| Mention {
@@ -755,7 +789,7 @@ fn mentions(
             carried: String::new(),
         }))
         .collect();
-    for (index, path) in message.attachments.iter().enumerate() {
+    for (index, path) in attachments.iter().enumerate() {
         let number = index + 1;
         if is_image(Path::new(path)) {
             found.push(Mention {
@@ -785,7 +819,7 @@ fn mentions(
             });
         }
     }
-    for item in &message.context {
+    for item in context {
         let named = item.title.starts_with('@');
         let mention = item
             .uri
@@ -826,7 +860,8 @@ fn chip_words(id: &str, label: &SharedString) -> (SharedString, Option<SharedStr
                 .split_once(": ")
                 .filter(|(kind, _)| kind.len() <= 24 && !kind.contains(' '))
                 .map_or(title, |(_, rest)| rest);
-            return (number.to_owned().into(), Some(title.to_owned().into()));
+            let title = (!title.is_empty()).then(|| title.to_owned().into());
+            return (number.to_owned().into(), title);
         }
     }
     let bare = label
@@ -1010,7 +1045,7 @@ fn context_chip(
 }
 
 /// A link's site icon, which the core fetches, else `icon`.
-fn site_icon(
+pub(crate) fn site_icon(
     uri: &str,
     web: bool,
     icon: Icon,

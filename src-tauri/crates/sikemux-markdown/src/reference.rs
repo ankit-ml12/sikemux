@@ -16,7 +16,8 @@ pub fn fold(node: Node) -> Node {
     Node::Element(Element::A { href, title, c })
 }
 
-fn name(href: &str) -> Option<String> {
+/// How GitHub writes a reference to the pull request or issue at `href`, when it is one.
+pub fn name(href: &str) -> Option<String> {
     let rest = href
         .strip_prefix("https://")
         .or_else(|| href.strip_prefix("http://"))?;
