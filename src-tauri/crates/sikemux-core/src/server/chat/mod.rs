@@ -27,7 +27,6 @@ use sikemux_process::sync::Locked;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::acp::{bounded_text, current_choice, native as acp_native, permission, SessionEnd};
-use crate::launch::providers::ROUTED_ENV;
 use crate::launch::PermissionMode;
 use crate::protocol::{
     AgentState, Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatInfo,
@@ -936,7 +935,7 @@ impl Chat {
             launcher: self.origin.launcher.clone(),
             permission_mode: self.feed.permission_mode(),
             model: self.launch.model.clone(),
-            model_provider: self.launch.env.get(ROUTED_ENV).cloned(),
+            model_provider: self.launch.model_provider.clone(),
             effort: self.launch.effort.clone(),
             unread: false,
             active_at: None,
@@ -1583,6 +1582,7 @@ pub(crate) fn idle(core: &Arc<Core>, agent_id: &str, provider: &str, cwd: &str) 
         resume_id: None,
         permission_mode: PermissionMode::WorkspaceWrite,
         model: None,
+        model_provider: None,
         effort: None,
         account: None,
         fallbacks: Vec::new(),
@@ -2540,8 +2540,8 @@ fn offer_model(core: &Core, launch: &ChatLaunch, options: &mut Value, model: &st
         return;
     };
     let name = launch
-        .env
-        .get(ROUTED_ENV)
+        .model_provider
+        .as_deref()
         .and_then(|id| core.workspaces.providers()?.find(id))
         .map_or(model, |provider| {
             provider.api_model(&launch.provider, model)

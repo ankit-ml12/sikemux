@@ -16,7 +16,6 @@ use sikemux_process::sync::Locked;
 
 use super::changed::Topic;
 use crate::cli::protocol::HarnessRequest;
-use crate::launch::providers::ROUTED_ENV;
 use crate::text::clipped;
 
 use super::connection::blocking;
@@ -636,7 +635,7 @@ fn paid_by(core: &Core, agent_id: &str) -> Option<String> {
     let provider = core
         .workspaces
         .providers()?
-        .find(chat.launch.env.get(ROUTED_ENV)?)?;
+        .find(chat.launch.model_provider.as_deref()?)?;
     Some(provider.label.clone())
 }
 

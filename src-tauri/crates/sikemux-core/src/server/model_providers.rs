@@ -184,8 +184,8 @@ pub(crate) async fn key(core: &Arc<Core>, id: &str) -> Option<String> {
 /// A chat started on a provider has its model's tool calls checked once.
 pub(crate) fn chat_begun(core: &Arc<Core>, launch: &ChatLaunch) {
     let routed = launch
-        .env
-        .get(providers::ROUTED_ENV)
+        .model_provider
+        .as_deref()
         .and_then(|id| store(core).ok()?.find(id));
     if let (Some(provider), Some(model)) = (routed, launch.model.as_deref()) {
         let model = provider.api_model(&launch.provider, model).to_owned();

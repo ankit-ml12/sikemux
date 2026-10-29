@@ -14,7 +14,6 @@ use sikemux_process::sync::Locked;
 use sikemux_pty::agent_detection::AgentKind;
 
 use crate::cli::protocol::HarnessRequest;
-use crate::launch::providers::ROUTED_ENV;
 use crate::launch::PermissionMode;
 use crate::protocol::Event;
 
@@ -354,7 +353,7 @@ fn start(
     };
     launch.agent_id = agent_id.clone();
     let model = launch.model.clone();
-    let paid_by = launch.env.get(ROUTED_ENV).cloned();
+    let paid_by = launch.model_provider.clone();
     let chat = chat::begin_worker(core, launch, &lead_id, launcher).map_err(|error| {
         core.names.forget(&agent_id);
         error.to_string()

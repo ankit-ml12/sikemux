@@ -660,6 +660,7 @@ fn chat_launch(core: &CoreProcess, agent_id: &str) -> ChatLaunch {
         resume_id: None,
         permission_mode: PermissionMode::WorkspaceWrite,
         model: None,
+        model_provider: None,
         effort: None,
         account: None,
         fallbacks: Vec::new(),

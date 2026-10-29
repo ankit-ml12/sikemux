@@ -919,6 +919,7 @@ fn fake_launch(agent_id: &str) -> ChatLaunch {
         resume_id: None,
         permission_mode: PermissionMode::Bypass,
         model: None,
+        model_provider: None,
         effort: None,
         account: None,
         fallbacks: Vec::new(),

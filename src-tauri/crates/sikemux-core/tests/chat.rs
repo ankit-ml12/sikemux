@@ -114,6 +114,7 @@ fn chat_launch(agent_id: &str, permission_mode: &str) -> ChatLaunch {
         resume_id: None,
         permission_mode: PermissionMode::parse(permission_mode).unwrap(),
         model: Some("slow".into()),
+        model_provider: None,
         effort: None,
         account: None,
         fallbacks: Vec::new(),

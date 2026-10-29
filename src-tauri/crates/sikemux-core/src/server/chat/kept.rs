@@ -10,7 +10,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::user_environment::shell_var;
 use tokio::sync::watch;
 
-use crate::launch::providers::{self, ROUTED_ENV};
+use crate::launch::providers;
 use crate::protocol::ChatLaunch;
 
 use super::super::callers;
@@ -104,10 +104,9 @@ impl KeptChat {
             }
         }
         if !self.keys.is_empty() {
-            let routed = launch.env.get(ROUTED_ENV).cloned();
             let wired = core.workspaces.wiring(
                 &launch.provider,
-                routed.as_deref(),
+                launch.model_provider.as_deref(),
                 launch.model.as_deref(),
             )?;
             for name in &self.keys {

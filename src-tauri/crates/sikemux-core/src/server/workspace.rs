@@ -21,7 +21,7 @@ use crate::agent_accounts::status::{self, AgentStatus};
 use crate::agent_accounts::Book;
 use crate::agent_catalog::{AgentKind, AGENTS};
 use crate::cli::protocol::is_tool_agent_id;
-use crate::launch::providers::{Helper, Providers, Wiring, ROUTED_ENV};
+use crate::launch::providers::{Helper, Providers, Wiring};
 use crate::launch::{skills, AgentSpec, PermissionMode};
 use crate::protocol::{
     AgentBuddy, Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState,
@@ -1114,7 +1114,7 @@ impl Workspaces {
             permission_mode: launch.permission_mode.as_str().to_owned(),
             profile_id,
             model: launch.model.clone(),
-            model_provider: launch.env.get(ROUTED_ENV).cloned(),
+            model_provider: launch.model_provider.clone(),
             effort: launch.effort.clone(),
             keep_alive: false,
             asleep: false,
@@ -1360,6 +1360,7 @@ impl Workspaces {
             resume_id: None,
             permission_mode: PermissionMode::parse(&launcher.permission_mode)?,
             model,
+            model_provider: provider.map(str::to_owned),
             effort: None,
             account: None,
             fallbacks: Vec::new(),
@@ -1843,7 +1844,7 @@ impl Workspaces {
     ) -> Result<(ChatLaunch, Option<String>), String> {
         let same = lead.provider == provider;
         let lead_own = lead.launch.as_ref().filter(|_| same);
-        let lead_route = lead_own.and_then(|own| own.env.get(ROUTED_ENV).cloned());
+        let lead_route = lead_own.and_then(|own| own.model_provider.clone());
         let route = match paid {
             Paid::AsLead => lead_route.clone(),
             Paid::By(route) => route,

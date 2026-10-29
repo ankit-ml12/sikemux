@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 
-use crate::launch::providers::ROUTED_ENV;
 use crate::launch::PermissionMode;
 use crate::protocol::ChatLaunch;
 
@@ -618,7 +617,7 @@ impl Backend for Codex {
             .await
             .map(|read| read["account"].clone())
             .unwrap_or(Value::Null);
-        let models = if launch.env.contains_key(ROUTED_ENV) {
+        let models = if launch.model_provider.is_some() {
             Models::default()
         } else {
             list_models(&rpc).await.map_err(failed)?

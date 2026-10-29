@@ -21,7 +21,6 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::agent_catalog::AgentKind;
-use crate::launch::providers::ROUTED_ENV;
 use crate::launch::PermissionMode;
 use crate::protocol::ChatLaunch;
 use crate::sessions::{self, roots::account_root};
@@ -513,7 +512,7 @@ impl Backend for Claude {
         if let Some(replaying) = replaying {
             replaying.await.map_err(|error| error.to_string())??;
         }
-        let routed = launch.env.contains_key(ROUTED_ENV);
+        let routed = launch.model_provider.is_some();
         let mut models: Vec<Value> = initialized
             .get("models")
             .and_then(Value::as_array)
@@ -676,7 +675,7 @@ impl Backend for Claude {
     async fn set_config(&mut self, config_id: &str, value: &str) -> Result<Value, String> {
         match config_id {
             "model" => {
-                if self.launch.env.contains_key(ROUTED_ENV) {
+                if self.launch.model_provider.is_some() {
                     config::provider_model(&mut self.kept.models, value);
                 }
                 if !config::offers_model(&self.kept.models, value) {

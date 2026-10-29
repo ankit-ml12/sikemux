@@ -27,9 +27,6 @@ pub const KEY_SERVICE: &str = if cfg!(debug_assertions) {
 #[cfg(test)]
 pub const KEY_SERVICE: &str = "sikemux-model-provider-test";
 
-/// Names the provider a chat runs on in place of its agent's own account.
-pub const ROUTED_ENV: &str = "SIKEMUX_MODEL_PROVIDER";
-
 /// Begins a provider's id as OMP and OpenCode know it.
 const AGENT_ID_PREFIX: &str = "sikemux-";
 
@@ -387,7 +384,7 @@ impl Provider {
         if !self.routes(agent) {
             return None;
         }
-        let mut env = BTreeMap::from([(ROUTED_ENV.to_owned(), self.id.clone())]);
+        let mut env = BTreeMap::new();
         let token = key.unwrap_or(&self.id).to_owned();
         if agent == "omp" || agent == "opencode" {
             let model = self.api_model(agent, model?);

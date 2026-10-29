@@ -444,6 +444,9 @@ pub struct ChatLaunch {
     pub resume_id: Option<String>,
     pub permission_mode: PermissionMode,
     pub model: Option<String>,
+    /// The hosted model provider its turns are paid with, in place of the agent's own account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_provider: Option<String>,
     pub effort: Option<String>,
     /// The account the agent signs in as, when the app names one.
     #[serde(default)]
