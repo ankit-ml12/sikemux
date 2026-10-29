@@ -903,9 +903,11 @@ impl Workbench {
             .panes
             .focused
             .as_deref()
-            .and_then(|focused| target_of(&tab.pane, focused));
+            .and_then(|focused| crate::panes::find_view(&tab.pane, focused));
         let agent = match focused {
-            Some((PaneKind::Agent | PaneKind::Desk, agent)) => agent,
+            Some(view) if matches!(view.kind, PaneKind::Agent | PaneKind::Desk) => {
+                view.target.clone()
+            }
             _ => shows(tab, PaneKind::Agent)?.clone(),
         };
         let view = view_of(&tab.pane, PaneKind::Agent, &agent)?;
@@ -1378,10 +1380,12 @@ pub fn install(cx: &mut App) {
 
 /// Makes the page areas and address bars of the desks the tab in front shows.
 pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
-    let mut agents = Vec::new();
-    if let Some(tab) = bench.tab() {
-        desks_in(&tab.pane, &mut agents);
-    }
+    let agents: Vec<String> = bench.tab().map_or_else(Vec::new, |tab| {
+        crate::panes::views(&tab.pane)
+            .filter(|view| view.kind == PaneKind::Desk)
+            .map(|view| view.target.clone())
+            .collect()
+    });
     bench.stop_screens_hidden(&agents);
     for agent in &agents {
         if bench.desks.kinds.get(agent) == Some(&DeskKind::Simulator) {
@@ -1624,34 +1628,10 @@ fn idle_blank(tab: &sikemux_browser::BrowserTab) -> bool {
     tab.url == sikemux_browser::BLANK_URL && !tab.loading
 }
 
-fn desks_in(pane: &Pane, found: &mut Vec<String>) {
-    match pane {
-        Pane::View {
-            kind: PaneKind::Desk,
-            target,
-            ..
-        } => found.push(target.clone()),
-        Pane::View { .. } => {}
-        Pane::Split { panes, .. } => panes.iter().for_each(|pane| desks_in(pane, found)),
-    }
-}
-
 fn view_of(pane: &Pane, kind: PaneKind, target: &str) -> Option<String> {
-    match pane {
-        Pane::View {
-            id,
-            kind: shown,
-            target: shown_target,
-        } => (*shown == kind && shown_target == target).then(|| id.clone()),
-        Pane::Split { panes, .. } => panes.iter().find_map(|pane| view_of(pane, kind, target)),
-    }
-}
-
-fn target_of(pane: &Pane, view: &str) -> Option<(PaneKind, String)> {
-    match pane {
-        Pane::View { id, kind, target } => (id == view).then(|| (*kind, target.clone())),
-        Pane::Split { panes, .. } => panes.iter().find_map(|pane| target_of(pane, view)),
-    }
+    crate::panes::views(pane)
+        .find(|view| view.kind == kind && view.target == target)
+        .map(|view| view.id.clone())
 }
 
 /// A desk's head, its strip of tabs beside the kind switch, as tall as the Mac's.

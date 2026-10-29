@@ -3,7 +3,7 @@
 
 use gpui_kit::Context;
 use serde_json::json;
-use sikemux_wire::protocol::{AgentStatus, Pane, PaneKind};
+use sikemux_wire::protocol::{AgentStatus, PaneKind};
 
 use crate::workbench::{Choice, Strip, Workbench};
 
@@ -29,7 +29,11 @@ impl Workbench {
             .iter()
             .filter(|tab| tabs.contains(&tab.id))
         {
-            agents_in(&tab.pane, &mut agents);
+            agents.extend(
+                crate::panes::views(&tab.pane)
+                    .filter(|view| view.kind == PaneKind::Agent)
+                    .map(|view| view.target.clone()),
+            );
             files.extend(crate::editor::files_of(&place, &tab.pane));
         }
         let title = match (tabs.len(), agents.as_slice()) {
@@ -168,19 +172,6 @@ impl Workbench {
                 _ => row.title,
             })
             .unwrap_or_else(|| "the agent".to_owned())
-    }
-}
-
-/// The agents a tab's views show.
-fn agents_in(pane: &Pane, agents: &mut Vec<String>) {
-    match pane {
-        Pane::View {
-            kind: PaneKind::Agent,
-            target,
-            ..
-        } => agents.push(target.clone()),
-        Pane::View { .. } => {}
-        Pane::Split { panes, .. } => panes.iter().for_each(|pane| agents_in(pane, agents)),
     }
 }
 

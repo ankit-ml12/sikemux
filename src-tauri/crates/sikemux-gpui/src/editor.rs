@@ -1508,15 +1508,11 @@ pub fn keep(bench: &mut Workbench) {
 }
 
 fn files_in(place: &Host, pane: &Pane, found: &mut Vec<FileKey>) {
-    match pane {
-        Pane::View {
-            kind: PaneKind::Files,
-            target,
-            ..
-        } => found.push(FileKey::new(place.clone(), target)),
-        Pane::View { .. } => {}
-        Pane::Split { panes, .. } => panes.iter().for_each(|pane| files_in(place, pane, found)),
-    }
+    found.extend(
+        crate::panes::views(pane)
+            .filter(|view| view.kind == PaneKind::Files)
+            .map(|view| FileKey::new(place.clone(), view.target)),
+    );
 }
 
 /// Reads again what open files were at their last commit, when the repository of the

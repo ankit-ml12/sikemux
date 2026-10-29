@@ -3772,15 +3772,11 @@ impl Workbench {
     /// was picked in it while another tab is in front, and lets go of the rest.
     fn plugin_panes(&mut self, cx: &mut Context<Self>) {
         fn plugin_views(pane: &Pane, into: &mut Vec<(String, String)>) {
-            match pane {
-                Pane::View {
-                    id,
-                    kind: PaneKind::Plugin,
-                    target,
-                } => into.push((id.clone(), target.clone())),
-                Pane::View { .. } => {}
-                Pane::Split { panes, .. } => panes.iter().for_each(|pane| plugin_views(pane, into)),
-            }
+            into.extend(
+                crate::panes::views(pane)
+                    .filter(|view| view.kind == PaneKind::Plugin)
+                    .map(|view| (view.id.clone(), view.target.clone())),
+            );
         }
         let mut shown = Vec::new();
         if let Some(strip) = self.strip() {
@@ -4642,19 +4638,9 @@ fn same_kind(tab: &Tab, front: &Tab) -> bool {
 
 /// What the tab's first view of `kind` shows, among its splits.
 pub fn shows(tab: &Tab, kind: PaneKind) -> Option<&String> {
-    shown_in(&tab.pane, kind)
-}
-
-fn shown_in(pane: &Pane, kind: PaneKind) -> Option<&String> {
-    match pane {
-        Pane::View {
-            kind: shown,
-            target,
-            ..
-        } if *shown == kind => Some(target),
-        Pane::View { .. } => None,
-        Pane::Split { panes, .. } => panes.iter().find_map(|pane| shown_in(pane, kind)),
-    }
+    crate::panes::views(&tab.pane)
+        .find(|view| view.kind == kind)
+        .map(|view| view.target)
 }
 
 /// One part of the window, drawn as a view of its own so that it draws again only when the

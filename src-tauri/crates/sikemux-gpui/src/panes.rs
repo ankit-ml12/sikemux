@@ -209,8 +209,10 @@ impl Panes {
     fn note_desks(&self, tab: &Tab, still: bool) {
         let in_sight = self.last_drawn.replace(Some(tab.id.clone())).as_ref() == Some(&tab.id);
         let still = still || !in_sight;
-        let mut desks = Vec::new();
-        desk_views(&tab.pane, &mut desks);
+        let desks: Vec<String> = views(&tab.pane)
+            .filter(|view| view.kind == PaneKind::Desk)
+            .map(|view| view.id.clone())
+            .collect();
         let before = self
             .desks_seen
             .borrow_mut()
@@ -251,30 +253,45 @@ pub fn tab(
     pane(bench, &tab.id, zoomed.unwrap_or(&tab.pane), window, cx)
 }
 
-fn desk_views(pane: &Pane, found: &mut Vec<String>) {
-    match pane {
-        Pane::View {
+/// A view in a tab's pane tree: its id, its kind and what it shows.
+#[derive(Clone, Copy, PartialEq)]
+pub struct View<'a> {
+    pub id: &'a String,
+    pub kind: PaneKind,
+    pub target: &'a String,
+}
+
+/// Every split and view of a pane tree, from the top down and left to right.
+pub fn nodes(pane: &Pane) -> impl Iterator<Item = &Pane> {
+    let mut left = vec![pane];
+    std::iter::from_fn(move || {
+        let node = left.pop()?;
+        if let Pane::Split { panes, .. } = node {
+            left.extend(panes.iter().rev());
+        }
+        Some(node)
+    })
+}
+
+/// Every view of a pane tree, left to right.
+pub fn views(pane: &Pane) -> impl Iterator<Item = View<'_>> {
+    nodes(pane).filter_map(|node| match node {
+        Pane::View { id, kind, target } => Some(View {
             id,
-            kind: PaneKind::Desk,
-            ..
-        } => found.push(id.clone()),
-        Pane::View { .. } => {}
-        Pane::Split { panes, .. } => panes.iter().for_each(|pane| desk_views(pane, found)),
-    }
+            kind: *kind,
+            target,
+        }),
+        Pane::Split { .. } => None,
+    })
+}
+
+/// The view `id` in a pane tree.
+pub fn find_view<'a>(pane: &'a Pane, id: &str) -> Option<View<'a>> {
+    views(pane).find(|view| view.id == id)
 }
 
 fn view_in<'a>(pane: &'a Pane, view: &str) -> Option<&'a Pane> {
-    match pane {
-        Pane::View { id, .. } => (id == view).then_some(pane),
-        Pane::Split { panes, .. } => panes.iter().find_map(|child| view_in(child, view)),
-    }
-}
-
-fn first_view(pane: &Pane) -> Option<&str> {
-    match pane {
-        Pane::View { id, .. } => Some(id),
-        Pane::Split { panes, .. } => panes.first().and_then(first_view),
-    }
+    nodes(pane).find(|node| matches!(node, Pane::View { id, .. } if id == view))
 }
 
 /// The splits from the tab's top down to `view`, each with which of its panes holds it.
@@ -420,8 +437,8 @@ fn stack(
         .position(|child| focused.is_some_and(|view| view_in(child, view).is_some()))
         .unwrap_or(0);
     let pills = panes.iter().enumerate().filter_map(|(at, child)| {
-        let lead = first_view(child)?.to_owned();
-        let (kind, target) = crate::tabs::first_view(child)?;
+        let first = views(child).next()?;
+        let (lead, kind, target) = (first.id.clone(), first.kind, first.target);
         let mark = ui::picture(
             crate::tabs::view_icon(kind, target),
             13.,
@@ -746,11 +763,10 @@ pub(crate) fn handle<T: Clone + 'static>(
 }
 
 fn split_sizes(pane: &Pane, split: &str) -> Option<Vec<u16>> {
-    match pane {
+    nodes(pane).find_map(|node| match node {
         Pane::Split { id, sizes, .. } if id == split => Some(sizes.clone()),
-        Pane::Split { panes, .. } => panes.iter().find_map(|child| split_sizes(child, split)),
-        Pane::View { .. } => None,
-    }
+        _ => None,
+    })
 }
 
 impl Panes {
@@ -834,7 +850,7 @@ impl Workbench {
             .focused
             .clone()
             .filter(|id| view_in(&tab.pane, id).is_some())
-            .or_else(|| first_view(&tab.pane).map(str::to_owned))
+            .or_else(|| views(&tab.pane).next().map(|view| view.id.clone()))
     }
 
     /// What the view in focus in the tab in front shows, else its first.
@@ -1126,7 +1142,7 @@ impl Workbench {
             .focused
             .clone()
             .filter(|id| view_in(&tab.pane, id).is_some())
-            .or_else(|| first_view(&tab.pane).map(str::to_owned))?;
+            .or_else(|| views(&tab.pane).next().map(|view| view.id.clone()))?;
         let Pane::View { kind, target, .. } = view_in(&tab.pane, &view)? else {
             return None;
         };

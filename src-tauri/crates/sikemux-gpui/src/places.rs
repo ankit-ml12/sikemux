@@ -197,17 +197,18 @@ impl Workbench {
         let (Some(strip), Some(tab)) = (self.strip(), self.tab().cloned()) else {
             return;
         };
-        let mut views = Vec::new();
-        views_of(&tab.pane, &mut views);
+        let views: Vec<_> = crate::panes::views(&tab.pane).collect();
         let split = views.len() > 1;
         let shown = match split {
             true => views
                 .iter()
-                .find(|(id, _, _)| self.panes.focused.as_deref() == Some(id.as_str()))
+                .find(|view| self.panes.focused.as_deref() == Some(view.id.as_str()))
                 .or(views.last()),
             false => views.first(),
         };
-        let Some((pane, kind, target)) = shown.cloned() else {
+        let Some((pane, kind, target)) =
+            shown.map(|view| (view.id.clone(), view.kind, view.target.clone()))
+        else {
             return;
         };
         let place = self.place();
@@ -261,13 +262,5 @@ impl Workbench {
         }
         self.show_rail_page(page, cx);
         cx.notify();
-    }
-}
-
-/// Every view of a tab, by its id, kind and what it shows.
-fn views_of(pane: &Pane, views: &mut Vec<(String, PaneKind, String)>) {
-    match pane {
-        Pane::View { id, kind, target } => views.push((id.clone(), *kind, target.clone())),
-        Pane::Split { panes, .. } => panes.iter().for_each(|pane| views_of(pane, views)),
     }
 }

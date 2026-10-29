@@ -1318,11 +1318,11 @@ pub fn view_label(bench: &Workbench, pane: &Pane) -> SharedString {
     }
 }
 
+/// The kind of a pane's first view and what it shows, which name the tab holding it.
 pub fn first_view(pane: &Pane) -> Option<(PaneKind, &String)> {
-    match pane {
-        Pane::View { kind, target, .. } => Some((*kind, target)),
-        Pane::Split { panes, .. } => panes.iter().find_map(first_view),
-    }
+    crate::panes::views(pane)
+        .next()
+        .map(|view| (view.kind, view.target))
 }
 
 /// A view's icon: its plugin's mark for a plugin's pane, else its kind's.

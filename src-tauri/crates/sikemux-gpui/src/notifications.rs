@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use gpui_kit::Context;
-use sikemux_wire::protocol::{AgentGroup, DeviceView, Pane, PaneKind, SessionKind};
+use sikemux_wire::protocol::{AgentGroup, DeviceView, PaneKind, SessionKind};
 use tokio::sync::mpsc;
 
 use crate::toast;
@@ -283,7 +283,11 @@ pub fn kept_running(bench: &mut Workbench, cx: &mut Context<Workbench>) {
         .chain(std::iter::once(&layout.terminals));
     for strip in strips {
         for tab in &strip.tabs {
-            terminals_in(&tab.pane, &mut shown);
+            shown.extend(
+                crate::panes::views(&tab.pane)
+                    .filter(|view| view.kind == PaneKind::Terminal)
+                    .map(|view| view.target.as_str()),
+            );
         }
     }
     let running = |kind: SessionKind| {
@@ -310,20 +314,6 @@ pub fn kept_running(bench: &mut Workbench, cx: &mut Context<Workbench>) {
 }
 
 struct KeptRunning;
-
-fn terminals_in<'a>(pane: &'a Pane, found: &mut HashSet<&'a str>) {
-    match pane {
-        Pane::View {
-            kind: PaneKind::Terminal,
-            target,
-            ..
-        } => {
-            found.insert(target);
-        }
-        Pane::View { .. } => {}
-        Pane::Split { panes, .. } => panes.iter().for_each(|pane| terminals_in(pane, found)),
-    }
-}
 
 /// How many agents wait on the person: those asking for something, and those that finished
 /// a turn the person has not seen.
