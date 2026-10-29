@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
-use crate::acp::account;
+use crate::acp::account::{Failure, FailureKind};
 
 use super::super::super::states::Subagent;
 use super::super::json::{text, text_or_empty};
@@ -56,33 +56,21 @@ pub(super) struct Session {
     asked: HashSet<(String, String)>,
 }
 
-/// The category and fixes a failed turn is shown with, by its cause.
-fn failure_policy(error: &Value) -> (&'static str, &'static [&'static str]) {
-    let retryable = error["retryable"] == true;
-    if !error["quota"].is_null() {
-        return ("limit", &[]);
+/// The failure a turn ended with, from Muse's error for it.
+pub(super) fn failure(error: &Value) -> Failure {
+    let kind = if !error["quota"].is_null() {
+        FailureKind::Limit
+    } else if text_or_empty(error, "kind") == "authRequired" {
+        FailureKind::SignIn
+    } else {
+        FailureKind::Other
+    };
+    Failure {
+        kind,
+        title: text(error, "message").unwrap_or("Turn failed").to_owned(),
+        details: None,
+        resets_at: None,
     }
-    match text_or_empty(error, "kind") {
-        "authRequired" => ("access", &["login"]),
-        "stepLimit" => ("limit", &["new_session"]),
-        "configError" | "launchError" | "mcpLinkError" => ("request", &[]),
-        _ if retryable => ("service", &["retry"]),
-        _ => ("service", &[]),
-    }
-}
-
-/// The failure a turn ended with, in the AIR shape the chat reads.
-pub(super) fn failure_meta(turn_id: &str, error: &Value) -> Value {
-    let (category, actions) = failure_policy(error);
-    let title = text(error, "message").unwrap_or("Turn failed");
-    json!({ "jetbrains": { "air": { "version": 1, "sessionFailure": {
-        "id": format!("{turn_id}:error"),
-        "revision": 1,
-        "category": category,
-        "severity": "error",
-        "title": title,
-        "actions": actions,
-    } } } })
 }
 
 /// The tokens a turn used, as the chat reads a prompt's answer.
@@ -351,17 +339,13 @@ impl Session {
                             "retryable": true,
                         })
                     });
-                let meta = failure_meta(id, &error);
-                payload["_meta"] = meta.clone();
-                if let Some(failure) = account::failure(&meta) {
-                    effects.push(Effect::End(
-                        turn.number,
-                        TurnEnd::Failed {
-                            failure,
-                            response: Some(payload),
-                        },
-                    ));
-                }
+                effects.push(Effect::End(
+                    turn.number,
+                    TurnEnd::Failed {
+                        failure: failure(&error),
+                        response: Some(payload),
+                    },
+                ));
             }
         }
         effects

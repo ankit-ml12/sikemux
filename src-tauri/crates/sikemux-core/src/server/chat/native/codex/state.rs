@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::acp::account;
+use crate::acp::account::{Failure, FailureKind};
 
 use super::super::super::reset::{month_day, WallClock, Zone};
 use super::super::super::states::{self, Subagent};
@@ -106,30 +106,29 @@ fn notice(title: &str, description: Option<&str>) -> Value {
     update
 }
 
-/// The category and fixes Codex's adapter gives a turn error, by its cause.
-fn failure_policy(info: &Value) -> (&'static str, &'static [&'static str]) {
+/// What Codex's error info says a failed turn needs.
+fn failure_kind(info: &Value) -> FailureKind {
     let status = info
         .as_object()
         .and_then(|info| info.values().next())
         .and_then(|details| details["httpStatusCode"].as_u64());
     if info == "unauthorized" || status == Some(401) {
-        return ("access", &["login"]);
+        return FailureKind::SignIn;
     }
     if status == Some(429) {
-        return ("limit", &["retry"]);
+        return FailureKind::Limit;
     }
-    if let Some(info) = info.as_str() {
-        return match info {
-            "usageLimitExceeded" => ("limit", &[]),
-            "rateLimitExceeded" => ("limit", &["retry"]),
-            "contextWindowExceeded" | "sessionBudgetExceeded" => ("limit", &["new_session"]),
-            "serverOverloaded" => ("service", &["retry"]),
-            "cyberPolicy" | "misalignmentPolicyViolation" | "badRequest" => ("request", &[]),
-            "internalServerError" => ("service", &["retry", "new_session"]),
-            _ => ("service", &["retry"]),
-        };
+    match info.as_str() {
+        Some("usageLimitExceeded" | "rateLimitExceeded") => FailureKind::Limit,
+        Some(_) => FailureKind::Other,
+        None if cut_off(info) => FailureKind::Network,
+        None => FailureKind::Other,
     }
-    let transport = info.as_object().is_some_and(|info| {
+}
+
+/// Whether Codex lost its connection to the model provider.
+fn cut_off(info: &Value) -> bool {
+    info.as_object().is_some_and(|info| {
         [
             "httpConnectionFailed",
             "responseStreamConnectionFailed",
@@ -138,31 +137,27 @@ fn failure_policy(info: &Value) -> (&'static str, &'static [&'static str]) {
         ]
         .iter()
         .any(|key| info.contains_key(*key))
-    });
-    if transport {
-        ("connection", &["retry", "new_session"])
-    } else {
-        ("service", &["retry"])
-    }
+    })
 }
 
-/// The `_meta` Codex's adapter answers a failed turn with.
-pub(super) fn failure_meta(turn_id: &str, error: &Value) -> Value {
-    let (category, actions) = failure_policy(&error["codexErrorInfo"]);
+/// The failure a turn ended with, from Codex's error for it.
+pub(super) fn failure(error: &Value) -> Failure {
+    let kind = failure_kind(&error["codexErrorInfo"]);
     let title = error["message"]
         .as_str()
         .filter(|message| !message.is_empty())
         .unwrap_or("Turn failed");
-    let resets_at = (category == "limit").then(|| resets_at(title)).flatten();
-    json!({ "jetbrains": { "air": { "version": 1, "sessionFailure": {
-        "id": format!("{turn_id}:error"),
-        "revision": 1,
-        "category": category,
-        "severity": "error",
-        "title": title,
-        "actions": actions,
-        "resetsAt": resets_at,
-    } } } })
+    if kind == FailureKind::Network {
+        return Failure::lost_connection(title);
+    }
+    Failure {
+        kind,
+        title: title.to_owned(),
+        details: None,
+        resets_at: (kind == FailureKind::Limit)
+            .then(|| resets_at(title))
+            .flatten(),
+    }
 }
 
 /// When a usage limit resets, from the "try again at 2:46 AM" or "try again
@@ -402,18 +397,13 @@ impl Session {
                 let error = error
                     .or_else(|| Some(ended["error"].clone()).filter(|error| !error.is_null()))
                     .unwrap_or_else(|| json!({ "message": "Turn failed", "codexErrorInfo": null }));
-                let meta = failure_meta(&id, &error);
-                let mut response = self.payload("end_turn");
-                response["_meta"] = meta.clone();
-                if let Some(failure) = account::failure(&meta) {
-                    effects.push(Effect::End(
-                        turn.number,
-                        TurnEnd::Failed {
-                            failure,
-                            response: Some(response),
-                        },
-                    ));
-                }
+                effects.push(Effect::End(
+                    turn.number,
+                    TurnEnd::Failed {
+                        failure: failure(&error),
+                        response: Some(self.payload("end_turn")),
+                    },
+                ));
             }
         }
         effects
@@ -528,7 +518,10 @@ impl Session {
                 }
                 let attempt = self.retries.entry(turn.clone()).or_default();
                 *attempt += 1;
-                let (category, _) = failure_policy(&params["error"]["codexErrorInfo"]);
+                let category = match failure_kind(&params["error"]["codexErrorInfo"]) {
+                    FailureKind::Network => "connection",
+                    _ => "service",
+                };
                 let detail = params["error"]["message"]
                     .as_str()
                     .unwrap_or("Codex is retrying");
@@ -730,7 +723,6 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::acp::account::FailureKind;
 
     fn session() -> Session {
         Session::new("thread".into())
@@ -893,10 +885,6 @@ mod tests {
                 assert!(failure.title.starts_with("You've hit your usage limit"));
                 let response = response.as_ref().unwrap();
                 assert_eq!(response["stopReason"], "end_turn");
-                assert_eq!(
-                    response.pointer("/_meta/jetbrains/air/sessionFailure/id"),
-                    Some(&json!("turn-b:error"))
-                );
             }
             _ => panic!("the turn should have failed"),
         }
@@ -904,14 +892,7 @@ mod tests {
 
     #[test]
     fn failures_are_told_apart_by_their_cause() {
-        let kind = |info: Value| {
-            account::failure(&failure_meta(
-                "t",
-                &json!({ "message": "m", "codexErrorInfo": info }),
-            ))
-            .unwrap()
-            .kind
-        };
+        let kind = |info: Value| failure(&json!({ "message": "m", "codexErrorInfo": info })).kind;
         assert_eq!(kind(json!("unauthorized")), FailureKind::SignIn);
         assert_eq!(
             kind(json!({ "responseStreamDisconnected": { "httpStatusCode": 401 } })),
