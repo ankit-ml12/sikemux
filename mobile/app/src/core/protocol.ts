@@ -20,6 +20,7 @@ export type {
   InboxItem,
   LauncherInfo,
   LinkedHost,
+  Preferences,
   ProjectInfo,
   RecentInfo,
   RemoteAgent,

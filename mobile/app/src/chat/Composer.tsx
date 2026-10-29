@@ -409,6 +409,7 @@ export const Composer = memo(function Composer({
   session,
   provider,
   running,
+  steers,
   model,
   effort,
   usage,
@@ -432,6 +433,8 @@ export const Composer = memo(function Composer({
   session: ChatSession;
   provider: string;
   running: boolean;
+  /** Sending while the turn runs steers into it rather than waiting behind it. */
+  steers: boolean;
   model: ChatRows['model'];
   effort: ChatRows['effort'];
   usage: ChatRows['usage'];
@@ -523,7 +526,7 @@ export const Composer = memo(function Composer({
       return;
     }
     haptics.tap();
-    const sending = question ? session.answerWith(text, question.onAnswer) : session.send(text);
+    const sending = question ? session.answerWith(text, question.onAnswer) : session.send(text, steers);
     void sending.then((sent) => {
       if (!sent) return;
       // Clearing the state alone leaves text the keyboard is still composing.
@@ -626,7 +629,15 @@ export const Composer = memo(function Composer({
               disabled={uploading}
               accessibilityRole="button"
               accessibilityLabel={
-                uploading ? 'Sending files' : offline ? `Send, waiting for ${hostName}` : running ? 'Send after this turn' : 'Send'
+                uploading
+                  ? 'Sending files'
+                  : offline
+                    ? `Send, waiting for ${hostName}`
+                    : running
+                      ? steers
+                        ? 'Send to steer this turn'
+                        : 'Send after this turn'
+                      : 'Send'
               }
               accessibilityHint={sendable ? 'Hold to stash this prompt' : undefined}
               accessibilityState={{ disabled: offline || !sendable, busy: uploading }}>

@@ -28,18 +28,21 @@ export function activityText(
 }
 
 /** `commands` says whether the agent offers slash commands; a chat not started yet is taken to.
+    `steers` says that sending while the turn runs goes into it.
     A message written while the agent starts goes out as soon as it is up, so the
     composer reads the same then as once it is ready. */
 export function composerPlaceholder(
     state: Pick<ChatRows, "connection" | "running">,
-    { resuming, disconnected, commands = true }: { resuming: boolean; disconnected: boolean; commands?: boolean },
+    { resuming, disconnected, commands = true, steers = false }: { resuming: boolean; disconnected: boolean; commands?: boolean; steers?: boolean },
 ): string {
     return resuming
         ? "Resuming — this message sends as soon as the session is back"
         : disconnected
           ? "Reconnect to continue this conversation"
           : state.running
-            ? "Send to queue behind the running turn"
+            ? steers
+                ? "Send to steer this turn"
+                : "Send to queue behind the running turn"
             : commands
               ? "Ask about this project, or type / for commands"
               : "Ask about this project";

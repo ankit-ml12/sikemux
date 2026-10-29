@@ -379,10 +379,10 @@ export class ChatSession {
   };
 
   /**
-   * Shows the message at once, behind the running turn when there is one, and puts its files on the host
-   * before sending it. Answers whether the composer can let it go.
+   * Shows the message at once, behind the running turn when there is one or into it when `steers`, and puts
+   * its files on the host before sending it. Answers whether the composer can let it go.
    */
-  send = async (text: string): Promise<boolean> => {
+  send = async (text: string, steers = false): Promise<boolean> => {
     if (this.uploading()) return false;
     this.notice = null;
     const files = this.attachments;
@@ -391,7 +391,7 @@ export class ChatSession {
     this.chips = [];
     this.edited();
     if (this.outbox.some((outgoing) => outgoing.waiting)) this.deliver(text, files, true);
-    else if (this.busy()) this.queue(text, files);
+    else if (this.busy()) this.queue(text, files, steers && this.chat.running);
     else this.deliver(text, files);
     return true;
   };
@@ -1039,8 +1039,11 @@ export class ChatSession {
     this.outbox = this.outbox.map((outgoing) => (outgoing.waiting ? { ...outgoing, waiting: false, state: 'failed', problem } : outgoing));
   }
 
-  /** Sends the message behind the running turn, showing it queued at once; when it does not go, it goes back to the composer. */
-  private queue(text: string, files: Attachment[]) {
+  /**
+   * Sends the message behind the running turn, or into it when it `steers`, showing it queued at once; when it
+   * does not go, it goes back to the composer.
+   */
+  private queue(text: string, files: Attachment[], steers: boolean) {
     const key = (this.held += 1);
     this.showFiles(files);
     this.holding = [...this.holding, { id: `phone-${key}`, key, text, paths: files.map(shownPath), context: [], taken: false }];
@@ -1049,11 +1052,15 @@ export class ChatSession {
     this.inOrder(async () => {
       if (!connection?.isOpen()) throw new Error('the host is not connected');
       const sent = await this.putFiles(connection, files, () => {});
-      await this.prompt(connection, randomUUID(), text, pathsOf(sent));
+      if (!steers) return this.prompt(connection, randomUUID(), text, pathsOf(sent));
+      const ids = this.onHostQueue(this.chat.queued.map((held) => held.id));
+      const message = { text, paths: pathsOf(sent), context: [] };
+      await connection.call('steerQueued', JSON.stringify({ agentId: this.agentId, ids, message }));
     })
       .then(() => {
         const held = this.holding.find((holding) => holding.key === key);
-        if (held && !notQueued([held], this.chat.queued).length) this.holding = this.holding.filter((holding) => holding !== held);
+        if (held && (steers || !notQueued([held], this.chat.queued).length))
+          this.holding = this.holding.filter((holding) => holding !== held);
         else this.holding = this.holding.map((holding) => (holding.key === key ? { ...holding, taken: true } : holding));
         this.emit();
       })
