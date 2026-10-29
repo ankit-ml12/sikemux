@@ -3,22 +3,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// The endpoint file the core publishes for this app. See
-/// [`sikemux_core::cli::endpoint::default_endpoint_path`] for why
-/// `SIKEMUX_CLI_ENDPOINT` is not read here.
-pub fn cli_endpoint_path() -> Option<PathBuf> {
-    sikemux_core::cli::endpoint::default_endpoint_path()
-}
-
-/// The endpoint file Sikemux handed to the terminal or agent it started.
-pub fn handed_endpoint() -> Option<PathBuf> {
-    sikemux_process::paths::handed_cli_endpoint()
-}
-
 /// The endpoint file a command the person runs reads: the one Sikemux handed
 /// it, else the one this build of Sikemux publishes.
 pub fn endpoint_to_read() -> Result<PathBuf, String> {
-    handed_endpoint()
+    sikemux_process::paths::handed_cli_endpoint()
         .or_else(|| sikemux_process::paths::config_file("cli", "json"))
         .ok_or_else(|| "home directory is unavailable".into())
 }
@@ -135,7 +123,8 @@ mod tests {
         std::env::set_var("SIKEMUX_CLI_ENDPOINT", "/tmp/sikemux-other-instance.json");
         std::env::remove_var("SIKEMUX_CLI_ENDPOINT_PUBLISH");
 
-        let published = cli_endpoint_path().expect("an endpoint path");
+        let published =
+            sikemux_core::cli::endpoint::default_endpoint_path().expect("an endpoint path");
 
         assert_ne!(published, Path::new("/tmp/sikemux-other-instance.json"));
         std::env::remove_var("SIKEMUX_CLI_ENDPOINT");
@@ -149,7 +138,8 @@ mod tests {
             "/tmp/sikemux-published-here.json",
         );
 
-        let published = cli_endpoint_path().expect("an endpoint path");
+        let published =
+            sikemux_core::cli::endpoint::default_endpoint_path().expect("an endpoint path");
 
         assert_eq!(published, Path::new("/tmp/sikemux-published-here.json"));
         std::env::remove_var("SIKEMUX_CLI_ENDPOINT_PUBLISH");

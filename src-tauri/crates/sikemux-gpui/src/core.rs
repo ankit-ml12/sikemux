@@ -1484,7 +1484,7 @@ async fn run(
                                     let launch = LaunchIdentity {
                                         version: client.hello().build.version.clone(),
                                         cli_executable: cli_paths::cli_executable_path(),
-                                        cli_endpoint: cli_paths::cli_endpoint_path(),
+                                        cli_endpoint: sikemux_core::cli::endpoint::default_endpoint_path(),
                                     };
                                     let spawned = client.spawn(launch, SpawnTarget::Terminal(*spawn)).await;
                                     let _ = started.send(spawned.map_err(|error| error.to_string()));

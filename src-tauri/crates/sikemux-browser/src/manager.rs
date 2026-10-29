@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use sikemux_process::sync::Locked;
@@ -230,6 +230,8 @@ impl AgentBrowser {
 #[derive(Default)]
 pub struct BrowserManager {
     pub(crate) agents: Mutex<HashMap<String, AgentBrowser>>,
+    /// Rung, under `agents`, whenever an agent's download starts, finishes or fails.
+    downloads_moved: Condvar,
     pub(crate) next_tab: AtomicU64,
     pub(crate) next_mark: AtomicU64,
     pub(crate) shortcuts_installed: AtomicBool,
@@ -540,6 +542,7 @@ impl BrowserManager {
         if let Some(agent) = self.agents.locked().get_mut(agent_id) {
             agent.downloads.note(&download, bytes);
         }
+        self.downloads_moved.notify_all();
         self.host().downloaded(&download);
     }
 
@@ -558,6 +561,34 @@ impl BrowserManager {
             .get(agent_id)
             .map(|agent| agent.downloads.since(mark))
             .unwrap_or_default()
+    }
+
+    /// [`Self::downloads_since`] once none of them is still going, or once `limit` is up.
+    pub fn settled_downloads_since(
+        &self,
+        agent_id: &str,
+        mark: u64,
+        limit: Duration,
+    ) -> Vec<downloads::SavedFile> {
+        let deadline = Instant::now() + limit;
+        let mut agents = self.agents.locked();
+        loop {
+            let files = agents
+                .get(agent_id)
+                .map(|agent| agent.downloads.since(mark))
+                .unwrap_or_default();
+            let left = deadline.saturating_duration_since(Instant::now());
+            let going = files
+                .iter()
+                .any(|file| file.state == DownloadState::Started);
+            if !going || left.is_zero() {
+                return files;
+            }
+            agents = match self.downloads_moved.wait_timeout(agents, left) {
+                Ok((agents, _)) => agents,
+                Err(poisoned) => poisoned.into_inner().0,
+            };
+        }
     }
 
     pub fn recent_downloads(&self, agent_id: &str) -> Vec<downloads::SavedFile> {

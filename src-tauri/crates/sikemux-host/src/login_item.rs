@@ -60,7 +60,7 @@ pub const IDENTIFIER: &str = if cfg!(debug_assertions) {
 /// What the core is started with after its socket, by the app or a login item.
 pub fn core_args(data_dir: Option<PathBuf>) -> Vec<OsString> {
     let mut args = Vec::new();
-    if let Some(endpoint) = crate::cli_paths::cli_endpoint_path() {
+    if let Some(endpoint) = sikemux_core::cli::endpoint::default_endpoint_path() {
         args.extend([OsString::from("--cli-endpoint"), endpoint.into()]);
     }
     if let Some(data_dir) = data_dir {

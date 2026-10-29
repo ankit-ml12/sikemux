@@ -8,7 +8,7 @@ use sikemux_process::sync::Locked;
 
 use crate::manager::BrowserManager;
 use crate::viewport::Viewport;
-use crate::{DownloadState, Tab, BLANK_URL};
+use crate::{Tab, BLANK_URL};
 use sikemux_core::cli::protocol::HarnessRequest;
 
 use crate::{PAGE_SCRIPT, RECORDS_SCRIPT};
@@ -16,7 +16,6 @@ const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_millis(250);
 const DOWNLOAD_WAIT: Duration = Duration::from_secs(15);
-const DOWNLOAD_POLL: Duration = Duration::from_millis(100);
 const MAX_WAIT_MS: u64 = 30_000;
 const SCRIPT_TIMEOUT_MS: u64 = 30_000;
 /// The sidecar stops waiting for any reply after 70 seconds.
@@ -97,17 +96,11 @@ pub fn execute(manager: &BrowserManager, request: &HarnessRequest) -> Result<Val
 /// Files the action made the page download, given a moment to finish so the
 /// agent gets a path it can use straight away.
 fn saved_files(manager: &BrowserManager, agent_id: &str, mark: u64) -> Vec<Value> {
-    let deadline = Instant::now() + DOWNLOAD_WAIT;
-    loop {
-        let files = manager.downloads_since(agent_id, mark);
-        let unfinished = files
-            .iter()
-            .any(|file| file.state == DownloadState::Started);
-        if !unfinished || Instant::now() >= deadline {
-            return files.into_iter().map(|file| json!(file)).collect();
-        }
-        std::thread::sleep(DOWNLOAD_POLL);
-    }
+    manager
+        .settled_downloads_since(agent_id, mark, DOWNLOAD_WAIT)
+        .into_iter()
+        .map(|file| json!(file))
+        .collect()
 }
 
 /// An unloaded tab loads its page again before the agent's tools touch it.

@@ -7,7 +7,7 @@ use serde_json::Value;
 use sikemux_core::cli::client::{attempt, Failure};
 pub use sikemux_core::cli::protocol::TOOLS_REPLY_TIMEOUT;
 use sikemux_host::cli_client::current_project;
-use sikemux_host::cli_paths::handed_endpoint;
+use sikemux_process::paths::handed_cli_endpoint;
 
 /// How long a call waits for Sikemux to come back while it restarts, such as
 /// after an update.
@@ -41,7 +41,7 @@ pub fn call_within(
 /// Only the endpoint Sikemux handed over, so a tools server it did not start
 /// never reaches whichever Sikemux happens to be running.
 fn endpoint() -> Result<PathBuf, String> {
-    handed_endpoint()
+    handed_cli_endpoint()
         .ok_or_else(|| "Missing SIKEMUX_CLI_ENDPOINT; launch this MCP from Sikemux".into())
 }
 
