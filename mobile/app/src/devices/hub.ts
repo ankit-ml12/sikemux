@@ -298,7 +298,6 @@ async function connect(core: string, found: Entry) {
 
 /** Takes the agents the host can run, which every screen names and draws agents from, then shows the view that waited on them. */
 function readCatalog(core: string, found: Entry, connection: ConnectionLike) {
-  connection;
   callHost(connection, 'agentCatalog', {})
     .then((catalog) => setAgentCatalog(core, catalog))
     .catch((error: unknown) => console.warn("sikemux: could not read the host's agents", error))
