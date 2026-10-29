@@ -11,7 +11,7 @@ use sikemux_process::sync::Locked;
 
 use super::{change_card, send_notices, By, Changes, Status, Ticket, Tracker};
 use crate::server::connection::blocking;
-use crate::server::plugins::{self, Failure};
+use crate::server::plugins::{self, Failure, Provided};
 use crate::server::wake::sooner;
 use crate::server::Core;
 
@@ -23,14 +23,16 @@ const RETRY_AFTER_MS: u64 = 5 * 60 * 1000;
 /// A ticket in Jira, the one tracker with a plugin; a Linear ticket waits
 /// for one.
 struct Jira<'a> {
+    plugins: Option<Provided>,
     key: &'a str,
     /// The Jira site, which the ticket's web address names.
     site: Option<String>,
 }
 
 impl<'a> Jira<'a> {
-    fn of(ticket: &'a Ticket) -> Option<Self> {
+    fn of(core: &Core, ticket: &'a Ticket) -> Option<Self> {
         (ticket.provider == Tracker::Jira).then(|| Self {
+            plugins: core.plugins,
             key: &ticket.key,
             site: ticket.url.as_deref().and_then(site_of),
         })
@@ -39,7 +41,7 @@ impl<'a> Jira<'a> {
     async fn call(&self, method: &str, mut params: Value) -> Result<Value, Failure> {
         params["key"] = self.key.into();
         params["site"] = json!(self.site);
-        plugins::call("sikemux.jira", method, params).await
+        plugins::call_on(self.plugins, "sikemux.jira", method, params).await
     }
 }
 
@@ -73,7 +75,7 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
         for (project, board) in &state.boards {
             for card in &board.cards {
                 let Some(ticket) = &card.ticket else { continue };
-                if Jira::of(ticket).is_none() {
+                if Jira::of(core, ticket).is_none() {
                     continue;
                 }
                 let kept = state.work_of(project, card.id);
@@ -150,7 +152,7 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
 }
 
 async fn run(core: &Arc<Core>, project: &str, id: u64, ticket: &Ticket, work: Work) {
-    let Some(jira) = Jira::of(ticket) else {
+    let Some(jira) = Jira::of(core, ticket) else {
         return;
     };
     let issue = jira.call("issue", json!({})).await;

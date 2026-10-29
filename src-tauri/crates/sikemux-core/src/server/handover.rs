@@ -369,6 +369,7 @@ pub(crate) struct Recovery {
     /// their file type. Only these are adopted or closed: anything opened
     /// since may have reused a number that was listed but already closed.
     pub inherited: HashMap<RawFd, libc::mode_t>,
+    pub plugins: Option<super::plugins::Provided>,
 }
 
 pub(crate) fn file_type(fd: RawFd) -> Option<libc::mode_t> {
@@ -837,10 +838,11 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
         remote_direct_only: false,
         accounts_api: Some(crate::accounts::api_base()),
         secret_store: true,
+        plugins: recovery.plugins,
     };
     super::data_format::upgrade(&config);
     let uptime_ms = state.as_ref().map_or(0, |state| state.uptime_ms);
-    let core = Core::continuing(build, config.data_dir.as_deref(), uptime_ms)?;
+    let core = Core::continuing(build, config.data_dir.as_deref(), uptime_ms, config.plugins)?;
     let mut inherited = Inherited {
         open: recovery.inherited.clone(),
         claimed: HashSet::new(),

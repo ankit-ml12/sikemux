@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::de::IgnoredAny;
@@ -106,15 +106,23 @@ pub trait Plugins: Send + Sync {
     fn call_agent_tool<'a>(&'a self, name: &'a str, arguments: Value) -> Answer<'a, Value>;
 }
 
-static PLUGINS: OnceLock<Box<dyn Plugins>> = OnceLock::new();
+/// The plugins the binary that runs the core provides. They live as long as
+/// the process does.
+#[derive(Clone, Copy)]
+pub struct Provided(pub &'static dyn Plugins);
 
-/// Gives the core its plugins. Call once, before the core starts.
-pub fn provide(plugins: Box<dyn Plugins>) {
-    let _ = PLUGINS.set(plugins);
+impl std::fmt::Debug for Provided {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Provided")
+    }
 }
 
-fn plugins(plugin: &str) -> Result<&'static dyn Plugins, Failure> {
-    PLUGINS.get().map(|plugins| &**plugins).ok_or_else(|| {
+fn plugins(core: &Core, plugin: &str) -> Result<&'static dyn Plugins, Failure> {
+    present(core.plugins, plugin)
+}
+
+fn present(plugins: Option<Provided>, plugin: &str) -> Result<&'static dyn Plugins, Failure> {
+    plugins.map(|provided| provided.0).ok_or_else(|| {
         Failure::new(
             plugin,
             Category::NotInstalled,
@@ -126,15 +134,30 @@ fn plugins(plugin: &str) -> Result<&'static dyn Plugins, Failure> {
 /// What the plugins set for an agent, terminal or task started in `cwd`,
 /// asked of the project that holds it.
 pub(crate) fn agent_environment(core: &Core, cwd: &Path) -> BTreeMap<String, String> {
-    let Some(plugins) = PLUGINS.get() else {
+    let Some(Provided(plugins)) = core.plugins else {
         return BTreeMap::new();
     };
     let project = super::workspace::project_of(cwd, &core.workspaces.project_paths());
     plugins.agent_environment(Path::new(&project))
 }
 
-pub(crate) async fn call(plugin: &str, method: &str, params: Value) -> Result<Value, Failure> {
-    plugins(plugin)?.call(plugin, method, params).await
+pub(crate) async fn call(
+    core: &Core,
+    plugin: &str,
+    method: &str,
+    params: Value,
+) -> Result<Value, Failure> {
+    call_on(core.plugins, plugin, method, params).await
+}
+
+/// Calls `method` of `plugin` among `plugins`, for what holds them without the core.
+pub(crate) async fn call_on(
+    plugins: Option<Provided>,
+    plugin: &str,
+    method: &str,
+    params: Value,
+) -> Result<Value, Failure> {
+    present(plugins, plugin)?.call(plugin, method, params).await
 }
 
 #[derive(Deserialize)]
@@ -148,7 +171,7 @@ pub(crate) struct WindowCall {
 /// A call from a plugin's pane. A pane signing in or out changes what its
 /// plugin offers agents, so they are told to list their tools again.
 pub(crate) async fn window_call(core: &Core, call: WindowCall) -> Outcome {
-    let outcome = match plugins(&call.plugin) {
+    let outcome = match plugins(core, &call.plugin) {
         Ok(plugins) => {
             plugins
                 .call(&call.plugin, &call.method, call.params.clone())
@@ -168,23 +191,22 @@ pub(crate) async fn window_call(core: &Core, call: WindowCall) -> Outcome {
 }
 
 pub(crate) fn tell_agents_if_theirs(core: &Core, plugin: &str) {
-    if PLUGINS
-        .get()
-        .is_some_and(|plugins| plugins.offers_agent_tools(plugin))
+    if core
+        .plugins
+        .is_some_and(|Provided(plugins)| plugins.offers_agent_tools(plugin))
     {
         core.harness.plugins_changed();
     }
 }
 
-pub(crate) fn manifests() -> Vec<&'static Manifest> {
-    PLUGINS
-        .get()
-        .map(|plugins| plugins.manifests())
+pub(crate) fn manifests(core: &Core) -> Vec<&'static Manifest> {
+    core.plugins
+        .map(|Provided(plugins)| plugins.manifests())
         .unwrap_or_default()
 }
 
-pub(crate) fn manifest(plugin: &str) -> Option<&'static Manifest> {
-    manifests()
+pub(crate) fn manifest(core: &Core, plugin: &str) -> Option<&'static Manifest> {
+    manifests(core)
         .into_iter()
         .find(|manifest| manifest.id == plugin)
 }
@@ -192,7 +214,8 @@ pub(crate) fn manifest(plugin: &str) -> Option<&'static Manifest> {
 /// `plugin` ran `method`; when its manifest names it as a write, what it
 /// shows is read again at once, and again once the service has settled.
 pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str, params: &Value) {
-    if !manifest(plugin).is_some_and(|manifest| manifest.writes.iter().any(|write| write == method))
+    if !manifest(core, plugin)
+        .is_some_and(|manifest| manifest.writes.iter().any(|write| write == method))
     {
         return;
     }
@@ -206,7 +229,7 @@ pub(crate) struct Disabled {
 }
 
 pub(crate) fn set_disabled(core: &Core, disabled: Disabled) {
-    if let Some(plugins) = PLUGINS.get() {
+    if let Some(Provided(plugins)) = core.plugins {
         plugins.set_disabled(disabled.ids);
         core.harness.plugins_changed();
         core.changes.changed(Topic::Plugins, None, None);
@@ -249,11 +272,11 @@ pub(crate) struct Landed {
 
 /// Finishes a browser sign-in whose browser came back on another machine,
 /// such as one the person opened from a host reached over SSH.
-pub(crate) fn sign_in_callback(landed: Landed) -> CoreResult<()> {
+pub(crate) fn sign_in_callback(core: &Core, landed: Landed) -> CoreResult<()> {
     if landed.target.len() > 8 * 1024 {
         return Err("that is not a sign-in address".into());
     }
-    plugins("sign-in")
+    plugins(core, "sign-in")
         .map_err(|failure| CoreError::from(failure.message))?
         .relay_sign_in(&landed.target)
         .map_err(CoreError::from)
@@ -273,15 +296,15 @@ pub(crate) struct Listed {
 
 /// Every plugin built in, each with whether its sign-in works, asked of its
 /// service now.
-pub(crate) async fn listed() -> Vec<Listed> {
-    let disabled = disabled();
-    let asked = manifests().into_iter().map(|manifest| {
+pub(crate) async fn listed(core: &Core) -> Vec<Listed> {
+    let disabled = disabled(core);
+    let asked = manifests(core).into_iter().map(|manifest| {
         let id = manifest.id.clone();
         let name = manifest.name.clone();
         let enabled = !disabled.contains(&id);
         async move {
             let signed_in = if enabled {
-                match call(&id, "status", Value::Null).await {
+                match call(core, &id, "status", Value::Null).await {
                     Ok(status) => Some(
                         serde_json::from_value::<SignInStatus<IgnoredAny>>(status)
                             .is_ok_and(|status| status.configured && !status.auth_failed),
@@ -310,14 +333,16 @@ pub(crate) struct LinkParams {
 
 /// The plugin whose own view shows what a web address names, and where in that view, as
 /// the first enabled plugin's `resolveLink` answers; null when none does.
-pub(crate) async fn link(params: LinkParams) -> Value {
-    let disabled = disabled();
+pub(crate) async fn link(core: &Core, params: LinkParams) -> Value {
+    let disabled = disabled(core);
     let url = params.url;
-    let asked = manifests().into_iter().filter_map(|manifest| {
+    let asked = manifests(core).into_iter().filter_map(|manifest| {
         let id = manifest.id.clone();
         let url = url.clone();
         (!disabled.contains(&id)).then_some(async move {
-            let at = call(&id, "resolveLink", json!({ "url": url })).await.ok()?;
+            let at = call(core, &id, "resolveLink", json!({ "url": url }))
+                .await
+                .ok()?;
             (!at.is_null()).then(|| json!({ "plugin": id, "at": at }))
         })
     });
@@ -332,7 +357,7 @@ pub(crate) async fn link(params: LinkParams) -> Value {
 /// A plugin's call may have signed it in or out, or picked another account,
 /// so clients read the plugins again.
 pub(crate) fn sign_in_moved(core: &Core, plugin: &str, method: &str) {
-    let account_moved = manifest(plugin).is_some_and(|manifest| {
+    let account_moved = manifest(core, plugin).is_some_and(|manifest| {
         manifest
             .account_methods
             .iter()
@@ -345,10 +370,13 @@ pub(crate) fn sign_in_moved(core: &Core, plugin: &str, method: &str) {
 }
 
 /// The plugins the person switched off, which every client shows.
-pub(crate) fn disabled() -> Vec<String> {
-    PLUGINS
-        .get()
-        .map(|plugins| plugins.disabled())
+pub(crate) fn disabled(core: &Core) -> Vec<String> {
+    disabled_in(core.plugins)
+}
+
+pub(crate) fn disabled_in(plugins: Option<Provided>) -> Vec<String> {
+    plugins
+        .map(|Provided(plugins)| plugins.disabled())
         .unwrap_or_default()
 }
 
@@ -381,7 +409,7 @@ pub(crate) fn stream(
     tokio::spawn(async move {
         let items = stream.clone();
         let sink: Sink = Box::new(move |value| items.push(value));
-        let ended = match plugins(&plugin) {
+        let ended = match plugins(&core, &plugin) {
             Ok(plugins) => plugins.stream(&plugin, &method, params, sink).await,
             Err(failure) => Err(failure),
         };
@@ -396,8 +424,8 @@ pub(crate) fn stream(
 }
 
 /// The tools an agent working in `project` is offered.
-pub(crate) async fn agent_tools(project: &str) -> Result<Value, String> {
-    let Some(plugins) = PLUGINS.get() else {
+pub(crate) async fn agent_tools(core: &Core, project: &str) -> Result<Value, String> {
+    let Some(Provided(plugins)) = core.plugins else {
         return Ok(Value::Array(Vec::new()));
     };
     let project = PathBuf::from(project);
@@ -422,7 +450,7 @@ pub(crate) async fn call_agent_tool(
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
-    let Some(plugins) = PLUGINS.get() else {
+    let Some(Provided(plugins)) = core.plugins else {
         return Err("plugins are not loaded".into());
     };
     if let Some(gated) = plugins.gated(name) {

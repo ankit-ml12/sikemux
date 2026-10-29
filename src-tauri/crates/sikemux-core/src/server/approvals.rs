@@ -197,7 +197,7 @@ pub(crate) async fn propose(
         .agent_id
         .clone()
         .ok_or("this tool needs the calling agent's id")?;
-    let checked = plugins::call(&gated.plugin, &gated.check, arguments.clone())
+    let checked = plugins::call(core, &gated.plugin, &gated.check, arguments.clone())
         .await
         .map_err(|failure| plugins::explain(&failure))?;
     let proposal: Proposal = serde_json::from_value(checked).map_err(|error| {
@@ -265,7 +265,7 @@ pub(crate) async fn settle(
     };
     match choice.and_then(|choice| approval.does.get(choice)) {
         Some(Does::Approve) => {
-            let done = plugins::call(plugin, method, held()?.arguments.clone())
+            let done = plugins::call(core, plugin, method, held()?.arguments.clone())
                 .await
                 .map_err(|failure| failure.message)?;
             plugins::tell_agents_if_theirs(core, plugin);

@@ -41,10 +41,10 @@ pub fn project_identity(path: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Where the current branch's pull request opens on its host, for a client to
-/// open there.
-pub async fn pull_request_url(repo: String) -> Result<String, String> {
-    let (remote_url, branch) = run_blocking(move || -> Result<(String, String), String> {
+/// The repository's origin and its current branch, which a new pull request
+/// comes from.
+pub async fn origin_and_branch(repo: String) -> Result<(String, String), String> {
+    run_blocking(move || -> Result<(String, String), String> {
         let r = open_repo(&repo)?;
         let remote_url = r
             .find_remote("origin")
@@ -59,10 +59,9 @@ pub async fn pull_request_url(repo: String) -> Result<String, String> {
             .and_then(|h| h.shorthand().ok().map(String::from))
             .ok_or("no current branch (detached HEAD?)")?;
 
-        Ok((remote_url, branch))
+        Ok((remote_url.trim().to_owned(), branch))
     })
-    .await?;
-    crate::server::codehost::repo::compare_url(remote_url.trim(), &branch).await
+    .await
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]

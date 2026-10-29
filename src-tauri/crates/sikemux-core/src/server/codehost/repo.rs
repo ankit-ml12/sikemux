@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use crate::protocol::{CodeHostChoice, ProjectCodeHost, ProjectPull, PullChecks};
 use crate::server::board::Pull;
-use crate::server::plugins::{self, Category, CodeHostSpec, Failure};
+use crate::server::plugins::{self, Category, CodeHostSpec, Failure, Provided};
 use crate::server::workspace::project_of;
 use crate::server::Core;
 use sikemux_plugin_api::codehost::{Repo as RemoteRepo, Resolved};
@@ -59,8 +59,8 @@ impl Host {
 }
 
 /// Every code host a plugin speaks for.
-fn hosts() -> impl Iterator<Item = Host> {
-    plugins::manifests().into_iter().filter_map(|manifest| {
+fn hosts(core: &Core) -> impl Iterator<Item = Host> {
+    plugins::manifests(core).into_iter().filter_map(|manifest| {
         Some(Host {
             plugin: &manifest.id,
             spec: manifest.code_host.as_ref()?,
@@ -73,8 +73,8 @@ fn plugin_of(id: &str) -> String {
     format!("sikemux.{id}")
 }
 
-fn host(id: &str) -> Result<Host, String> {
-    hosts()
+fn host(core: &Core, id: &str) -> Result<Host, String> {
+    hosts(core)
         .find(|host| host.id() == id)
         .ok_or_else(|| format!("Sikemux does not know the code host {id}"))
 }
@@ -82,6 +82,7 @@ fn host(id: &str) -> Result<Host, String> {
 /// A repository on a code host, and the account that reaches it.
 #[derive(Clone)]
 pub(crate) struct Repo {
+    plugins: Option<Provided>,
     host: Host,
     owner: String,
     name: String,
@@ -99,9 +100,10 @@ impl Repo {
 }
 
 impl Pull {
-    fn repo(&self) -> Result<Repo, String> {
+    fn repo(&self, core: &Core) -> Result<Repo, String> {
         Ok(Repo {
-            host: host(&self.host)?,
+            plugins: core.plugins,
+            host: host(core, &self.host)?,
             owner: self.owner.clone(),
             name: self.name.clone(),
             account: self.account.clone(),
@@ -112,7 +114,7 @@ impl Pull {
 impl Repo {
     /// Calls `method` of the host's plugin about this repository, with `more`.
     pub(crate) async fn call(&self, method: &str, more: Value) -> Result<Value, Failure> {
-        plugins::call(self.host.plugin(), method, self.params(more)).await
+        plugins::call_on(self.plugins, self.host.plugin(), method, self.params(more)).await
     }
 }
 
@@ -147,11 +149,13 @@ pub(crate) fn picks(core: &Core, dir: &Path) -> BTreeMap<String, CodeHostChoice>
 /// Where the remote `url` is on a code host, or the repository `picks`
 /// names there in its place, signed in to or not.
 async fn locate(
+    core: &Core,
     url: &str,
     picks: &BTreeMap<String, CodeHostChoice>,
 ) -> Option<(Host, String, String)> {
-    for host in hosts() {
-        let Ok(found) = plugins::call(host.plugin(), "resolveRemote", json!({ "url": url })).await
+    for host in hosts(core) {
+        let Ok(found) =
+            plugins::call(core, host.plugin(), "resolveRemote", json!({ "url": url })).await
         else {
             continue;
         };
@@ -177,11 +181,12 @@ async fn locate(
 /// The code host the remote `url` is on, with an account signed in to it,
 /// or the repository and account in `picks` for it.
 pub(crate) async fn find(
+    core: &Core,
     url: &str,
     picks: &BTreeMap<String, CodeHostChoice>,
 ) -> Result<Repo, String> {
-    let Some((host, owner, name)) = locate(url, picks).await else {
-        let labels: Vec<&str> = hosts().map(|host| host.spec.label.as_str()).collect();
+    let Some((host, owner, name)) = locate(core, url, picks).await else {
+        let labels: Vec<&str> = hosts(core).map(|host| host.spec.label.as_str()).collect();
         return Err(format!(
             "this project's origin is on none of {}",
             labels.join(", ")
@@ -191,6 +196,7 @@ pub(crate) async fn find(
     let account = match pick.account {
         Some(account) => Some(account),
         None => plugins::call(
+            core,
             host.plugin(),
             "accountFor",
             json!({ "owner": owner, "name": name }),
@@ -206,6 +212,7 @@ pub(crate) async fn find(
         ));
     }
     Ok(Repo {
+        plugins: core.plugins,
         host,
         owner,
         name,
@@ -228,12 +235,12 @@ pub(crate) async fn of_project(core: &Arc<Core>, project: &str) -> Result<Repo, 
     let (Some(origin), picks) = found.map_err(|error| unsupported(&error.to_string()))? else {
         return Err(unsupported("this project has no origin remote"));
     };
-    let Some((host, _, _)) = locate(&origin, &picks).await else {
+    let Some((host, _, _)) = locate(core, &origin, &picks).await else {
         return Err(unsupported(
             "this project's origin is on no code host Sikemux knows",
         ));
     };
-    find(&origin, &picks)
+    find(core, &origin, &picks)
         .await
         .map_err(|message| Failure::new(host.plugin(), Category::Unconfigured, message))
 }
@@ -242,15 +249,17 @@ impl Repo {
     /// The repository `owner/name` on the code host whose plugin is `plugin`,
     /// reached as `account`.
     pub(crate) fn named(
+        core: &Core,
         plugin: &str,
         owner: &str,
         name: &str,
         account: Option<String>,
     ) -> Result<Self, Failure> {
         let id = plugin.strip_prefix("sikemux.").unwrap_or(plugin);
-        let host =
-            host(id).map_err(|message| Failure::new(plugin, Category::Unsupported, message))?;
+        let host = host(core, id)
+            .map_err(|message| Failure::new(plugin, Category::Unsupported, message))?;
         Ok(Self {
+            plugins: core.plugins,
             host,
             owner: owner.to_owned(),
             name: name.to_owned(),
@@ -317,10 +326,11 @@ impl Pull {
 
 /// What clients show of the code host the remote `url` is on.
 pub(crate) async fn shown(
+    core: &Core,
     url: &str,
     picks: &BTreeMap<String, CodeHostChoice>,
 ) -> Option<ProjectCodeHost> {
-    let (host, owner, name) = locate(url, picks).await?;
+    let (host, owner, name) = locate(core, url, picks).await?;
     Some(ProjectCodeHost {
         host: host.id().to_owned(),
         label: host.spec.label.clone(),
@@ -336,9 +346,10 @@ pub(crate) async fn shown(
 
 /// Where a new pull request from `branch` opens on the website of the code
 /// host the remote `url` is on, signed in to or not.
-pub(crate) async fn compare_url(url: &str, branch: &str) -> Result<String, String> {
-    for host in hosts() {
-        let Ok(found) = plugins::call(host.plugin(), "resolveRemote", json!({ "url": url })).await
+pub(crate) async fn compare_url(core: &Core, url: &str, branch: &str) -> Result<String, String> {
+    for host in hosts(core) {
+        let Ok(found) =
+            plugins::call(core, host.plugin(), "resolveRemote", json!({ "url": url })).await
         else {
             continue;
         };
@@ -419,7 +430,7 @@ pub(crate) async fn branch_pull(repo: &Repo, branch: &str) -> Result<Option<Proj
     };
     let pull = pull_of(repo, found)?;
     let checks = match text(found, "headSha") {
-        Some(sha) => match checks(&pull, branch, &sha).await? {
+        Some(sha) => match checks_on(repo, branch, &sha).await? {
             Checks::None => None,
             Checks::Running => Some(PullChecks::Pending),
             Checks::Passed => Some(PullChecks::Passing),
@@ -450,11 +461,12 @@ impl Repo {
 /// The pull requests the commit `sha` came in through, the merged one first,
 /// when the code host the remote `url` is on can tell.
 pub(crate) async fn pulls_of(
+    core: &Core,
     url: &str,
     picks: &BTreeMap<String, CodeHostChoice>,
     sha: &str,
 ) -> Result<Vec<Value>, String> {
-    let repo = find(url, picks).await?;
+    let repo = find(core, url, picks).await?;
     let found = repo.call("commitPulls", json!({ "sha": sha })).await?;
     Ok(found.as_array().cloned().unwrap_or_default())
 }
@@ -508,8 +520,16 @@ pub(crate) enum Checks {
 }
 
 /// How the CI runs on `sha` went.
-pub(crate) async fn checks(pull: &Pull, branch: &str, sha: &str) -> Result<Checks, String> {
-    let repo = pull.repo()?;
+pub(crate) async fn checks(
+    core: &Core,
+    pull: &Pull,
+    branch: &str,
+    sha: &str,
+) -> Result<Checks, String> {
+    checks_on(&pull.repo(core)?, branch, sha).await
+}
+
+async fn checks_on(repo: &Repo, branch: &str, sha: &str) -> Result<Checks, String> {
     let page = repo
         .call(
             "runs",
@@ -620,15 +640,15 @@ pub(crate) async fn log_tail(
 
 /// A run's id as its code host takes it from an address on it, such as
 /// GitHub's `/actions/runs/<id>`.
-pub(crate) fn run_in(address: &str) -> Option<Value> {
-    hosts()
+pub(crate) fn run_in(core: &Core, address: &str) -> Option<Value> {
+    hosts(core)
         .find_map(|host| address.split_once(host.spec.run_path.as_str()))
         .and_then(|(_, rest)| digits(rest))
 }
 
 /// The job an address on a run points at, such as GitHub's `/job/<id>`.
-pub(crate) fn job_in(address: &str) -> Option<Value> {
-    hosts()
+pub(crate) fn job_in(core: &Core, address: &str) -> Option<Value> {
+    hosts(core)
         .filter_map(|host| host.spec.job_path.as_deref())
         .find_map(|path| address.split_once(path))
         .and_then(|(_, rest)| digits(rest))
@@ -647,8 +667,8 @@ pub(crate) struct Looked {
     pub mark: String,
 }
 
-pub(crate) async fn look(pull: &Pull) -> Result<Looked, String> {
-    let repo = pull.repo()?;
+pub(crate) async fn look(core: &Core, pull: &Pull) -> Result<Looked, String> {
+    let repo = pull.repo(core)?;
     let found = repo.call("pull", json!({ "number": pull.number })).await?;
     Ok(Looked {
         state: text(&found, "state").unwrap_or_else(|| "open".to_owned()),
@@ -674,8 +694,12 @@ pub(crate) struct Feedback {
 }
 
 /// The comments and reviews on the pull request that changed at or after `since`.
-pub(crate) async fn feedback(pull: &Pull, since: Option<&str>) -> Result<Vec<Feedback>, String> {
-    let repo = pull.repo()?;
+pub(crate) async fn feedback(
+    core: &Core,
+    pull: &Pull,
+    since: Option<&str>,
+) -> Result<Vec<Feedback>, String> {
+    let repo = pull.repo(core)?;
     let found = repo
         .call(
             "reviewFeedback",
@@ -688,11 +712,12 @@ pub(crate) async fn feedback(pull: &Pull, since: Option<&str>) -> Result<Vec<Fee
 /// Answers each comment in its own thread with `(comment id, text, what it
 /// said)`, then asks `reviewers` to look again where the host can.
 pub(crate) async fn answer(
+    core: &Core,
     pull: &Pull,
     replies: &[(String, String, String)],
     reviewers: &[String],
 ) -> Result<(), String> {
-    let repo = pull.repo()?;
+    let repo = pull.repo(core)?;
     let replies: Vec<Value> = replies
         .iter()
         .map(|(to, body, quote)| json!({ "to": to, "body": body, "quote": quote }))
@@ -702,16 +727,16 @@ pub(crate) async fn answer(
 }
 
 /// Closes the pull request without merging it.
-pub(crate) async fn close(pull: &Pull) -> Result<(), String> {
-    let repo = pull.repo()?;
+pub(crate) async fn close(core: &Core, pull: &Pull) -> Result<(), String> {
+    let repo = pull.repo(core)?;
     let closed = json!({ "number": pull.number, "state": "closed" });
     Ok(repo.call("setPullState", closed).await.map(drop)?)
 }
 
 /// Merges the pull request at `sha`, the commit whose checks passed, the
 /// first way the repository allows.
-pub(crate) async fn merge(pull: &Pull, sha: &str) -> Result<(), String> {
-    let repo = pull.repo()?;
+pub(crate) async fn merge(core: &Core, pull: &Pull, sha: &str) -> Result<(), String> {
+    let repo = pull.repo(core)?;
     let mut refused = None;
     for method in repo.host.merges() {
         let asked = json!({ "number": pull.number, "method": method, "sha": sha });
@@ -734,6 +759,7 @@ impl Repo {
             ..CodeHostSpec::default()
         }));
         Self {
+            plugins: None,
             host: Host {
                 plugin: "sikemux.test",
                 spec,

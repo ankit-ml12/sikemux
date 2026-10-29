@@ -14,6 +14,7 @@ use sikemux_process::sync::Locked;
 use super::{git, remember, Found};
 use crate::protocol::CodeHostChoice;
 use crate::server::codehost::repo::{self as codehost, Conclusion, Repo};
+use crate::server::Core;
 
 const ASK_BUDGET: Duration = Duration::from_secs(10);
 const LOG_BUDGET: Duration = Duration::from_secs(20);
@@ -99,8 +100,8 @@ pub(super) struct Ci {
 /// The CI run `target` names, if it names one: a run's address or id, a
 /// workflow's name, or `ci` and `main` for the latest failing run on the
 /// current branch and on main.
-pub(super) fn asked(top: &Path, target: &str) -> Result<Option<Asked>, String> {
-    if codehost::run_in(target).is_some() {
+pub(super) fn asked(core: &Core, top: &Path, target: &str) -> Result<Option<Asked>, String> {
+    if codehost::run_in(core, target).is_some() {
         return Ok(Some(Asked::Run(target.to_owned())));
     }
     let latest =
@@ -234,11 +235,12 @@ fn summary(run: &Value) -> Value {
 
 /// Finds the failing run `asked` names on the code host `origin` is on.
 pub(super) async fn find(
+    core: &Core,
     origin: &str,
     picks: &BTreeMap<String, CodeHostChoice>,
     asked: Asked,
 ) -> Result<Ci, String> {
-    let repo = timed(ASK_BUDGET, codehost::find(origin, picks)).await?;
+    let repo = timed(ASK_BUDGET, codehost::find(core, origin, picks)).await?;
     let mut notes = Vec::new();
     let mut also_failing = Vec::new();
     let (id, job) = match asked {
@@ -253,8 +255,8 @@ pub(super) async fn find(
                     repo.slug()
                 ));
             }
-            let id = codehost::run_in(&address).unwrap_or_else(|| address.as_str().into());
-            (id, codehost::job_in(&address))
+            let id = codehost::run_in(core, &address).unwrap_or_else(|| address.as_str().into());
+            (id, codehost::job_in(core, &address))
         }
         Asked::Latest { branch, workflow } => {
             let id = match &workflow {

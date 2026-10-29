@@ -48,12 +48,12 @@ impl Shows for Shown {
     }
 
     async fn read(
-        _core: Arc<Core>,
+        core: Arc<Core>,
         key: Key,
         every: Duration,
     ) -> Result<(Value, Duration), Failure> {
         let params = serde_json::from_str(&key.params).unwrap_or_default();
-        let answer = plugins::call(&key.plugin, &key.method, params).await?;
+        let answer = plugins::call(&core, &key.plugin, &key.method, params).await?;
         let pace = pace(&answer, every);
         Ok((answer, pace))
     }
@@ -77,13 +77,16 @@ pub(crate) struct ViewParams {
     slot: Option<String>,
 }
 
-fn every(plugin: &str, method: &str) -> Option<Duration> {
-    let secs = plugins::manifest(plugin)?.views.get(method)?.every_secs;
+fn every(core: &Core, plugin: &str, method: &str) -> Option<Duration> {
+    let secs = plugins::manifest(core, plugin)?
+        .views
+        .get(method)?
+        .every_secs;
     Some(Duration::from_secs(secs.max(1)))
 }
 
 pub(crate) async fn view(core: &Arc<Core>, client: ClientId, asked: ViewParams) -> Outcome {
-    let Some(every) = every(&asked.plugin, &asked.method) else {
+    let Some(every) = every(core, &asked.plugin, &asked.method) else {
         return Outcome::Failed(Failure::new(
             &asked.plugin,
             Category::Invalid,
@@ -101,7 +104,7 @@ pub(crate) async fn view(core: &Arc<Core>, client: ClientId, asked: ViewParams) 
     if let Some(answer) = core.plugin_views.0.show(client, slot, &key) {
         return Outcome::Value(answer);
     }
-    match plugins::call(&key.plugin, &key.method, asked.params).await {
+    match plugins::call(core, &key.plugin, &key.method, asked.params).await {
         Ok(answer) => {
             let pace = pace(&answer, every);
             shown_cache::keep::<Shown>(core, key, answer.clone(), pace, every);
@@ -162,7 +165,7 @@ pub(crate) fn read_again(core: &Arc<Core>, asked: ReadAgain) {
 
 /// An agent ran the tool `tool`, which may be one of a plugin's writes.
 pub(crate) fn tool_ran(core: &Arc<Core>, tool: &str) {
-    let found = plugins::manifests().into_iter().find_map(|manifest| {
+    let found = plugins::manifests(core).into_iter().find_map(|manifest| {
         let tool = manifest.tools.iter().find(|each| each.name == tool)?;
         Some((manifest.id.as_str(), tool.method.as_str()))
     });

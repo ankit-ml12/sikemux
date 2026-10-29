@@ -21,9 +21,12 @@ use crate::git::{
 use super::access::{Needs, Peer};
 use super::{Core, CoreError, CoreResult};
 
+/// Answered by the code host layer, which needs the core, rather than by the table below.
+const PULL_REQUEST_URL: &str = "git.pullRequestUrl";
+
 /// What a client must be allowed to call `method`.
 pub(crate) fn needs(method: &str) -> Needs {
-    if reads(method) {
+    if reads(method) || method == PULL_REQUEST_URL {
         Needs::Watch
     } else if matches!(method, "git.push") {
         Needs::Person
@@ -35,7 +38,7 @@ pub(crate) fn needs(method: &str) -> Needs {
 /// Whether only Sikemux's own window or notch may call `method` from this
 /// host; another program here may only read.
 pub(crate) fn for_person(method: &str) -> bool {
-    !reads(method)
+    !reads(method) && method != PULL_REQUEST_URL
 }
 
 /// Each method's parameters by the names clients send them under, the git
@@ -106,6 +109,16 @@ pub(crate) async fn call(
             );
         }
     }
+    if method == PULL_REQUEST_URL {
+        #[derive(Deserialize)]
+        struct Asked {
+            repo: String,
+        }
+        let Asked { repo } = serde_json::from_value(params).map_err(unfit)?;
+        let (origin, branch) = remote::origin_and_branch(repo).await?;
+        let url = codehost::compare_url(core, &origin, &branch).await?;
+        return Ok(Value::String(url));
+    }
     let mut params = params;
     if method == "git.projectRepo" {
         let chosen = params
@@ -158,7 +171,6 @@ methods!(
     "git.blame" read => blame::git_blame { repo: String, path: String, contents: Option<String> },
     "git.push" => commit::git_push { repo: String },
     "git.pull" => commit::git_pull { repo: String },
-    "git.pullRequestUrl" read => remote::pull_request_url { repo: String },
     "git.aiMessage" => ai::git_ai_message { repo: String, provider: Option<String>, model: Option<String> },
     "git.stashList" read => stash::git_stash_list { repo: String },
     "git.stashPush" => stash::git_stash_push { repo: String, message: Option<String>, mode: String },
@@ -322,13 +334,13 @@ pub(crate) fn read_hosts(core: &Arc<Core>, folders: Vec<String>) {
                 read.push((folder, None));
                 continue;
             };
-            let shown = codehost::shown(&origin, &picks).await;
+            let shown = codehost::shown(&core, &origin, &picks).await;
             let branch = crate::git::status::git_chip(folder.clone())
                 .await
                 .ok()
                 .map(|chip| chip.branch);
             let (pull, watched) = match (&shown, &branch) {
-                (Some(_), Some(branch)) => match codehost::find(&origin, &picks).await {
+                (Some(_), Some(branch)) => match codehost::find(&core, &origin, &picks).await {
                     Ok(repo) => {
                         let pull = match codehost::branch_pull(&repo, branch).await {
                             Ok(Some(pull)) => BranchPull::Open(pull),

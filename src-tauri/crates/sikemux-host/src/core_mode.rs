@@ -7,20 +7,18 @@ use std::path::Path;
 pub fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(2).collect();
     sikemux_host::cli_paths::link_cli_for_children();
-    if let Some(data_dir) = args
+    let plugins = args
         .iter()
         .position(|arg| arg == "--data-dir")
         .and_then(|at| args.get(at + 1))
-    {
-        sikemux_host::provide_to_core(Path::new(data_dir));
-    }
+        .and_then(|data_dir| sikemux_host::provide_to_core(Path::new(data_dir)));
     if !args
         .iter()
         .any(|arg| arg == sikemux_core::frozen::UPGRADE_INFO_ARG)
     {
         rewrite_service();
     }
-    sikemux_core::server::main(args.into_iter(), sikemux_host::build_identity())
+    sikemux_core::server::main(args.into_iter(), sikemux_host::build_identity(), plugins)
 }
 
 /// A core that updated itself starts its service the way its own release

@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::{json, Value};
-use sikemux_core::server::plugins::{Answer, Gated, Listing, Plugins, Sink};
+use sikemux_core::server::plugins::{Answer, Gated, Listing, Plugins, Provided, Sink};
 use sikemux_plugin_api::{AgentTool, Manifest, StreamSink};
 use sikemux_process::user_environment::UserEnvironment;
 
@@ -114,27 +114,31 @@ fn core_environment() -> UserEnvironment {
     environment
 }
 
-/// Gives the core the plugins, which keep their sign-ins under `data_dir`
-/// as the app always has, and the environment they read.
-pub fn provide_to_core(data_dir: &Path) {
+/// The plugins for the core, which keep their sign-ins under `data_dir` as
+/// the app always has, after giving the core the environment they read.
+pub fn provide_to_core(data_dir: &Path) -> Option<Provided> {
     crate::install_tls_crypto();
     let host = semver::Version::parse(env!("CARGO_PKG_VERSION"))
         .map_err(std::io::Error::other)
         .and_then(|version| PluginHost::with_builtins(&data_dir.join("plugins"), &version));
-    match host {
+    let plugins = match host {
         Ok(host) => {
             let _ = SHELL_VARIABLES.set(host.shell_variables());
             let plugins: Box<dyn Plugins> = Box::new(InCore(host));
             #[cfg(feature = "fake-plugins")]
             let plugins: Box<dyn Plugins> = Box::new(super::fake::Fake(plugins));
-            sikemux_core::server::plugins::provide(plugins);
+            Some(Provided(Box::leak(plugins)))
         }
-        Err(error) => eprintln!("sikemux core: the built-in plugins did not load: {error}"),
-    }
+        Err(error) => {
+            eprintln!("sikemux core: the built-in plugins did not load: {error}");
+            None
+        }
+    };
     sikemux_process::user_environment::provide(
         core_environment,
         sikemux_pty::user_shell::login_shell_generation,
     );
+    plugins
 }
 
 #[cfg(test)]

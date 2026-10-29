@@ -614,7 +614,7 @@ async fn dispatch(
             Ok(answer)
         }
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
-        "plugins.tools" => super::plugins::agent_tools(&request.project).await,
+        "plugins.tools" => super::plugins::agent_tools(core, &request.project).await,
         "plugins.call" => super::plugins::call_agent_tool(core, &request).await,
         "skills.manage" => skills_call(core, &request).await,
         "task.start" => task_start(core, &request, false).await,

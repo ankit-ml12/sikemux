@@ -162,6 +162,9 @@ pub struct ServerConfig {
     /// person's secret store. Without it they live in a file beside the
     /// socket, for tests.
     pub secret_store: bool,
+    /// The built-in plugins, which the binary that runs the core provides.
+    /// Without them every plugin call says the plugin is missing.
+    pub plugins: Option<plugins::Provided>,
 }
 
 impl ServerConfig {
@@ -176,6 +179,7 @@ impl ServerConfig {
             remote_direct_only: false,
             accounts_api: None,
             secret_store: false,
+            plugins: None,
         }
     }
 }
@@ -316,6 +320,7 @@ pub(crate) struct Core {
     pub(crate) tasks: tasks::Tasks,
     pub(crate) git: git::Projects,
     /// The code-host lists clients look at, kept and read again while they do.
+    pub(crate) plugins: Option<plugins::Provided>,
     pub(crate) code_host_lists: codehost::Lists,
     /// The plugin views panes look at, kept and read again while they do.
     pub(crate) plugin_views: plugin_views::Views,
@@ -368,8 +373,9 @@ impl Core {
         }
     }
 
+    #[cfg(test)]
     fn new(build: BuildIdentity, data_dir: Option<&Path>) -> Result<Arc<Self>, ServerError> {
-        Self::continuing(build, data_dir, 0)
+        Self::continuing(build, data_dir, 0, None)
     }
 
     /// A core whose clock reads `uptime_ms` already: a core that replaced an earlier one keeps
@@ -378,6 +384,7 @@ impl Core {
         build: BuildIdentity,
         data_dir: Option<&Path>,
         uptime_ms: u64,
+        plugins: Option<plugins::Provided>,
     ) -> Result<Arc<Self>, ServerError> {
         let started = Instant::now()
             .checked_sub(Duration::from_millis(uptime_ms))
@@ -415,7 +422,7 @@ impl Core {
             remote: remote::Remote::default(),
             shares: share::Shares::default(),
             hooks: hooks::Hooks::default(),
-            workspaces: workspace::Workspaces::new(data_dir),
+            workspaces: workspace::Workspaces::new(data_dir).with_plugins(plugins),
             seen: seen::Seen::default(),
             lifecycle: lifecycle::Lifecycle::default(),
             session_watch: session_watch::SessionWatch::default(),
@@ -432,6 +439,7 @@ impl Core {
             usage_wake: Notify::new(),
             tasks: tasks::Tasks::new(data_dir),
             git: git::Projects::default(),
+            plugins,
             code_host_lists: Default::default(),
             plugin_views: Default::default(),
             open_files: Default::default(),
@@ -992,7 +1000,12 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
         .await
         .map_err(std::io::Error::other)??;
     data_format::upgrade(&config);
-    let core = Core::new(config.build.clone(), config.data_dir.as_deref())?;
+    let core = Core::continuing(
+        config.build.clone(),
+        config.data_dir.as_deref(),
+        0,
+        config.plugins,
+    )?;
     chat::restore(&core);
     workspace::restore(&core);
     core.chats.clear_history();

@@ -93,7 +93,11 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<CoreArgs, String
 /// shut down or sits idle, publishing agents' tool endpoint at
 /// `--cli-endpoint`, by default where the CLI looks for it. `args` are the
 /// ones after `core`. Returns the exit code.
-pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
+pub fn main(
+    args: impl Iterator<Item = String>,
+    build: BuildIdentity,
+    plugins: Option<super::plugins::Provided>,
+) -> i32 {
     #[cfg(unix)]
     if let Some(path) = with_system_path(&std::env::var("PATH").unwrap_or_default()) {
         // Nothing else runs yet, so the process environment is safe to change.
@@ -134,6 +138,7 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
             sessions: args.sessions,
             chat_fds: args.chat_fds,
             inherited: HashMap::new(),
+            plugins,
         };
         // Taken before anything opens a descriptor of its own.
         recovery.inherited = recovery
@@ -168,6 +173,7 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
         remote_direct_only: false,
         accounts_api: Some(crate::accounts::api_base()),
         secret_store: true,
+        plugins,
     }));
     sikemux_process::jobs::leave();
     exit

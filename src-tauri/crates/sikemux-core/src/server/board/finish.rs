@@ -142,7 +142,7 @@ async fn clear(core: &Arc<Core>, dropped: Dropped) {
         core.note_agent_gone(&run.agent);
     }
     if let (true, Some(pull)) = (discard, &run.pull) {
-        if let Err(error) = codehost::close(pull).await {
+        if let Err(error) = codehost::close(core, pull).await {
             eprintln!(
                 "sikemux core: Auto left the pull request {} open: {error}",
                 pull.url
@@ -384,7 +384,7 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
     }
     let origin = origin.ok_or("the project has no origin remote to open a pull request on")?;
     let picks = codehost::picks(core, Path::new(&step.project));
-    let host = codehost::find(&origin, &picks).await?;
+    let host = codehost::find(core, &origin, &picks).await?;
     let (branch, pushed) = (step.run.branch.clone(), step.run.head.clone());
     let head = {
         let tree = tree.clone();
@@ -416,7 +416,7 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
             .get(step.agent())
             .and_then(|chat| chat.feed.last_answer());
         let answers = review::answers(asked, said.as_deref(), &step.name(core), &head);
-        codehost::answer(&pull, &answers.replies, &answers.reviewers)
+        codehost::answer(core, &pull, &answers.replies, &answers.reviewers)
             .await
             .map_err(|error| {
                 format!(
@@ -659,7 +659,7 @@ async fn checking(core: &Arc<Core>, step: Step) {
         ship(core, step.project.clone(), step.id);
         return;
     };
-    let checks = match codehost::checks(&pull, &step.run.branch, &head).await {
+    let checks = match codehost::checks(core, &pull, &step.run.branch, &head).await {
         Ok(checks) => checks,
         Err(error) => {
             core.boards
@@ -797,11 +797,11 @@ pub(super) async fn merge(core: &Arc<Core>, step: &Step, pull: &Pull, head: &str
         return;
     }
     step.note(core, Stage::Merging, "Merging its pull request");
-    let error = match codehost::merge(pull, head).await {
+    let error = match codehost::merge(core, pull, head).await {
         Ok(()) => return merged(core, step).await,
         Err(error) => error,
     };
-    if codehost::look(pull)
+    if codehost::look(core, pull)
         .await
         .is_ok_and(|looked| looked.state == "merged")
     {
@@ -915,7 +915,7 @@ async fn reviewing(core: &Arc<Core>, step: Step) {
     let Some(pull) = step.run.pull.clone() else {
         return;
     };
-    let Ok(looked) = codehost::look(&pull).await else {
+    let Ok(looked) = codehost::look(core, &pull).await else {
         return;
     };
     match looked.state.as_str() {
@@ -932,7 +932,7 @@ async fn reviewing(core: &Arc<Core>, step: Step) {
     if !seen.moved(&looked.mark) {
         return quiet(core, &step, true);
     }
-    let Ok(found) = codehost::feedback(&pull, seen.since()).await else {
+    let Ok(found) = codehost::feedback(core, &pull, seen.since()).await else {
         return;
     };
     let new = seen.take(looked.mark, found);

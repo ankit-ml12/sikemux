@@ -128,7 +128,7 @@ async fn check(core: &Arc<Core>, repo: Shown) {
         "host": repo.host,
         "perPage": RUNS_CHECKED,
     });
-    let Ok(page) = plugins::call(&repo.id.provider, "runs", params).await else {
+    let Ok(page) = plugins::call(core, &repo.id.provider, "runs", params).await else {
         return;
     };
     let runs = page.get("runs").cloned().unwrap_or(Value::Null);

@@ -512,7 +512,7 @@ calls! { core, client, params;
     "codeHostReleases": Watch => answer(super::codehost::releases(&core, client.id, parse(params)?).await),
     "codeHostPull": Watch => answer(super::codehost::pull(&core, client.id, parse(params)?).await),
     "codeHostPullFiles": Watch => answer(super::codehost::pull_files(&core, client.id, parse(params)?).await),
-    "codeHostLink": Watch => answer(super::codehost::link(parse(params)?).await),
+    "codeHostLink": Watch => answer(super::codehost::link(&core, parse(params)?).await),
     "codeHostCheckout": Person => answer(super::codehost::checkout(&core, parse(params)?).await),
     "codeHostNewPull": Watch => answer(super::codehost::new_pull(&core, parse(params)?).await),
     "codeHostTrackedContext": Watch => answer(super::codehost::tracked_context(&core, parse(params)?).await),
@@ -606,7 +606,7 @@ calls! { core, client, params;
         answer(super::chat::offered::models(&params.agent))
     },
     "plugin": Person => answer(plugins::window_call(&core, parse(params)?).await),
-    "pluginManifests": Person => answer(plugins::manifests()),
+    "pluginManifests": Person => answer(plugins::manifests(&core)),
     "releaseNotes": Watch => answer(super::about::release_notes(parse(params)?).await?),
     "releaseAvatars": Watch => answer(super::about::release_avatars(parse(params)?).await),
     "hostTools": Watch => answer(super::about::tools().await?),
@@ -629,8 +629,8 @@ calls! { core, client, params;
         super::plugin_views::read_again(&core, parse(params)?);
         answer(())
     },
-    "plugins": Watch => answer(plugins::listed().await),
-    "pluginLink": Watch => answer(plugins::link(parse(params)?).await),
+    "plugins": Watch => answer(plugins::listed(&core).await),
+    "pluginLink": Watch => answer(plugins::link(&core, parse(params)?).await),
     "pluginSetDisabled": Person => {
         plugins::set_disabled(&core, parse(params)?);
         answer(())
@@ -642,7 +642,7 @@ calls! { core, client, params;
     },
     "signInCallback": Person, any_program => {
         not_an_agent(client).await?;
-        answer(plugins::sign_in_callback(parse(params)?)?)
+        answer(plugins::sign_in_callback(&core, parse(params)?)?)
     },
 }
 

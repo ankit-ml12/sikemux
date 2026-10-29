@@ -99,8 +99,10 @@ pub(super) fn carry(core: &Arc<Core>, data_dir: Option<&Path>) {
     let Ok(runtime) = tokio::runtime::Handle::try_current() else {
         return;
     };
+    let core = core.clone();
     runtime.spawn(async move {
         let picked = plugins::call(
+            &core,
             AWS_PLUGIN,
             "setDefaultAccount",
             json!({ "profile": profile }),

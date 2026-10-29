@@ -376,11 +376,11 @@ pub(crate) struct LinkParams {
 
 /// The pull request, issue or run a web address shows, with what clients show of its
 /// repository's host, when the address is one of a host Sikemux reads; else null.
-pub(crate) async fn link(params: LinkParams) -> Value {
+pub(crate) async fn link(core: &Core, params: LinkParams) -> Value {
     let Some((repo_url, item)) = linked(&params.url) else {
         return Value::Null;
     };
-    match repo::shown(&repo_url, &Default::default()).await {
+    match repo::shown(core, &repo_url, &Default::default()).await {
         Some(host) => json!({ "codeHost": host, "item": item }),
         None => Value::Null,
     }
@@ -543,6 +543,7 @@ async fn repo_of(core: &Arc<Core>, place: &Place) -> Result<Repo, Failure> {
         Place::Project(project) => project,
         Place::Repo(named) => {
             return Repo::named(
+                core,
                 &named.id.provider,
                 &named.id.owner,
                 &named.id.name,

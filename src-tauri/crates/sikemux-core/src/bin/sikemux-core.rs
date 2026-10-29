@@ -14,7 +14,7 @@ fn main() {
         "standalone",
     );
     let args = std::env::args().skip(1).skip_while(|arg| arg == "core");
-    std::process::exit(sikemux_core::server::main(args, build));
+    std::process::exit(sikemux_core::server::main(args, build, None));
 }
 
 #[cfg(not(unix))]

@@ -738,7 +738,7 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         let origin = git(&top, &["remote", "get-url", "origin"])
             .ok()
             .map(|url| url.trim().to_owned());
-        let asked = match ci::asked(&top, &target)? {
+        let asked = match ci::asked(&core_for_owners, &top, &target)? {
             Some(run) => Asked::Ci(run),
             None => Asked::Found(resolve(&dir, &top, &target)?),
         };
@@ -764,7 +764,7 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
                 .as_deref()
                 .ok_or("this project has no origin remote to find its CI runs on")?;
             let picks = codehost::picks(core, Path::new(&request.project));
-            let ci = ci::find(origin, &picks, run).await?;
+            let ci = ci::find(core, origin, &picks, run).await?;
             let top = top.clone();
             blocking(move || Ok((ci::commits(&top, &ci)?, Some(ci))))
                 .await
@@ -772,6 +772,7 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         }
     };
     let picks = codehost::picks(core, &top);
+    let asking = core.clone();
     let core = core.clone();
     let (found, mut commits) = blocking(move || {
         let hashes: Vec<&str> = found
@@ -819,8 +820,11 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         let mut asked = tokio::task::JoinSet::new();
         for (commit, _) in commits.iter().filter(|(_, owners)| owners.is_empty()) {
             let (origin, picks, hash) = (origin.clone(), picks.clone(), commit.hash.clone());
+            let core = asking.clone();
             asked.spawn(async move {
-                let found = codehost::pulls_of(&origin, &picks, &hash).await.ok()?;
+                let found = codehost::pulls_of(&core, &origin, &picks, &hash)
+                    .await
+                    .ok()?;
                 Some((hash, found.into_iter().next()?))
             });
         }
