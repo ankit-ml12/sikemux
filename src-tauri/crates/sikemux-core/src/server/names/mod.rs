@@ -12,11 +12,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use super::kept::Kept;
+use crate::protocol::AgentBuddy;
 use words::{ANIME, NATURE};
 
 const FILE: &str = "agent-names.json";
@@ -67,7 +67,7 @@ struct Entry {
     /// The character the app last drew for it, which it wears again when
     /// opened again.
     #[serde(skip_serializing_if = "Option::is_none")]
-    buddy: Option<Value>,
+    buddy: Option<AgentBuddy>,
     /// What it was last working on, as the app titled it.
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
@@ -154,7 +154,7 @@ pub(crate) struct ClosedAgent {
     pub provider: String,
     pub session_id: String,
     pub title: Option<String>,
-    pub buddy: Option<Value>,
+    pub buddy: Option<AgentBuddy>,
 }
 
 /// An agent another agent starts.
@@ -594,7 +594,7 @@ impl Names {
         &self,
         starting: &Starting<'_>,
         open: HashSet<String>,
-    ) -> Option<Option<Value>> {
+    ) -> Option<Option<AgentBuddy>> {
         let session = starting.resume_id?;
         let mut book = self.book.locked();
         if book.entry_mut(starting.agent_id).is_some() {
@@ -620,8 +620,15 @@ impl Names {
 
     /// Keeps how the app draws the agent and what it works on, for when it is
     /// opened again after closing. What the app leaves out stays as it was.
-    pub(crate) fn note_look(&self, agent_id: &str, buddy: Option<Value>, title: Option<String>) {
-        let buddy = buddy.filter(|buddy| buddy.to_string().len() <= MAX_BUDDY_BYTES);
+    pub(crate) fn note_look(
+        &self,
+        agent_id: &str,
+        buddy: Option<AgentBuddy>,
+        title: Option<String>,
+    ) {
+        let buddy = buddy.filter(|buddy| {
+            serde_json::to_vec(buddy).is_ok_and(|bytes| bytes.len() <= MAX_BUDDY_BYTES)
+        });
         let title = title.filter(|title| title.chars().count() <= MAX_TITLE_CHARS);
         let mut book = self.book.locked();
         let Some(entry) = book.entry_mut(agent_id) else {

@@ -73,13 +73,11 @@ pub(super) fn apply(repo: &Path, steps: Steps, before: &str, after: &str) -> Vec
 
 /// Lands `agent_id`'s commits from its own checkout onto its base branch.
 pub(super) fn land(core: &Core, agent_id: &str) -> Result<Landed, String> {
-    let record = core
+    let worktree = core
         .workspaces
         .agent(agent_id)
         .and_then(|agent| agent.worktree)
         .ok_or("You work in the project's own checkout, so your commits are on its branch already; there is nothing to land")?;
-    let worktree: AgentWorktree = serde_json::from_value(record)
-        .map_err(|error| format!("your checkout's record: {error}"))?;
     land_from(&worktree, &Signing::of(core))
 }
 

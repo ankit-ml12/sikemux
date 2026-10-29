@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Deserialize;
-use serde_json::{Map, Value};
 
 use super::workspace::AddProjectParams;
 use super::{launching, session, Core, CoreError, CoreResult};
@@ -108,17 +107,13 @@ pub(crate) async fn move_agent(core: &Arc<Core>, params: MoveParams) -> CoreResu
     } else if chat {
         core.chats.stop(&agent.id);
     }
-    let mut patch = Map::new();
-    patch.insert("project".into(), Value::String(to.id));
-    patch.insert(
-        "cwd".into(),
-        Value::String(to.path.to_string_lossy().into_owned()),
-    );
-    if terminal.is_some() {
-        patch.insert("ptyId".into(), Value::Null);
-    }
-    let moved = core.workspaces.update_agent(&agent.id, patch)?;
-    core.view_changed();
+    let moved = core.workspaces.edit_agent(&agent.id, |moved| {
+        moved.project = to.id;
+        moved.cwd = to.path;
+        if terminal.is_some() {
+            moved.pty_id = None;
+        }
+    })?;
     if chat {
         let (core, agent_id) = (core.clone(), agent.id.clone());
         // A chat that never ran goes on waiting for the person in its new project.

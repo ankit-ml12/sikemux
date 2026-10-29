@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
@@ -16,6 +16,7 @@ use super::{blind, finish, git, Board, Card, Status, Team};
 use crate::protocol::Event;
 use crate::server::connection::blocking;
 use crate::server::names::Starting;
+use crate::server::sandbox::AgentWorktree;
 use crate::server::spawn::Ending;
 use crate::server::{chat, messages, Core};
 
@@ -572,15 +573,15 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
     super::tell_clients(core);
     let chat = chat::begin(core, launch, None, Some(launcher), false)
         .map_err(|error| error.to_string())?;
-    let worktree = json!({
-        "repo": tree.repo,
-        "path": tree.path,
-        "branch": tree.branch,
-        "base": tree.base,
-        "startSha": tree.start_sha,
+    let _ = core.workspaces.edit_agent(agent, |agent| {
+        agent.worktree = Some(AgentWorktree {
+            repo: tree.repo,
+            path: tree.path,
+            branch: tree.branch,
+            base: Some(tree.base),
+            start_sha: tree.start_sha,
+        })
     });
-    let worktree = serde_json::Map::from_iter([("worktree".to_owned(), worktree)]);
-    let _ = core.workspaces.update_agent(agent, worktree);
     core.broadcast_local(&Event::ChatBegun { chat: chat.info() });
     core.view_changed();
     chat::until_started(core, chat)

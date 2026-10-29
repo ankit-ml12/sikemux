@@ -112,8 +112,8 @@ impl Workbench {
         cx.notify();
         let Some((folder, branch)) = known(self, &agent).and_then(|known| {
             let worktree = known.worktree.as_ref()?;
-            let folder = worktree["path"].as_str()?.to_owned();
-            Some((folder, worktree["branch"].as_str()?.to_owned()))
+            let folder = worktree.path.to_str()?.to_owned();
+            Some((folder, worktree.branch.clone()))
         }) else {
             return;
         };
@@ -203,13 +203,10 @@ pub fn view(
     }
     let t = Tokens::get(cx).clone();
     let worktree = known(bench, &agent.id).and_then(|known| known.worktree.clone());
-    let branch = worktree
-        .as_ref()
-        .and_then(|worktree| worktree["branch"].as_str())
-        .map(str::to_owned);
+    let branch = worktree.as_ref().map(|worktree| worktree.branch.clone());
     let folder = worktree
         .as_ref()
-        .and_then(|worktree| worktree["path"].as_str())
+        .and_then(|worktree| worktree.path.to_str())
         .map(|path| {
             crate::ui::path::tilde(path, bench.chat_target(&agent.id).place().home().as_deref())
         });

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use super::connection::blocking;
 use super::sandbox::AgentWorktree;
@@ -46,7 +46,6 @@ fn worktree_of(core: &Core, agent_id: &str) -> CoreResult<(WorkspaceAgent, Agent
     let worktree = agent
         .worktree
         .clone()
-        .and_then(|worktree| serde_json::from_value(worktree).ok())
         .ok_or_else(|| CoreError::from("that agent works in the main checkout"))?;
     Ok((agent, worktree))
 }
@@ -290,7 +289,7 @@ fn outside(worktree: &AgentWorktree, cwd: &Path) -> PathBuf {
 }
 
 pub(crate) async fn remove(core: &Core, params: RemoveParams) -> CoreResult<Removed> {
-    let (agent, worktree) = worktree_of(core, &params.agent_id)?;
+    let (_, worktree) = worktree_of(core, &params.agent_id)?;
     if busy(core, &params.agent_id) {
         return Err("stop the agent's turn before removing its worktree".into());
     }
@@ -327,18 +326,10 @@ pub(crate) async fn remove(core: &Core, params: RemoveParams) -> CoreResult<Remo
         })
         .await?
     };
-    let mut patch = Map::new();
-    patch.insert("worktree".into(), Value::Null);
-    patch.insert(
-        "cwd".into(),
-        Value::String(
-            outside(&worktree, &agent.cwd)
-                .to_string_lossy()
-                .into_owned(),
-        ),
-    );
-    core.workspaces.update_agent(&params.agent_id, patch)?;
-    core.view_changed();
+    core.workspaces.edit_agent(&params.agent_id, |agent| {
+        agent.worktree = None;
+        agent.cwd = outside(&worktree, &agent.cwd);
+    })?;
     Ok(Removed {
         branch_deleted: deleted,
     })

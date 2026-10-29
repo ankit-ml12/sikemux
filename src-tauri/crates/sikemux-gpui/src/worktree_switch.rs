@@ -9,7 +9,7 @@ use gpui_kit::{
     div, px, AnyElement, App, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use serde_json::Value;
+use sikemux_wire::protocol::AgentWorktree;
 
 use crate::icons::Icon;
 use crate::theme::Tokens;
@@ -33,7 +33,7 @@ pub enum Switch {
 /// The switch a chat shows, or none for one that has started outside a worktree or is not
 /// in a repository.
 pub fn state(
-    worktree: Option<&Value>,
+    worktree: Option<&AgentWorktree>,
     is_repo: bool,
     started: bool,
     preparing: Option<&str>,
@@ -46,11 +46,11 @@ pub fn state(
         });
     }
     if let Some(worktree) = worktree {
-        let path = worktree["path"].as_str().unwrap_or_default();
+        let path = worktree.path.to_string_lossy();
         return Some(Switch::In {
-            branch: worktree["branch"].as_str().unwrap_or_default().to_owned(),
-            path: path.to_owned(),
-            shown: crate::ui::path::tilde(path, home),
+            branch: worktree.branch.clone(),
+            shown: crate::ui::path::tilde(&path, home),
+            path: path.into_owned(),
         });
     }
     (is_repo && !started).then_some(Switch::Choosing { on })

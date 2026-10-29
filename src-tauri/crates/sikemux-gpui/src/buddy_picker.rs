@@ -64,8 +64,8 @@ impl Workbench {
 fn own(agent: &WorkspaceAgent) -> (Option<&str>, Option<u64>) {
     let buddy = agent.buddy.as_ref();
     (
-        buddy.and_then(|buddy| buddy.get("pack")?.as_str()),
-        buddy.and_then(|buddy| buddy.get("color")?.as_u64()),
+        buddy.and_then(|buddy| buddy.pack.as_deref()),
+        buddy.and_then(|buddy| buddy.color.map(u64::from)),
     )
 }
 

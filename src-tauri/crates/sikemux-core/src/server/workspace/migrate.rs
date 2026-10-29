@@ -213,12 +213,10 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
             asleep,
             worktree: agent
                 .get("worktree")
-                .filter(|tree| tree.is_object())
-                .cloned(),
+                .and_then(|tree| serde_json::from_value(tree.clone()).ok()),
             buddy: agent
                 .get("buddy")
-                .filter(|buddy| buddy.is_object())
-                .cloned(),
+                .and_then(|buddy| serde_json::from_value(buddy.clone()).ok()),
             face: None,
             pty_id,
             terminal: false,

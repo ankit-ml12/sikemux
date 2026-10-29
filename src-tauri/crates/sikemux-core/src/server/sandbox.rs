@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 use sikemux_process::vars;
+pub(crate) use sikemux_wire::protocol::AgentWorktree;
 
 use super::board::git::{branch_exists, git, git_in, inside, slug, worktrees_folder, SLOW};
 use super::connection::blocking;
@@ -170,19 +170,6 @@ fn matches_part(pattern: &str, name: &str) -> bool {
     rest.is_empty()
 }
 
-/// The checkout an agent was given, as its workspace record keeps it.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct AgentWorktree {
-    /// The main checkout, which git commands about the worktree run against.
-    pub repo: PathBuf,
-    pub path: PathBuf,
-    pub branch: String,
-    /// The branch the project was on when the worktree was cut, if any.
-    pub base: Option<String>,
-    pub start_sha: String,
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ForAgentParams {
@@ -326,14 +313,10 @@ pub(crate) async fn for_agent(core: &Arc<Core>, params: ForAgentParams) -> CoreR
         .find(|project| project.id == agent.project)
         .map_or(agent.cwd, |project| project.path);
     let setup_error = set_up(core, &project, Some(&params.agent_id), &tree_cwd).await;
-    let mut patch = Map::new();
-    patch.insert("worktree".into(), serde_json::to_value(&worktree)?);
-    patch.insert(
-        "cwd".into(),
-        Value::String(tree_cwd.to_string_lossy().into_owned()),
-    );
-    core.workspaces.update_agent(&params.agent_id, patch)?;
-    core.view_changed();
+    core.workspaces.edit_agent(&params.agent_id, |agent| {
+        agent.worktree = Some(worktree.clone());
+        agent.cwd = tree_cwd.clone();
+    })?;
     if core.chats.stop(&params.agent_id) {
         launching::start_agent(core, None, &params.agent_id, false).await?;
     }

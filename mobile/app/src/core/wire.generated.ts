@@ -233,9 +233,9 @@ export interface WorkspaceAgent {
   /** Stopped, and woken again on its saved conversation when opened. */
   asleep?: boolean;
   /** The git worktree it works in. */
-  worktree?: unknown;
+  worktree?: AgentWorktree;
   /** The character drawn for it. */
-  buddy?: unknown;
+  buddy?: AgentBuddy;
   /**
    * The face it wears in place of its CLI's logo, from `buddy` and the
    * person's face style; none while it shows the logo. The core fills it
@@ -251,6 +251,27 @@ export interface WorkspaceAgent {
   terminal?: boolean;
   /** Unix milliseconds. */
   createdAt?: number;
+}
+
+/** The checkout an agent was given, as its workspace record keeps it. */
+export interface AgentWorktree {
+  /** The main checkout, which git commands about the worktree run against. */
+  repo: string;
+  path: string;
+  branch: string;
+  /** The branch the project was on when the worktree was cut, if any. */
+  base?: string;
+  startSha: string;
+}
+
+/**
+ * The character an agent wears: a pack and shape when the person picked one,
+ * and a slot in the pack's palette, which the core gives out.
+ */
+export interface AgentBuddy {
+  color?: number;
+  pack?: string;
+  shape?: string;
 }
 
 /** The face an agent wears, drawn by each client from the same art. */

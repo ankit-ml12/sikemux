@@ -21,7 +21,7 @@ use super::code::Scratch;
 use super::link::{Answer, Received};
 use super::{ask, find, open};
 use crate::agent_catalog::{self, AgentKind};
-use crate::protocol::{Tab, WorkspaceAgent};
+use crate::protocol::{AgentBuddy, Tab, WorkspaceAgent};
 use crate::sessions::{carry, delete};
 
 /// Long enough to send a project's chats over a slow link.
@@ -53,7 +53,7 @@ struct Carried {
     resume_id: String,
     model: Option<String>,
     effort: Option<String>,
-    buddy: Option<Value>,
+    buddy: Option<AgentBuddy>,
     /// Its files, in the order the body holds them, with their sizes.
     files: Vec<(String, u64)>,
 }
@@ -323,7 +323,10 @@ pub(super) async fn take_here(core: &Arc<Core>, params: Value, body: Option<Rece
                 draft.insert(key.into(), value.into());
             }
         }
-        if let Some(buddy) = chat.buddy {
+        if let Some(buddy) = chat
+            .buddy
+            .and_then(|buddy| serde_json::to_value(buddy).ok())
+        {
             draft.insert("buddy".into(), buddy);
         }
         if let Ok(made) = core.workspaces.put_agent(draft) {

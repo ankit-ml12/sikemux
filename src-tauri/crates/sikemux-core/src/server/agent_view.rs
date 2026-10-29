@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 use super::agent::AgentActivity;
 use super::{launching, session, Core, CoreError, CoreResult};
@@ -81,8 +81,8 @@ async fn to_chat(
         }
         let draft = session::prompt_draft(&terminal);
         session::kill(core, &terminal);
-        let patch = Map::from_iter([("ptyId".to_owned(), Value::Null)]);
-        core.workspaces.update_agent(agent_id, patch)?;
+        core.workspaces
+            .edit_agent(agent_id, |agent| agent.pty_id = None)?;
         if !draft.trim().is_empty() {
             let key = draft_key(agent_id);
             core.drafts.set(&key, draft, None)?;

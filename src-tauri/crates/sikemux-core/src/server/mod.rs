@@ -686,7 +686,10 @@ impl Core {
         cwd: &Path,
         provider: Option<&str>,
         resume_id: Option<&str>,
-    ) -> (names::AgentName, Option<Option<serde_json::Value>>) {
+    ) -> (
+        names::AgentName,
+        Option<Option<crate::protocol::AgentBuddy>>,
+    ) {
         let starting = names::Starting {
             agent_id,
             project: names::project_of(cwd, &self.workspaces.project_paths()),
@@ -695,8 +698,9 @@ impl Core {
         };
         let reopened = self.names.reopen(&starting, self.open_agents());
         if let Some(Some(buddy)) = &reopened {
-            let patch = serde_json::Map::from_iter([("buddy".to_owned(), buddy.clone())]);
-            let _ = self.workspaces.update_agent(agent_id, patch);
+            let _ = self
+                .workspaces
+                .edit_agent(agent_id, |agent| agent.buddy = Some(buddy.clone()));
         }
         let (named, changed) = self.names.give(starting, self.open_agents());
         if changed || reopened.is_some() {

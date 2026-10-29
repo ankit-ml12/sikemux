@@ -29,7 +29,7 @@ impl Workbench {
                 .agents
                 .iter()
                 .find(|known| known.id == agent.id)?;
-            let folder = known.worktree.as_ref()?["path"].as_str()?.to_owned();
+            let folder = known.worktree.as_ref()?.path.to_str()?.to_owned();
             Some((agent.id, folder, self.place()))
         });
         if watched == self.watched_worktree {
@@ -115,8 +115,8 @@ pub fn badges(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
         .iter()
         .find(|known| known.id == agent)?;
     let worktree = known.worktree.as_ref()?;
-    let branch = worktree["branch"].as_str()?.to_owned();
-    let path = worktree["path"].as_str().unwrap_or_default().to_owned();
+    let branch = worktree.branch.clone();
+    let path = worktree.path.to_string_lossy().into_owned();
     let t = Tokens::get(cx).clone();
     let pull = pull(bench, &branch);
     let pull_merged = pull.is_some_and(merged);

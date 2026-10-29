@@ -1108,6 +1108,33 @@ pub struct PinnedChat {
     pub project: PathBuf,
 }
 
+/// The checkout an agent was given, as its workspace record keeps it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentWorktree {
+    /// The main checkout, which git commands about the worktree run against.
+    pub repo: PathBuf,
+    pub path: PathBuf,
+    pub branch: String,
+    /// The branch the project was on when the worktree was cut, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    pub start_sha: String,
+}
+
+/// The character an agent wears: a pack and shape when the person picked one,
+/// and a slot in the pack's palette, which the core gives out.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentBuddy {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pack: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+}
+
 /// An agent in the workspace, kept whether or not it runs now.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1151,10 +1178,10 @@ pub struct WorkspaceAgent {
     pub asleep: bool,
     /// The git worktree it works in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktree: Option<Value>,
+    pub worktree: Option<AgentWorktree>,
     /// The character drawn for it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub buddy: Option<Value>,
+    pub buddy: Option<AgentBuddy>,
     /// The face it wears in place of its CLI's logo, from `buddy` and the
     /// person's face style; none while it shows the logo. The core fills it
     /// in; clients only read it.

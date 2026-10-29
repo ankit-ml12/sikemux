@@ -344,11 +344,9 @@ impl Chat {
         if known.is_none_or(|agent| agent.resume_id.as_deref() == Some(start.session_id.as_str())) {
             return;
         }
-        let patch =
-            serde_json::Map::from_iter([("resumeId".to_owned(), Value::from(start.session_id))]);
-        if core.workspaces.update_agent(self.agent_id(), patch).is_ok() {
-            core.view_changed();
-        }
+        let _ = core.workspaces.edit_agent(self.agent_id(), |agent| {
+            agent.resume_id = Some(start.session_id)
+        });
     }
 
     fn note_session(&self, payload: &Value) {
@@ -362,11 +360,9 @@ impl Chat {
             return;
         };
         if let Some(account) = payload.pointer("/update/account").and_then(Value::as_str) {
-            let patch =
-                serde_json::Map::from_iter([("profileId".to_owned(), Value::from(account))]);
-            if core.workspaces.update_agent(self.agent_id(), patch).is_ok() {
-                core.view_changed();
-            }
+            let _ = core.workspaces.edit_agent(self.agent_id(), |agent| {
+                agent.profile_id = Some(account.to_owned())
+            });
         }
         let title = feed::session_title(payload);
         super::workspace::retitle(&core, self.agent_id(), title, false);
@@ -2391,9 +2387,8 @@ pub(crate) fn switch_account(core: &Core, agent_id: &str, account: ChatAccount) 
             &account,
         ));
     }
-    let patch = serde_json::Map::from_iter([("profileId".to_owned(), Value::from(account.id))]);
-    core.workspaces.update_agent(agent_id, patch)?;
-    core.view_changed();
+    core.workspaces
+        .edit_agent(agent_id, |agent| agent.profile_id = Some(account.id))?;
     Ok(())
 }
 
@@ -2669,22 +2664,28 @@ fn keep_model_choice(core: &Core, agent_id: &str, options: &Value) {
         return;
     };
     let (model, effort) = crate::acp::pickers::pickers(options);
-    let mut patch = serde_json::Map::new();
-    if let Some(model) = model.filter(|model| !model.current.is_empty()) {
-        patch.insert("model".into(), Value::String(model.current));
-    }
+    let model = model
+        .map(|model| model.current)
+        .filter(|model| !model.is_empty());
     let takes = |effort: &str| {
         crate::agent_catalog::agent(&agent.provider)
             .is_some_and(|entry| entry.efforts.contains(&effort))
     };
-    if let Some(effort) = effort.filter(|effort| takes(&effort.current)) {
-        patch.insert("effort".into(), Value::String(effort.current));
-    }
-    if patch.is_empty() {
+    let effort = effort
+        .map(|effort| effort.current)
+        .filter(|effort| takes(effort));
+    if model.is_none() && effort.is_none() {
         return;
     }
-    match core.workspaces.update_agent(agent_id, patch) {
-        Ok(_) => core.view_changed(),
-        Err(error) => eprintln!("sikemux core: the agent's model choice was not kept: {error}"),
+    let kept = core.workspaces.edit_agent(agent_id, |agent| {
+        if model.is_some() {
+            agent.model = model;
+        }
+        if effort.is_some() {
+            agent.effort = effort;
+        }
+    });
+    if let Err(error) = kept {
+        eprintln!("sikemux core: the agent's model choice was not kept: {error}");
     }
 }

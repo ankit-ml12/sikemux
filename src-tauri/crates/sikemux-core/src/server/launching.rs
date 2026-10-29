@@ -16,7 +16,7 @@ use crate::protocol::{
     ChatAccount, ChatLaunch, ChatStart, Continuation, Event, RequestId, Response, SessionId,
     SpawnTarget, TerminalSpawn, WAKE_WAIT,
 };
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use sikemux_process::vars;
 use sikemux_pty::launch::{PtyAgentProfile, PtyContext, PtyDirectCommand};
 
@@ -186,13 +186,11 @@ async fn launch_terminal(
         super::connection::spawn(core.clone(), core.launch_identity(), target, None).await?;
     let id = pending.id();
     pending.start(core);
-    let patch = Map::from_iter([
-        ("ptyId".to_owned(), Value::from(id)),
-        ("terminal".to_owned(), Value::Bool(true)),
-        ("asleep".to_owned(), Value::Bool(false)),
-    ]);
-    core.workspaces.update_agent(agent_id, patch)?;
-    core.view_changed();
+    core.workspaces.edit_agent(agent_id, |agent| {
+        agent.pty_id = Some(id);
+        agent.terminal = true;
+        agent.asleep = false;
+    })?;
     Ok(id)
 }
 
@@ -484,9 +482,8 @@ async fn start_new(
     let started = start(core, client, chosen).await?;
     super::workspace::retitle(core, &agent_id, choice.title, false);
     if let Some(worktree) = worktree {
-        let patch = Map::from_iter([("worktree".to_owned(), serde_json::to_value(worktree)?)]);
-        core.workspaces.update_agent(&agent_id, patch)?;
-        core.view_changed();
+        core.workspaces
+            .edit_agent(&agent_id, |agent| agent.worktree = Some(worktree))?;
     }
     remember_kind(core, &kind);
     if started.unstarted() {

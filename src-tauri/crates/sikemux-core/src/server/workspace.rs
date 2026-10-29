@@ -24,8 +24,9 @@ use crate::cli::protocol::is_tool_agent_id;
 use crate::launch::providers::{Helper, Providers, Wiring, ROUTED_ENV};
 use crate::launch::{skills, AgentSpec, PermissionMode};
 use crate::protocol::{
-    Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, LauncherInfo,
-    PinnedChat, ProjectInfo, RecentInfo, SessionInfo, SpaceInfo, Workspace, WorkspaceAgent,
+    AgentBuddy, Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState,
+    LauncherInfo, PinnedChat, ProjectInfo, RecentInfo, SessionInfo, SpaceInfo, Workspace,
+    WorkspaceAgent,
 };
 use crate::sessions::recent::{self as saved_chats, RecentProvider, RecentRequest};
 
@@ -61,7 +62,7 @@ const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
 /// number means the same slot whichever pack the person picks.
 const BUDDY_COLOURS: usize = 8;
 /// Colour numbers clients read as a buddy's own.
-const MAX_BUDDY_COLOUR: u64 = 63;
+const MAX_BUDDY_COLOUR: u32 = 63;
 /// How many of the newest saved chats devices can take up again.
 const RECENT_LIMIT: usize = 30;
 /// How many chats a device paged or searched to the core remembers to take up again.
@@ -263,7 +264,7 @@ fn patched<T: Serialize + for<'de> Deserialize<'de>>(
 }
 
 fn buddy_colour(agent: &WorkspaceAgent) -> Option<usize> {
-    let colour = agent.buddy.as_ref()?.get("color")?.as_u64()?;
+    let colour = agent.buddy.as_ref()?.color?;
     (colour <= MAX_BUDDY_COLOUR).then_some(colour as usize)
 }
 
@@ -286,12 +287,7 @@ fn dress(agent: &mut WorkspaceAgent, others: &[Kept]) {
     let least = (0..BUDDY_COLOURS)
         .min_by_key(|&slot| scores[slot])
         .unwrap_or(0);
-    let mut buddy = match agent.buddy.take() {
-        Some(Value::Object(buddy)) => buddy,
-        _ => Map::new(),
-    };
-    buddy.insert("color".into(), least.into());
-    agent.buddy = Some(Value::Object(buddy));
+    agent.buddy.get_or_insert_default().color = Some(least as u32);
 }
 
 fn check_agent(agent: &WorkspaceAgent, saved: &Saved) -> CoreResult<()> {
@@ -299,11 +295,11 @@ fn check_agent(agent: &WorkspaceAgent, saved: &Saved) -> CoreResult<()> {
         text.as_deref()
             .is_some_and(|text| too_long(text, MAX_FIELD_CHARS))
     };
-    let detail = |value: &Option<Value>| {
-        value
-            .as_ref()
-            .is_some_and(|value| value.to_string().len() > MAX_DETAIL_BYTES)
-    };
+    fn detail(value: &Option<impl Serialize>) -> bool {
+        value.as_ref().is_some_and(|value| {
+            serde_json::to_vec(value).map_or(true, |bytes| bytes.len() > MAX_DETAIL_BYTES)
+        })
+    }
     if !is_tool_agent_id(&agent.id) {
         return Err("that is not an agent id".into());
     }
@@ -908,16 +904,20 @@ impl Workspaces {
         Ok(put)
     }
 
-    pub(crate) fn update_agent(
+    /// Changes the agent `agent_id` as `edit` does. Clients hear of it once
+    /// the change is kept, so callers need not tell them.
+    pub(crate) fn edit_agent(
         &self,
         agent_id: &str,
-        patch: Map<String, Value>,
+        edit: impl FnOnce(&mut WorkspaceAgent),
     ) -> CoreResult<WorkspaceAgent> {
         self.change(|saved| {
-            let current = saved
+            let mut agent = saved
                 .kept(agent_id)
-                .ok_or_else(|| CoreError::from("that agent is not on this host"))?;
-            let mut agent = patched(&current.agent, patch, &["id", "createdAt"])?;
+                .ok_or_else(|| CoreError::from("that agent is not on this host"))?
+                .agent
+                .clone();
+            edit(&mut agent);
             dress(&mut agent, &saved.agents);
             check_agent(&agent, saved)?;
             if let Some(kept) = saved.kept_mut(agent_id) {
@@ -1096,11 +1096,11 @@ impl Workspaces {
                 .map(str::to_owned)
         });
         let worktree = lead.as_ref().and_then(|lead| {
-            let path = lead.worktree.as_ref()?.get("path")?.as_str()?;
+            let worktree = lead.worktree.as_ref()?;
             launch
                 .cwd
-                .starts_with(path)
-                .then(|| lead.worktree.clone())?
+                .starts_with(&worktree.path)
+                .then(|| worktree.clone())
         });
         let agent = WorkspaceAgent {
             id: chat.agent_id().to_owned(),
@@ -2171,25 +2171,75 @@ pub(crate) struct CreateAgentParams {
 
 /// Adds an agent to the workspace, or replaces the one with its id.
 pub(crate) fn create_agent(core: &Core, params: CreateAgentParams) -> CoreResult<WorkspaceAgent> {
-    let agent = core.workspaces.put_agent(params.agent)?;
-    core.view_changed();
-    Ok(agent)
+    core.workspaces.put_agent(params.agent)
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UpdateAgentParams {
     agent_id: String,
-    patch: Map<String, Value>,
+    patch: AgentPatch,
+}
+
+/// The fields of an agent a client may change; a null one is cleared. The
+/// rest, such as its terminal or worktree, only the core sets.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AgentPatch {
+    title: Option<String>,
+    renamed: Option<bool>,
+    provider: Option<String>,
+    permission_mode: Option<String>,
+    keep_alive: Option<bool>,
+    #[serde(default, deserialize_with = "given")]
+    lead: Option<Option<String>>,
+    #[serde(default, deserialize_with = "given")]
+    resume_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "given")]
+    profile_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "given")]
+    model: Option<Option<String>>,
+    #[serde(default, deserialize_with = "given")]
+    model_provider: Option<Option<String>>,
+    #[serde(default, deserialize_with = "given")]
+    effort: Option<Option<String>>,
+    #[serde(default, deserialize_with = "given")]
+    buddy: Option<Option<AgentBuddy>>,
+}
+
+/// A field the patch names, null or not, as against one it leaves out.
+fn given<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    field: D,
+) -> Result<Option<Option<T>>, D::Error> {
+    Option::deserialize(field).map(Some)
+}
+
+impl AgentPatch {
+    fn apply(self, agent: &mut WorkspaceAgent) {
+        fn set<T>(field: &mut T, to: Option<T>) {
+            if let Some(to) = to {
+                *field = to;
+            }
+        }
+        set(&mut agent.title, self.title);
+        set(&mut agent.renamed, self.renamed);
+        set(&mut agent.provider, self.provider);
+        set(&mut agent.permission_mode, self.permission_mode);
+        set(&mut agent.keep_alive, self.keep_alive);
+        set(&mut agent.lead, self.lead);
+        set(&mut agent.resume_id, self.resume_id);
+        set(&mut agent.profile_id, self.profile_id);
+        set(&mut agent.model, self.model);
+        set(&mut agent.model_provider, self.model_provider);
+        set(&mut agent.effort, self.effort);
+        set(&mut agent.buddy, self.buddy);
+    }
 }
 
 /// Changes some of an agent's fields; a null one is cleared.
 pub(crate) fn update_agent(core: &Core, params: UpdateAgentParams) -> CoreResult<WorkspaceAgent> {
-    let agent = core
-        .workspaces
-        .update_agent(&params.agent_id, params.patch)?;
-    core.view_changed();
-    Ok(agent)
+    core.workspaces
+        .edit_agent(&params.agent_id, |agent| params.patch.apply(agent))
 }
 
 #[derive(Deserialize)]
@@ -2794,10 +2844,12 @@ mod tests {
         assert_eq!(title("agent-1"), "Binary size on landing page");
 
         agent("agent-2");
-        let mut renamed = Map::new();
-        renamed.insert("title".into(), "Parser rewrite".into());
-        renamed.insert("renamed".into(), true.into());
-        workspaces.update_agent("agent-2", renamed).unwrap();
+        workspaces
+            .edit_agent("agent-2", |agent| {
+                agent.title = "Parser rewrite".into();
+                agent.renamed = true;
+            })
+            .unwrap();
         assert!(!workspaces.note_title("agent-2", "Fix the parser", true));
         assert!(!workspaces.note_title("agent-2", "Parser fixes", false));
         assert_eq!(title("agent-2"), "Parser rewrite");

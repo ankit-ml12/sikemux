@@ -356,12 +356,10 @@ fn start(
         error.to_string()
     })?;
     if let Some(checkout) = &checkout.0 {
-        let mut patch = serde_json::Map::new();
-        patch.insert(
-            "worktree".into(),
-            serde_json::to_value(checkout).map_err(|error| error.to_string())?,
-        );
-        if let Err(error) = core.workspaces.update_agent(&agent_id, patch) {
+        let kept = core
+            .workspaces
+            .edit_agent(&agent_id, |agent| agent.worktree = Some(checkout.clone()));
+        if let Err(error) = kept {
             eprintln!("sikemux core: a worker's own checkout was not kept on its record: {error}");
         }
     }

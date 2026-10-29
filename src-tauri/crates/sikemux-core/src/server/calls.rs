@@ -19,6 +19,7 @@ use super::{
     agent_accounts, agent_sign_in, board, inbox, messages, model_providers, plugins, questions,
     remote, saved, saved_sessions, share, skill_library, who_wrote, Core, CoreError, CoreResult,
 };
+use crate::protocol::AgentBuddy;
 
 /// Each method once: what a client must be allowed, `any_program` when any
 /// program on this host may call it rather than only Sikemux's own window or
@@ -1029,7 +1030,7 @@ struct NameAgentParams {
     provider: Option<String>,
     resume_id: Option<String>,
     /// How the app draws it, kept for when it is opened again.
-    buddy: Option<Value>,
+    buddy: Option<AgentBuddy>,
     title: Option<String>,
 }
 
@@ -1041,7 +1042,7 @@ struct NamedAgent {
     #[serde(flatten)]
     named: AgentName,
     #[serde(skip_serializing_if = "Option::is_none")]
-    buddy: Option<Value>,
+    buddy: Option<AgentBuddy>,
 }
 
 #[derive(Deserialize)]

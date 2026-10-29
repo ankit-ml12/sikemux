@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use serde_json::{Map, Value};
 use sikemux_process::sync::Locked;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -511,8 +510,10 @@ async fn settle(core: &Arc<Core>, group: &Group, rows: Vec<AgentSession>) {
             continue;
         };
         let row = candidates.remove(index);
-        let patch = Map::from_iter([("resumeId".to_owned(), Value::from(row.id.clone()))]);
-        if core.workspaces.update_agent(&agent.id, patch).is_err() {
+        let resumed = core
+            .workspaces
+            .edit_agent(&agent.id, |agent| agent.resume_id = Some(row.id.clone()));
+        if resumed.is_err() {
             continue;
         }
         core.session_watch.baselines.locked().remove(&agent.id);

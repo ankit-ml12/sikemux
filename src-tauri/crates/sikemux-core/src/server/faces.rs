@@ -70,11 +70,11 @@ fn face(style: &FaceStyle, agent: &WorkspaceAgent) -> Option<AgentFace> {
     let first = packs.first()?;
     let h = hash(&agent.id);
     let own = agent.buddy.as_ref();
-    let own_text = |key: &str| own.and_then(|buddy| buddy.get(key)?.as_str());
-    let named = own_text("pack")
+    let named = own
+        .and_then(|buddy| buddy.pack.as_deref())
         .and_then(|id| packs.iter().find(|pack| pack.id == id))
         .and_then(|pack| {
-            let id = own_text("shape")?;
+            let id = own?.shape.as_deref()?;
             Some((pack, pack.shapes.iter().find(|shape| shape.id == id)?))
         });
     let (pack, shape) = named.or_else(|| {
@@ -98,9 +98,7 @@ fn face(style: &FaceStyle, agent: &WorkspaceAgent) -> Option<AgentFace> {
         };
         Some((pack, shape?))
     })?;
-    let colour = own
-        .and_then(|buddy| buddy.get("color")?.as_u64())
-        .map_or(h, |colour| colour as u32);
+    let colour = own.and_then(|buddy| buddy.color).unwrap_or(h);
     Some(AgentFace {
         pack: pack.id.clone(),
         shape: shape.id.clone(),

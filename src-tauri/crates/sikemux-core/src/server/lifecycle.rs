@@ -153,13 +153,11 @@ pub(crate) fn sleep_agent(core: &Core, agent_id: &str) -> CoreResult<()> {
         return Err("the agent is at work; it can sleep once its turn ends".into());
     }
     session::kill(core, &terminal);
-    let patch = serde_json::Map::from_iter([
-        ("ptyId".to_owned(), serde_json::Value::Null),
-        ("asleep".to_owned(), serde_json::Value::Bool(true)),
-    ]);
-    core.workspaces.update_agent(agent_id, patch)?;
+    core.workspaces.edit_agent(agent_id, |agent| {
+        agent.pty_id = None;
+        agent.asleep = true;
+    })?;
     core.note_agent_gone(agent_id);
-    core.view_changed();
     Ok(())
 }
 
@@ -250,8 +248,9 @@ fn settle_terminals(core: &Core) {
     let mut closed = Vec::new();
     for agent in gone {
         if agent.resume_id.is_some() {
-            let patch = serde_json::Map::from_iter([("ptyId".to_owned(), serde_json::Value::Null)]);
-            let _ = core.workspaces.update_agent(&agent.id, patch);
+            let _ = core
+                .workspaces
+                .edit_agent(&agent.id, |agent| agent.pty_id = None);
         } else {
             closed.push(agent.id);
         }
