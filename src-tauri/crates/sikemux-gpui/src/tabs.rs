@@ -120,7 +120,7 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 ),
         );
     let row = tabs.map(|(copy, tabs)| {
-        let glide = bench.strip_glide.borrow();
+        let glide = bench.strip.glide.borrow();
         div()
             .on_children_prepainted(glide.keep_origin())
             .id("tab-row")
@@ -150,7 +150,7 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                             .items_center()
                             .gap(SPACE_1)
                             .overflow_x_scroll()
-                            .track_scroll(&bench.strip_scroll)
+                            .track_scroll(&bench.strip.scroll)
                             .children(tabs),
                     ),
             )
@@ -546,6 +546,17 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     )
 }
 
+/// What the strip remembers between draws to move its tabs: those drawn last, for telling
+/// those that have just opened and closed, where they were, for the chosen surface to glide
+/// between them, and how far they are scrolled, with the tab last scrolled into view.
+#[derive(Default)]
+pub struct StripMotion {
+    pub(crate) seen: std::cell::RefCell<motion::ListMemory<LayoutTab>>,
+    pub(crate) glide: std::cell::RefCell<motion::GlideTrack>,
+    pub(crate) scroll: gpui_kit::ScrollHandle,
+    pub(crate) scrolled_to: std::cell::RefCell<Option<String>>,
+}
+
 /// How long the person's task has run, counted on the Run chip each second. The app's clock
 /// draws it again in place, leaving the bar around it as it was.
 #[derive(Default)]
@@ -825,20 +836,20 @@ fn strip_tabs(
         .grow
         .duration
         .max(motion::TAB_DEPARTURE.close.duration);
-    let mut seen = bench.strip_seen.borrow_mut();
+    let mut seen = bench.strip.seen.borrow_mut();
     let (arriving, left) = seen.update(format!("{strip:?}"), shown, 2, lasting);
     let mut order: Vec<String> = listed.iter().map(|tab| tab.id.clone()).collect();
     for gone in left {
         order.insert(gone.at.min(order.len()), gone.id.clone());
     }
-    let mut scrolled_to = bench.strip_scrolled_to.borrow_mut();
+    let mut scrolled_to = bench.strip.scrolled_to.borrow_mut();
     if *scrolled_to != front {
         if let Some(at) = order.iter().position(|id| Some(id) == front.as_ref()) {
-            bench.strip_scroll.scroll_to_item(at);
+            bench.strip.scroll.scroll_to_item(at);
         }
         *scrolled_to = front.clone();
     }
-    let mut glide = bench.strip_glide.borrow_mut();
+    let mut glide = bench.strip.glide.borrow_mut();
     let glided = glide.choose(front.clone(), cx.reduce_motion());
     glide.set_order(order);
     let chosen = Tokens::get(cx).surface_chosen;
