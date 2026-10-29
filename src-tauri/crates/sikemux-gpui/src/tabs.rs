@@ -1313,7 +1313,7 @@ pub fn view_label(bench: &Workbench, pane: &Pane) -> SharedString {
                     |name| SharedString::from(name.to_owned()),
                 )
         }
-        Some((kind, _)) => kind_label(kind).into(),
+        Some((kind, _)) => crate::pane_kind::of(kind).label.into(),
         None => "".into(),
     }
 }
@@ -1331,43 +1331,7 @@ pub fn view_icon(kind: PaneKind, target: &str) -> Icon {
         PaneKind::Plugin => {
             crate::rail::plugin_mark(crate::plugin_pane::parts(target).0).unwrap_or(Icon::Window)
         }
-        kind => kind_icon(kind),
-    }
-}
-
-pub fn kind_icon(kind: PaneKind) -> Icon {
-    match kind {
-        PaneKind::Agent => Icon::Agent,
-        PaneKind::Terminal => Icon::Terminal,
-        PaneKind::Files => Icon::Editor,
-        PaneKind::Git => Icon::Git,
-        PaneKind::Search => Icon::Search,
-        PaneKind::Board => Icon::Board,
-        PaneKind::Browser => Icon::Globe,
-        PaneKind::Plugin => Icon::Window,
-        PaneKind::Desk => Icon::PanelRight,
-        PaneKind::ProjectSettings => Icon::Settings,
-        PaneKind::InstallSikemux => Icon::Download,
-        PaneKind::Stash => Icon::Stack,
-        PaneKind::Unknown => Icon::Window,
-    }
-}
-
-fn kind_label(kind: PaneKind) -> &'static str {
-    match kind {
-        PaneKind::Agent => "Agent",
-        PaneKind::Terminal => "Terminal",
-        PaneKind::Files => "Files",
-        PaneKind::Git => "Git",
-        PaneKind::Search => "Search",
-        PaneKind::Board => "Agent board",
-        PaneKind::Browser => "Browser",
-        PaneKind::Plugin => "Plugin",
-        PaneKind::Desk => "Desk",
-        PaneKind::ProjectSettings => "Project settings",
-        PaneKind::InstallSikemux => "Install Sikemux",
-        PaneKind::Stash => "Stash",
-        PaneKind::Unknown => "Needs a newer Sikemux",
+        kind => crate::pane_kind::of(kind).icon,
     }
 }
 

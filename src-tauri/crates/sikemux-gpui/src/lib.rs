@@ -62,6 +62,7 @@ mod overlays;
 mod page_view;
 mod pairing;
 mod palette;
+mod pane_kind;
 mod panes;
 mod pasted;
 mod picker;

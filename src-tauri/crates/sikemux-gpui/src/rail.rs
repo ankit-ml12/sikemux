@@ -694,12 +694,7 @@ fn lit_surface(bench: &Workbench) -> Option<PaneKind> {
 
 /// The tab rail's page that lists a surface's tabs.
 fn page_of(kind: PaneKind) -> Option<RailPage> {
-    match kind {
-        PaneKind::Agent => Some(RailPage::Agents),
-        PaneKind::Terminal => Some(RailPage::Terminals),
-        PaneKind::Files => Some(RailPage::Files),
-        _ => None,
-    }
+    crate::pane_kind::of(kind).page
 }
 
 /// The hover group of a project's row, whose × shows on hover.
@@ -856,58 +851,26 @@ fn rollup(bench: &Workbench, project: &str, cx: &App) -> Option<gpui_kit::AnyEle
 fn surface_rows(
     project: &ProjectInfo,
 ) -> Vec<(Icon, SharedString, &'static str, Option<PaneKind>, Area)> {
-    let mut rows = vec![
-        (
-            Icon::Editor,
-            "Files".into(),
-            "window.files",
-            Some(PaneKind::Files),
-            Area::Local,
-        ),
-        (
-            Icon::Terminal,
-            "Terminal".into(),
-            "window.terminal",
-            Some(PaneKind::Terminal),
-            Area::Local,
-        ),
-        (
-            Icon::Agent,
-            "Agents".into(),
-            "window.agents",
-            Some(PaneKind::Agent),
-            Area::Local,
-        ),
-        (
-            Icon::Git,
-            "Git".into(),
-            "window.git",
-            Some(PaneKind::Git),
-            Area::Local,
-        ),
-    ];
+    let surface = |kind: PaneKind| {
+        let shown = crate::pane_kind::of(kind);
+        let (label, command) = shown.surface.unwrap_or_default();
+        (shown.icon, label.into(), command, Some(kind), Area::Local)
+    };
+    let mut rows: Vec<_> = [
+        PaneKind::Files,
+        PaneKind::Terminal,
+        PaneKind::Agent,
+        PaneKind::Git,
+    ]
+    .map(surface)
+    .into();
     if let Some(host) = &project.code_host {
         rows.extend(host.sections.iter().filter_map(|section| {
             let area = Area::of(section)?;
             Some((area.icon(), area.label(host), "", Some(PaneKind::Git), area))
         }));
     }
-    rows.extend([
-        (
-            Icon::Search,
-            "Search".into(),
-            "search.global",
-            Some(PaneKind::Search),
-            Area::Local,
-        ),
-        (
-            Icon::Board,
-            "Agent board".into(),
-            "window.board",
-            Some(PaneKind::Board),
-            Area::Local,
-        ),
-    ]);
+    rows.extend([PaneKind::Search, PaneKind::Board].map(surface));
     rows
 }
 

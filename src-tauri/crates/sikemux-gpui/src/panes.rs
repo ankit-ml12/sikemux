@@ -15,6 +15,7 @@ use serde_json::json;
 use sikemux_wire::protocol::{Pane, PaneKind, SessionId, SplitDir, Tab};
 
 use crate::drag::DraggedTab;
+use crate::pane_kind::Separable;
 use crate::workbench::{Strip, TakesKeys, Workbench};
 use crate::{desk, home, motion, terminal, ui};
 
@@ -1151,9 +1152,9 @@ impl Workbench {
                 .editors
                 .is_dirty(&crate::editor::FileKey::new(self.place(), target))
         };
-        match kind {
-            PaneKind::Terminal | PaneKind::Git | PaneKind::Search => Some((view, *kind)),
-            PaneKind::Files if saved() => Some((view, *kind)),
+        match crate::pane_kind::of(*kind).separable {
+            Separable::Always => Some((view, *kind)),
+            Separable::WhenSaved if saved() => Some((view, *kind)),
             _ => None,
         }
     }

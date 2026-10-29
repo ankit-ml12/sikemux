@@ -3686,7 +3686,7 @@ impl Workbench {
         let moved = front.map(|tab| &tab.id) != pending.from.as_ref();
         let shows = front
             .and_then(|tab| tabs::first_view(&tab.pane))
-            .is_some_and(|(kind, _)| pending.wants.shows_in(kind));
+            .is_some_and(|(kind, _)| pending.wants.kind() == kind);
         if !moved || shows {
             self.takes_keys.set(Some(pending));
         }
@@ -3712,11 +3712,26 @@ impl Workbench {
             .is_some_and(|(kind, _)| kind == PaneKind::Git)
     }
 
+    /// Makes the pane of the tab in front, for the kinds made the first time they come to the
+    /// front, and lets the code host's areas go once Git leaves it.
+    fn make_front_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.tell_reach(cx);
+        let front = self
+            .tab()
+            .and_then(|tab| tabs::first_view(&tab.pane))
+            .map(|(kind, _)| kind);
+        match front {
+            Some(PaneKind::Git) => self.git_pane(window, cx),
+            Some(PaneKind::Search) => self.search_pane(cx),
+            Some(PaneKind::Board) => self.board_pane(cx),
+            _ => {}
+        }
+        self.host_area(front == Some(PaneKind::Git), cx);
+    }
+
     /// Makes the Git pane when the project's Git tab comes to the front.
     fn git_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.tell_reach(cx);
-        let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
-        let (Some((PaneKind::Git, _)), Some(project)) = (front, self.project()) else {
+        let Some(project) = self.project() else {
             return;
         };
         let Some(repo) = self.git_repo() else {
@@ -3765,8 +3780,7 @@ impl Workbench {
 
     /// Makes the Search pane when the project's Search tab comes to the front.
     fn search_pane(&mut self, cx: &mut Context<Self>) {
-        let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
-        let (Some((PaneKind::Search, _)), Some(project)) = (front, self.project()) else {
+        let Some(project) = self.project() else {
             return;
         };
         let project = project.path.to_string_lossy().into_owned();
@@ -3980,8 +3994,7 @@ impl Workbench {
 
     /// Makes the board pane when the project's board tab comes to the front.
     fn board_pane(&mut self, cx: &mut Context<Self>) {
-        let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
-        let (Some((PaneKind::Board, _)), Some(project)) = (front, self.project()) else {
+        let Some(project) = self.project() else {
             return;
         };
         let folder = project.path.to_string_lossy().into_owned();
@@ -4046,9 +4059,8 @@ impl Workbench {
 
     /// Makes the code host's areas when the Git tab in front shows one, and keeps them
     /// on the project's repository and branch.
-    fn host_area(&mut self, cx: &mut Context<Self>) {
-        let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
-        let (Some((PaneKind::Git, _)), Some(project)) = (front, self.project()) else {
+    fn host_area(&mut self, git_in_front: bool, cx: &mut Context<Self>) {
+        let (true, Some(project)) = (git_in_front, self.project()) else {
             if let Some(shown) = &self.host {
                 shown.update(cx, |shown, _| shown.hide());
             }
@@ -4682,12 +4694,12 @@ pub enum TakesKeys {
 }
 
 impl TakesKeys {
-    fn shows_in(&self, kind: PaneKind) -> bool {
+    fn kind(&self) -> PaneKind {
         match self {
-            Self::Terminal => kind == PaneKind::Terminal,
-            Self::Git => kind == PaneKind::Git,
-            Self::File(_) => kind == PaneKind::Files,
-            Self::Board => kind == PaneKind::Board,
+            Self::Terminal => PaneKind::Terminal,
+            Self::Git => PaneKind::Git,
+            Self::File(_) => PaneKind::Files,
+            Self::Board => PaneKind::Board,
         }
     }
 }
@@ -4748,10 +4760,7 @@ impl Parts {
                 |bench, window, cx| {
                     bench.compose(window, cx);
                     bench.hint(window, cx);
-                    bench.git_pane(window, cx);
-                    bench.host_area(cx);
-                    bench.search_pane(cx);
-                    bench.board_pane(cx);
+                    bench.make_front_pane(window, cx);
                     bench.plugin_panes(cx);
                     crate::desk::prepare(bench, window, cx);
                     bench.settle_takes_keys();
