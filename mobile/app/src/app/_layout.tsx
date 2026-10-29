@@ -4,6 +4,7 @@ import { Stack } from 'expo-router';
 import SwipeStack from 'expo-router/js-stack';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useFonts } from 'expo-font';
 import { Figtree_400Regular, Figtree_400Regular_Italic, Figtree_500Medium, Figtree_600SemiBold } from '@expo-google-fonts/figtree';
 import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono';
@@ -82,10 +83,10 @@ export default function RootLayout() {
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache} __experimental_resourceCache={resourceCache}>
       <PhoneOnAccount />
       {fontsReady ? (
-        <>
+        <KeyboardProvider>
           <StatusBar style="light" />
           <Routes background={colors.ground} />
-        </>
+        </KeyboardProvider>
       ) : null}
     </ClerkProvider>
   );

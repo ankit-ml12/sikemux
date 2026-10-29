@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { AccessibilityInfo, type TextInput, KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, type ScrollViewProps, type TextInput, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import MaskedView from '@react-native-masked-view/masked-view';
+import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { activityText, composerPlaceholder } from '@shared/chat/chatStatus';
@@ -125,14 +128,31 @@ function Fade({ id, from }: { id: string; from: 0 | 1 }) {
 
 /** The header and composer float over the backdrop, so the transcript fades into them rather than ending on a line. */
 function EdgeFades() {
+  const { bottom } = useSafeAreaInsets();
+  const { height, progress } = useReanimatedKeyboardAnimation();
+  // The bottom fade rises with the composer, which rides the keyboard less the home bar it covers.
+  const rise = useAnimatedStyle(() => ({ transform: [{ translateY: height.value + progress.value * bottom }] }));
   return (
     <View style={{ flex: 1 }}>
       <Fade id="transcript-top" from={0} />
-      <View style={{ flex: 1, backgroundColor: '#000' }} />
-      <Fade id="transcript-bottom" from={1} />
+      <View style={{ flex: 1, overflow: 'hidden' }}>
+        <Animated.View style={[{ flex: 1 }, rise]}>
+          <View style={{ flex: 1, backgroundColor: '#000' }} />
+          <Fade id="transcript-bottom" from={1} />
+        </Animated.View>
+      </View>
     </View>
   );
 }
+
+/** The keyboard covers the home bar, so the transcript makes room for only what rises above it. */
+function KeyboardScroller(props: ScrollViewProps) {
+  const { bottom } = useSafeAreaInsets();
+  return <KeyboardChatScrollView {...props} keyboardLiftBehavior="whenAtEnd" offset={bottom} />;
+}
+
+// Someone reading the latest keeps reading it as the keyboard rises, frame by frame with it.
+const renderScrollComponent = (props: ScrollViewProps) => <KeyboardScroller {...props} />;
 
 export default function Chat() {
   const { core, agent } = useLocalSearchParams<{ core: string; agent: string }>();
@@ -207,6 +227,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   });
   const list = useRef<FlashListRef<ChatMessage>>(null);
   const bottom = useBottomGap();
+  const homeBar = useSafeAreaInsets().bottom;
   const scroll = useTranscriptScroll(list, {
     has: chat.hasEarlier,
     idle: chat.earlier === 'idle',
@@ -257,7 +278,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
           </Pressable>
         }
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <View style={styles.transcript}>
         {chat.attached !== 'live' && !state.messages.length ? (
           <View style={[styles.transcript, styles.alone, { paddingBottom: bottom }]}>{status}</View>
         ) : (
@@ -362,18 +383,21 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                             }
                             contentContainerStyle={styles.content}
                             {...scroll.listProps}
+                            renderScrollComponent={renderScrollComponent}
                             keyboardDismissMode="interactive"
                           />
                         </MaskedView>
                         {scroll.away ? (
-                          <Pressable
-                            onPress={scroll.toEnd}
-                            style={styles.jump}
-                            hitSlop={8}
-                            accessibilityRole="button"
-                            accessibilityLabel="Jump to latest message">
-                            <Icon name="IconArrowDown" size={16} color={colors.inkDim} />
-                          </Pressable>
+                          <KeyboardStickyView style={styles.jumpPlace} offset={{ opened: homeBar }}>
+                            <Pressable
+                              onPress={scroll.toEnd}
+                              style={styles.jump}
+                              hitSlop={8}
+                              accessibilityRole="button"
+                              accessibilityLabel="Jump to latest message">
+                              <Icon name="IconArrowDown" size={16} color={colors.inkDim} />
+                            </Pressable>
+                          </KeyboardStickyView>
                         ) : null}
                       </View>
                     </ToolDetailContext>
@@ -383,55 +407,57 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
             </ProviderContext>
           </HostContext>
         )}
-        {chat.attached === 'live' ? (
-          <HostContext value={core}>
-            {live.status !== 'open' ? <Reconnecting live={live} hostName={hostName} onTry={() => reconnect(core)} /> : null}
-            {chat.notice ? <Notice text={chat.notice} onDismiss={session.dismissNotice} /> : null}
-            <Composer
-              session={session}
-              provider={provider}
-              running={state.running && !chat.stoppingTurn}
-              model={state.model}
-              effort={state.effort}
-              usage={state.usage}
-              commands={state.commands}
-              requests={chat.permissions}
-              answering={chat.answering}
-              placeholder={
-                composing
-                  ? `Answer ${composing.name}`
-                  : composerPlaceholder(state, {
-                      resuming: false,
-                      disconnected: live.status !== 'open',
-                      commands: state.commands.length > 0,
-                    })
-              }
-              permissionMode={chat.permissionMode ?? ''}
-              modeLocked={state.running || chat.permissions.length > 0 || state.connection !== 'ready' || live.status !== 'open'}
-              watchOnly={watchOnly}
-              offline={live.status !== 'open'}
-              hostName={hostName}
-              onSent={scroll.toEnd}
-              attachments={chat.attachments}
-              chips={chat.chips}
-              strip={strip}
-              onRecent={recalls ? openRecent : undefined}
-              inputRef={input}
-              question={
-                composing && {
-                  name: composing.name,
-                  cli: composing.cli,
-                  text: composing.text,
-                  onRemove: questions.stopComposing,
-                  onAnswer: (text) => questions.answer(composing, { answer: text }, () => session.setDraft(text)),
+        <KeyboardStickyView offset={{ opened: homeBar }}>
+          {chat.attached === 'live' ? (
+            <HostContext value={core}>
+              {live.status !== 'open' ? <Reconnecting live={live} hostName={hostName} onTry={() => reconnect(core)} /> : null}
+              {chat.notice ? <Notice text={chat.notice} onDismiss={session.dismissNotice} /> : null}
+              <Composer
+                session={session}
+                provider={provider}
+                running={state.running && !chat.stoppingTurn}
+                model={state.model}
+                effort={state.effort}
+                usage={state.usage}
+                commands={state.commands}
+                requests={chat.permissions}
+                answering={chat.answering}
+                placeholder={
+                  composing
+                    ? `Answer ${composing.name}`
+                    : composerPlaceholder(state, {
+                        resuming: false,
+                        disconnected: live.status !== 'open',
+                        commands: state.commands.length > 0,
+                      })
                 }
-              }
-            />
-          </HostContext>
-        ) : state.messages.length ? (
-          <View style={[styles.bottomStatus, { paddingBottom: bottom }]}>{status}</View>
-        ) : null}
-      </KeyboardAvoidingView>
+                permissionMode={chat.permissionMode ?? ''}
+                modeLocked={state.running || chat.permissions.length > 0 || state.connection !== 'ready' || live.status !== 'open'}
+                watchOnly={watchOnly}
+                offline={live.status !== 'open'}
+                hostName={hostName}
+                onSent={scroll.toEnd}
+                attachments={chat.attachments}
+                chips={chat.chips}
+                strip={strip}
+                onRecent={recalls ? openRecent : undefined}
+                inputRef={input}
+                question={
+                  composing && {
+                    name: composing.name,
+                    cli: composing.cli,
+                    text: composing.text,
+                    onRemove: questions.stopComposing,
+                    onAnswer: (text) => questions.answer(composing, { answer: text }, () => session.setDraft(text)),
+                  }
+                }
+              />
+            </HostContext>
+          ) : state.messages.length ? (
+            <View style={[styles.bottomStatus, { paddingBottom: bottom }]}>{status}</View>
+          ) : null}
+        </KeyboardStickyView>
+      </View>
       <LiveSheet
         visible={showLive && liveShown}
         onClose={() => setShowLive(false)}
@@ -485,10 +511,8 @@ const makeStyles = (colors: Palette) => {
     transcript: { flex: 1 },
     alone: { justifyContent: 'flex-end' },
     content: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 28 },
+    jumpPlace: { position: 'absolute', bottom: 8, alignSelf: 'center' },
     jump: {
-      position: 'absolute',
-      bottom: 8,
-      alignSelf: 'center',
       width: 34,
       height: 34,
       borderRadius: 17,

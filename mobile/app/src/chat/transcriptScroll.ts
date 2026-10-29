@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
-import { Keyboard, Platform, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { useRef, useState, type RefObject } from 'react';
+import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import type { FlashListRef } from '@shopify/flash-list';
 
 /** How near the end, as a share of the transcript's height, still counts as reading the latest. */
@@ -52,14 +52,6 @@ export function useTranscriptScroll<T>(list: RefObject<FlashListRef<T> | null>, 
     measureAway();
     touching.current = false;
   };
-
-  useEffect(() => {
-    // The keyboard takes the bottom of the screen; someone reading the latest keeps reading it.
-    const shown = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => {
-      if (!awayRef.current) requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
-    });
-    return () => shown.remove();
-  }, [list]);
 
   const toEnd = () => {
     awayRef.current = false;

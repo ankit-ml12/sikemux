@@ -16,7 +16,6 @@ import { problem } from '@/core/problem';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Track } from '@/ui/controls';
-import { useKeyboardShown } from '@/ui/screen';
 import { Sheet } from '@/ui/Sheet';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 import { ComposerAttachments } from './Attachments';
@@ -472,7 +471,6 @@ export const Composer = memo(function Composer({
   const ownInput = useRef<TextInput>(null);
   const input = inputRef ?? ownInput;
   const [sheet, setSheet] = useState(false);
-  const typing = useKeyboardShown();
   const modelLabel = currentLabel(model);
   const effortLabel = currentLabel(effort);
   const pulls = !draft && onRecent !== undefined;
@@ -503,7 +501,7 @@ export const Composer = memo(function Composer({
 
   if (watchOnly) {
     return (
-      <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
+      <SafeAreaView edges={['bottom']} style={styles.wrap}>
         {dock ?? strip}
         <View style={[styles.composer, styles.watch]}>
           <Icon name="IconEye" size={17} color={colors.inkDim} />
@@ -545,7 +543,7 @@ export const Composer = memo(function Composer({
   };
 
   return (
-    <SafeAreaView edges={typing ? [] : ['bottom']} style={styles.wrap}>
+    <SafeAreaView edges={['bottom']} style={styles.wrap}>
       {dock}
       <Commands matches={matches} onPick={(name) => session.setDraft(`/${name} `)} />
       {mention !== undefined ? <StashMenu query={mention} onPick={(item) => fromStash([item], withoutQuery(draft))} /> : null}
