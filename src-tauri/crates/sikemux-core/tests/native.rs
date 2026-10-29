@@ -20,7 +20,9 @@ use sikemux_core::protocol::{
     ClientMessage, PermissionMode, Request, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
-use sikemux_wire::chat::{ChatPage, ChatRole, FailureKind, PermissionAsk, StopReason};
+use sikemux_wire::chat::{
+    ChatPage, ChatRole, FailureKind, PermissionAsk, PermissionKind, StopReason,
+};
 
 const FAKE_CLAUDE: &str = env!("CARGO_BIN_EXE_sikemux-fake-claude");
 const FAKE_CODEX: &str = env!("CARGO_BIN_EXE_sikemux-fake-codex");
@@ -97,7 +99,7 @@ fn allow_once(asked: &PermissionAsk) -> (String, String) {
     let allow = asked
         .options
         .iter()
-        .find(|option| option.kind == "allow_once")
+        .find(|option| option.kind == PermissionKind::AllowOnce)
         .expect("an allow option");
     (asked.request_id.clone(), allow.option_id.clone())
 }

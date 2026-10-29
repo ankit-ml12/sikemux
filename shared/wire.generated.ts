@@ -1128,9 +1128,11 @@ export interface DiffSummary {
 export interface PermissionOption {
     optionId: string;
     name: string;
-    /** `allow_once`, `allow_always`, `reject_once` or `reject_always`. */
-    kind: string;
+    kind: PermissionKind;
 }
+
+/** What choosing a permission request's option does, as ACP names it. */
+export type PermissionKind = "allow_once" | "allow_always" | "reject_once" | "reject_always";
 
 /** Work the agent left running in the background. */
 export interface AsyncTask {

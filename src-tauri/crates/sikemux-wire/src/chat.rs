@@ -378,8 +378,30 @@ pub struct PermissionAsk {
 pub struct PermissionOption {
     pub option_id: String,
     pub name: String,
-    /// `allow_once`, `allow_always`, `reject_once` or `reject_always`.
-    pub kind: String,
+    pub kind: PermissionKind,
+}
+
+/// What choosing a permission request's option does, as ACP names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionKind {
+    AllowOnce,
+    AllowAlways,
+    RejectOnce,
+    RejectAlways,
+    /// A kind an agent sent that ACP does not name.
+    #[serde(other)]
+    Unknown,
+}
+
+impl PermissionKind {
+    pub fn is_allow(self) -> bool {
+        matches!(self, Self::AllowOnce | Self::AllowAlways)
+    }
+
+    pub fn is_reject(self) -> bool {
+        matches!(self, Self::RejectOnce | Self::RejectAlways)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

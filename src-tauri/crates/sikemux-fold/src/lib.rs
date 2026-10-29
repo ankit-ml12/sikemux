@@ -28,10 +28,10 @@ use sikemux_wire::protocol::PermissionMode;
 use sikemux_wire::chat::{
     AccountMove, AgentNotice, AsyncTask, ChatCapabilities, ChatCommandInfo, ChatConnection,
     ChatDraft, ChatFailure, ChatHead, ChatMessage, ChatPart, ChatRole, ChatTrigger, ContextUsage,
-    FailureKind, MoveReason, NoticeSeverity, NoticeState, PermissionAsk, PermissionOption,
-    PlanEntry, QueuedMessage, Retrying, SentContext, SessionEnded, StopReason, SubagentCard,
-    SubagentState, TaskNotice, TaskState, TaskUsage, ToolDetail, ToolStatus, TurnStart, UsageCost,
-    WorkflowAgent,
+    FailureKind, MoveReason, NoticeSeverity, NoticeState, PermissionAsk, PermissionKind,
+    PermissionOption, PlanEntry, QueuedMessage, Retrying, SentContext, SessionEnded, StopReason,
+    SubagentCard, SubagentState, TaskNotice, TaskState, TaskUsage, ToolDetail, ToolStatus,
+    TurnStart, UsageCost, WorkflowAgent,
 };
 use tools::WithRow;
 
@@ -459,7 +459,7 @@ fn permission_ask(payload: &Value) -> Option<PermissionAsk> {
             Some(PermissionOption {
                 option_id: text_of(option.get("optionId"))?.to_owned(),
                 name: text_of(option.get("name"))?.to_owned(),
-                kind: text_of(option.get("kind"))?.to_owned(),
+                kind: PermissionKind::deserialize(option.get("kind")?).ok()?,
             })
         })
         .collect();

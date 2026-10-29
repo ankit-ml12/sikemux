@@ -2270,7 +2270,6 @@ fn permission(
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let rejects = |kind: &str| kind.starts_with("reject");
     let mut answers: Vec<(String, Option<String>, bool)> = ask
         .options
         .iter()
@@ -2278,11 +2277,11 @@ fn permission(
             (
                 option.name.clone(),
                 Some(option.option_id.clone()),
-                !rejects(&option.kind),
+                !option.kind.is_reject(),
             )
         })
         .collect();
-    if !ask.options.iter().any(|option| rejects(&option.kind)) {
+    if !ask.options.iter().any(|option| option.kind.is_reject()) {
         answers.push(("Cancel".into(), None, false));
     }
     let buttons: Vec<_> = answers

@@ -1,13 +1,40 @@
 //! Reading a permission request the way every short answer to it does: the
 //! notch, notifications and approving on the person's behalf.
 
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{json, Value};
+use sikemux_wire::chat::PermissionKind;
 
 use crate::protocol::PermissionChoices;
 
+/// One answer a permission request offers.
+pub fn option(id: &str, name: &str, kind: PermissionKind) -> Value {
+    json!({ "optionId": id, "name": name, "kind": kind })
+}
+
+/// Marks an allow that lasts only for the session, so a client offering one
+/// "Always allow" picks a lasting allow when there is one.
+pub fn for_session(mut option: Value) -> Value {
+    option["_meta"]["scope"] = json!("session");
+    option
+}
+
+pub fn kind_of(option: &Value) -> PermissionKind {
+    PermissionKind::deserialize(&option["kind"]).unwrap_or(PermissionKind::Unknown)
+}
+
+/// Where an option stands among a request's: allowing once first, then always, then the rest.
+pub fn allow_first(option: &Value) -> u8 {
+    match kind_of(option) {
+        PermissionKind::AllowOnce => 0,
+        PermissionKind::AllowAlways => 1,
+        _ => 2,
+    }
+}
+
 struct Offered<'a> {
     id: &'a str,
-    kind: &'a str,
+    kind: PermissionKind,
     session_only: bool,
 }
 
@@ -20,7 +47,7 @@ fn offered(request: &Value) -> Vec<Offered<'_>> {
         .filter_map(|option| {
             Some(Offered {
                 id: option.get("optionId")?.as_str()?,
-                kind: option.get("kind")?.as_str()?,
+                kind: PermissionKind::deserialize(option.get("kind")?).ok()?,
                 session_only: option.pointer("/_meta/scope").and_then(Value::as_str)
                     == Some("session"),
             })
@@ -28,7 +55,7 @@ fn offered(request: &Value) -> Vec<Offered<'_>> {
         .collect()
 }
 
-fn first<'a>(options: &[Offered<'a>], kind: &str) -> Option<&'a str> {
+fn first<'a>(options: &[Offered<'a>], kind: PermissionKind) -> Option<&'a str> {
     options
         .iter()
         .find(|option| option.kind == kind)
@@ -39,7 +66,7 @@ pub fn choices(request: &Value) -> PermissionChoices {
     let options = offered(request);
     let lasting = options
         .iter()
-        .find(|option| option.kind == "allow_always" && !option.session_only)
+        .find(|option| option.kind == PermissionKind::AllowAlways && !option.session_only)
         .map(|option| option.id);
     let raw = request.pointer("/toolCall/rawInput");
     let command = ["command", "cmd"]
@@ -47,12 +74,12 @@ pub fn choices(request: &Value) -> PermissionChoices {
         .find_map(|key| raw?.get(key)?.as_str())
         .map(str::to_owned);
     PermissionChoices {
-        allow_once: first(&options, "allow_once").map(str::to_owned),
+        allow_once: first(&options, PermissionKind::AllowOnce).map(str::to_owned),
         allow_always: lasting
-            .or_else(|| first(&options, "allow_always"))
+            .or_else(|| first(&options, PermissionKind::AllowAlways))
             .map(str::to_owned),
-        reject: first(&options, "reject_once")
-            .or_else(|| first(&options, "reject_always"))
+        reject: first(&options, PermissionKind::RejectOnce)
+            .or_else(|| first(&options, PermissionKind::RejectAlways))
             .map(str::to_owned),
         command,
         title: request
@@ -66,8 +93,8 @@ pub fn choices(request: &Value) -> PermissionChoices {
 /// The answer that lets one tool call through without granting more.
 pub fn approval(request: &Value) -> Option<String> {
     let options = offered(request);
-    first(&options, "allow_once")
-        .or_else(|| first(&options, "allow_always"))
+    first(&options, PermissionKind::AllowOnce)
+        .or_else(|| first(&options, PermissionKind::AllowAlways))
         .map(str::to_owned)
 }
 

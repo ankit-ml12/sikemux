@@ -4,18 +4,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use sikemux_wire::chat::PermissionKind;
+
 use super::items::strip_shell;
-
-fn option(id: &str, name: &str, kind: &str) -> Value {
-    json!({ "optionId": id, "name": name, "kind": kind })
-}
-
-/// Marks an allow that lasts only for the session, so a client offering one
-/// "Always allow" picks a lasting allow when there is one.
-fn for_session(mut option: Value) -> Value {
-    option["_meta"]["scope"] = json!("session");
-    option
-}
+use crate::acp::permission::{allow_first, for_session, kind_of, option};
 
 fn request(
     session_id: &str,
@@ -150,18 +142,11 @@ pub(super) fn cancelled_elicitation() -> Value {
 
 fn decision_options(decisions: &[(Value, Value)]) -> Option<(Vec<Value>, Vec<Decision>)> {
     let mut ordered: Vec<&(Value, Value)> = decisions.iter().collect();
-    let rank = |option: &Value| match option["kind"].as_str() {
-        Some("allow_once") => 0,
-        Some("allow_always") => 1,
-        _ => 2,
-    };
-    ordered.sort_by_key(|(option, _)| rank(option));
-    let kinds: Vec<&str> = ordered
+    ordered.sort_by_key(|(option, _)| allow_first(option));
+    let allows = ordered.iter().any(|(option, _)| kind_of(option).is_allow());
+    let rejects = ordered
         .iter()
-        .filter_map(|(option, _)| option["kind"].as_str())
-        .collect();
-    let allows = kinds.iter().any(|kind| kind.starts_with("allow"));
-    let rejects = kinds.iter().any(|kind| kind.starts_with("reject"));
+        .any(|(option, _)| kind_of(option).is_reject());
     let ids: Vec<String> = ordered
         .iter()
         .filter_map(|(option, _)| option["optionId"].as_str().map(str::to_owned))
@@ -283,7 +268,7 @@ fn command_options(params: &Value) -> Option<Vec<(Value, Value)>> {
                 } else {
                     "Yes, proceed"
                 },
-                "allow_once",
+                PermissionKind::AllowOnce,
             ),
             Some("acceptForSession") => for_session(option(
                 "allow_for_session",
@@ -294,13 +279,17 @@ fn command_options(params: &Value) -> Option<Vec<(Value, Value)>> {
                 } else {
                     "Yes, and don't ask again for this command in this session"
                 },
-                "allow_always",
+                PermissionKind::AllowAlways,
             )),
-            Some("decline") => option("decline", "No, continue without running it", "reject_once"),
+            Some("decline") => option(
+                "decline",
+                "No, continue without running it",
+                PermissionKind::RejectOnce,
+            ),
             Some("cancel") => option(
                 "cancel",
                 "No, and tell Codex what to do differently",
-                "reject_once",
+                PermissionKind::RejectOnce,
             ),
             _ => {
                 if let Some(words) = decision
@@ -316,7 +305,7 @@ fn command_options(params: &Value) -> Option<Vec<(Value, Value)>> {
                         &format!(
                             "Yes, and don't ask again for commands that start with `{prefix}`"
                         ),
-                        "allow_always",
+                        PermissionKind::AllowAlways,
                     )
                 } else {
                     let allow = decision
@@ -328,13 +317,13 @@ fn command_options(params: &Value) -> Option<Vec<(Value, Value)>> {
                         option(
                             &id,
                             "Yes, and allow this host in the future",
-                            "allow_always",
+                            PermissionKind::AllowAlways,
                         )
                     } else {
                         option(
                             &id,
                             "No, and block this host in the future",
-                            "reject_always",
+                            PermissionKind::RejectAlways,
                         )
                     }
                 }
@@ -483,16 +472,16 @@ pub(super) fn command(session_id: &str, params: &Value) -> Option<Question> {
 /// which Codex sent when it began.
 pub(super) fn file_change(session_id: &str, params: &Value, item: Option<&Value>) -> Question {
     let options = [
-        option("allow_once", "Yes, proceed", "allow_once"),
+        option("allow_once", "Yes, proceed", PermissionKind::AllowOnce),
         for_session(option(
             "allow_for_session",
             "Yes, and don't ask again for these files",
-            "allow_always",
+            PermissionKind::AllowAlways,
         )),
         option(
             "cancel",
             "No, and tell Codex what to do differently",
-            "reject_once",
+            PermissionKind::RejectOnce,
         ),
     ];
     let mut tool_call = json!({
@@ -534,22 +523,22 @@ pub(super) fn permissions(session_id: &str, params: &Value) -> Question {
         option(
             "allow_permissions_turn",
             "Yes, grant these permissions for this turn",
-            "allow_once",
+            PermissionKind::AllowOnce,
         ),
         option(
             "allow_permissions_turn_strict_auto_review",
             "Yes, grant for this turn with strict auto review",
-            "allow_once",
+            PermissionKind::AllowOnce,
         ),
         for_session(option(
             "allow_permissions_session",
             "Yes, grant these permissions for this session",
-            "allow_always",
+            PermissionKind::AllowAlways,
         )),
         option(
             "reject_permissions",
             "No, continue without permissions",
-            "reject_once",
+            PermissionKind::RejectOnce,
         ),
     ];
     let mut tool_call = json!({
@@ -625,7 +614,7 @@ pub(super) fn elicitation(
                 .is_some_and(|scopes| scopes.iter().any(|item| item == scope))
     };
     let (session, always) = (persists("session"), persists("always"));
-    let described = |id: &str, name: &str, kind: &str, description: &str| {
+    let described = |id: &str, name: &str, kind: PermissionKind, description: &str| {
         let mut option = option(id, name, kind);
         option["_meta"] = json!({ "permission": { "version": 1, "description": description } });
         option
@@ -634,14 +623,14 @@ pub(super) fn elicitation(
         described(
             "allow_once",
             "Allow",
-            "allow_once",
+            PermissionKind::AllowOnce,
             "Run the tool and continue.",
         )
     } else {
         described(
             "accept",
             "Allow",
-            "allow_once",
+            PermissionKind::AllowOnce,
             "Allow this request and continue.",
         )
     }];
@@ -649,7 +638,7 @@ pub(super) fn elicitation(
         options.push(for_session(described(
             "allow_session",
             "Allow for this session",
-            "allow_always",
+            PermissionKind::AllowAlways,
             if tool {
                 "Run the tool and remember this choice for this session."
             } else {
@@ -661,7 +650,7 @@ pub(super) fn elicitation(
         options.push(described(
             "allow_always",
             "Always allow",
-            "allow_always",
+            PermissionKind::AllowAlways,
             if tool {
                 "Run the tool and remember this choice for future tool calls."
             } else {
@@ -673,20 +662,20 @@ pub(super) fn elicitation(
         options.push(described(
             "cancel",
             "Cancel",
-            "reject_once",
+            PermissionKind::RejectOnce,
             "Cancel this tool call",
         ));
     } else {
         options.push(described(
             "decline",
             "Deny",
-            "reject_once",
+            PermissionKind::RejectOnce,
             "Decline this request and continue.",
         ));
         options.push(described(
             "cancel",
             "Cancel",
-            "reject_once",
+            PermissionKind::RejectOnce,
             "Cancel this request",
         ));
     }

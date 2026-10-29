@@ -3,7 +3,10 @@
 
 use serde_json::{json, Value};
 
+use sikemux_wire::chat::PermissionKind;
+
 use super::super::json::{text, text_or_empty};
+use crate::acp::permission::{allow_first, for_session, option};
 
 /// One stage of an approval the person is asked about, and how to tell Muse
 /// what they chose.
@@ -47,11 +50,11 @@ impl Question {
 }
 
 /// The ACP option kind a Muse decision reads as.
-fn option_kind(decision: &str) -> Option<&'static str> {
+fn option_kind(decision: &str) -> Option<PermissionKind> {
     match decision {
-        "approved" => Some("allow_once"),
-        "approvedForSession" | "approvedPolicyAmendment" => Some("allow_always"),
-        "denied" | "deniedPolicyAmendment" | "abort" => Some("reject_once"),
+        "approved" => Some(PermissionKind::AllowOnce),
+        "approvedForSession" | "approvedPolicyAmendment" => Some(PermissionKind::AllowAlways),
+        "denied" | "deniedPolicyAmendment" | "abort" => Some(PermissionKind::RejectOnce),
         _ => None,
     }
 }
@@ -109,25 +112,19 @@ pub(super) fn question(session: &str, params: &Value) -> Option<Question> {
         ) else {
             continue;
         };
-        let mut option = json!({
-            "optionId": id,
-            "name": text(choice, "label").unwrap_or(id),
-            "kind": kind,
-        });
+        let mut option = option(id, text(choice, "label").unwrap_or(id), kind);
         if choice["scope"] == "session" {
-            option["_meta"] = json!({ "scope": "session" });
+            option = for_session(option);
         }
-        if kind == "reject_once" && (refusal.is_none() || choice["decision"] == "abort") {
+        if kind == PermissionKind::RejectOnce
+            && (refusal.is_none() || choice["decision"] == "abort")
+        {
             refusal = Some(id.to_owned());
         }
         choices.push(id.to_owned());
         options.push(option);
     }
-    options.sort_by_key(|option| match option["kind"].as_str() {
-        Some("allow_once") => 0,
-        Some("allow_always") => 1,
-        _ => 2,
-    });
+    options.sort_by_key(allow_first);
     if options.is_empty() {
         return None;
     }

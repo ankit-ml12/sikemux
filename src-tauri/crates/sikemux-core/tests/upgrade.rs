@@ -31,7 +31,7 @@ use sikemux_core::protocol::{
     SessionId, SpawnTarget, StreamId, TerminalSpawn, BUILD_ID_OVERRIDE_ENV,
 };
 use sikemux_pty::output_log::OutputQuery;
-use sikemux_wire::chat::StopReason;
+use sikemux_wire::chat::{PermissionKind, StopReason};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const CORE: &str = env!("CARGO_BIN_EXE_sikemux-core");
@@ -847,7 +847,7 @@ async fn an_upgrade_carries_running_chats_over_with_their_agents() {
         let allow = request
             .options
             .iter()
-            .find(|option| option.kind == "allow_once")
+            .find(|option| option.kind == PermissionKind::AllowOnce)
             .expect("an allow option")
             .option_id
             .clone();

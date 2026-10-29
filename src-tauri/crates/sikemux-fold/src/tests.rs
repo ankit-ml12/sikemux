@@ -870,7 +870,7 @@ mod reducer {
                 options: vec![PermissionOption {
                     option_id: "allow".into(),
                     name: "Allow".into(),
-                    kind: "allow_once".into(),
+                    kind: PermissionKind::AllowOnce,
                 }],
             }]
         );
@@ -1603,7 +1603,7 @@ mod acp_events {
         PermissionOption {
             option_id: id.into(),
             name: name.into(),
-            kind: kind.into(),
+            kind: serde_json::from_value(json!(kind)).unwrap(),
         }
     }
 

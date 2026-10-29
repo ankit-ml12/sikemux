@@ -4,18 +4,16 @@
 use std::path::Path;
 
 use serde_json::{json, Value};
+use sikemux_wire::chat::PermissionKind;
 
 use super::tools;
+use crate::acp::permission::{kind_of, option};
 
 const ALLOW: &str = "allow-once";
 const ALLOW_ALWAYS: &str = "allow-always";
 const REJECT: &str = "reject";
 const EXIT_PLAN: &str = "exit-plan";
 const KEEP_PLANNING: &str = "keep-planning";
-
-fn option(id: &str, name: &str, kind: &str) -> Value {
-    json!({ "optionId": id, "name": name, "kind": kind })
-}
 
 fn suggestions(request: &Value) -> Option<&Value> {
     let suppressed = request
@@ -100,34 +98,37 @@ pub(crate) fn request(
             option(
                 &format!("{EXIT_PLAN}:{mode}"),
                 "Yes, start implementing",
-                "allow_once",
+                PermissionKind::AllowOnce,
             ),
-            option(KEEP_PLANNING, "No, keep planning", "reject_once"),
+            option(
+                KEEP_PLANNING,
+                "No, keep planning",
+                PermissionKind::RejectOnce,
+            ),
         ],
         "EnterPlanMode" => vec![
-            option(ALLOW, "Yes, enter plan mode", "allow_once"),
-            option(REJECT, "No, start implementing now", "reject_once"),
+            option(ALLOW, "Yes, enter plan mode", PermissionKind::AllowOnce),
+            option(
+                REJECT,
+                "No, start implementing now",
+                PermissionKind::RejectOnce,
+            ),
         ],
         _ => {
-            let mut options = vec![option(ALLOW, "Yes", "allow_once")];
+            let mut options = vec![option(ALLOW, "Yes", PermissionKind::AllowOnce)];
             if let Some(suggestions) = suggestions(cli) {
                 options.push(option(
                     ALLOW_ALWAYS,
                     &always_label(name, cli, suggestions),
-                    "allow_always",
+                    PermissionKind::AllowAlways,
                 ));
             }
-            options.push(option(REJECT, "No", "reject_once"));
+            options.push(option(REJECT, "No", PermissionKind::RejectOnce));
             options
         }
     };
     if cli.get("default_to_no").and_then(Value::as_bool) == Some(true) {
-        options.sort_by_key(|option| {
-            !option["kind"]
-                .as_str()
-                .unwrap_or_default()
-                .starts_with("reject")
-        });
+        options.sort_by_key(|option| !kind_of(option).is_reject());
     }
     let mut tool_call = json!({
         "toolCallId": tool_id,
