@@ -19,11 +19,12 @@ use sikemux_plugin_api::codehost::{
 
 use super::diffs::{Changed, Diffs};
 use super::thread::{self, Block, Post, Pushers};
-use super::{ago, branch_chip, outcome_word, pull_mark, tally_summary, HostArea, Read};
+use super::{branch_chip, outcome_word, pull_mark, tally_summary, HostArea, Read};
 use crate::git::pane::ROW_HEIGHT;
 use crate::git::Diff;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
+use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, IconButton, Variant};
 use gpui_kit::component::input::{Textarea, TextareaState};
 

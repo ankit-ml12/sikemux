@@ -9,12 +9,13 @@ use gpui_kit::{
 use sikemux_plugin_api::codehost::{ListedPull, PullList};
 
 use super::{
-    ago, branch_chip, comments, list_head, notice, outcome_word, pull_mark, tally_summary, Area,
+    branch_chip, comments, list_head, notice, outcome_word, pull_mark, tally_summary, Area,
     HostArea, Read,
 };
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
+use crate::ui::time::ago_written as ago;
 
 /// The key the list is watched under.
 pub const KEY: &str = "host-pulls";

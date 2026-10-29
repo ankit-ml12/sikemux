@@ -12,11 +12,11 @@ use gpui_kit::{
 use gpui_transcript::{Markdown, Pen};
 use sikemux_plugin_api::codehost::{Mention, PullCommit, TimelineItem};
 
-use super::ago;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::toast;
 use crate::ui;
+use crate::ui::time::ago_written as ago;
 
 /// Something someone wrote in the thread, the opening description included.
 pub struct Post {

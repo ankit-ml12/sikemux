@@ -333,10 +333,6 @@ fn signoz_mark() -> Hsla {
     rgb(0xf25733).into()
 }
 
-fn now_ms() -> u64 {
-    chrono::Utc::now().timestamp_millis().max(0) as u64
-}
-
 fn saved(host: &Host, cx: &App) -> Settings {
     serde_json::from_value(host.settings(cx)).unwrap_or_default()
 }
@@ -466,7 +462,7 @@ impl Signoz {
 
     fn set_live(&mut self, live: bool) {
         self.live = live;
-        self.fixed_end = (!live).then(now_ms);
+        self.fixed_end = (!live).then(crate::ui::time::now_ms);
         self.range = None;
     }
 

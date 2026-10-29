@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 use sikemux_plugin_linear_views::{IssueList, IssueRow, IssueView};
 
 use super::{Failure, Host, Panel, PluginPane};
-use crate::codehost::ago;
+use crate::ui::time::ago_written as ago;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, IconButton, Pick, Variant};

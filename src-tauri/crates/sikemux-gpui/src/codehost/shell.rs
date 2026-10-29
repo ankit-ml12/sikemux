@@ -737,7 +737,7 @@ impl HostArea {
                                 about.push("archived".into());
                             }
                             if let Some(pushed) = repo.pushed_at.as_deref() {
-                                about.push(super::ago(pushed));
+                                about.push(crate::ui::time::ago_written(pushed));
                             }
                             row(repo.slug, "Your repositories", about.join(" · "))
                         }),

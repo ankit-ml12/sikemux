@@ -252,13 +252,6 @@ fn dot(state: &str, t: &Tokens) -> AnyElement {
         .into_any_element()
 }
 
-fn ago(at: u64) -> String {
-    match crate::ui::time::age(at) {
-        now if now == "now" => now,
-        age => format!("{age} ago"),
-    }
-}
-
 /// How long a build ran, in seconds or minutes and seconds.
 fn took(ms: u64) -> String {
     let seconds = ms / 1000;
@@ -369,7 +362,7 @@ impl Vercel {
                 body: format!(
                     "{} ({}) starts serving production again, without building.",
                     name_of(deployment),
-                    ago(deployment.created_at)
+                    crate::ui::time::ago(deployment.created_at)
                 )
                 .into(),
                 yes: "Roll back",
@@ -852,7 +845,7 @@ impl Vercel {
                     .child(ui::meta(
                         [
                             project.repo.clone(),
-                            Some(format!("updated {}", ago(project.updated_at))),
+                            Some(format!("updated {}", crate::ui::time::ago(project.updated_at))),
                         ]
                         .into_iter()
                         .flatten()
@@ -1241,7 +1234,7 @@ impl Vercel {
                 ),
                 cx,
             ))
-            .child(ui::meta(ago(deployment.created_at), cx))
+            .child(ui::meta(crate::ui::time::ago(deployment.created_at), cx))
             .children(more)
             .into_any_element()
     }
@@ -1363,7 +1356,7 @@ impl Vercel {
                 "Created",
                 Some(format!(
                     "{}{}",
-                    ago(deployment.created_at),
+                    crate::ui::time::ago(deployment.created_at),
                     deployment
                         .author
                         .as_ref()
@@ -1543,7 +1536,7 @@ impl Vercel {
                                 .clone()
                                 .map(|branch| ui::meta(branch, cx)),
                         )
-                        .children(variable.updated_at.map(|at| ui::meta(ago(at), cx)))
+                        .children(variable.updated_at.map(|at| ui::meta(crate::ui::time::ago(at), cx)))
                 }))
                 .into_any_element(),
         };
@@ -1672,7 +1665,7 @@ fn summary_line(
                 Some(state_word(&production.state)),
                 current.and_then(|current| current.branch.clone()),
                 current.map(name_of),
-                Some(ago(production.created_at)),
+                Some(crate::ui::time::ago(production.created_at)),
             ]
             .into_iter()
             .flatten()

@@ -15,9 +15,10 @@ use sikemux_plugin_api::codehost::{Issue, IssueList, TimelineItem};
 
 use super::pulls::Listed;
 use super::thread::{self, Block, Post};
-use super::{ago, comments, label_chip, list_head, notice, Area, HostArea, Read, Said};
+use super::{comments, label_chip, list_head, notice, Area, HostArea, Read, Said};
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_2};
+use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, IconButton, Segmented, Variant};
 
 pub const KEY: &str = "host-issues";

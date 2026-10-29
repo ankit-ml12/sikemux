@@ -69,6 +69,25 @@ pub fn age(at: u64) -> String {
     }
 }
 
+/// How long ago in words: `now`, `5m ago`, `3h ago`.
+pub fn ago(at: u64) -> String {
+    match age(at) {
+        now if now == "now" => now,
+        age => format!("{age} ago"),
+    }
+}
+
+/// [`ago`] of a moment a service wrote in RFC 3339, or with an offset that has no colon as Jira
+/// writes it; nothing for one that does not read.
+pub fn ago_written(at: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(at)
+        .or_else(|_| chrono::DateTime::parse_from_str(at, "%Y-%m-%dT%H:%M:%S%.f%z"))
+        .map_or_else(
+            |_| String::new(),
+            |at| ago(at.timestamp_millis().max(0) as u64),
+        )
+}
+
 /// How long until, in the same tight column as [`age`], rounded up: `now`, `1m`, `3h`, `4d`.
 pub fn until(at: u64) -> String {
     let seconds = at.saturating_sub(now_ms()) / 1000;

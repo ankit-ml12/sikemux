@@ -12,9 +12,10 @@ use gpui_transcript::{Markdown, Pen};
 use serde_json::json;
 use sikemux_plugin_api::codehost::{Release, ReleaseList};
 
-use super::{ago, branch_chip, notice, Area, HostArea, Read, Said};
+use super::{branch_chip, notice, Area, HostArea, Read, Said};
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_2};
+use crate::ui::time::ago_written as ago;
 use crate::ui::{self, IconButton, Segmented};
 
 pub const KEY: &str = "host-releases";

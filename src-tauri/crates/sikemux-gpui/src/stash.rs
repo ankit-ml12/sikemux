@@ -152,7 +152,7 @@ pub fn place(item: &Value) -> String {
         },
         _ => item["size"].as_u64().map(crate::codehost::bytes),
     };
-    let ago = item["createdAt"].as_str().map(crate::codehost::ago);
+    let ago = item["createdAt"].as_str().map(crate::ui::time::ago_written);
     [what, ago]
         .into_iter()
         .flatten()
@@ -831,7 +831,7 @@ fn tray_row(
             .children(files)
             .children(pages)
     });
-    let ago = item["createdAt"].as_str().map(crate::codehost::ago);
+    let ago = item["createdAt"].as_str().map(crate::ui::time::ago_written);
     let agent = agent.to_owned();
     div()
         .id(("stash-tray-row", index))

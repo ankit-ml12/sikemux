@@ -2294,19 +2294,6 @@ fn sprint_left(end: Option<&str>) -> Option<String> {
     })
 }
 
-/// When something happened, as how long ago, from Jira's time.
-fn ago(at: &str) -> String {
-    let at = chrono::DateTime::parse_from_rfc3339(at)
-        .or_else(|_| chrono::DateTime::parse_from_str(at, "%Y-%m-%dT%H:%M:%S%.f%z"));
-    let Ok(at) = at else {
-        return String::new();
-    };
-    match crate::ui::time::age(at.timestamp_millis().max(0) as u64) {
-        now if now == "now" => now,
-        age => format!("{age} ago"),
-    }
-}
-
 /// Someone's comment or change: their picture, their name and when, and what they did.
 fn said(
     host: &Host,
@@ -2339,7 +2326,7 @@ fn said(
                                 .min_w_0()
                                 .truncate(),
                         )
-                        .child(ui::meta(ago(at), cx).flex_none()),
+                        .child(ui::meta(crate::ui::time::ago_written(at), cx).flex_none()),
                 )
                 .child(body),
         )

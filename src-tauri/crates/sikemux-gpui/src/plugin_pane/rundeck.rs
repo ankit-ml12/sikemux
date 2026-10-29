@@ -1044,7 +1044,7 @@ impl Rundeck {
             .latest
             .as_ref()
             .and_then(|run| run.ended_at.as_deref().or(run.started_at.as_deref()))
-            .map(crate::codehost::ago)
+            .map(crate::ui::time::ago_written)
             .unwrap_or_else(|| "—".into());
         let took_for = job
             .latest
@@ -1224,7 +1224,7 @@ fn compare_grid(
                                 .ended_at
                                 .as_deref()
                                 .or(run.started_at.as_deref())
-                                .map(crate::codehost::ago)
+                                .map(crate::ui::time::ago_written)
                                 .unwrap_or_default();
                             ui::meta(
                                 format!("{} · {when}", run.user.clone().unwrap_or_default()),
@@ -1380,7 +1380,7 @@ impl Rundeck {
                     "Last success"
                 },
                 good.and_then(|good| good.ended_at.as_deref())
-                    .map(crate::codehost::ago)
+                    .map(crate::ui::time::ago_written)
                     .unwrap_or_else(|| "—".into()),
                 good.and_then(|good| good.user.clone())
                     .map(|user| format!("by {user}")),

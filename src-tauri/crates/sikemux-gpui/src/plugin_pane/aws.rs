@@ -22,7 +22,7 @@ use sikemux_plugin_aws_views::{
 };
 
 use super::{after, listen, Failure, Host, Panel, PluginPane, Streamed};
-use crate::codehost::ago;
+use crate::ui::time::ago_written as ago;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, IconButton, Pick, Segmented, Toggle, Tone, Variant};

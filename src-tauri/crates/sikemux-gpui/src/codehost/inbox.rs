@@ -11,10 +11,11 @@ use serde_json::json;
 use sikemux_plugin_api::codehost::Notification;
 use sikemux_wire::protocol::ProjectCodeHost;
 
-use super::{ago, answer, call_of, host_label, notice, Area, Read};
+use super::{answer, call_of, host_label, notice, Area, Read};
 use crate::core::Target;
 use crate::theme::Tokens;
 use crate::toast;
+use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, Toggle, Variant};
 use crate::workbench::Workbench;
 

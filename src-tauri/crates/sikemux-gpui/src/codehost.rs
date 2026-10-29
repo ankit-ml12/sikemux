@@ -1105,17 +1105,6 @@ fn label_chip(label: &Label, cx: &App) -> Div {
         .child(label.name.clone())
 }
 
-/// When something happened, as how long ago, from the host's RFC 3339 time.
-pub(crate) fn ago(at: &str) -> String {
-    let Ok(at) = chrono::DateTime::parse_from_rfc3339(at) else {
-        return String::new();
-    };
-    match crate::ui::time::age(at.timestamp_millis().max(0) as u64) {
-        now if now == "now" => now,
-        age => format!("{age} ago"),
-    }
-}
-
 /// A branch's name in a quiet chip.
 fn branch_chip(name: &str, ink: Hsla, cx: &App) -> Div {
     let t = Tokens::get(cx);

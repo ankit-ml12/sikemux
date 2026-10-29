@@ -13,11 +13,12 @@ use serde_json::{json, Value};
 use sikemux_plugin_api::codehost::{GraphBox, Job, OpenRun, Outcome, RunList, Workflow};
 
 use super::{
-    ago, branch_chip, elapsed, event_label, list_head, notice, outcome_label, outcome_word, Area,
+    branch_chip, elapsed, event_label, list_head, notice, outcome_label, outcome_word, Area,
     HostArea, Read, Said,
 };
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
+use crate::ui::time::ago_written as ago;
 use crate::ui::{self, Button, Choice, IconButton, Segmented, Variant};
 
 pub const LIST: &str = "host-runs";
