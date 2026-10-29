@@ -193,15 +193,10 @@ pub(crate) fn chat_begun(core: &Arc<Core>, launch: &ChatLaunch) {
     }
 }
 
-fn client() -> &'static Client {
+fn client() -> Result<&'static Client, String> {
     static CLIENT: OnceLock<Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        Client::builder()
-            .timeout(CHECK_TIMEOUT)
-            .user_agent(concat!("sikemux/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .unwrap_or_default()
-    })
+    crate::http::shared(&CLIENT, || crate::http::builder().timeout(CHECK_TIMEOUT))
+        .map_err(|error| format!("no HTTP client: {error}"))
 }
 
 fn check_failure(label: &str, status: StatusCode) -> Option<String> {
@@ -221,7 +216,7 @@ async fn check_key(provider: &Provider, key: &str) -> CoreResult<()> {
         .key
         .as_ref()
         .ok_or_else(|| format!("{} needs no key", provider.label))?;
-    let response = client()
+    let response = client()?
         .get(&spec.check)
         .bearer_auth(key)
         .send()
@@ -257,7 +252,10 @@ async fn model_list(
     key: Option<&str>,
     timeout: Duration,
 ) -> Result<Vec<String>, Unlisted> {
-    let mut request = client().get(format!("{base_url}/models")).timeout(timeout);
+    let mut request = client()
+        .map_err(|_| Unlisted::Unreachable)?
+        .get(format!("{base_url}/models"))
+        .timeout(timeout);
     if let Some(key) = key {
         request = request.bearer_auth(key);
     }

@@ -369,7 +369,10 @@ async fn other_apis(base_url: &str, key: Option<&str>) -> (bool, Option<String>)
 
 /// Whether `url` takes requests: an empty one is refused as malformed, not as missing.
 async fn answers(url: String, key: Option<&str>) -> bool {
-    let mut request = client()
+    let Ok(client) = client() else {
+        return false;
+    };
+    let mut request = client
         .post(url)
         .timeout(PROBE_TIMEOUT)
         .header("anthropic-version", "2023-06-01")

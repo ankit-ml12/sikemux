@@ -33,19 +33,15 @@ const AGAIN: Duration = Duration::from_secs(5);
 const SIGNATURE_MEMORY_SECS: u64 = 60;
 
 pub(crate) fn client() -> CoreResult<&'static Client> {
-    static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
-    CLIENT
-        .get_or_init(|| {
-            let tls = sikemux_client::accounts::tls_config()?;
-            Client::builder()
-                .tls_backend_preconfigured((*tls).clone())
-                .timeout(REQUEST_TIMEOUT)
-                .user_agent(concat!("sikemux/", env!("CARGO_PKG_VERSION")))
-                .build()
-                .ok()
-        })
-        .as_ref()
-        .ok_or_else(|| CoreError::from("this host cannot reach the accounts server"))
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    let unreachable = || CoreError::from("this host cannot reach the accounts server");
+    let tls = sikemux_client::accounts::tls_config().ok_or_else(unreachable)?;
+    crate::http::shared(&CLIENT, || {
+        crate::http::builder()
+            .tls_backend_preconfigured((*tls).clone())
+            .timeout(REQUEST_TIMEOUT)
+    })
+    .map_err(|_| unreachable())
 }
 
 /// What the account asks one of the person's devices to sign before this host adds it:

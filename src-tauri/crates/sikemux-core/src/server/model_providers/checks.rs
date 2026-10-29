@@ -256,7 +256,7 @@ fn tool_parameters() -> Value {
 }
 
 async fn openai(provider: &Provider, key: Option<&str>, model: &str) -> Result<Answer, String> {
-    let request = super::client()
+    let request = super::client()?
         .post(format!("{}/chat/completions", provider.openai))
         .bearer_auth(key.unwrap_or(&provider.id));
     let body = json!({
@@ -282,9 +282,12 @@ async fn anthropic(
 ) -> Option<Result<Answer, String>> {
     let api = provider.anthropic.as_ref()?;
     let key = key.unwrap_or(&provider.id);
-    let request = super::client()
-        .post(format!("{}/v1/messages", api.url))
-        .header("anthropic-version", "2023-06-01");
+    let request = match super::client() {
+        Ok(client) => client,
+        Err(error) => return Some(Err(error)),
+    }
+    .post(format!("{}/v1/messages", api.url))
+    .header("anthropic-version", "2023-06-01");
     let request = match api.auth {
         AnthropicAuth::Bearer => request.bearer_auth(key),
         AnthropicAuth::XApiKey => request.header("x-api-key", key),

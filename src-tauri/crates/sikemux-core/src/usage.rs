@@ -105,6 +105,7 @@ pub async fn report_active(data_dir: &Path, active: Active<'_>) -> Result<(), St
 
     let event = active_event(&record.install_id, &active, &platform());
     client()
+        .map_err(|error| error.to_string())?
         .post(CAPTURE_ENDPOINT)
         .json(&event)
         .send()
@@ -143,6 +144,7 @@ async fn report_activity(
         .collect();
     if !batch.is_empty() {
         client()
+            .map_err(|error| error.to_string())?
             .post(BATCH_ENDPOINT)
             .json(&json!({ "api_key": PROJECT_TOKEN, "batch": batch }))
             .send()
@@ -450,15 +452,9 @@ pub(crate) fn os_version() -> Option<String> {
     None
 }
 
-fn client() -> &'static Client {
+fn client() -> reqwest::Result<&'static Client> {
     static CLIENT: OnceLock<Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        Client::builder()
-            .timeout(REQUEST_TIMEOUT)
-            .user_agent(concat!("sikemux/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .unwrap_or_default()
-    })
+    crate::http::shared(&CLIENT, || crate::http::builder().timeout(REQUEST_TIMEOUT))
 }
 
 #[cfg(test)]
