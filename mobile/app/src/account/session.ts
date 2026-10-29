@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Alert, AppState, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@clerk/expo';
@@ -6,6 +6,8 @@ import { nativeApplicationVersion } from 'expo-application';
 import * as Notifications from 'expo-notifications';
 import type { Device } from '@protocol';
 import { liveUrl } from '@protocol/live';
+
+import { externalValue, useExternalValue } from '@shared/lib/externalValue';
 
 import { problem as problemOf } from '@/core/problem';
 import { alertFailure } from '@/ui/prompt';
@@ -24,49 +26,38 @@ import { signOutHere } from './leave';
 import { LiveAccount, runLive, savedCursor } from './live';
 import { AccountSequence, type AccountStatus } from './sequence';
 
-let hostsVersion = 0;
-const hostsListeners = new Set<() => void>();
+/** Counts the times the live connection heard the account's hosts change, each one asking for them again. */
+const hostsVersion = externalValue(0);
 
 function hostsChanged() {
-  hostsVersion += 1;
-  hostsListeners.forEach((listener) => listener());
-}
-
-function subscribeHosts(listener: () => void) {
-  hostsListeners.add(listener);
-  return () => hostsListeners.delete(listener);
+  hostsVersion.set(hostsVersion.get() + 1);
 }
 
 /** The hosts on the account; `loaded` once the server has answered since signing in, `problem` while the last read failed. */
 export type AccountHosts = { hosts: Device[]; loaded: boolean; problem?: string };
 
 const NO_HOSTS: AccountHosts = { hosts: [], loaded: false };
-let accountHostsNow = NO_HOSTS;
-
-function publishHosts(next: AccountHosts) {
-  accountHostsNow = next;
-  hostsListeners.forEach((listener) => listener());
-}
+const accountHostsNow = externalValue(NO_HOSTS);
 
 /** Reads the hosts on the account on signing in, and again whenever the live connection hears one change. */
 export function useAccountHostsFeed() {
   const { isSignedIn, getToken } = useAuth();
-  const version = useSyncExternalStore(subscribeHosts, () => hostsVersion);
+  const version = useExternalValue(hostsVersion);
   const latestGetToken = useRef(getToken);
   useEffect(() => {
     latestGetToken.current = getToken;
   });
   useEffect(() => {
     if (!isSignedIn) {
-      publishHosts(NO_HOSTS);
+      accountHostsNow.set(NO_HOSTS);
       return;
     }
     let current = true;
     accountHosts(() => latestGetToken.current())
-      .then((hosts) => current && publishHosts({ hosts, loaded: true }))
+      .then((hosts) => current && accountHostsNow.set({ hosts, loaded: true }))
       .catch((error: unknown) => {
         console.warn('sikemux: could not list the hosts on the account', error);
-        if (current) publishHosts({ ...accountHostsNow, problem: problemOf(error) });
+        if (current) accountHostsNow.set({ ...accountHostsNow.get(), problem: problemOf(error) });
       });
     return () => {
       current = false;
@@ -76,11 +67,12 @@ export function useAccountHostsFeed() {
 
 /** Reads the hosts again, unless the last read worked; the live connection keeps a good list current. */
 export function retryHosts() {
-  if (!accountHostsNow.loaded || accountHostsNow.problem) hostsChanged();
+  const now = accountHostsNow.get();
+  if (!now.loaded || now.problem) hostsChanged();
 }
 
 export function useAccountHosts(): AccountHosts {
-  return useSyncExternalStore(subscribeHosts, () => accountHostsNow);
+  return useExternalValue(accountHostsNow);
 }
 
 /** A host that arrives while the phone is in the background stays new until the phone is in front, so it still connects then. */
@@ -110,24 +102,12 @@ export function useConnectArrivals() {
   }, [userId, loaded, hosts, inFront]);
 }
 
-let statusNow: AccountStatus | undefined;
-const statusListeners = new Set<() => void>();
+const statusNow = externalValue<AccountStatus | undefined>(undefined);
 let running: AccountSequence | undefined;
-
-function publishStatus(next: AccountStatus | undefined) {
-  statusNow = next;
-  statusListeners.forEach((listener) => listener());
-}
 
 /** How far adding this phone to the account has got; undefined while signed out. */
 export function useAccountStatus(): AccountStatus | undefined {
-  return useSyncExternalStore(
-    (listener) => {
-      statusListeners.add(listener);
-      return () => statusListeners.delete(listener);
-    },
-    () => statusNow,
-  );
+  return useExternalValue(statusNow);
 }
 
 /** Signing in is enough to reach every host, so a device that joins the account is shown, with one tap to take it off (ADR 0018). */
@@ -182,7 +162,7 @@ export function useAccountSequence() {
       syncPush: () => syncPushToken(() => token()),
       live,
       hostsStale: retryHosts,
-      status: publishStatus,
+      status: statusNow.set,
     });
     running = sequence;
     sequence.start(AppState.currentState === 'active');
@@ -198,7 +178,7 @@ export function useAccountSequence() {
       renewed?.remove();
       sequence.stop();
       if (running === sequence) running = undefined;
-      publishStatus(undefined);
+      statusNow.set(undefined);
     };
   }, [isSignedIn, userId]);
 }

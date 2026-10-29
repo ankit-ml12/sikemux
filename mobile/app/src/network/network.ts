@@ -1,7 +1,8 @@
-import { useSyncExternalStore } from 'react';
 import { File, Paths } from 'expo-file-system';
 import type { MinimumVersions, Relay } from '@protocol';
 import type { RelaySetting } from '@sikemux/native';
+
+import { externalValue, useExternalValue } from '@shared/lib/externalValue';
 
 import { apiUrl } from '@/account/config';
 import { onNetworkChange } from './connectivity';
@@ -22,8 +23,7 @@ const saved = new File(Paths.document, 'network.json');
 
 export type UpdateRequired = { current: string; minimum: string };
 
-let required: UpdateRequired | null = null;
-const listeners = new Set<() => void>();
+const required = externalValue<UpdateRequired | null>(null);
 let reading: { until: number; fresh: boolean; relays: Promise<Relay[]> } | undefined;
 
 function usableRelays(value: unknown): Relay[] {
@@ -65,9 +65,9 @@ async function savedRelays(): Promise<Relay[]> {
 }
 
 function setRequired(next: UpdateRequired | null) {
-  if (next?.current === required?.current && next?.minimum === required?.minimum) return;
-  required = next;
-  listeners.forEach((listener) => listener());
+  const now = required.get();
+  if (next?.current === now?.current && next?.minimum === now?.minimum) return;
+  required.set(next);
 }
 
 /** Only an answer from the server decides this app is too old; failing to reach it never does. */
@@ -86,7 +86,9 @@ async function readRelays(): Promise<{ relays: Relay[]; fresh: boolean }> {
   if (relays.length > 0) {
     try {
       saved.write(JSON.stringify(answer));
-    } catch {}
+    } catch (error) {
+      console.warn('sikemux: could not keep the network answer on this phone', error);
+    }
     return { relays, fresh: true };
   }
   const copy = await savedRelays();
@@ -131,15 +133,9 @@ export function relaySettings(relays: Relay[]): RelaySetting[] {
 }
 
 export function updateRequired(): UpdateRequired | null {
-  return required;
+  return required.get();
 }
 
 export function useUpdateRequired(): UpdateRequired | null {
-  return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    () => required,
-  );
+  return useExternalValue(required);
 }

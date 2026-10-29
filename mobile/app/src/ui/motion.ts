@@ -1,75 +1,44 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef } from 'react';
 import { AccessibilityInfo, AppState } from 'react-native';
 import { useIsFocused } from 'expo-router';
 
-/** One system setting, followed once for the whole app however many components read it. */
-function followed<T>(initial: T, follow: (set: (value: T) => void) => void) {
-  let value = initial;
-  let following = false;
-  const listeners = new Set<() => void>();
-  return {
-    subscribe(listener: () => void) {
-      if (!following) {
-        following = true;
-        follow((next) => {
-          if (next === value) return;
-          value = next;
-          listeners.forEach((listen) => listen());
-        });
-      }
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-    get: () => value,
-  };
-}
+import { externalValue, useExternalValue, type ExternalValue } from '@shared/lib/externalValue';
 
-const reduceMotion = followed(false, (set) => {
+const reduceMotion: ExternalValue<boolean> = externalValue(false, () => {
   AccessibilityInfo.isReduceMotionEnabled()
-    .then(set)
-    .catch(() => {});
-  AccessibilityInfo.addEventListener('reduceMotionChanged', set);
+    .then(reduceMotion.set)
+    .catch((error: unknown) => console.warn('sikemux: could not read whether to reduce motion', error));
+  const following = AccessibilityInfo.addEventListener('reduceMotionChanged', reduceMotion.set);
+  return () => following.remove();
 });
 
-const appActive = followed(AppState.currentState === 'active', (set) => {
-  AppState.addEventListener('change', (state) => set(state === 'active'));
+const appActive: ExternalValue<boolean> = externalValue(AppState.currentState === 'active', () => {
+  appActive.set(AppState.currentState === 'active');
+  const following = AppState.addEventListener('change', (state) => appActive.set(state === 'active'));
+  return () => following.remove();
 });
 
 /** Whether the person asked the system to reduce motion. */
 export function useStill(): boolean {
-  return useSyncExternalStore(reduceMotion.subscribe, reduceMotion.get);
+  return useExternalValue(reduceMotion);
 }
 
-let minute = Math.floor(Date.now() / 60_000);
-const minuteListeners = new Set<() => void>();
-let minuteTimer: ReturnType<typeof setInterval> | undefined;
+const thisMinute = () => Math.floor(Date.now() / 60_000);
+
+const minute: ExternalValue<number> = externalValue(thisMinute(), () => {
+  minute.set(thisMinute());
+  const ticking = setInterval(() => minute.set(thisMinute()), 60_000);
+  return () => clearInterval(ticking);
+});
 
 /** The current minute, from one clock the whole app shares, for labels like "5m" that age as they sit. */
 export function useMinute(): number {
-  return useSyncExternalStore(
-    (listener) => {
-      minuteListeners.add(listener);
-      minuteTimer ??= setInterval(() => {
-        minute = Math.floor(Date.now() / 60_000);
-        minuteListeners.forEach((each) => each());
-      }, 60_000);
-      return () => {
-        minuteListeners.delete(listener);
-        if (minuteListeners.size === 0) {
-          clearInterval(minuteTimer);
-          minuteTimer = undefined;
-        }
-      };
-    },
-    () => minute,
-  );
+  return useExternalValue(minute);
 }
 
 /** Whether the app is in front. */
 export function useAppActive(): boolean {
-  return useSyncExternalStore(appActive.subscribe, appActive.get);
+  return useExternalValue(appActive);
 }
 
 /**
@@ -84,12 +53,10 @@ export function useAnimating(): boolean {
   return !still && active && focused;
 }
 
-let pauses = 0;
-const pauseListeners = new Set<() => void>();
+const pauses = externalValue(0);
 
 function pausesChanged(by: number) {
-  pauses += by;
-  pauseListeners.forEach((listen) => listen());
+  pauses.set(pauses.get() + by);
 }
 
 /** Stills the backdrop until the returned function is called: a sheet covers it, or the screen is scrolling. */
@@ -103,15 +70,8 @@ export function pauseBackdrop(): () => void {
   };
 }
 
-function subscribePauses(listener: () => void) {
-  pauseListeners.add(listener);
-  return () => {
-    pauseListeners.delete(listener);
-  };
-}
-
 export function useBackdropPaused(): boolean {
-  return useSyncExternalStore(subscribePauses, () => pauses > 0);
+  return useExternalValue(pauses, (count) => count > 0);
 }
 
 /** Scroll handlers that still the backdrop while a list moves, so scrolling keeps the JavaScript thread free. */

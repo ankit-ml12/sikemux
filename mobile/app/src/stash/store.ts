@@ -1,5 +1,7 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAuth } from '@clerk/expo';
+
+import { externalValue, useExternalValue } from '@shared/lib/externalValue';
 
 import type { TokenSource } from '@/account/api';
 import { problem as problemOf } from '@/core/problem';
@@ -15,27 +17,17 @@ const EMPTY: Stash = { items: [], seenAt: null, state: 'loading' };
 /** Live events often come in a burst, such as a file and then its link preview; one read follows them. */
 const SETTLE_MS = 300;
 
-let now = EMPTY;
+const stash = externalValue(EMPTY);
 let token: TokenSource | undefined;
 let reading = 0;
 let settling: ReturnType<typeof setTimeout> | undefined;
-const listeners = new Set<() => void>();
-
-function publish(next: Stash) {
-  now = next;
-  listeners.forEach((listener) => listener());
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
 
 /** Reads the untaken stash again; what was shown stays while it does. */
 export async function refreshStash() {
   if (!token) return;
   const read = (reading += 1);
-  if (now.state === 'offline' && !now.items.length) publish(EMPTY);
+  const shown = stash.get();
+  if (shown.state === 'offline' && !shown.items.length) stash.set(EMPTY);
   try {
     const items: StashItem[] = [];
     let seenAt: string | null = null;
@@ -46,9 +38,9 @@ export async function refreshStash() {
       seenAt = page.seenAt;
       cursor = page.cursor;
     } while (cursor);
-    if (read === reading) publish({ items, seenAt, state: 'ready' });
+    if (read === reading) stash.set({ items, seenAt, state: 'ready' });
   } catch (error) {
-    if (read === reading) publish({ ...now, state: 'offline', problem: problemOf(error) });
+    if (read === reading) stash.set({ ...stash.get(), state: 'offline', problem: problemOf(error) });
   }
 }
 
@@ -62,18 +54,19 @@ export function stashChanged() {
 export async function takeStash(ids: readonly string[]) {
   if (!ids.length || !token) return;
   const signedIn = token;
-  publish({ ...now, items: now.items.filter((item) => !ids.includes(item.id)) });
+  const now = stash.get();
+  stash.set({ ...now, items: now.items.filter((item) => !ids.includes(item.id)) });
   await Promise.allSettled(ids.map((id) => stashApi(signedIn).updateStash(id, { taken: true })));
 }
 
 export async function removeStash(id: string) {
   if (!token) return;
-  const before = now.items;
-  publish({ ...now, items: before.filter((item) => item.id !== id) });
+  const before = stash.get().items;
+  stash.set({ ...stash.get(), items: before.filter((item) => item.id !== id) });
   try {
     await stashApi(token).deleteStash(id);
   } catch (error) {
-    publish({ ...now, items: before });
+    stash.set({ ...stash.get(), items: before });
     throw error;
   }
 }
@@ -86,22 +79,25 @@ export function newInStash(stash: Stash): StashItem[] {
 
 /** The person has looked at the stash: what it holds now is no longer new, on any device. */
 export async function seeStash() {
+  const now = stash.get();
   const newest = now.items[0]?.createdAt;
   if (!token || !newest || !newInStash(now).length) return;
-  publish({ ...now, seenAt: newest });
+  stash.set({ ...now, seenAt: newest });
   try {
     const { at } = await stashApi(token).markStashSeen({ at: newest });
-    publish({ ...now, seenAt: at });
-  } catch {}
+    stash.set({ ...stash.get(), seenAt: at });
+  } catch (error) {
+    console.warn('sikemux: could not mark the stash seen on the account', error);
+  }
 }
 
 /** The stash as the phone knows it now, outside a render. */
 export function stashNow(): Stash {
-  return now;
+  return stash.get();
 }
 
 export function useStash(): Stash {
-  return useSyncExternalStore(subscribe, () => now);
+  return useExternalValue(stash);
 }
 
 export function stashToken(): TokenSource | undefined {
@@ -118,7 +114,7 @@ export function useStashFeed() {
   useEffect(() => {
     if (!isSignedIn) {
       token = undefined;
-      publish(EMPTY);
+      stash.set(EMPTY);
       return;
     }
     token = () => latestGetToken.current();
