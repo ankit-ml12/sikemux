@@ -607,7 +607,12 @@ impl HostArea {
     /// The form the host is signed in to with a token, as its plugin gives it.
     fn token_form(&self, cx: &App) -> Option<TokenForm> {
         let bench = self.bench.upgrade()?;
-        bench.read(cx).reads.plugins.token_form(&self.host.plugin).cloned()
+        bench
+            .read(cx)
+            .reads
+            .plugins
+            .token_form(&self.host.plugin)
+            .cloned()
     }
 
     fn plugin_call(&self, method: &str, more: Value) -> Value {

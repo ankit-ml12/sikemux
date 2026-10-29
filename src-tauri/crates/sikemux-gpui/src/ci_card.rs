@@ -165,7 +165,7 @@ impl CiCard {
         };
         let bench = bench.read(cx);
         let asks = bench.asks.clone();
-        let plugin = bench.watched_ci.as_ref().map(|ci| ci.plugin.clone());
+        let plugin = bench.ci.watched.as_ref().map(|ci| ci.plugin.clone());
         self.pictures.fetch(
             |url| {
                 let asked = plugin.as_ref().map(|plugin| {
@@ -209,7 +209,7 @@ fn plugin(
     method: &str,
     mut params: Value,
 ) -> impl Future<Output = Option<Value>> {
-    let asked = bench.watched_ci.as_ref().map(|ci| {
+    let asked = bench.ci.watched.as_ref().map(|ci| {
         params["owner"] = json!(ci.owner);
         params["name"] = json!(ci.name);
         params["account"] = json!(ci.account);

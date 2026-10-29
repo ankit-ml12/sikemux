@@ -128,11 +128,7 @@ pub struct Workbench {
     /// Each open project settings tab's state, by the project's folder.
     pub project_settings: HashMap<String, crate::project_settings::ProjectSettings>,
     pub shown: crate::experience::Shown,
-    /// The repository and branch whose latest CI run the top bar shows.
-    pub watched_ci: Option<CiRepo>,
-    pub ci_card: Entity<crate::ci_card::CiCard>,
-    /// The commit whose runs from every workflow, tags' included, the glyph sums up.
-    watched_head: Option<String>,
+    pub ci: Ci,
     /// The account's picture, and the hash the core named the one asked for by.
     picture: Option<Arc<Image>>,
     picture_hash: Option<String>,
@@ -238,6 +234,16 @@ pub struct Workbench {
     pub sims: crate::sim::pane::Simulators,
     _filtering: Option<Subscription>,
     pub(crate) _older: Option<Task<()>>,
+}
+
+/// The CI the top bar's chip shows: the repository and branch watched, the commit its newest
+/// run is for, and the chip.
+pub struct Ci {
+    /// The repository and branch whose latest CI run the top bar shows.
+    pub(crate) watched: Option<CiRepo>,
+    pub(crate) card: Entity<crate::ci_card::CiCard>,
+    /// The commit whose runs from every workflow, tags' included, the glyph sums up.
+    pub(crate) head: Option<String>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -611,11 +617,13 @@ impl Workbench {
             on_screen: None,
             watched_project: None,
             watched_place: crate::hosts::Place::This,
-            watched_ci: None,
-            watched_head: None,
-            ci_card: {
-                let bench = cx.weak_entity();
-                cx.new(|_| crate::ci_card::CiCard::new(bench))
+            ci: Ci {
+                watched: None,
+                card: {
+                    let bench = cx.weak_entity();
+                    cx.new(|_| crate::ci_card::CiCard::new(bench))
+                },
+                head: None,
             },
             battery: crate::battery::read(),
             agent_setup: Default::default(),
@@ -2190,7 +2198,7 @@ impl Workbench {
     /// and the window shows; a hidden window has it check none.
     fn watch_ci(&mut self) {
         let shown = self.ci_repo().filter(|_| self.window_shown);
-        if shown == self.watched_ci {
+        if shown == self.ci.watched {
             return;
         }
         let repos: Vec<Value> = shown
@@ -2208,7 +2216,7 @@ impl Workbench {
                 .asks
                 .send(Ask::Watch("ci", Watch::new("plugin", call, &[Topic::Ci])));
         }
-        self.watched_ci = shown;
+        self.ci.watched = shown;
     }
 
     fn ci_repo(&self) -> Option<CiRepo> {
@@ -2242,10 +2250,10 @@ impl Workbench {
             .ci
             .as_ref()
             .and_then(|ci| ci["value"]["runs"][0]["sha"].as_str());
-        let Some(ci) = self.watched_ci.as_ref().filter(|_| head.is_some()) else {
+        let Some(ci) = self.ci.watched.as_ref().filter(|_| head.is_some()) else {
             return;
         };
-        if head == self.watched_head.as_deref() {
+        if head == self.ci.head.as_deref() {
             return;
         }
         let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "headSha": head, "perPage": 20 });
@@ -2254,14 +2262,14 @@ impl Workbench {
             "ci-head",
             Watch::new("plugin", call, &[Topic::Ci]),
         ));
-        self.watched_head = head.map(str::to_owned);
+        self.ci.head = head.map(str::to_owned);
     }
 
     /// The branch's newest commit's checks, while the core is checking it: the latest run of
     /// each workflow a push or pull request started, as the code host counts a commit's checks.
     /// Runs started by hand or on a schedule only happen to sit on the commit, so they are left out.
     pub fn head_runs(&self) -> Vec<sikemux_plugin_api::codehost::Run> {
-        let (Some(_), Some(head)) = (&self.watched_ci, &self.watched_head) else {
+        let (Some(_), Some(head)) = (&self.ci.watched, &self.ci.head) else {
             return Vec::new();
         };
         let mut seen = HashSet::new();

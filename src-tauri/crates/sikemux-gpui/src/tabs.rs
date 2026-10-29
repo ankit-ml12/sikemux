@@ -246,7 +246,7 @@ fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
         .iter()
         .map(|run| run.outcome)
         .min_by_key(|outcome| crate::ci_card::urgency(*outcome))?;
-    let card = bench.ci_card.clone();
+    let card = bench.ci.card.clone();
     let hovered = card.clone();
     let clicked = card.clone();
     Some(
