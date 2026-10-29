@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Map, Value};
 
 use crate::agent_catalog::{AgentKind, Home};
-use crate::sessions::roots::account_root;
+use crate::launch::{account_variable, named_account};
+use crate::sessions::roots::{account_root, environment_path};
 
 /// Marks a folder as one Sikemux made, whose shared entries it may link.
 const MARKER: &str = ".sikemux-account";
@@ -70,6 +71,20 @@ fn accounts_home(provider: &str) -> Option<(AgentKind, &'static Home)> {
 pub fn root(provider: &str, config_path: Option<&str>) -> Option<PathBuf> {
     let (kind, _) = accounts_home(provider)?;
     account_root(kind, config_path, &BTreeMap::new())
+}
+
+/// The `.claude.json` a Claude account keeps its sign-in and name in: inside the folder
+/// `config_path`, `env` or the person's shell names, else beside the default `~/.claude`.
+pub fn claude_config_file(config_path: Option<&str>, env: &BTreeMap<String, String>) -> PathBuf {
+    let named = config_path.is_some_and(|path| !path.trim().is_empty())
+        || named_account("claude", env).is_some()
+        || account_variable("claude")
+            .and_then(environment_path)
+            .is_some();
+    match account_root(AgentKind::Claude, config_path, env).filter(|_| named) {
+        Some(root) => root.join(".claude.json"),
+        None => home().join(".claude.json"),
+    }
 }
 
 fn default_root(provider: &str) -> Option<PathBuf> {

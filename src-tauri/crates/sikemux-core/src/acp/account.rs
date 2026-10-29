@@ -6,18 +6,13 @@
 //! write, so a sign-in made in a terminal is noticed before the next turn.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::agent_accounts::folders::claude_config_file;
 use crate::agent_catalog::AgentKind;
-use crate::launch::account_variable;
-use crate::sessions::roots::{account_root, environment_path};
-
-fn home() -> PathBuf {
-    sikemux_process::paths::home().unwrap_or_default()
-}
+use crate::sessions::roots::account_root;
 
 /// Who the provider is signed in as: an account id, or `SignedOut`. `None`
 /// when that cannot be told, such as for a provider without account files or
@@ -29,21 +24,12 @@ pub enum SignIn {
 }
 
 pub fn signed_in(provider: &str, env: &BTreeMap<String, String>) -> Option<SignIn> {
-    let kind = AgentKind::from_name(provider)?;
-    let variable = account_variable(provider)?;
-    let directory = account_root(kind, None, env)?;
-    match kind {
-        AgentKind::Claude => {
-            // The default account keeps this file beside its directory, not in it.
-            let named = env.contains_key(variable) || environment_path(variable).is_some();
-            let file = if named {
-                directory.join(".claude.json")
-            } else {
-                home().join(".claude.json")
-            };
-            claude_sign_in(&read_json(&file)?)
+    match AgentKind::from_name(provider)? {
+        AgentKind::Claude => claude_sign_in(&read_json(&claude_config_file(None, env))?),
+        AgentKind::Codex => {
+            let directory = account_root(AgentKind::Codex, None, env)?;
+            codex_sign_in(&read_json(&directory.join("auth.json"))?)
         }
-        AgentKind::Codex => codex_sign_in(&read_json(&directory.join("auth.json"))?),
         _ => None,
     }
 }

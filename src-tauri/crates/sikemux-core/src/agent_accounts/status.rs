@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sikemux_process::sync::Locked;
 
-use super::folders::{link_shared, root, sessions_root};
+use super::folders::{claude_config_file, link_shared, sessions_root};
 use super::usage::codex_app_server;
 use super::{cli, key};
 use crate::agent_catalog::{AgentKind, AGENTS};
@@ -418,18 +418,6 @@ fn claude_account_name(config: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Claude puts `.claude.json` inside a chosen config folder, but beside the
-/// default `~/.claude` folder rather than in it.
-fn claude_config_file(config_path: Option<&str>) -> Option<PathBuf> {
-    let root = root("claude", config_path)?;
-    let inside = root.join(".claude.json");
-    if inside.exists() {
-        return Some(inside);
-    }
-    let home = sikemux_process::paths::home()?;
-    (root == home.join(".claude")).then(|| home.join(".claude.json"))
-}
-
 fn parse_codex_status(result: &Value) -> AccountStatus {
     let account = result.get("account").filter(|account| !account.is_null());
     let text_of = |key: &str| {
@@ -483,8 +471,8 @@ async fn account(
         _ => return Err("Only Claude and Codex keep separate accounts".into()),
     };
     if provider == "claude" && status.signed_in {
-        status.name = claude_config_file(config_path)
-            .and_then(|file| std::fs::read(file).ok())
+        status.name = std::fs::read(claude_config_file(config_path, &BTreeMap::new()))
+            .ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .and_then(|config| claude_account_name(&config));
     }
