@@ -79,6 +79,13 @@ pub trait EventSink: Send + Sync + 'static {
     /// lays it out.
     fn grid(&self, stream: StreamId, frame: &[u8]);
     fn event(&self, event: Event);
+    /// Whether this sink takes the device view as the core's JSON in [`EventSink::device_view`]
+    /// rather than read into an [`Event::DeviceView`], so fields and values newer than this
+    /// client still reach whoever reads that JSON.
+    fn takes_view_json(&self) -> bool {
+        false
+    }
+    fn device_view(&self, _view_json: &str) {}
     /// The core asks the registered window to do something. Answer with
     /// [`CoreClient::answer_window`].
     fn window_call(&self, _call_id: CallId, _call: WindowCall) {}
@@ -969,6 +976,28 @@ impl CoreClient {
     }
 }
 
+/// The device view a control frame carries, as the core's JSON, read without the rest of it.
+fn view_json(payload: &[u8]) -> Option<&str> {
+    #[derive(serde::Deserialize)]
+    struct Message<'a> {
+        #[serde(rename = "type", borrow)]
+        kind: &'a str,
+        #[serde(borrow)]
+        event: Option<&'a serde_json::value::RawValue>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Shown<'a> {
+        #[serde(borrow)]
+        kind: &'a str,
+        #[serde(borrow)]
+        view: Option<&'a serde_json::value::RawValue>,
+    }
+    let message: Message = serde_json::from_slice(payload).ok()?;
+    let event: Shown =
+        serde_json::from_str(message.event.filter(|_| message.kind == "event")?.get()).ok()?;
+    (event.kind == "deviceView").then_some(event.view?.get())
+}
+
 fn unreadable_reply(payload: &[u8]) -> Option<RequestId> {
     serde_json::from_slice::<serde_json::Value>(payload)
         .ok()?
@@ -1009,6 +1038,14 @@ fn dispatch(frame: sikemux_wire::protocol::Frame, pending: &Pending, sink: &dyn 
             if let Some((request_id, lines)) = decode_lines(&frame.payload) {
                 resolve(request_id, Ok(Reply::Lines(lines.to_vec())));
             }
+        }
+        FrameKind::Control
+            if let Some(view) = sink
+                .takes_view_json()
+                .then(|| view_json(&frame.payload))
+                .flatten() =>
+        {
+            sink.device_view(view)
         }
         FrameKind::Control => match serde_json::from_slice::<ServerMessage>(&frame.payload) {
             Ok(ServerMessage::Response {

@@ -411,6 +411,17 @@ impl EventSink for ListenerSink {
         }
     }
 
+    fn takes_view_json(&self) -> bool {
+        true
+    }
+
+    fn device_view(&self, view_json: &str) {
+        let view_json = view_json.to_owned();
+        let _ = self
+            .0
+            .send(Delivery::Event(Box::new(CoreEvent::View { view_json })));
+    }
+
     fn window_call(&self, _call_id: CallId, _call: WindowCall) {}
 
     fn closed(&self) {

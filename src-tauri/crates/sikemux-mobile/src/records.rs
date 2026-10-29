@@ -94,9 +94,6 @@ impl CoreEvent {
                 seq,
                 changes_json: json(&changes),
             },
-            core::Event::DeviceView { view } => Self::View {
-                view_json: json(&view),
-            },
             _ => return None,
         })
     }
