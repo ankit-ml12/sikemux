@@ -25,6 +25,25 @@ use crate::syntax::{self, LineRuns};
 use crate::theme::{self, Tokens};
 use crate::ui;
 
+/// What the Git tab shows and holds: the local workbench pane or one of the code host's areas.
+pub struct GitTab {
+    /// The Git pane of the project whose Git tab was last in front.
+    pub(crate) pane: Option<gpui_kit::Entity<GitPane>>,
+    /// What the Git tab shows: the local workbench, or one of the code host's areas.
+    pub(crate) area: crate::codehost::Area,
+    /// The code host's areas of the project whose Git tab last showed one.
+    pub(crate) host: Option<gpui_kit::Entity<crate::codehost::HostArea>>,
+    /// The repository picked from the list inside a project folder, by the folder.
+    pub(crate) picked: Option<(String, String)>,
+    /// The list of repositories inside the project folder shows in the Git tab.
+    pub(crate) listing: bool,
+    /// A pull request or issue to open once the code host's area shows.
+    pub(crate) opening: Option<(crate::codehost::Area, u64, String)>,
+    /// The repository changed while the Git pane was out of sight, so it reads it and its
+    /// review again once it shows rather than on every change.
+    pub(crate) behind: bool,
+}
+
 pub use crate::codehost::{Area, OpenArea};
 pub use pane::{FocusGit, GitPane};
 pub use sikemux_core::git::diff::DiffKind;

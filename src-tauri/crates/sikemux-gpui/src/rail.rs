@@ -727,7 +727,7 @@ fn project_tree(
         .children(close);
     div().flex().flex_col().child(row).when(active, |tree| {
         tree.pb(px(4.))
-            .child(surfaces(project, lit_surface(bench), bench.area, cx))
+            .child(surfaces(project, lit_surface(bench), bench.git.area, cx))
     })
 }
 

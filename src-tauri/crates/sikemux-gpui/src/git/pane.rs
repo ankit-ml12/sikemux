@@ -2881,13 +2881,13 @@ fn branch_switch(pane: &GitPane, branch: String, cx: &mut Context<GitPane>) -> i
 /// The project's code host account, lent by its areas: the person's face and its menu, or
 /// Sign in while signed out.
 fn host_account(pane: &GitPane, cx: &mut Context<GitPane>) -> Option<AnyElement> {
-    let host = pane.bench.upgrade()?.read(cx).host.clone()?;
+    let host = pane.bench.upgrade()?.read(cx).git.host.clone()?;
     Some(host.update(cx, |area, cx| crate::codehost::shell::account(area, cx)))
 }
 
 /// The code host's account menu, while the person has it open from the head.
 fn host_menu(pane: &GitPane, cx: &mut Context<GitPane>) -> Option<ui::Choices> {
-    let host = pane.bench.upgrade()?.read(cx).host.clone()?;
+    let host = pane.bench.upgrade()?.read(cx).git.host.clone()?;
     host.update(cx, |area, cx| area.account_menu(cx))
 }
 
@@ -2901,7 +2901,7 @@ fn more_menu(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
     let host = pane
         .bench
         .upgrade()
-        .and_then(|bench| bench.read(cx).host.clone());
+        .and_then(|bench| bench.read(cx).git.host.clone());
     ui::menu_button(
         "git-more",
         Anchor::TopRight,

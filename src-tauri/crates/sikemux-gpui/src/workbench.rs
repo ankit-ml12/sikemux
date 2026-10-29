@@ -172,9 +172,7 @@ pub struct Workbench {
     pub failure_shown: Option<String>,
     /// The space whose projects the rail shows, else every project.
     pub space: Option<String>,
-    /// The repository changed while the Git pane was out of sight, so it reads it and its
-    /// review again once it shows rather than on every change.
-    git_behind: bool,
+    pub git: crate::git::GitTab,
     /// Lets go of the chats out of sight once they have been for a while, counted from when
     /// the chat now in front came there.
     resting_chats: Option<(Option<String>, Task<()>)>,
@@ -218,18 +216,6 @@ pub struct Workbench {
     host_questions: Vec<Question>,
     pub terminals: terminal::Terminals,
     pub editors: crate::editor::Editors,
-    /// The Git pane of the project whose Git tab was last in front.
-    pub git: Option<Entity<GitPane>>,
-    /// What the Git tab shows: the local workbench, or one of the code host's areas.
-    pub area: Area,
-    /// The code host's areas of the project whose Git tab last showed one.
-    pub host: Option<Entity<HostArea>>,
-    /// The repository picked from the list inside a project folder, by the folder.
-    git_picked: Option<(String, String)>,
-    /// The list of repositories inside the project folder shows in the Git tab.
-    git_listing: bool,
-    /// A pull request or issue to open once the code host's area shows.
-    opening: Option<(Area, u64, String)>,
     /// The Search pane of the project whose Search tab was last in front.
     pub search: Option<Entity<SearchPane>>,
     pub board: Option<Entity<crate::board::BoardPane>>,
@@ -698,7 +684,15 @@ impl Workbench {
             skills_offered: HashSet::new(),
             trust_host: None,
             resting_chats: None,
-            git_behind: false,
+            git: crate::git::GitTab {
+                pane: None,
+                area: Area::Local,
+                host: None,
+                picked: None,
+                listing: false,
+                opening: None,
+                behind: false,
+            },
             run_clock: cx.new(|_| crate::tabs::RunClock::default()),
             files: FileTree::default(),
             files_focus: cx.focus_handle(),
@@ -722,12 +716,6 @@ impl Workbench {
             host_questions: Vec::new(),
             terminals: terminal::Terminals::default(),
             editors: crate::editor::Editors::default(),
-            git: None,
-            area: Area::Local,
-            host: None,
-            opening: None,
-            git_picked: None,
-            git_listing: false,
             search: None,
             board: None,
             plugin_panes: HashMap::new(),
@@ -1080,9 +1068,9 @@ impl Workbench {
             }
             Update::Read("git-overview", value) => {
                 self.files.mark(&value);
-                match (&self.git, self.git_in_front()) {
+                match (&self.git.pane, self.git_in_front()) {
                     (Some(pane), true) => pane.update(cx, |pane, cx| pane.overview(&value, cx)),
-                    (Some(_), false) => self.git_behind = true,
+                    (Some(_), false) => self.git.behind = true,
                     (None, _) => {}
                 }
                 self.keep_read("git-overview", value);
@@ -1123,7 +1111,7 @@ impl Workbench {
                 crate::notifications::kept_running(self, cx);
             }
             Update::Read("git-draft", value) => {
-                if let Some(pane) = &self.git {
+                if let Some(pane) = &self.git.pane {
                     pane.update(cx, |pane, cx| pane.drafts(&value, cx));
                 }
                 self.keep_read("git-draft", value);
@@ -1155,7 +1143,7 @@ impl Workbench {
                 if !self.reads.keep_catalog(value) {
                     return;
                 }
-                if let Some(pane) = &self.git {
+                if let Some(pane) = &self.git.pane {
                     let catalog = &self.reads.catalog;
                     pane.update(cx, |pane, cx| pane.catalog(catalog, cx));
                 }
@@ -1181,7 +1169,7 @@ impl Workbench {
                 self.read_desk_pulls(key, &value, cx);
             }
             Update::Read(key, value) if crate::codehost::watches(key) => {
-                if let Some(host) = &self.host {
+                if let Some(host) = &self.git.host {
                     host.update(cx, |host, cx| host.read(key, &value, cx));
                 }
             }
@@ -1906,11 +1894,11 @@ impl Workbench {
             .as_ref()
             .map(|root| root.to_string_lossy().into_owned());
         if topic == Topic::Git {
-            match (&self.git, self.git_in_front()) {
+            match (&self.git.pane, self.git_in_front()) {
                 (Some(pane), true) => pane.update(cx, |pane, cx| {
                     pane.git_moved(project.as_deref(), paths.as_deref(), cx)
                 }),
-                (Some(_), false) => self.git_behind = true,
+                (Some(_), false) => self.git.behind = true,
                 (None, _) => {}
             }
         }
@@ -1955,7 +1943,7 @@ impl Workbench {
     /// Tells the Git pane and the code host's areas whether their host is in reach.
     fn tell_reach(&self, cx: &mut Context<Self>) {
         let away = self.out_of_reach();
-        if let Some(pane) = &self.git {
+        if let Some(pane) = &self.git.pane {
             let host = self.code_host_of(&pane.read(cx).repo);
             let signed_in = self.host_signed_in(cx);
             pane.update(cx, |pane, cx| {
@@ -1963,13 +1951,14 @@ impl Workbench {
                 pane.set_code_host(host, signed_in, cx);
             });
         }
-        if let Some(area) = &self.host {
+        if let Some(area) = &self.git.host {
             area.update(cx, |area, cx| area.set_out_of_reach(away, cx));
         }
     }
 
     fn host_signed_in(&self, cx: &App) -> bool {
-        self.host
+        self.git
+            .host
             .as_ref()
             .is_some_and(|area| area.read(cx).signed_in())
     }
@@ -1994,10 +1983,10 @@ impl Workbench {
     /// inside it. None while the person has to pick.
     pub(crate) fn git_repo(&self) -> Option<String> {
         let folder = self.watched_project.as_ref()?;
-        if self.git_listing {
+        if self.git.listing {
             return None;
         }
-        if let Some((at, repo)) = &self.git_picked {
+        if let Some((at, repo)) = &self.git.picked {
             if at == folder {
                 return Some(repo.clone());
             }
@@ -2023,15 +2012,15 @@ impl Workbench {
     /// Opens `repo` in the project's Git views until the project changes.
     pub(crate) fn pick_git_repo(&mut self, repo: String, cx: &mut Context<Self>) {
         let was = self.git_repo();
-        self.git_picked = self.watched_project.clone().map(|folder| (folder, repo));
-        self.git_listing = false;
+        self.git.picked = self.watched_project.clone().map(|folder| (folder, repo));
+        self.git.listing = false;
         self.follow_git_repo(was, cx);
     }
 
     /// Shows the repositories inside the project folder again.
     pub(crate) fn list_git_repos(&mut self, cx: &mut Context<Self>) {
         let was = self.git_repo();
-        self.git_listing = true;
+        self.git.listing = true;
         self.follow_git_repo(was, cx);
     }
 
@@ -2101,7 +2090,7 @@ impl Workbench {
             _ => {}
         }
         self.reads.forget("git-project-repo");
-        self.git_listing = false;
+        self.git.listing = false;
         match &path {
             Some(path) => {
                 target.watch(
@@ -3708,11 +3697,11 @@ impl Workbench {
             return;
         }
         let target = self.target();
-        if let Some(pane) = self.git.as_ref().filter(|pane| {
+        if let Some(pane) = self.git.pane.as_ref().filter(|pane| {
             let pane = pane.read(cx);
             pane.repo == repo && pane.place() == target.place()
         }) {
-            if std::mem::take(&mut self.git_behind) {
+            if std::mem::take(&mut self.git.behind) {
                 let overview = self.reads.git_overview.as_ref();
                 pane.update(cx, |pane, cx| {
                     if let Some(overview) = overview {
@@ -3723,7 +3712,7 @@ impl Workbench {
             }
             return;
         }
-        self.git_behind = false;
+        self.git.behind = false;
         let bench = cx.entity().downgrade();
         let away = self.out_of_reach();
         let (host, signed_in) = (self.code_host_of(&repo), self.host_signed_in(cx));
@@ -3742,7 +3731,7 @@ impl Workbench {
         if let Some(drafts) = self.reads.git_draft.as_ref() {
             pane.update(cx, |pane, cx| pane.drafts(drafts, cx));
         }
-        self.git = Some(pane);
+        self.git.pane = Some(pane);
     }
 
     /// Makes the Search pane when the project's Search tab comes to the front.
@@ -4024,14 +4013,14 @@ impl Workbench {
     /// on the project's repository and branch.
     fn host_area(&mut self, git_in_front: bool, cx: &mut Context<Self>) {
         let (true, Some(project)) = (git_in_front, self.project()) else {
-            if let Some(shown) = &self.host {
+            if let Some(shown) = &self.git.host {
                 shown.update(cx, |shown, _| shown.hide());
             }
             return;
         };
         let Some(host) = project.code_host.clone() else {
-            if self.area != Area::Local {
-                self.area = Area::Local;
+            if self.git.area != Area::Local {
+                self.git.area = Area::Local;
                 self.parts.redraw(&self.parts.rail, cx);
             }
             return;
@@ -4040,13 +4029,13 @@ impl Workbench {
             project.path.to_string_lossy().into_owned(),
             crate::codehost::branch_of(project),
         );
-        let area = self.area;
+        let area = self.git.area;
         let account = project
             .code_hosts
             .get(&host.host)
             .and_then(|choice| choice.account.clone());
-        let opening = self.opening.take();
-        match &self.host {
+        let opening = self.git.opening.take();
+        match &self.git.host {
             Some(shown)
                 if shown.read(cx).project == folder && shown.read(cx).place() == &self.place() =>
             {
@@ -4059,7 +4048,7 @@ impl Workbench {
                 });
             }
             _ => {
-                if let Some(old) = &self.host {
+                if let Some(old) = &self.git.host {
                     old.update(cx, |old, _| old.hide());
                 }
                 let (target, bench) = (self.target(), cx.entity().downgrade());
@@ -4072,14 +4061,14 @@ impl Workbench {
                         shown.open_item(area, number, repo, cx);
                     }
                 });
-                self.host = Some(shown);
+                self.git.host = Some(shown);
             }
         }
     }
 
     /// Brings the project's Git tab to the front showing `area`.
     pub(crate) fn open_area(&mut self, area: Area, cx: &mut Context<Self>) {
-        self.area = area;
+        self.git.area = area;
         self.open_git(cx);
         cx.notify();
     }
@@ -4093,7 +4082,7 @@ impl Workbench {
         repo: String,
         cx: &mut Context<Self>,
     ) {
-        self.opening = Some((area, number, repo));
+        self.git.opening = Some((area, number, repo));
         self.open_area(area, cx);
     }
 
@@ -4142,8 +4131,8 @@ impl Workbench {
         let Some(project) = self.projects().iter().find(holds).cloned() else {
             return false;
         };
-        self.opening = Some((area, number, host.repo.clone()));
-        self.area = area;
+        self.git.opening = Some((area, number, host.repo.clone()));
+        self.git.area = area;
         self.activate_project(&project.id);
         self.call_in_front(
             "openTab",

@@ -186,7 +186,7 @@ impl CiCard {
         };
         let host = bench.update(cx, |bench, cx| {
             bench.open_area(Area::Actions, cx);
-            bench.host.clone()
+            bench.git.host.clone()
         });
         if let Some(host) = host {
             host.update(cx, |host, cx| host.open_run(id, None, cx));

@@ -695,7 +695,7 @@ impl HostArea {
         }
         self.bench
             .update(cx, |bench, cx| {
-                bench.area = area;
+                bench.git.area = area;
                 bench.parts.redraw(&bench.parts.rail, cx);
                 cx.notify();
             })
