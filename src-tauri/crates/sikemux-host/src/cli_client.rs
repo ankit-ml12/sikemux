@@ -1,18 +1,15 @@
 use std::env;
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use uuid::Uuid;
 
-use sikemux_core::cli::client::{attempt, Failure};
+use sikemux_core::cli::client::{self, attempt, Failure, Session};
 use sikemux_core::cli::protocol::{
-    CliClientCommand, CliClientHello, CliCloseReason, CliEndpointDescriptor, CliOpenRequest,
-    CliOpenTarget, CliServerResponse, CliTargetKind, CLI_PROTOCOL_VERSION, MAX_CLI_RESPONSE_BYTES,
-    TOOLS_REPLY_TIMEOUT,
+    CliClientCommand, CliCloseReason, CliEndpointDescriptor, CliOpenRequest, CliOpenTarget,
+    CliServerResponse, CliTargetKind, CLI_PROTOCOL_VERSION, TOOLS_REPLY_TIMEOUT,
 };
 use sikemux_core::waiting;
 use sikemux_process::vars;
@@ -22,6 +19,7 @@ use crate::cli_paths::endpoint_to_read;
 /// Starts this binary as the MCP server agents use to reach their tools, instead of the editor.
 pub const TOOLS_MCP_FLAG: &str = "--tools-mcp";
 const APP_START_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(600);
 const PROBE_TIMEOUT: Duration = Duration::from_millis(900);
 const ACCEPT_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -236,13 +234,10 @@ fn execute_open(args: OpenArgs) -> Result<i32, String> {
         token: descriptor.token.clone(),
         request,
     };
-    let mut reader = session(&descriptor)?;
-    reader
-        .get_ref()
-        .set_read_timeout(Some(ACCEPT_TIMEOUT))
-        .map_err(|error| format!("cannot configure CLI connection: {error}"))?;
-    write_command(reader.get_mut(), &command)?;
-    let accepted = read_response(&mut reader)?;
+    let mut session = session(&descriptor)?;
+    session.wait_for_answers(Some(ACCEPT_TIMEOUT))?;
+    session.send(&command)?;
+    let accepted = session.receive()?;
     let mut failed = false;
     match accepted {
         CliServerResponse::Accepted {
@@ -256,13 +251,10 @@ fn execute_open(args: OpenArgs) -> Result<i32, String> {
         CliServerResponse::Error { message } => return Err(message),
         _ => return Err("unexpected response from Sikemux".into()),
     }
-    reader
-        .get_mut()
-        .set_read_timeout(None)
-        .map_err(|error| format!("cannot configure CLI wait: {error}"))?;
+    session.wait_for_answers(None)?;
 
     if args.wait {
-        match read_response(&mut reader)? {
+        match session.receive()? {
             CliServerResponse::Closed {
                 reason: CliCloseReason::TabsClosed,
                 ..
@@ -496,15 +488,12 @@ fn connect_or_launch(endpoint_path: &Path) -> Result<CliEndpointDescriptor, Stri
 
 /// Whether the window is open, once the endpoint answers.
 fn probe(descriptor: &CliEndpointDescriptor) -> Result<bool, String> {
-    let mut reader = session(descriptor)?;
-    write_command(
-        reader.get_mut(),
-        &CliClientCommand::Ping {
-            protocol: CLI_PROTOCOL_VERSION,
-            token: descriptor.token.clone(),
-        },
-    )?;
-    match read_response(&mut reader)? {
+    let mut session = session(descriptor)?;
+    session.send(&CliClientCommand::Ping {
+        protocol: CLI_PROTOCOL_VERSION,
+        token: descriptor.token.clone(),
+    })?;
+    match session.receive()? {
         CliServerResponse::Pong {
             protocol, window, ..
         } if protocol == CLI_PROTOCOL_VERSION => Ok(window),
@@ -514,9 +503,7 @@ fn probe(descriptor: &CliEndpointDescriptor) -> Result<bool, String> {
 }
 
 fn read_endpoint(path: &Path) -> Result<CliEndpointDescriptor, String> {
-    let file = fs::File::open(path).map_err(|_| "Sikemux is not running".to_string())?;
-    let descriptor: CliEndpointDescriptor =
-        serde_json::from_reader(file).map_err(|_| "Sikemux CLI endpoint is invalid".to_string())?;
+    let descriptor = client::read_endpoint(path)?;
     if descriptor.protocol != CLI_PROTOCOL_VERSION {
         return Err(format!(
             "CLI protocol mismatch (CLI {CLI_PROTOCOL_VERSION}, app {}); update or restart Sikemux",
@@ -526,69 +513,8 @@ fn read_endpoint(path: &Path) -> Result<CliEndpointDescriptor, String> {
     Ok(descriptor)
 }
 
-fn connect(descriptor: &CliEndpointDescriptor) -> Result<TcpStream, String> {
-    let stream = TcpStream::connect_timeout(
-        &SocketAddrV4::new(Ipv4Addr::LOCALHOST, descriptor.port).into(),
-        Duration::from_millis(600),
-    )
-    .map_err(|_| "Sikemux is not running".to_string())?;
-    stream
-        .set_write_timeout(Some(PROBE_TIMEOUT))
-        .map_err(|error| format!("cannot configure CLI connection: {error}"))?;
-    Ok(stream)
-}
-
-/// Connects and makes the app prove it holds the endpoint token before
-/// anything is sent that a program squatting on a stale port should not see.
-fn session(descriptor: &CliEndpointDescriptor) -> Result<BufReader<TcpStream>, String> {
-    let stream = connect(descriptor)?;
-    stream
-        .set_read_timeout(Some(PROBE_TIMEOUT))
-        .map_err(|error| format!("cannot configure CLI connection: {error}"))?;
-    let mut reader = BufReader::new(stream);
-    let nonce = sikemux_core::cli::auth::new_nonce();
-    write_command(
-        reader.get_mut(),
-        &CliClientHello::Hello {
-            protocol: CLI_PROTOCOL_VERSION,
-            nonce: nonce.clone(),
-        },
-    )?;
-    let expected =
-        sikemux_core::cli::auth::server_proof(&descriptor.token, descriptor.port, &nonce);
-    match read_response(&mut reader) {
-        Ok(CliServerResponse::Hello { proof })
-            if sikemux_core::cli::auth::same_secret(&proof, &expected) =>
-        {
-            Ok(reader)
-        }
-        _ => Err(STALE_ENDPOINT.into()),
-    }
-}
-
-const STALE_ENDPOINT: &str =
-    "the program on Sikemux's CLI port is not Sikemux; the endpoint file may be stale";
-
-fn write_command(stream: &mut TcpStream, command: &impl serde::Serialize) -> Result<(), String> {
-    serde_json::to_writer(&mut *stream, command).map_err(|error| error.to_string())?;
-    stream.write_all(b"\n").map_err(|error| error.to_string())?;
-    stream.flush().map_err(|error| error.to_string())
-}
-
-fn read_response(reader: &mut BufReader<TcpStream>) -> Result<CliServerResponse, String> {
-    let mut frame = Vec::new();
-    reader
-        .by_ref()
-        .take(MAX_CLI_RESPONSE_BYTES + 1)
-        .read_until(b'\n', &mut frame)
-        .map_err(|error| format!("CLI connection failed: {error}"))?;
-    if frame.is_empty() {
-        return Err("Sikemux closed the CLI connection".into());
-    }
-    if frame.len() as u64 > MAX_CLI_RESPONSE_BYTES {
-        return Err("Sikemux sent an oversized CLI response".into());
-    }
-    serde_json::from_slice(&frame).map_err(|_| "Sikemux sent an invalid CLI response".into())
+fn session(descriptor: &CliEndpointDescriptor) -> Result<Session, String> {
+    Session::open(descriptor, CONNECT_TIMEOUT, PROBE_TIMEOUT)
 }
 
 fn launch_app() -> Result<(), String> {
@@ -680,6 +606,11 @@ fn execute_tool(args: &[String]) -> Result<i32, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::Ipv4Addr;
+
+    use sikemux_core::cli::client::STALE_ENDPOINT;
+    use sikemux_core::cli::protocol::CliClientHello;
 
     fn answer_hello_with(token: &'static str) -> CliEndpointDescriptor {
         let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();

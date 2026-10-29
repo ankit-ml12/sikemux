@@ -6,18 +6,113 @@ use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::Path;
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde::Serialize;
+use serde_json::Value;
 use uuid::Uuid;
 
-use super::protocol::MAX_CLI_FRAME_BYTES;
+use super::auth;
+use super::protocol::{
+    CliClientCommand, CliClientHello, CliEndpointDescriptor, CliServerResponse, HarnessRequest,
+    MAX_CLI_FRAME_BYTES, MAX_CLI_RESPONSE_BYTES,
+};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-const MAX_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
+
+/// What a client says when the program on the endpoint's port cannot prove it is Sikemux.
+pub const STALE_ENDPOINT: &str =
+    "the program on Sikemux's CLI port is not Sikemux; the endpoint file may be stale";
 
 /// Why a call failed: whether Sikemux could have started on the request.
 pub enum Failure {
     NotSent(String),
     Sent(String),
+}
+
+/// The endpoint the file at `path` describes.
+pub fn read_endpoint(path: &Path) -> Result<CliEndpointDescriptor, String> {
+    let file = std::fs::File::open(path).map_err(|_| "Sikemux is not running".to_owned())?;
+    serde_json::from_reader(file).map_err(|_| "Sikemux CLI endpoint is invalid".to_owned())
+}
+
+/// A connection to Sikemux's CLI endpoint whose server proved it holds the endpoint's
+/// token, before anything is sent that a program squatting on a stale port should not see.
+pub struct Session {
+    reader: BufReader<TcpStream>,
+}
+
+impl Session {
+    /// Connects within `connect` and says hello; each answer is waited for up to `read`.
+    pub fn open(
+        endpoint: &CliEndpointDescriptor,
+        connect: Duration,
+        read: Duration,
+    ) -> Result<Self, String> {
+        let stream = TcpStream::connect_timeout(
+            &SocketAddrV4::new(Ipv4Addr::LOCALHOST, endpoint.port).into(),
+            connect,
+        )
+        .map_err(|_| "Sikemux is not running".to_owned())?;
+        stream
+            .set_write_timeout(Some(connect))
+            .and_then(|()| stream.set_read_timeout(Some(read)))
+            .map_err(|error| format!("cannot configure the Sikemux connection: {error}"))?;
+        let mut session = Session {
+            reader: BufReader::new(stream),
+        };
+        let nonce = auth::new_nonce();
+        session.send(&CliClientHello::Hello {
+            protocol: endpoint.protocol,
+            nonce: nonce.clone(),
+        })?;
+        let expected = auth::server_proof(&endpoint.token, endpoint.port, &nonce);
+        match session.receive() {
+            Ok(CliServerResponse::Hello { proof }) if auth::same_secret(&proof, &expected) => {
+                Ok(session)
+            }
+            Ok(CliServerResponse::Error { message }) => Err(message),
+            _ => Err(STALE_ENDPOINT.into()),
+        }
+    }
+
+    /// Waits up to `read` for each answer from now on, or for as long as it takes.
+    pub fn wait_for_answers(&self, read: Option<Duration>) -> Result<(), String> {
+        self.reader
+            .get_ref()
+            .set_read_timeout(read)
+            .map_err(|error| format!("cannot configure the Sikemux connection: {error}"))
+    }
+
+    pub fn send(&mut self, command: &impl Serialize) -> Result<(), String> {
+        let mut frame = serde_json::to_vec(command).map_err(|error| error.to_string())?;
+        frame.push(b'\n');
+        if frame.len() as u64 > MAX_CLI_FRAME_BYTES {
+            return Err(format!(
+                "the request exceeds {} KiB",
+                MAX_CLI_FRAME_BYTES / 1024
+            ));
+        }
+        let stream = self.reader.get_mut();
+        stream
+            .write_all(&frame)
+            .and_then(|()| stream.flush())
+            .map_err(|error| format!("Sikemux did not accept the request: {error}"))
+    }
+
+    pub fn receive(&mut self) -> Result<CliServerResponse, String> {
+        let mut frame = Vec::new();
+        self.reader
+            .by_ref()
+            .take(MAX_CLI_RESPONSE_BYTES + 1)
+            .read_until(b'\n', &mut frame)
+            .map_err(|error| format!("Sikemux did not answer: {error}"))?;
+        if frame.is_empty() {
+            return Err("Sikemux closed the CLI connection".into());
+        }
+        if frame.len() as u64 > MAX_CLI_RESPONSE_BYTES {
+            return Err("Sikemux sent an oversized CLI response".into());
+        }
+        serde_json::from_slice(&frame).map_err(|_| "Sikemux sent an invalid CLI response".into())
+    }
 }
 
 /// Sends `method` once to the endpoint the file at `endpoint` describes, as
@@ -30,112 +125,25 @@ pub fn attempt(
     params: &Value,
     timeout: Duration,
 ) -> Result<Value, Failure> {
-    let unreachable = |message: &str| Failure::NotSent(message.to_owned());
-    let descriptor: Value = serde_json::from_slice(
-        &std::fs::read(endpoint).map_err(|_| unreachable("Sikemux is not running"))?,
-    )
-    .map_err(|_| unreachable("Sikemux CLI endpoint is invalid"))?;
-    let port = descriptor
-        .get("port")
-        .and_then(Value::as_u64)
-        .and_then(|port| u16::try_from(port).ok())
-        .ok_or_else(|| unreachable("Sikemux CLI endpoint is invalid"))?;
-    let (Some(protocol), Some(token)) = (
-        descriptor.get("protocol"),
-        descriptor.get("token").and_then(Value::as_str),
-    ) else {
-        return Err(unreachable("Sikemux CLI endpoint is invalid"));
-    };
-
-    let mut frame = serde_json::to_vec(&json!({
-        "command": "harness",
-        "protocol": protocol,
-        "token": token,
-        "request": {
-            "id": Uuid::new_v4().to_string(),
-            "project": project,
-            "agentId": agent_id,
-            "method": method,
-            "params": params,
-        },
-    }))
-    .map_err(|error| Failure::Sent(error.to_string()))?;
-    frame.push(b'\n');
-    if frame.len() as u64 > MAX_CLI_FRAME_BYTES {
-        return Err(Failure::Sent(format!(
-            "Harness request exceeds {} KiB",
-            MAX_CLI_FRAME_BYTES / 1024
-        )));
-    }
-
-    let stream = TcpStream::connect_timeout(
-        &SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into(),
-        CONNECT_TIMEOUT,
-    )
-    .map_err(|_| unreachable("Sikemux is not running"))?;
-    stream
-        .set_write_timeout(Some(CONNECT_TIMEOUT))
-        .and_then(|()| stream.set_read_timeout(Some(timeout)))
-        .map_err(|error| {
-            Failure::NotSent(format!("cannot configure the Sikemux connection: {error}"))
-        })?;
-    let mut reader = BufReader::new(&stream);
-    let nonce = super::auth::new_nonce();
-    let mut hello = json!({ "command": "hello", "protocol": protocol, "nonce": nonce }).to_string();
-    hello.push('\n');
-    send(&stream, hello.as_bytes()).map_err(Failure::NotSent)?;
-    let expected = super::auth::server_proof(token, port, &nonce);
-    let answer = receive(&mut reader).map_err(Failure::NotSent)?;
-    let proven = answer.get("status").and_then(Value::as_str) == Some("hello")
-        && answer
-            .get("proof")
-            .and_then(Value::as_str)
-            .is_some_and(|proof| super::auth::same_secret(proof, &expected));
-    if !proven {
-        return Err(Failure::NotSent(
-            match answer.get("message").and_then(Value::as_str) {
-                Some(message) if answer.get("status").and_then(Value::as_str) == Some("error") => {
-                    message.to_owned()
-                }
-                _ => "The program on Sikemux's CLI port is not Sikemux; restart Sikemux".into(),
+    let descriptor = read_endpoint(endpoint).map_err(Failure::NotSent)?;
+    let mut session =
+        Session::open(&descriptor, CONNECT_TIMEOUT, timeout).map_err(Failure::NotSent)?;
+    session
+        .send(&CliClientCommand::Harness {
+            protocol: descriptor.protocol,
+            token: descriptor.token.clone(),
+            request: HarnessRequest {
+                id: Uuid::new_v4().to_string(),
+                project: project.to_owned(),
+                agent_id: agent_id.map(str::to_owned),
+                method: method.to_owned(),
+                params: params.clone(),
             },
-        ));
-    }
-
-    send(&stream, &frame).map_err(Failure::Sent)?;
-    let response = receive(&mut reader).map_err(Failure::Sent)?;
-    match response.get("status").and_then(Value::as_str) {
-        Some("result") => response
-            .get("value")
-            .cloned()
-            .ok_or_else(|| Failure::Sent("Unexpected harness response".into())),
-        Some("error") => Err(Failure::Sent(
-            response
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("Harness request failed")
-                .to_owned(),
-        )),
+        })
+        .map_err(Failure::Sent)?;
+    match session.receive().map_err(Failure::Sent)? {
+        CliServerResponse::Result { value } => Ok(value),
+        CliServerResponse::Error { message } => Err(Failure::Sent(message)),
         _ => Err(Failure::Sent("Unexpected harness response".into())),
     }
-}
-
-fn send(mut stream: &TcpStream, frame: &[u8]) -> Result<(), String> {
-    stream
-        .write_all(frame)
-        .and_then(|()| stream.flush())
-        .map_err(|error| format!("Sikemux did not accept the request: {error}"))
-}
-
-fn receive(reader: &mut BufReader<&TcpStream>) -> Result<Value, String> {
-    let mut answer = Vec::new();
-    reader
-        .by_ref()
-        .take(MAX_RESPONSE_BYTES + 1)
-        .read_until(b'\n', &mut answer)
-        .map_err(|error| format!("Sikemux did not answer: {error}"))?;
-    if answer.len() as u64 > MAX_RESPONSE_BYTES || !answer.ends_with(b"\n") {
-        return Err("Invalid or oversized harness response".into());
-    }
-    serde_json::from_slice(&answer).map_err(|_| "Invalid or oversized harness response".into())
 }
