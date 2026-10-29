@@ -1684,6 +1684,8 @@ pub struct HostInfo {
     /// The Sikemux release running there, such as "0.4.3-nightly.5".
     pub version: String,
     pub channel: BuildChannel,
+    /// The home folder of the person the core runs as, so a client can shorten its paths.
+    pub home: PathBuf,
 }
 
 /// Which kind of Sikemux build a core belongs to. Each keeps its own key and

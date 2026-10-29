@@ -13,6 +13,7 @@ pub fn info() -> HostInfo {
         model: os::model().unwrap_or_else(|| "Host".into()),
         version: VERSION.into(),
         channel: channel(cfg!(debug_assertions), VERSION),
+        home: sikemux_process::paths::home().unwrap_or_default(),
     })
     .clone()
 }

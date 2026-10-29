@@ -2047,6 +2047,8 @@ export interface HostInfo {
     /** The Sikemux release running there, such as "0.4.3-nightly.5". */
     version: string;
     channel: BuildChannel;
+    /** The home folder of the person the core runs as, so a client can shorten its paths. */
+    home: string;
 }
 
 /**
