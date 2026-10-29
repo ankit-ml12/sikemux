@@ -1,4 +1,4 @@
-const { readdirSync, readFileSync } = require('node:fs');
+const { existsSync, readdirSync, readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 /** The packages in a Cargo.lock: name, version, source, checksum and what each depends on. */
@@ -66,7 +66,9 @@ function workspaceSettings(manifest) {
 function crateDirs(crates) {
   const dirs = new Map();
   for (const dir of readdirSync(crates)) {
-    const manifest = readFileSync(join(crates, dir, 'Cargo.toml'), 'utf8');
+    const path = join(crates, dir, 'Cargo.toml');
+    if (!existsSync(path)) continue;
+    const manifest = readFileSync(path, 'utf8');
     const name = /^name = "(.*)"$/m.exec(manifest)?.[1];
     if (name) dirs.set(name, { dir, manifest });
   }
