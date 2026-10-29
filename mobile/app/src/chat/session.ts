@@ -227,6 +227,7 @@ export class ChatSession {
   private pending: ChatChange[] = [];
   private cancelFrame: (() => void) | undefined;
   private earlier: ChatSnapshot['earlier'] = 'idle';
+  private paging: Promise<boolean> | undefined;
   private details = new Map<string, Promise<ToolDetail>>();
 
   /** What the host lists as waiting, or null before it has said. */
@@ -643,31 +644,58 @@ export class ChatSession {
 
   /** Fetches the rows before the first one shown, unless that is already under way. */
   loadEarlier = () => {
+    void this.pageBack();
+  };
+
+  /** Answers whether earlier rows came; a fetch already under way is waited on rather than asked again. */
+  private pageBack(): Promise<boolean> {
+    if (this.paging) return this.paging;
     const connection = this.connection;
     const before = this.chat.olderBefore;
     const feed = this.mark?.feed;
-    if (before === null || feed === undefined || !connection || this.earlier === 'loading') return;
+    if (before === null || feed === undefined || !connection) return Promise.resolve(false);
     this.earlier = 'loading';
     this.emit();
     const run = this.run;
-    connection
+    const paging = connection
       .chatHistory(this.agentId, feed, BigInt(before), PAGE_TURNS)
       .then((json) => {
-        if (run !== this.run) return;
+        if (run !== this.run) return false;
         this.chat = withPage(this.chat, JSON.parse(json) as ChatPage);
         this.earlier = 'idle';
-        this.emit();
+        return true;
       })
       .catch((error: unknown) => {
-        if (run !== this.run) return;
+        if (run !== this.run) return false;
         if (MobileError.Refused.instanceOf(error)) {
           this.chat = { ...this.chat, olderBefore: null };
           this.earlier = 'idle';
         } else {
           this.earlier = 'failed';
         }
+        return false;
+      })
+      .finally(() => {
+        if (this.paging === paging) this.paging = undefined;
         this.emit();
       });
+    this.paging = paging;
+    return paging;
+  }
+
+  /** Pages back until row `id` is held, answering whether it is. */
+  reach = async (id: string): Promise<boolean> => {
+    while (!this.chat.messages.some((message) => message.id === id)) {
+      if (!(await this.pageBack())) return false;
+    }
+    return true;
+  };
+
+  /** Asks the host to find words across the whole chat, held here or not, from where `params` says. */
+  find = async (params: Record<string, unknown>): Promise<unknown> => {
+    const feed = this.mark?.feed;
+    if (feed === undefined) throw new Error('the chat is not open');
+    return JSON.parse(await this.openConnection().call('chatFind', JSON.stringify({ ...params, agentId: this.agentId, feed })));
   };
 
   /** A call's whole change and what it printed, which rows carry only counts of. `done` calls are read once. */
@@ -1026,6 +1054,7 @@ export class ChatSession {
     this.stopRun?.();
     this.stopRun = undefined;
     if (this.earlier === 'loading') this.earlier = 'idle';
+    this.paging = undefined;
     this.keep();
   }
 

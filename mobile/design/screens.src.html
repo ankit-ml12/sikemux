@@ -884,6 +884,15 @@
   .msg-edit .acts { display: flex; justify-content: flex-end; gap: 6px; }
   .msg-edit .acts span { height: 30px; padding: 0 12px; border-radius: 8px; display: inline-flex; align-items: center; font-size: 13px; font-weight: 600; border: 1px solid var(--border-strong); color: var(--ink); }
   .msg-edit .acts span.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  mark.found { background: color-mix(in oklab, var(--acc) 34%, transparent); color: var(--ink); border-radius: 2px; }
+  mark.found.now { background: var(--acc); color: var(--surface-sunken); }
+  .find-wrap { flex: none; padding: 8px 10px; }
+  .find-bar { display: flex; align-items: center; gap: 2px; padding: 5px; border-radius: 16px; border: 1px solid var(--border); background: color-mix(in oklab, var(--surface-raised) 55%, var(--surface-sunken)); }
+  .find-bar .field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 8px; color: var(--ink-faint); }
+  .find-bar .field b { flex: 1; min-width: 0; font-weight: 400; font-size: 14.5px; color: var(--ink); white-space: nowrap; overflow: hidden; }
+  .find-bar .field .n { font-family: var(--mono); font-size: 10.5px; font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+  .find-bar .fb { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: var(--ink-dim); font-size: 12.5px; font-weight: 600; }
+  .find-bar .fb.on { background: color-mix(in oklab, var(--acc) 14%, transparent); color: var(--ink); }
   .sources > span.danger { color: var(--danger); }
   .recent-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 8px; font-size: 14.5px; line-height: 20px; color: var(--text-secondary); }
   .recent-row .ico { margin-top: 2px; color: var(--ink-faint); }
@@ -3334,6 +3343,7 @@ expected 1 write, got 2</div>
         <div class="sheet">
           <div class="grabber"></div>
           <div class="sources">
+            <span>{{IconSearch:19}}Find in chat</span>
             <span>{{IconClock:19}}Recent prompts</span>
             <span>{{IconCopy:19}}Copy link</span>
             <span class="danger">{{IconStop:19}}Stop chat</span>
@@ -3341,7 +3351,37 @@ expected 1 write, got 2</div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>The chat's menu</b><div class="note">The ⋮ in the header: Recent prompts, Copy link, which opens this chat on any phone paired with the host, and Stop chat, which asks once more and then ends the agent on the host, with anything it still has running, closes it there and in every app, and goes back. A phone that can only watch has no Stop.</div></figcaption>
+      <figcaption><b>The chat's menu</b><div class="note">The ⋮ in the header: Find in chat, Recent prompts, Copy link, which opens this chat on any phone paired with the host, and Stop chat, which asks once more and then ends the agent on the host, with anything it still has running, closes it there and in every app, and goes back. A phone that can only watch has no Stop.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="msg-user">Show the download <mark class="found">size</mark> next to the button.</div>
+          <div class="work"><span class="work-sum"><span class="claude">{{IconClaude:17}}</span>Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:10}}</span></div>
+          <div class="prose" style="margin-top:0">Done. The <mark class="found now">size</mark> comes from the latest release's DMG at build time, then from the visitor's browser, so <code class="chip">download<mark class="found">Size</mark></code> stays right between deploys.</div>
+        </div>
+        <div class="find-wrap">
+          <div class="find-bar">
+            <span class="field">{{IconSearch:14}}<b>size<span class="caret"></span></b><span class="n">7/41…</span></span>
+            <span class="fb">Aa</span>
+            <span class="fb">W</span>
+            <span class="fb">{{IconArrowUp:15}}</span>
+            <span class="fb">{{IconArrowDown:15}}</span>
+            <span class="fb">{{IconClose:15}}</span>
+          </div>
+        </div>
+        <div class="kb" style="padding-bottom:26px">
+          <div class="r"><span class="k">q</span><span class="k">w</span><span class="k">e</span><span class="k">r</span><span class="k">t</span><span class="k">y</span><span class="k">u</span><span class="k">i</span><span class="k">o</span><span class="k">p</span></div>
+          <div class="r"><span class="k">a</span><span class="k">s</span><span class="k">d</span><span class="k">f</span><span class="k">g</span><span class="k">h</span><span class="k">j</span><span class="k">k</span><span class="k">l</span></div>
+          <div class="r"><span class="k w">⇧</span><span class="k">z</span><span class="k">x</span><span class="k">c</span><span class="k">v</span><span class="k">b</span><span class="k">n</span><span class="k">m</span><span class="k w">⌫</span></div>
+          <div class="r"><span class="k w">123</span><span class="k sp">space</span><span class="k w">search</span></div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Find in chat</b><div class="note">Find in chat in the menu puts the Mac's find bar where the composer was, riding the keyboard: the words, the count, Aa for matching case, W for whole words, the up and down arrows and ×. The host finds across the whole chat, the rows this phone holds and those it does not, newest first. It counts a bounded step at a time, so the count reads 7/41… while counting goes on and stops at 999+. Every place in the rows drawn is marked in the accent, faintly, and the one the reader is on solidly; that one is brought into view as soon as the words are typed. Up goes to older places and down to newer, round the chat's ends; search on the keyboard is up. A place in rows not loaded yet pages earlier turns in until it is there, a place in folded work opens the fold, and a long text holding one shows whole while the bar is open. × closes it, takes the marks away and brings the composer back.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

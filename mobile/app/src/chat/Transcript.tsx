@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, Fragment, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from 'react-native';
 
 import { durationLabel } from '@shared/chat/durationLabel';
@@ -38,10 +38,11 @@ import { AgentFace } from '@/ui/Buddy';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import type { IconName } from '@/ui/icons.generated';
 import { Working } from '@/ui/status';
-import { fonts, italic, mixed, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
+import { fonts, italic, keyboardFor, mixed, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
 import { useAnimating, useStill } from '@/ui/motion';
 import { Shimmer } from '@/ui/Shimmer';
 import { FoldsContext, useFold } from './folds';
+import { FindingContext, markBlocks, markTyped, type Finding } from './found';
 import { Markdown, plainBlocks } from './Markdown';
 import { useStreamedText } from './reveal';
 import { SentAttachments } from './Attachments';
@@ -88,12 +89,16 @@ const EARLIER_LOST = 'Earlier messages are no longer kept.';
 function LongText({ id, text, md, live, style }: { id: string; text: string; md?: PartTree; live: boolean; style: object }) {
   const styles = useStyles(makeStyles);
   const folds = useContext(FoldsContext);
+  const finding = useContext(FindingContext);
   const [whole, setWhole] = useFold(`whole/${id}`, false);
-  const blocks = useMemo(() => (md?.blocks as MdElement[] | undefined) ?? plainBlocks(text), [md, text]);
+  const tree = useMemo(() => (md?.blocks as MdElement[] | undefined) ?? plainBlocks(text), [md, text]);
+  const found = finding?.byPart.get(id);
+  const current = finding?.current?.part === id ? finding.current.range : null;
+  const blocks = useMemo(() => markBlocks(tree, found, current), [tree, found, current]);
   const plain = useMemo(() => visibleText(blocks), [blocks]);
   const streamed = useStreamedText(id, plain, live);
   if (live) folds.streamed.add(id);
-  const cut = whole || folds.streamed.has(id) ? null : cutLongBlocks(blocks);
+  const cut = whole || found || folds.streamed.has(id) ? null : cutLongBlocks(blocks);
   const shown = streamed.text.length < plain.length ? revealBlocks(blocks, streamed.text.length) : blocks;
   return (
     <>
@@ -420,6 +425,29 @@ function Strip({ meta, mine, onEdit }: { meta: StripMeta; mine: boolean; onEdit?
   );
 }
 
+/** A sent message's words with the places the find bar found in them marked. */
+function TypedFound({ parts, finding }: { parts: Extract<ChatPart, { kind: 'text' }>[]; finding: Finding }) {
+  const styles = useStyles(makeStyles);
+  return parts.map((part, index) => {
+    const current = finding.current?.part === part.id ? finding.current.range : null;
+    const runs = markTyped(part.text, part.md?.blocks as MdElement[] | undefined, finding.byPart.get(part.id), current);
+    return (
+      <Fragment key={part.id}>
+        {index > 0 ? '\n\n' : null}
+        {runs.map((run, at) =>
+          run.found ? (
+            <Text key={at} style={run.current ? styles.foundCurrent : styles.found}>
+              {run.text}
+            </Text>
+          ) : (
+            run.text
+          ),
+        )}
+      </Fragment>
+    );
+  });
+}
+
 /** A long press is the text's own, for selecting it, so it must not also count as a tap. */
 const keepLongPress = () => {};
 
@@ -445,7 +473,8 @@ function MessageEditor({ text, editing }: { text: string; editing: Editing }) {
         multiline
         autoFocus
         style={styles.editorText}
-        selectionColor={colors.ink}
+        selectionColor={colors.accent}
+        keyboardAppearance={keyboardFor(colors)}
         accessibilityLabel="Edit message"
       />
       <View style={styles.editorActs}>
@@ -503,6 +532,7 @@ export function Message({
   const chatAgent = useContext(AgentContext);
   const host = useContext(HostContext);
   const agentNames = useNamesIn(message.role === 'user' ? host : '');
+  const finding = useContext(FindingContext);
   const tap = onTap
     ? () => {
         haptics.select();
@@ -546,7 +576,8 @@ export function Message({
   }
   if (message.role === 'user') {
     const failed = unsent?.state === 'failed';
-    const text = message.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n\n');
+    const typed = message.parts.flatMap((part) => (part.kind === 'text' ? [part] : []));
+    const text = typed.map((part) => part.text).join('\n\n');
     const { spans, drawn } = sentChips(text, message.attachments ?? [], message.context ?? [], agentNames);
     const context = (message.context ?? []).filter((item) => !drawn.has(item.uri));
     return (
@@ -562,14 +593,18 @@ export function Message({
             style={[styles.bubble, unsent?.state === 'sending' && { opacity: 0.7 }, failed && styles.failedBubble]}
             accessibilityHint={tap ? 'Tap for copy and the time it was sent' : undefined}>
             <Text style={styles.userText} selectable>
-              {spans.map((span, index) =>
-                typeof span === 'string' ? (
-                  span
-                ) : (
-                  <Text key={index} style={styles.sentChip}>
-                    {span.chip.label}
-                  </Text>
-                ),
+              {finding ? (
+                <TypedFound parts={typed} finding={finding} />
+              ) : (
+                spans.map((span, index) =>
+                  typeof span === 'string' ? (
+                    span
+                  ) : (
+                    <Text key={index} style={styles.sentChip}>
+                      {span.chip.label}
+                    </Text>
+                  ),
+                )
               )}
             </Text>
           </Pressable>
@@ -790,6 +825,8 @@ const makeStyles = (colors: Palette) => {
     },
     userText: { fontFamily: fonts.ui, fontSize: 14, lineHeight: 22, color: colors.ink },
     sentChip: { color: colors.accent, backgroundColor: colors.active },
+    found: { backgroundColor: translucent(colors.accent, 0.34), color: colors.ink },
+    foundCurrent: { backgroundColor: colors.accent, color: colors.sunken },
     failedBubble: { borderColor: colors.danger },
     unsent: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
     unsentText: { fontFamily: fonts.uiMedium, fontSize: 12, color: colors.inkFaint },

@@ -13,6 +13,7 @@ import { Icon } from '@/ui/Icon';
 import { openLink } from '@/ui/prompt';
 import { fonts, italic, type Palette, translucent, useColors, useStyles } from '@/ui/theme';
 import { DiffRow, SidewaysRows } from './Diff';
+import type { FoundCode, FoundNode } from './found';
 import { FileRef, hostImagePath, LinkedImage, namesFile } from './FileRef';
 import { ImageViewerHost } from './ImageViewer';
 import type { Fading } from './reveal';
@@ -41,9 +42,36 @@ function Link({ url, children, styles }: { url: string; children: ReactNode; sty
 
 type Ink = { styles: Styles; paths: boolean };
 
+const foundOf = (node: MdElement) => ((node as { t: string }).t === 'found' ? (node as unknown as FoundNode) : null);
+
+/** Inline code with the places the find bar found in it marked. */
+function FoundIn({ code, styles }: { code: FoundCode; styles: Styles }) {
+  const runs: ReactNode[] = [];
+  let cursor = 0;
+  code.found.forEach(([from, to, current], index) => {
+    if (from > cursor) runs.push(code.v.slice(cursor, from));
+    runs.push(
+      <Text key={index} style={current ? styles.foundCurrent : styles.found}>
+        {code.v.slice(from, to)}
+      </Text>,
+    );
+    cursor = to;
+  });
+  runs.push(code.v.slice(cursor));
+  return <Text style={styles.chip}>{runs}</Text>;
+}
+
 function inline(node: MdNode, key: number, ink: Ink): ReactNode {
   const { styles, paths } = ink;
   if (typeof node === 'string') return <Fragment key={key}>{node}</Fragment>;
+  const found = foundOf(node);
+  if (found) {
+    return (
+      <Text key={key} style={found.current ? styles.foundCurrent : styles.found}>
+        {found.c[0]}
+      </Text>
+    );
+  }
   switch (node.t) {
     case 'path': {
       const label = node.code ? visibleText(node.c) : inlines(node.c, { styles, paths: false });
@@ -57,6 +85,7 @@ function inline(node: MdNode, key: number, ink: Ink): ReactNode {
       );
     }
     case 'code':
+      if ('found' in node) return <FoundIn key={key} code={node as FoundCode} styles={styles} />;
       return (
         <Text key={key} style={styles.chip}>
           {node.v}
@@ -457,6 +486,8 @@ const makeStyles = (colors: Palette) =>
     details: { gap: 8 },
     summary: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     chip: { fontFamily: fonts.mono, fontSize: 12.5, color: colors.accent, backgroundColor: colors.accentSoft },
+    found: { backgroundColor: translucent(colors.accent, 0.34), color: colors.ink },
+    foundCurrent: { backgroundColor: colors.accent, color: colors.sunken },
     bold: { fontFamily: fonts.uiSemibold, color: colors.ink },
     link: { color: colors.accent },
     item: { flexDirection: 'row', gap: 8, paddingLeft: 2 },

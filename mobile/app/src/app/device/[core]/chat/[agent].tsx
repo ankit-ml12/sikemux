@@ -14,6 +14,9 @@ import { activeToolLabel } from '@shared/chat/toolLabels';
 import type { ChatMessage } from '@shared/chat/types';
 import { recordOf } from '@shared/lib/guards';
 import { ChatMenu } from '@/chat/ChatMenu';
+import { ChatFind, type Hit } from '@/chat/chatFind';
+import { FindBar } from '@/chat/FindBar';
+import { FindingContext } from '@/chat/found';
 import { ChatTitle } from '@/chat/ChatTitle';
 import { askTitle, Composer, RecentSheet } from '@/chat/Composer';
 import { FoldsContext, rowFold, shownRows } from '@/chat/folds';
@@ -53,6 +56,8 @@ import { goBack } from '@/ui/navigate';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
 import { Working } from '@/ui/status';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
+
+const noSubscribe = () => () => {};
 
 function capitalised(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1) + (text.endsWith('.') ? '' : '.');
@@ -190,6 +195,10 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     setOpen((shown) => (shown === owner ? undefined : owner));
   };
   const [editing, setEditing] = useState<string>();
+  const [find, setFind] = useState<ChatFind | null>(null);
+  const finding = useSyncExternalStore(find?.subscribe ?? noSubscribe, () => find?.snapshot().finding ?? null);
+  // A place found is brought into view once the rows it unfolded or paged in are drawn.
+  const [shown, setShown] = useState<{ row: string }>();
   // The list redraws its rows when a summary opens or closes, and only then, so it watches those folds alone.
   const openWork = useSyncExternalStore(session.folds.subscribe, () => session.folds.openUnder('work/'));
   const workOpen = (id: string) => session.folds.isOpen(`work/${id}`, false);
@@ -249,8 +258,37 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
       idle: chat.earlier === 'idle',
       load: session.loadEarlier,
     },
-    editing !== undefined,
+    editing !== undefined || find !== null,
   );
+  const showHit = (hit: Hit) => {
+    const row = session.snapshot().view.messages.find((message) => message.id === hit.row);
+    if (!row) return;
+    const { hidden, from } = rowFold(row, workOpen);
+    const part = row.parts.findIndex((held) => held.id === hit.part);
+    if (row.fold && (hidden || part < from)) session.folds.set(`work/${row.fold.id}`, true);
+    setShown({ row: hit.row });
+  };
+  const showing = useRef(showHit);
+  useEffect(() => {
+    showing.current = showHit;
+  });
+  const shownIndex = shown ? rows.findIndex((row) => row.id === shown.row) : -1;
+  // Only a new place moves the transcript, not the rows growing under it.
+  const revealed = useRef(shown);
+  useEffect(() => {
+    if (shownIndex < 0 || revealed.current === shown) return;
+    revealed.current = shown;
+    scroll.reveal(shownIndex, 0.3);
+  }, [shown, shownIndex, scroll]);
+  const openFind = () => {
+    setEditing(undefined);
+    setFind(new ChatFind(session, (hit) => showing.current(hit)));
+  };
+  const closeFind = () => {
+    find?.close();
+    setFind(null);
+    setShown(undefined);
+  };
   const startEdit = (message: ChatMessage) => {
     setOpen(undefined);
     setEditing(message.id);
@@ -318,7 +356,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     </View>
   ) : null;
 
-  return (
+  const screen = (
     <Screen>
       <Nav
         title={<ChatTitle agentId={agentId} group={info?.group} provider={provider} name={info?.name} title={title} />}
@@ -472,48 +510,52 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
             <HostContext value={core}>
               {live.status !== 'open' ? <Reconnecting live={live} hostName={hostName} onTry={() => reconnect(core)} /> : null}
               {chat.notice ? <Notice text={chat.notice} onDismiss={session.dismissNotice} /> : null}
-              <Composer
-                session={session}
-                provider={provider}
-                running={state.running && !chat.stoppingTurn}
-                steers={steers}
-                model={state.model}
-                effort={state.effort}
-                usage={state.usage}
-                commands={state.commands}
-                requests={chat.permissions}
-                answering={chat.answering}
-                placeholder={
-                  composing
-                    ? `Answer ${composing.name}`
-                    : composerPlaceholder(state, {
-                        resuming: false,
-                        disconnected: live.status !== 'open',
-                        commands: state.commands.length > 0,
-                        steers,
-                      })
-                }
-                permissionMode={chat.permissionMode ?? ''}
-                modeLocked={state.running || chat.permissions.length > 0 || state.connection !== 'ready' || live.status !== 'open'}
-                watchOnly={watchOnly}
-                offline={live.status !== 'open'}
-                hostName={hostName}
-                onSent={scroll.toEnd}
-                attachments={chat.attachments}
-                chips={chat.chips}
-                strip={strip}
-                onRecent={recalls ? openRecent : undefined}
-                inputRef={input}
-                question={
-                  composing && {
-                    name: composing.name,
-                    cli: composing.cli,
-                    text: composing.text,
-                    onRemove: questions.stopComposing,
-                    onAnswer: (text) => questions.hold(composing, text, () => session.setDraft(text)),
+              {find ? (
+                <FindBar find={find} onClose={closeFind} />
+              ) : (
+                <Composer
+                  session={session}
+                  provider={provider}
+                  running={state.running && !chat.stoppingTurn}
+                  steers={steers}
+                  model={state.model}
+                  effort={state.effort}
+                  usage={state.usage}
+                  commands={state.commands}
+                  requests={chat.permissions}
+                  answering={chat.answering}
+                  placeholder={
+                    composing
+                      ? `Answer ${composing.name}`
+                      : composerPlaceholder(state, {
+                          resuming: false,
+                          disconnected: live.status !== 'open',
+                          commands: state.commands.length > 0,
+                          steers,
+                        })
                   }
-                }
-              />
+                  permissionMode={chat.permissionMode ?? ''}
+                  modeLocked={state.running || chat.permissions.length > 0 || state.connection !== 'ready' || live.status !== 'open'}
+                  watchOnly={watchOnly}
+                  offline={live.status !== 'open'}
+                  hostName={hostName}
+                  onSent={scroll.toEnd}
+                  attachments={chat.attachments}
+                  chips={chat.chips}
+                  strip={strip}
+                  onRecent={recalls ? openRecent : undefined}
+                  inputRef={input}
+                  question={
+                    composing && {
+                      name: composing.name,
+                      cli: composing.cli,
+                      text: composing.text,
+                      onRemove: questions.stopComposing,
+                      onAnswer: (text) => questions.hold(composing, text, () => session.setDraft(text)),
+                    }
+                  }
+                />
+              )}
             </HostContext>
           ) : state.messages.length ? (
             <View style={[styles.bottomStatus, { paddingBottom: bottom }]}>{status}</View>
@@ -551,6 +593,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
         agentId={agentId}
         agentName={name}
         hostName={hostName}
+        onFind={chat.attached === 'live' ? openFind : undefined}
         onRecent={recalls ? openRecent : undefined}
         onStop={
           watchOnly || chat.attached !== 'live'
@@ -564,6 +607,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
       />
     </Screen>
   );
+  return <FindingContext value={finding}>{screen}</FindingContext>;
 }
 
 const makeStyles = (colors: Palette) => {

@@ -25,7 +25,7 @@ function Item({ icon, label, danger, onPress }: { icon: IconName; label: string;
   );
 }
 
-/** The chat's ⋯ menu: what was sent before, a link that opens this chat on a phone, and stopping the agent. */
+/** The chat's ⋯ menu: finding words in it, what was sent before, a link that opens this chat on a phone, and stopping the agent. */
 export function ChatMenu({
   visible,
   onClose,
@@ -33,6 +33,7 @@ export function ChatMenu({
   agentId,
   agentName,
   hostName,
+  onFind,
   onRecent,
   onStop,
 }: {
@@ -42,6 +43,8 @@ export function ChatMenu({
   agentId: string;
   agentName: string;
   hostName: string;
+  /** Absent while the chat is not open. */
+  onFind?: () => void;
   /** Absent while nothing was sent. */
   onRecent?: () => void;
   /** Absent for a phone that can only watch. */
@@ -78,6 +81,16 @@ export function ChatMenu({
         </View>
       ) : (
         <View style={styles.items}>
+          {onFind ? (
+            <Item
+              icon="IconSearch"
+              label="Find in chat"
+              onPress={() => {
+                close();
+                onFind();
+              }}
+            />
+          ) : null}
           {onRecent ? (
             <Item
               icon="IconClock"
