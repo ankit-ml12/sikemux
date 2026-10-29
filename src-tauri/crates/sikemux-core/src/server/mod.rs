@@ -83,6 +83,7 @@ mod spare;
 mod spawn;
 mod ssh;
 mod stash;
+pub use stash::shown_item;
 mod streams;
 mod tasks;
 pub mod themes;

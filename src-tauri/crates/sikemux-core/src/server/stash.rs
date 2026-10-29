@@ -3,7 +3,7 @@
 //! host's chats lands in that chat's draft as soon as the host hears of it; any other waits
 //! until the person attaches it from a composer.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -44,8 +44,11 @@ pub(crate) struct ListParams {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Shown {
     signed_in: bool,
-    #[serde(flatten)]
-    list: StashList,
+    /// Each item as the server keeps it, with what [`shown_item`] adds.
+    items: Vec<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cursor: Option<String>,
+    seen_at: Option<String>,
 }
 
 /// One page of the account's stash, newest first; by default only what has not been used.
@@ -53,19 +56,162 @@ pub(crate) async fn list(core: &Core, params: ListParams) -> CoreResult<Shown> {
     if core.remote.signed_in_api().is_none() {
         return Ok(Shown {
             signed_in: false,
-            list: StashList {
-                items: Vec::new(),
-                cursor: None,
-                seen_at: None,
-            },
+            items: Vec::new(),
+            cursor: None,
+            seen_at: None,
         });
     }
     let taken = params.taken.unwrap_or(StashTaken::False);
     let list = page(core, taken, params.cursor.as_deref()).await?;
+    let references: Vec<&str> = (list.items.iter())
+        .flat_map(|item| item.links.iter().flatten())
+        .map(|link| link.url.as_str())
+        .filter(|url| sikemux_markdown::reference(url).is_some())
+        .collect();
+    let states = super::codehost::known_states(core, &references);
+    let mut items = Vec::with_capacity(list.items.len());
+    for item in &list.items {
+        let mut item = serde_json::to_value(item)?;
+        shown_item(&mut item, &states);
+        items.push(item);
+    }
     Ok(Shown {
         signed_in: true,
-        list,
+        items,
+        cursor: list.cursor,
+        seen_at: list.seen_at,
     })
+}
+
+/// Adds to an item, as the server keeps it, what apps draw it by: a text's or prompt's `words`,
+/// its text with the links to pages taken out, and the `state` of each pull request or issue it
+/// links to that `states` holds, by its address.
+pub fn shown_item(item: &mut Value, states: &HashMap<String, String>) {
+    if !matches!(item["kind"].as_str(), Some("text" | "prompt")) {
+        return;
+    }
+    let mut cut = Vec::new();
+    for link in item["links"].as_array_mut().into_iter().flatten() {
+        let Some(url) = link["url"].as_str().map(str::to_owned) else {
+            continue;
+        };
+        match sikemux_markdown::reference(&url) {
+            Some(_) => {
+                if let Some(state) = states.get(&url) {
+                    link["state"] = json!(state);
+                }
+            }
+            None => cut.push(url),
+        }
+    }
+    let words = words(item["text"].as_str().unwrap_or_default(), &mut cut);
+    item["words"] = json!(words);
+}
+
+/// Where a link was taken out of a text, while what it leaves around it is tidied.
+const CUT: char = '\u{1}';
+
+/// `text` with the links in `cut` taken out, and what they leave dangling with them: an `and`,
+/// `or` or comma before a link that ended the sentence, brackets around only links, doubled
+/// spaces and a space before punctuation.
+fn words(text: &str, cut: &mut [String]) -> String {
+    cut.sort_by_key(|url| std::cmp::Reverse(url.len()));
+    let mut marked = text.to_owned();
+    for url in cut.iter() {
+        marked = marked.replace(url.as_str(), &CUT.to_string());
+    }
+    let lines: Vec<String> = marked.lines().map(tidied).collect();
+    let mut words = String::new();
+    let mut blank = false;
+    for line in lines {
+        if line.is_empty() {
+            blank = !words.is_empty();
+            continue;
+        }
+        if !words.is_empty() {
+            words.push_str(if blank { "\n\n" } else { "\n" });
+        }
+        words.push_str(&line);
+        blank = false;
+    }
+    words
+}
+
+enum Token<'a> {
+    Word(&'a str),
+    /// A link taken out, with the punctuation written before and after it.
+    Cut {
+        open: &'a str,
+        close: &'a str,
+    },
+}
+
+fn tidied(line: &str) -> String {
+    let tokens: Vec<Token> = line
+        .split_whitespace()
+        .flat_map(|word| {
+            let Some(start) = word.find(CUT) else {
+                return vec![Token::Word(word)];
+            };
+            let end = word.rfind(CUT).map_or(start, |end| end + CUT.len_utf8());
+            let (before, close) = (&word[..start], &word[end..]);
+            match before.chars().any(char::is_alphanumeric) {
+                true => vec![Token::Word(before), Token::Cut { open: "", close }],
+                false => vec![Token::Cut {
+                    open: before,
+                    close,
+                }],
+            }
+        })
+        .collect();
+    let joins = |word: &str| matches!(word, "and" | "or" | "&" | ",");
+    let mut kept: Vec<String> = Vec::new();
+    let mut at = 0;
+    while at < tokens.len() {
+        let Token::Cut { open, .. } = tokens[at] else {
+            if let Token::Word(word) = tokens[at] {
+                kept.push(word.to_owned());
+            }
+            at += 1;
+            continue;
+        };
+        let mut last = at;
+        let mut next = at + 1;
+        while next < tokens.len() {
+            match tokens[next] {
+                Token::Cut { .. } => last = next,
+                Token::Word(word)
+                    if joins(word) && matches!(tokens.get(next + 1), Some(Token::Cut { .. })) => {}
+                Token::Word(_) => break,
+            }
+            next += 1;
+        }
+        let close = match tokens[last] {
+            Token::Cut { close, .. } => close,
+            Token::Word(_) => "",
+        };
+        let ends = next == tokens.len() || close.contains(['.', '!', '?', ';', ':']);
+        let closing = |char: char| !open.is_empty() && matches!(char, ')' | ']' | '}');
+        let mut after: String = close.chars().filter(|char| !closing(*char)).collect();
+        if ends {
+            after.retain(|char| char != ',');
+            if kept.last().is_some_and(|word| joins(word)) {
+                kept.pop();
+            }
+            if let Some(word) = kept.last_mut() {
+                if word.ends_with(',') {
+                    word.pop();
+                }
+            }
+        }
+        match kept.last_mut() {
+            Some(word) => word.push_str(&after),
+            None if !after.chars().all(|char| char.is_ascii_punctuation()) => kept.push(after),
+            None => {}
+        }
+        at = last + 1;
+    }
+    kept.join(" ")
 }
 
 async fn page(core: &Core, taken: StashTaken, cursor: Option<&str>) -> CoreResult<StashList> {

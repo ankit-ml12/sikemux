@@ -535,6 +535,49 @@ async fn repo_of(core: &Arc<Core>, place: &Place) -> Result<Repo, Failure> {
     Ok(repo)
 }
 
+/// What the code host lists read lately say of each pull request and issue at `urls`: `open`,
+/// `draft`, `closed`, `merged`, or `notPlanned` for an issue closed as not planned. Nothing is
+/// read for it, so one no list held lately is left out.
+pub(crate) fn known_states(core: &Core, urls: &[&str]) -> HashMap<String, String> {
+    let mut known = HashMap::new();
+    if urls.is_empty() {
+        return known;
+    }
+    let state = core.code_host_lists.state.locked();
+    for kept in state.kept.values() {
+        let answer = &kept.answer;
+        let pulls = answer["pulls"].as_array().into_iter().flatten();
+        for listed in pulls {
+            if let (Some(url), Some(state)) =
+                (listed["pull"]["url"].as_str(), listed["state"].as_str())
+            {
+                if urls.contains(&url) {
+                    known.insert(url.to_owned(), state.to_owned());
+                }
+            }
+        }
+        for issue in answer["issues"].as_array().into_iter().flatten() {
+            let state = match (issue["state"].as_str(), issue["stateReason"].as_str()) {
+                (Some("open"), _) => "open",
+                (Some(_), Some("not_planned")) => "notPlanned",
+                (Some(_), _) => "closed",
+                _ => continue,
+            };
+            if let Some(url) = issue["url"].as_str().filter(|url| urls.contains(url)) {
+                known.insert(url.to_owned(), state.to_owned());
+            }
+        }
+        for tracked in answer.as_array().into_iter().flatten() {
+            if let Some(url) = tracked["url"].as_str().filter(|url| urls.contains(url)) {
+                known
+                    .entry(url.to_owned())
+                    .or_insert_with(|| "open".to_owned());
+            }
+        }
+    }
+    known
+}
+
 fn keep(core: &Arc<Core>, key: Key, read: Read, repo: Repo) {
     {
         let mut state = core.code_host_lists.state.locked();
