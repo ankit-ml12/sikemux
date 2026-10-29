@@ -15,8 +15,8 @@ use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 
 use crate::protocol::{
-    encode_control, fits, ChatAttachment, ChatContext, ChatMark, ChatStart, Event, PermissionMode,
-    RequestId, Response, ServerMessage,
+    ask, encode_control, fits, ChatAttachment, ChatContext, ChatMark, ChatStart, Event,
+    PermissionMode, RequestId, ServerMessage,
 };
 use sikemux_process::clock::epoch_ms;
 use sikemux_wire::chat::{
@@ -2245,12 +2245,7 @@ impl Feed {
         self.viewed();
         let mut inner = self.inner.locked();
         if inner.closed || (inner.start.is_none() && !inner.waits_for_person) {
-            client.respond(
-                request_id,
-                Ok(Response::ChatAttached {
-                    attachment: ChatAttachment::Missing,
-                }),
-            );
+            client.answer::<ask::AcpAttach>(request_id, Ok(ChatAttachment::Missing));
             return;
         }
         let fold = self.fold(&mut inner);
@@ -2276,7 +2271,7 @@ impl Feed {
                 }
             }
         };
-        client.respond(request_id, Ok(Response::ChatAttached { attachment }));
+        client.answer::<ask::AcpAttach>(request_id, Ok(attachment));
         inner.subscribers.insert(
             client.id,
             Subscriber {
@@ -3535,7 +3530,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
             if let Ok(ServerMessage::Response {
-                response: Response::ChatAttached { attachment },
+                response: crate::protocol::Response::ChatAttached { attachment },
                 ..
             }) = serde_json::from_slice(&frame.payload)
             {

@@ -7,7 +7,7 @@
 //! as the app is: it lets devices in, links hosts, adds projects and agent
 //! accounts, shares chats and commits, so a host with no window is run from it.
 
-use crate::protocol::{DeviceAccess, Request};
+use crate::protocol::{ask, DeviceAccess, Request};
 
 use super::{CoreError, CoreResult};
 
@@ -83,84 +83,82 @@ enum Person {
 /// once stays its account's until the app, root or the account moves it.
 pub(crate) fn rule(request: &Request) -> Rule {
     let (needs, person) = match request {
-        Request::Call { method, .. } => (
+        Request::Call(ask::Call { method, .. }) => (
             super::calls::needs(method),
             match super::calls::for_person(method) {
                 true => Person::AppOnly,
                 false => Person::Anyone,
             },
         ),
-        Request::SetOwner { owner: None } => {
+        Request::SetOwner(ask::SetOwner { owner: None }) => {
             (Needs::Local, Person::AppOnlyWhen(|setup| setup.app_signed))
         }
-        Request::SetOwner { owner: Some(_) } | Request::SignRegistration { .. } => (
+        Request::SetOwner(ask::SetOwner { owner: Some(_) }) | Request::SignRegistration(_) => (
             Needs::Local,
             Person::AppOnlyWhen(|setup| setup.app_signed || setup.signed_in),
         ),
-        Request::AnswerPairing { .. } => (
+        Request::AnswerPairing(_) => (
             Needs::Local,
             Person::AppOnlyWhen(|setup| setup.app_signed || setup.paired),
         ),
         Request::List
-        | Request::Attach { .. }
-        | Request::Detach { .. }
-        | Request::TerminalLines { .. }
-        | Request::TerminalText { .. }
-        | Request::TerminalFind { .. }
-        | Request::TerminalWaitFor { .. }
-        | Request::TaskOutput { .. }
+        | Request::Attach(_)
+        | Request::Detach(_)
+        | Request::TerminalLines(_)
+        | Request::TerminalText(_)
+        | Request::TerminalFind(_)
+        | Request::TerminalWaitFor(_)
+        | Request::TaskOutput(_)
         | Request::AcpList
-        | Request::AcpAttach { .. }
-        | Request::AcpHistory { .. }
-        | Request::AcpDetach { .. }
+        | Request::AcpAttach(_)
+        | Request::AcpHistory(_)
+        | Request::AcpDetach(_)
         | Request::BackdropImage
         | Request::Unpair
-        | Request::SetNotifications { .. }
+        | Request::SetNotifications(_)
         | Request::ClearNotifications
-        | Request::SetForeground { .. }
+        | Request::SetForeground(_)
         | Request::Workspace
         | Request::Attentions
         | Request::Host => (Needs::Watch, Person::Anyone),
-        Request::AcpWake { .. } | Request::AcpPermissionReply { .. } => {
-            (Needs::Watch, Person::AppOnly)
-        }
-        Request::ShellAtPrompt { .. } => (Needs::Full, Person::Anyone),
-        Request::Spawn { .. }
-        | Request::Resize { .. }
-        | Request::Kill { .. }
-        | Request::ResetModes { .. }
-        | Request::TerminalInput { .. }
-        | Request::TerminalClear { .. }
-        | Request::AcpStart { .. }
-        | Request::AcpPrompt { .. }
-        | Request::AcpEdit { .. }
-        | Request::AcpSteer { .. }
-        | Request::AttachFile { .. }
-        | Request::AcpCancel { .. }
-        | Request::AcpStopTask { .. }
-        | Request::AcpStop { .. }
-        | Request::AcpSetPermissionMode { .. }
-        | Request::AcpSetConfig { .. }
-        | Request::StartChat { .. }
-        | Request::ResumeChat { .. }
-        | Request::AcpSwitchAccount { .. } => (Needs::Full, Person::AppOnly),
+        Request::AcpWake(_) | Request::AcpPermissionReply(_) => (Needs::Watch, Person::AppOnly),
+        Request::ShellAtPrompt(_) => (Needs::Full, Person::Anyone),
+        Request::Spawn(_)
+        | Request::Resize(_)
+        | Request::Kill(_)
+        | Request::ResetModes(_)
+        | Request::TerminalInput(_)
+        | Request::TerminalClear(_)
+        | Request::AcpStart(_)
+        | Request::AcpPrompt(_)
+        | Request::AcpEdit(_)
+        | Request::AcpSteer(_)
+        | Request::AttachFile(_)
+        | Request::AcpCancel(_)
+        | Request::AcpStopTask(_)
+        | Request::AcpStop(_)
+        | Request::AcpSetPermissionMode(_)
+        | Request::AcpSetConfig(_)
+        | Request::StartChat(_)
+        | Request::ResumeChat(_)
+        | Request::AcpSwitchAccount(_) => (Needs::Full, Person::AppOnly),
         Request::ListManifests
-        | Request::ExplainAgentDetection { .. }
+        | Request::ExplainAgentDetection(_)
         | Request::StopAll
-        | Request::Shutdown { .. }
+        | Request::Shutdown(_)
         | Request::RemoteStatus
         | Request::WatchView => (Needs::Local, Person::Anyone),
-        Request::Configure { .. }
+        Request::Configure(_)
         | Request::ReloadManifests
         | Request::RegisterWindow
         | Request::PluginsChanged
-        | Request::SetRemoteAccess { .. }
-        | Request::SetDeviceAccess { .. }
-        | Request::RevokeDevice { .. }
-        | Request::AllowDevices { .. }
-        | Request::PublishOnScreen { .. }
-        | Request::FocusAgent { .. }
-        | Request::PublishBackdrop { .. } => (Needs::Local, Person::AppOnly),
+        | Request::SetRemoteAccess(_)
+        | Request::SetDeviceAccess(_)
+        | Request::RevokeDevice(_)
+        | Request::AllowDevices(_)
+        | Request::PublishOnScreen(_)
+        | Request::FocusAgent(_)
+        | Request::PublishBackdrop(_) => (Needs::Local, Person::AppOnly),
     };
     Rule { needs, person }
 }
@@ -238,9 +236,9 @@ mod tests {
     #[test]
     fn the_app_may_send_anything() {
         for request in [
-            Request::Shutdown { stop_all: true },
+            Request::Shutdown(ask::Shutdown { stop_all: true }),
             Request::RegisterWindow,
-            Request::Kill { id: SESSION },
+            Request::Kill(ask::Kill { id: SESSION }),
         ] {
             assert!(permit(&Peer::App, None, rule(&request).needs).is_ok());
         }
@@ -249,36 +247,36 @@ mod tests {
     #[test]
     fn no_device_reaches_the_core_itself() {
         for request in [
-            Request::Shutdown { stop_all: true },
+            Request::Shutdown(ask::Shutdown { stop_all: true }),
             Request::StopAll,
             Request::RegisterWindow,
-            Request::Configure { manifest_dir: None },
-            Request::SetRemoteAccess { enabled: false },
-            Request::RevokeDevice { id: "other".into() },
-            Request::AnswerPairing {
+            Request::Configure(ask::Configure { manifest_dir: None }),
+            Request::SetRemoteAccess(ask::SetRemoteAccess { enabled: false }),
+            Request::RevokeDevice(ask::RevokeDevice { id: "other".into() }),
+            Request::AnswerPairing(ask::AnswerPairing {
                 id: "request".into(),
                 allow: true,
                 access: DeviceAccess::Full,
-            },
-            Request::AllowDevices {
+            }),
+            Request::AllowDevices(ask::AllowDevices {
                 devices: vec![AllowedDevice {
                     id: "f".repeat(64),
                     name: "Attacker".into(),
                     platform: "ios".into(),
                     access: DeviceAccess::Full,
                 }],
-            },
-            Request::SignRegistration {
+            }),
+            Request::SignRegistration(ask::SignRegistration {
                 nonce: "a".repeat(64),
                 user_id: "user_attacker".into(),
-            },
-            Request::SetOwner {
+            }),
+            Request::SetOwner(ask::SetOwner {
                 owner: Some("user_attacker".into()),
-            },
-            Request::PublishOnScreen {
+            }),
+            Request::PublishOnScreen(ask::PublishOnScreen {
                 agent_ids: Vec::new(),
                 focused: true,
-            },
+            }),
         ] {
             assert_eq!(refusal(standing(DeviceAccess::Full), &request), LOCAL_ONLY);
         }
@@ -286,41 +284,41 @@ mod tests {
 
     #[test]
     fn a_watching_device_reads_and_answers_permissions_but_does_not_drive() {
-        let permission = Request::AcpPermissionReply {
+        let permission = Request::AcpPermissionReply(ask::AcpPermissionReply {
             agent_id: "a".into(),
             request_id: "r".into(),
             option_id: None,
-        };
+        });
         let watch = standing(DeviceAccess::Watch);
         assert!(permit(&device(), watch, rule(&permission).needs).is_ok());
         assert!(permit(
             &device(),
             watch,
-            rule(&Request::Attach { id: SESSION }).needs
+            rule(&Request::Attach(ask::Attach { id: SESSION })).needs
         )
         .is_ok());
         for request in [
-            Request::Kill { id: SESSION },
-            Request::Resize {
+            Request::Kill(ask::Kill { id: SESSION }),
+            Request::Resize(ask::Resize {
                 id: SESSION,
                 cols: 80,
                 rows: 24,
-            },
-            Request::AcpCancel {
+            }),
+            Request::AcpCancel(ask::AcpCancel {
                 agent_id: "a".into(),
-            },
-            Request::AttachFile {
+            }),
+            Request::AttachFile(ask::AttachFile {
                 agent_id: "a".into(),
                 name: "shot.jpg".into(),
                 mime: "image/jpeg".into(),
                 data: String::new(),
-            },
-            Request::ResumeChat {
+            }),
+            Request::ResumeChat(ask::ResumeChat {
                 recent: "claude:s1".into(),
                 permission_mode: None,
                 model: None,
                 effort: None,
-            },
+            }),
         ] {
             assert_eq!(refusal(watch, &request), WATCH_ONLY);
         }
@@ -329,7 +327,12 @@ mod tests {
     #[test]
     fn a_device_with_full_control_drives_sessions() {
         let full = standing(DeviceAccess::Full);
-        assert!(permit(&device(), full, rule(&Request::Kill { id: SESSION }).needs).is_ok());
+        assert!(permit(
+            &device(),
+            full,
+            rule(&Request::Kill(ask::Kill { id: SESSION })).needs
+        )
+        .is_ok());
     }
 
     #[test]

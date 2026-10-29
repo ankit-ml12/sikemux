@@ -17,7 +17,7 @@ use sikemux_client::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_client::join::{JoinHello, JoinReply};
 use sikemux_wire::accounts::protocol::{JoinTicket, Relay};
 use sikemux_wire::protocol::{
-    CallId, Event, NotifyPrefs, PermissionMode, Request, Response, StreamId, WindowCall,
+    ask, ask::Ask, CallId, Event, NotifyPrefs, PermissionMode, Request, StreamId, WindowCall,
     MAX_ATTACHMENT_BYTES, OLDEST_PROTOCOL_VERSION, WAKE_WAIT,
 };
 use tokio::sync::mpsc;
@@ -503,10 +503,6 @@ impl Connection {
             })
     }
 
-    async fn reply(&self, request: Request) -> Result<Reply, MobileError> {
-        self.reply_within(request, REQUEST_TIMEOUT).await
-    }
-
     async fn reply_within(&self, request: Request, wait: Duration) -> Result<Reply, MobileError> {
         let client = self.client()?;
         on_runtime(async move {
@@ -519,11 +515,20 @@ impl Connection {
         .await?
     }
 
-    async fn ask(&self, request: Request) -> Result<Response, MobileError> {
-        match self.reply(request).await? {
-            Reply::Response(response) => Ok(response),
-            Reply::Attached(_) | Reply::Lines(_) => Err(unexpected()),
+    async fn ask<A: Ask>(&self, request: A) -> Result<A::Answer, MobileError> {
+        self.ask_within(request, REQUEST_TIMEOUT).await
+    }
+
+    async fn ask_within<A: Ask>(
+        &self,
+        request: A,
+        wait: Duration,
+    ) -> Result<A::Answer, MobileError> {
+        match self.reply_within(request.into(), wait).await? {
+            Reply::Response(response) => A::answer(response),
+            Reply::Attached(_) | Reply::Lines(_) => None,
         }
+        .ok_or_else(unexpected)
     }
 
     async fn called(
@@ -533,20 +538,8 @@ impl Connection {
     ) -> Result<serde_json::Value, MobileError> {
         let params = serde_json::from_str(params_json)
             .map_err(|error| invalid(format!("the call's params are not JSON: {error}")))?;
-        match self
-            .reply_within(Request::Call { method, params }, CALL_TIMEOUT)
-            .await?
-        {
-            Reply::Response(Response::Called { result }) => Ok(result),
-            _ => Err(unexpected()),
-        }
-    }
-
-    async fn done(&self, request: Request) -> Result<(), MobileError> {
-        match self.ask(request).await? {
-            Response::Done => Ok(()),
-            _ => Err(unexpected()),
-        }
+        self.ask_within(ask::Call { method, params }, CALL_TIMEOUT)
+            .await
     }
 }
 
@@ -554,10 +547,7 @@ impl Connection {
 impl Connection {
     /// The computer the core runs on, as the core's `HostInfo` JSON.
     pub async fn host(&self) -> Result<String, MobileError> {
-        match self.ask(Request::Host).await? {
-            Response::Host { host } => Ok(records::json(&host)),
-            _ => Err(unexpected()),
-        }
+        Ok(records::json(&self.ask(ask::Host).await?))
     }
 
     /// Writes the host's backdrop picture into `dir` and answers with its path,
@@ -567,10 +557,7 @@ impl Connection {
         dir: String,
         id: String,
     ) -> Result<Option<String>, MobileError> {
-        let Response::BackdropImage { data_url } = self.ask(Request::BackdropImage).await? else {
-            return Err(unexpected());
-        };
-        let Some(data_url) = data_url else {
+        let Some(data_url) = self.ask(ask::BackdropImage).await? else {
             return Ok(None);
         };
         let (extension, bytes) = decode_data_url(&data_url)?;
@@ -590,13 +577,8 @@ impl Connection {
     /// Starts a chat the host's app put to sleep. Answers once it is ready to
     /// take up.
     pub async fn wake_chat(&self, agent_id: String) -> Result<(), MobileError> {
-        match self
-            .reply_within(Request::AcpWake { agent_id }, WAKE_TIMEOUT)
-            .await?
-        {
-            Reply::Response(Response::Done) => Ok(()),
-            _ => Err(unexpected()),
-        }
+        self.ask_within(ask::AcpWake { agent_id }, WAKE_TIMEOUT)
+            .await
     }
 
     /// Takes up a chat. Its events follow on the listener; drop those
@@ -606,14 +588,8 @@ impl Connection {
         agent_id: String,
         since: Option<ChatMark>,
     ) -> Result<ChatAttachment, MobileError> {
-        let request = Request::AcpAttach {
-            agent_id,
-            since: since.map(Into::into),
-        };
-        match self.ask(request).await? {
-            Response::ChatAttached { attachment } => Ok(attachment.into()),
-            _ => Err(unexpected()),
-        }
+        let since = since.map(Into::into);
+        Ok(self.ask(ask::AcpAttach { agent_id, since }).await?.into())
     }
 
     /// The rows before event `before` of the chat's run `feed`, a page at a
@@ -626,21 +602,20 @@ impl Connection {
         before: u64,
         turns: u32,
     ) -> Result<String, MobileError> {
-        let request = Request::AcpHistory {
-            agent_id,
-            feed,
-            before,
-            turns,
-        };
-        match self.ask(request).await? {
-            Response::ChatHistory { page } => Ok(records::json(&page)),
-            _ => Err(unexpected()),
-        }
+        let page = self
+            .ask(ask::AcpHistory {
+                agent_id,
+                feed,
+                before,
+                turns,
+            })
+            .await?;
+        Ok(records::json(&page))
     }
 
     /// No more of the chat's events reach this phone.
     pub async fn detach_chat(&self, agent_id: String) -> Result<(), MobileError> {
-        self.done(Request::AcpDetach { agent_id }).await
+        self.ask(ask::AcpDetach { agent_id }).await
     }
 
     /// `paths` are files on the host, such as those [`Self::attach_file`]
@@ -653,7 +628,7 @@ impl Connection {
         text: String,
         paths: Vec<String>,
     ) -> Result<(), MobileError> {
-        self.done(Request::AcpPrompt {
+        self.ask(ask::AcpPrompt {
             agent_id,
             message_id,
             text,
@@ -675,16 +650,14 @@ impl Connection {
         if bytes.len() > MAX_ATTACHMENT_BYTES {
             return Err(invalid("a file sent to a chat can be at most 10 MB"));
         }
-        let request = Request::AttachFile {
+        let request = ask::AttachFile {
             agent_id,
             name,
             mime,
             data: base64::engine::general_purpose::STANDARD.encode(bytes),
         };
-        match self.reply_within(request, UPLOAD_TIMEOUT).await? {
-            Reply::Response(Response::Attached { path }) => Ok(path.display().to_string()),
-            _ => Err(unexpected()),
-        }
+        let path = self.ask_within(request, UPLOAD_TIMEOUT).await?;
+        Ok(path.display().to_string())
     }
 
     /// Calls one of the core's methods with `params_json` and answers with
@@ -726,7 +699,7 @@ impl Connection {
     }
 
     pub async fn cancel(&self, agent_id: String) -> Result<(), MobileError> {
-        self.done(Request::AcpCancel { agent_id }).await
+        self.ask(ask::AcpCancel { agent_id }).await
     }
 
     /// Puts a message into the running turn. Answers whether the agent took
@@ -737,22 +710,21 @@ impl Connection {
         text: String,
         paths: Vec<String>,
     ) -> Result<bool, MobileError> {
-        let request = Request::AcpSteer {
-            agent_id,
-            text,
-            paths,
-            context: Vec::new(),
-        };
-        match self.ask(request).await? {
-            Response::Steered { outcome } => Ok(outcome != "promptRequired"),
-            _ => Err(unexpected()),
-        }
+        let outcome = self
+            .ask(ask::AcpSteer {
+                agent_id,
+                text,
+                paths,
+                context: Vec::new(),
+            })
+            .await?;
+        Ok(outcome != "promptRequired")
     }
 
     /// Stops one of the chat's background tasks, such as a shell it left
     /// running.
     pub async fn stop_task(&self, agent_id: String, task_id: String) -> Result<(), MobileError> {
-        self.done(Request::AcpStopTask { agent_id, task_id }).await
+        self.ask(ask::AcpStopTask { agent_id, task_id }).await
     }
 
     /// `mode` is `bypass` to run without asking or `workspace-write` to ask
@@ -763,13 +735,12 @@ impl Connection {
         mode: String,
     ) -> Result<(), MobileError> {
         let mode = PermissionMode::parse(&mode).map_err(invalid)?;
-        self.done(Request::AcpSetPermissionMode { agent_id, mode })
-            .await
+        self.ask(ask::AcpSetPermissionMode { agent_id, mode }).await
     }
 
     /// Ends the chat's agent on the host.
     pub async fn stop_chat(&self, agent_id: String) -> Result<(), MobileError> {
-        self.done(Request::AcpStop { agent_id }).await
+        self.ask(ask::AcpStop { agent_id }).await
     }
 
     /// `option_id` absent turns the request down.
@@ -779,7 +750,7 @@ impl Connection {
         request_id: String,
         option_id: Option<String>,
     ) -> Result<(), MobileError> {
-        self.done(Request::AcpPermissionReply {
+        self.ask(ask::AcpPermissionReply {
             agent_id,
             request_id,
             option_id,
@@ -794,15 +765,14 @@ impl Connection {
         config_id: String,
         value: String,
     ) -> Result<String, MobileError> {
-        let request = Request::AcpSetConfig {
-            agent_id,
-            config_id,
-            value,
-        };
-        match self.ask(request).await? {
-            Response::ChatConfig { value } => Ok(value.to_string()),
-            _ => Err(unexpected()),
-        }
+        let value = self
+            .ask(ask::AcpSetConfig {
+                agent_id,
+                config_id,
+                value,
+            })
+            .await?;
+        Ok(value.to_string())
     }
 
     /// Starts a chat the way the host's app would, in one of its projects, and
@@ -818,33 +788,31 @@ impl Connection {
             .map(|mode| PermissionMode::parse(&mode))
             .transpose()
             .map_err(invalid)?;
-        let request = Request::StartChat {
-            launcher,
-            project,
-            permission_mode,
-            model: None,
-            effort: None,
-        };
-        match self.ask(request).await? {
-            Response::ChatBegun { agent_id, .. } => Ok(agent_id),
-            _ => Err(unexpected()),
-        }
+        let (agent_id, _) = self
+            .ask(ask::StartChat {
+                launcher,
+                project,
+                permission_mode,
+                model: None,
+                effort: None,
+            })
+            .await?;
+        Ok(agent_id)
     }
 
     /// Takes up again one of the host's recent chats, by its id in the view,
     /// and answers with the chat's agent id. A host too old to know the
     /// request refuses it.
     pub async fn resume_chat(&self, recent: String) -> Result<String, MobileError> {
-        let request = Request::ResumeChat {
-            recent,
-            permission_mode: None,
-            model: None,
-            effort: None,
-        };
-        match self.ask(request).await? {
-            Response::ChatBegun { agent_id, .. } => Ok(agent_id),
-            _ => Err(unexpected()),
-        }
+        let (agent_id, _) = self
+            .ask(ask::ResumeChat {
+                recent,
+                permission_mode: None,
+                model: None,
+                effort: None,
+            })
+            .await?;
+        Ok(agent_id)
     }
 
     /// Gives the host the 32-byte `key` it seals this phone's notifications
@@ -861,7 +829,7 @@ impl Connection {
             return Err(invalid("a notification key is 32 bytes"));
         }
         let prefs = notify_prefs(&prefs_json)?;
-        self.done(Request::SetNotifications {
+        self.ask(ask::SetNotifications {
             key_id,
             key: hex::encode(key),
             prefs,
@@ -871,17 +839,17 @@ impl Connection {
 
     /// The host sends this phone no more notifications.
     pub async fn clear_notifications(&self) -> Result<(), MobileError> {
-        self.done(Request::ClearNotifications).await
+        self.ask(ask::ClearNotifications).await
     }
 
     /// Whether the app is in front, where a chat it shows needs no notification.
     pub async fn set_foreground(&self, foreground: bool) -> Result<(), MobileError> {
-        self.done(Request::SetForeground { foreground }).await
+        self.ask(ask::SetForeground { foreground }).await
     }
 
     /// Asks the host to forget this phone. The host closes the connection after.
     pub async fn unpair(&self) -> Result<(), MobileError> {
-        self.done(Request::Unpair).await
+        self.ask(ask::Unpair).await
     }
 
     pub fn is_open(&self) -> bool {

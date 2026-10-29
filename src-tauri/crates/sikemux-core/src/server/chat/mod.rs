@@ -31,8 +31,8 @@ use tokio::sync::{mpsc, oneshot, watch};
 use crate::acp::{bounded_text, current_choice, native as acp_native, permission, SessionEnd};
 use crate::launch::PermissionMode;
 use crate::protocol::{
-    AgentState, Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatInfo,
-    ChatLaunch, ChatMark, ChatStart, ChatState, Event, RequestId, Response,
+    ask, AgentState, Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatInfo,
+    ChatLaunch, ChatMark, ChatStart, ChatState, Event, RequestId,
 };
 
 use super::activity::Activity;
@@ -2095,14 +2095,7 @@ pub(crate) async fn attach(
     agent_id: &str,
     since: Option<ChatMark>,
 ) {
-    let missing = || {
-        client.respond(
-            request_id,
-            Ok(Response::ChatAttached {
-                attachment: ChatAttachment::Missing,
-            }),
-        )
-    };
+    let missing = || client.answer::<ask::AcpAttach>(request_id, Ok(ChatAttachment::Missing));
     // A sleeping chat is read from the feed it kept, or else taken up to wait for the person,
     // its saved history shown when the core can read it; neither starts its agent.
     let chat = match core.chats.get(agent_id) {
@@ -2163,14 +2156,12 @@ pub(crate) fn history(
     feed: &str,
     before: u64,
     turns: u32,
-) -> CoreResult<Response> {
+) -> CoreResult<serde_json::Value> {
     let page = core
         .chats
         .readable(agent_id)?
         .history(feed, before, turns as usize)?;
-    Ok(Response::ChatHistory {
-        page: serde_json::to_value(page).map_err(|error| CoreError::from(error.to_string()))?,
-    })
+    serde_json::to_value(page).map_err(|error| CoreError::from(error.to_string()))
 }
 
 /// The rows of a chat a client pages to: before or after an event, or around the row holding

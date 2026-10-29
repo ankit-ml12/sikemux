@@ -16,7 +16,7 @@ use folded::{Chat, Folded};
 use serde_json::json;
 use sikemux_core::client::{probe, CoreClient};
 use sikemux_core::protocol::{
-    encode_control, read_frame_sync, BuildIdentity, ChatAccount, ChatAttachment, ChatLaunch,
+    ask, encode_control, read_frame_sync, BuildIdentity, ChatAccount, ChatAttachment, ChatLaunch,
     ChatState, ClientMessage, PermissionMode, Request, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -81,7 +81,7 @@ impl Drop for TestCore {
                 },
                 ClientMessage::Request {
                     request_id: 1,
-                    request: Request::Shutdown { stop_all: true },
+                    request: Request::Shutdown(ask::Shutdown { stop_all: true }),
                 },
             ] {
                 let _ = stream.write_all(&encode_control(&message).expect("encode"));

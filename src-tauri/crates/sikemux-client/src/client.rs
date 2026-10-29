@@ -16,12 +16,13 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 use sikemux_wire::protocol::{
-    decode_grid, decode_lines, decode_snapshot, encode_control, encode_input, read_frame,
-    AllowedDevice, Attention, BackdropImage, BuildIdentity, CallId, ChatAccount, ChatAttachment,
-    ChatContext, ChatInfo, ChatLaunch, ChatMark, ChatStart, ClientMessage, DeviceAccess, Event,
-    FrameKind, HostRegistration, LaunchIdentity, PermissionMode, RemoteStatus, Request, RequestId,
-    Response, ServerMessage, SessionId, SessionInfo, SpawnTarget, StreamId, WindowAnswer,
-    WindowCall, Workspace, MAX_FRAME_BYTES, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
+    ask, ask::Ask, decode_grid, decode_lines, decode_snapshot, encode_control, encode_input,
+    read_frame, AllowedDevice, Attention, BackdropImage, BuildIdentity, CallId, ChatAccount,
+    ChatAttachment, ChatContext, ChatInfo, ChatLaunch, ChatMark, ChatStart, ClientMessage,
+    DeviceAccess, Event, FrameKind, HostRegistration, LaunchIdentity, PermissionMode, RemoteStatus,
+    Request, RequestId, Response, ServerMessage, SessionId, SessionInfo, SpawnTarget, StreamId,
+    WindowAnswer, WindowCall, Workspace, MAX_FRAME_BYTES, OLDEST_PROTOCOL_VERSION, PROTOCOL,
+    PROTOCOL_VERSION,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -379,11 +380,9 @@ impl CoreClient {
         }
     }
 
-    async fn request_done(&self, request: Request) -> Result<(), ClientError> {
-        match self.request(request).await? {
-            Response::Done => Ok(()),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+    /// Sends a request and reads the one kind of answer the core gives it.
+    pub async fn ask<A: Ask>(&self, request: A) -> Result<A::Answer, ClientError> {
+        A::answer(self.request(request.into()).await?).ok_or(ClientError::UnexpectedReply)
     }
 
     pub async fn spawn(
@@ -391,16 +390,8 @@ impl CoreClient {
         launch: LaunchIdentity,
         target: SpawnTarget,
     ) -> Result<SessionId, ClientError> {
-        match self
-            .request(Request::Spawn {
-                launch,
-                target: Box::new(target),
-            })
-            .await?
-        {
-            Response::Spawned { id } => Ok(id),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        let target = Box::new(target);
+        self.ask(ask::Spawn { launch, target }).await
     }
 
     /// Writes larger than one frame go out as several, in order.
@@ -421,23 +412,20 @@ impl CoreClient {
     }
 
     pub async fn resize(&self, id: SessionId, cols: u16, rows: u16) -> Result<(), ClientError> {
-        self.request_done(Request::Resize { id, cols, rows }).await
+        self.ask(ask::Resize { id, cols, rows }).await
     }
 
     pub async fn kill(&self, id: SessionId) -> Result<(), ClientError> {
-        self.request_done(Request::Kill { id }).await
+        self.ask(ask::Kill { id }).await
     }
 
     pub async fn list(&self) -> Result<Vec<SessionInfo>, ClientError> {
-        match self.request(Request::List).await? {
-            Response::Sessions { sessions } => Ok(sessions),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::List).await
     }
 
     pub async fn attach(&self, id: SessionId) -> Result<Attached, ClientError> {
         match self
-            .submit(Request::Attach { id }, |reply| reply)?
+            .submit(ask::Attach { id }.into(), |reply| reply)?
             .await??
         {
             Reply::Attached(attached) => Ok(attached),
@@ -447,12 +435,11 @@ impl CoreClient {
 
     /// No frame of the stream arrives after this resolves.
     pub async fn detach(&self, stream: StreamId) -> Result<(), ClientError> {
-        self.request_done(Request::Detach { stream }).await
+        self.ask(ask::Detach { stream }).await
     }
 
     pub async fn input(&self, id: SessionId, input: TerminalInput) -> Result<(), ClientError> {
-        self.request_done(Request::TerminalInput { id, input })
-            .await
+        self.ask(ask::TerminalInput { id, input }).await
     }
 
     /// History lines `start..start + count`, as many as the core still has.
@@ -463,7 +450,9 @@ impl CoreClient {
         count: u32,
     ) -> Result<Vec<u8>, ClientError> {
         match self
-            .submit(Request::TerminalLines { id, start, count }, |reply| reply)?
+            .submit(ask::TerminalLines { id, start, count }.into(), |reply| {
+                reply
+            })?
             .await??
         {
             Reply::Lines(lines) => Ok(lines),
@@ -476,17 +465,11 @@ impl CoreClient {
         id: SessionId,
         range: Option<(GridPoint, GridPoint)>,
     ) -> Result<String, ClientError> {
-        match self.request(Request::TerminalText { id, range }).await? {
-            Response::TerminalText { text } => Ok(text),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::TerminalText { id, range }).await
     }
 
-    pub async fn find(&self, request: Request) -> Result<FindResult, ClientError> {
-        match self.request(request).await? {
-            Response::Found { result } => Ok(result),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+    pub async fn find(&self, find: ask::TerminalFind) -> Result<FindResult, ClientError> {
+        self.ask(find).await
     }
 
     /// The first line on the terminal's screen containing `containing`, once
@@ -496,28 +479,19 @@ impl CoreClient {
         id: SessionId,
         containing: String,
     ) -> Result<Option<String>, ClientError> {
-        match self
-            .request(Request::TerminalWaitFor { id, containing })
-            .await?
-        {
-            Response::TerminalLine { line } => Ok(line),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::TerminalWaitFor { id, containing }).await
     }
 
     pub async fn clear(&self, id: SessionId) -> Result<(), ClientError> {
-        self.request_done(Request::TerminalClear { id }).await
+        self.ask(ask::TerminalClear { id }).await
     }
 
     pub async fn reset_modes(&self, id: SessionId) -> Result<(), ClientError> {
-        self.request_done(Request::ResetModes { id }).await
+        self.ask(ask::ResetModes { id }).await
     }
 
     pub async fn shell_at_prompt(&self, id: SessionId) -> Result<bool, ClientError> {
-        match self.request(Request::ShellAtPrompt { id }).await? {
-            Response::ShellAtPrompt { at_prompt } => Ok(at_prompt),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::ShellAtPrompt { id }).await
     }
 
     /// Reports the last frame of a stream this client has drawn. Never
@@ -531,50 +505,35 @@ impl CoreClient {
         id: SessionId,
         query: OutputQuery,
     ) -> Result<OutputPage, ClientError> {
-        match self.request(Request::TaskOutput { id, query }).await? {
-            Response::TaskOutput { page } => Ok(page),
-            _ => Err(ClientError::UnexpectedReply),
-        }
-    }
-
-    async fn manifests(&self, request: Request) -> Result<ManifestReloadReport, ClientError> {
-        match self.request(request).await? {
-            Response::Manifests { report } => Ok(report),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::TaskOutput { id, query }).await
     }
 
     pub async fn configure(
         &self,
         manifest_dir: Option<PathBuf>,
     ) -> Result<ManifestReloadReport, ClientError> {
-        self.manifests(Request::Configure { manifest_dir }).await
+        self.ask(ask::Configure { manifest_dir }).await
     }
 
     pub async fn list_manifests(&self) -> Result<ManifestReloadReport, ClientError> {
-        self.manifests(Request::ListManifests).await
+        self.ask(ask::ListManifests).await
     }
 
     pub async fn reload_manifests(&self) -> Result<ManifestReloadReport, ClientError> {
-        self.manifests(Request::ReloadManifests).await
+        self.ask(ask::ReloadManifests).await
     }
 
     pub async fn explain_agent_detection(
         &self,
         agent_id: String,
     ) -> Result<DetectionExplain, ClientError> {
-        match self
-            .request(Request::ExplainAgentDetection { agent_id })
-            .await?
-        {
-            Response::DetectionExplain { explain } => Ok(*explain),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        let explain = self.ask(ask::ExplainAgentDetection { agent_id }).await?;
+        Ok(*explain)
     }
 
     /// Tool calls that need the window come to this connection from now on.
     pub async fn register_window(&self) -> Result<(), ClientError> {
-        self.request_done(Request::RegisterWindow).await
+        self.ask(ask::RegisterWindow).await
     }
 
     fn send(&self, message: &ClientMessage) {
@@ -593,31 +552,24 @@ impl CoreClient {
     }
 
     pub async fn plugins_changed(&self) -> Result<(), ClientError> {
-        self.request_done(Request::PluginsChanged).await
+        self.ask(ask::PluginsChanged).await
     }
 
     /// Kills every session. The core keeps running.
     pub async fn stop_all(&self) -> Result<(), ClientError> {
-        self.request_done(Request::StopAll).await
+        self.ask(ask::StopAll).await
     }
 
     /// `stop_all` kills every session first; without it the core refuses to
     /// exit while any session is running.
     pub async fn shutdown(&self, stop_all: bool) -> Result<(), ClientError> {
-        self.request_done(Request::Shutdown { stop_all }).await
+        self.ask(ask::Shutdown { stop_all }).await
     }
 
     /// Starts a chat agent. Its events reach this connection from the first.
     pub async fn acp_start(&self, launch: ChatLaunch) -> Result<ChatStart, ClientError> {
-        match self
-            .request(Request::AcpStart {
-                launch: Box::new(launch),
-            })
-            .await?
-        {
-            Response::ChatStarted { start } => Ok(start),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        let launch = Box::new(launch);
+        self.ask(ask::AcpStart { launch }).await
     }
 
     /// Takes up a running chat. Its live events follow the replay on the
@@ -633,10 +585,7 @@ impl CoreClient {
         agent_id: String,
         since: Option<ChatMark>,
     ) -> Result<ChatAttachment, ClientError> {
-        match self.request(Request::AcpAttach { agent_id, since }).await? {
-            Response::ChatAttached { attachment } => Ok(attachment),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::AcpAttach { agent_id, since }).await
     }
 
     /// The chat's rows before event `before` of its run `feed`, a
@@ -649,28 +598,22 @@ impl CoreClient {
         before: u64,
         turns: u32,
     ) -> Result<serde_json::Value, ClientError> {
-        let request = Request::AcpHistory {
+        self.ask(ask::AcpHistory {
             agent_id,
             feed,
             before,
             turns,
-        };
-        match self.request(request).await? {
-            Response::ChatHistory { page } => Ok(page),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        })
+        .await
     }
 
     /// No more of the chat's events reach this client.
     pub async fn acp_detach(&self, agent_id: String) -> Result<(), ClientError> {
-        self.request_done(Request::AcpDetach { agent_id }).await
+        self.ask(ask::AcpDetach { agent_id }).await
     }
 
     pub async fn acp_list(&self) -> Result<Vec<ChatInfo>, ClientError> {
-        match self.request(Request::AcpList).await? {
-            Response::Chats { chats } => Ok(chats),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::AcpList).await
     }
 
     pub async fn acp_prompt(
@@ -681,7 +624,7 @@ impl CoreClient {
         paths: Vec<String>,
         context: Vec<ChatContext>,
     ) -> Result<(), ClientError> {
-        self.request_done(Request::AcpPrompt {
+        self.ask(ask::AcpPrompt {
             agent_id,
             message_id,
             text,
@@ -699,7 +642,7 @@ impl CoreClient {
         paths: Vec<String>,
         context: Vec<ChatContext>,
     ) -> Result<(), ClientError> {
-        self.request_done(Request::AcpEdit {
+        self.ask(ask::AcpEdit {
             agent_id,
             message_id,
             text,
@@ -719,20 +662,17 @@ impl CoreClient {
         bytes: &[u8],
     ) -> Result<PathBuf, ClientError> {
         use base64::Engine;
-        let request = Request::AttachFile {
+        self.ask(ask::AttachFile {
             agent_id,
             name,
             mime,
             data: base64::engine::general_purpose::STANDARD.encode(bytes),
-        };
-        match self.request(request).await? {
-            Response::Attached { path } => Ok(path),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        })
+        .await
     }
 
     pub async fn acp_cancel(&self, agent_id: String) -> Result<(), ClientError> {
-        self.request_done(Request::AcpCancel { agent_id }).await
+        self.ask(ask::AcpCancel { agent_id }).await
     }
 
     pub async fn acp_stop_task(
@@ -740,8 +680,7 @@ impl CoreClient {
         agent_id: String,
         task_id: String,
     ) -> Result<(), ClientError> {
-        self.request_done(Request::AcpStopTask { agent_id, task_id })
-            .await
+        self.ask(ask::AcpStopTask { agent_id, task_id }).await
     }
 
     pub async fn acp_permission_reply(
@@ -750,7 +689,7 @@ impl CoreClient {
         request_id: String,
         option_id: Option<String>,
     ) -> Result<(), ClientError> {
-        self.request_done(Request::AcpPermissionReply {
+        self.ask(ask::AcpPermissionReply {
             agent_id,
             request_id,
             option_id,
@@ -759,7 +698,7 @@ impl CoreClient {
     }
 
     pub async fn acp_stop(&self, agent_id: String) -> Result<(), ClientError> {
-        self.request_done(Request::AcpStop { agent_id }).await
+        self.ask(ask::AcpStop { agent_id }).await
     }
 
     pub async fn acp_set_permission_mode(
@@ -767,8 +706,7 @@ impl CoreClient {
         agent_id: String,
         mode: PermissionMode,
     ) -> Result<(), ClientError> {
-        self.request_done(Request::AcpSetPermissionMode { agent_id, mode })
-            .await
+        self.ask(ask::AcpSetPermissionMode { agent_id, mode }).await
     }
 
     pub async fn acp_set_config(
@@ -777,17 +715,12 @@ impl CoreClient {
         config_id: String,
         value: String,
     ) -> Result<serde_json::Value, ClientError> {
-        match self
-            .request(Request::AcpSetConfig {
-                agent_id,
-                config_id,
-                value,
-            })
-            .await?
-        {
-            Response::ChatConfig { value } => Ok(value),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::AcpSetConfig {
+            agent_id,
+            config_id,
+            value,
+        })
+        .await
     }
 
     pub async fn acp_switch_account(
@@ -795,15 +728,14 @@ impl CoreClient {
         agent_id: String,
         account: ChatAccount,
     ) -> Result<(), ClientError> {
-        self.request_done(Request::AcpSwitchAccount { agent_id, account })
-            .await
+        self.ask(ask::AcpSwitchAccount { agent_id, account }).await
     }
 
-    async fn remote_request(&self, request: Request) -> Result<RemoteStatus, ClientError> {
-        match self.request(request).await? {
-            Response::Remote { status } => Ok(*status),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+    async fn remote<A: Ask<Answer = Box<RemoteStatus>>>(
+        &self,
+        request: A,
+    ) -> Result<RemoteStatus, ClientError> {
+        Ok(*self.ask(request).await?)
     }
 
     /// Signs the registration text for the accounts server with the core's key.
@@ -812,26 +744,19 @@ impl CoreClient {
         nonce: String,
         user_id: String,
     ) -> Result<HostRegistration, ClientError> {
-        match self
-            .request(Request::SignRegistration { nonce, user_id })
-            .await?
-        {
-            Response::Registration { registration } => Ok(registration),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::SignRegistration { nonce, user_id }).await
     }
 
     pub async fn set_owner(&self, owner: Option<String>) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::SetOwner { owner }).await
+        self.remote(ask::SetOwner { owner }).await
     }
 
     pub async fn remote_status(&self) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::RemoteStatus).await
+        self.remote(ask::RemoteStatus).await
     }
 
     pub async fn set_remote_access(&self, enabled: bool) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::SetRemoteAccess { enabled })
-            .await
+        self.remote(ask::SetRemoteAccess { enabled }).await
     }
 
     pub async fn set_device_access(
@@ -839,12 +764,11 @@ impl CoreClient {
         id: String,
         access: DeviceAccess,
     ) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::SetDeviceAccess { id, access })
-            .await
+        self.remote(ask::SetDeviceAccess { id, access }).await
     }
 
     pub async fn revoke_device(&self, id: String) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::RevokeDevice { id }).await
+        self.remote(ask::RevokeDevice { id }).await
     }
 
     /// One of the core's methods by name, answered with its JSON result.
@@ -853,21 +777,13 @@ impl CoreClient {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, ClientError> {
-        match self
-            .request(Request::Call {
-                method: method.to_owned(),
-                params,
-            })
-            .await?
-        {
-            Response::Called { result } => Ok(result),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        let method = method.to_owned();
+        self.ask(ask::Call { method, params }).await
     }
 
     /// Removes this device from the core's paired devices.
     pub async fn unpair(&self) -> Result<(), ClientError> {
-        self.request_done(Request::Unpair).await
+        self.ask(ask::Unpair).await
     }
 
     pub async fn publish_backdrop(
@@ -875,15 +791,11 @@ impl CoreClient {
         texture: bool,
         image: Option<BackdropImage>,
     ) -> Result<(), ClientError> {
-        self.request_done(Request::PublishBackdrop { texture, image })
-            .await
+        self.ask(ask::PublishBackdrop { texture, image }).await
     }
 
     pub async fn backdrop_image(&self) -> Result<Option<String>, ClientError> {
-        match self.request(Request::BackdropImage).await? {
-            Response::BackdropImage { data_url } => Ok(data_url),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::BackdropImage).await
     }
 
     pub async fn publish_on_screen(
@@ -891,35 +803,28 @@ impl CoreClient {
         agent_ids: Vec<String>,
         focused: bool,
     ) -> Result<(), ClientError> {
-        self.request_done(Request::PublishOnScreen { agent_ids, focused })
-            .await
+        self.ask(ask::PublishOnScreen { agent_ids, focused }).await
     }
 
     pub async fn focus_agent(&self, agent_id: String) -> Result<(), ClientError> {
-        self.request_done(Request::FocusAgent { agent_id }).await
+        self.ask(ask::FocusAgent { agent_id }).await
     }
 
     /// The device view arrives as events from now on, starting with the whole.
     pub async fn watch_view(&self) -> Result<(), ClientError> {
-        self.request_done(Request::WatchView).await
+        self.ask(ask::WatchView).await
     }
 
     pub async fn acp_wake(&self, agent_id: String) -> Result<(), ClientError> {
-        self.request_done(Request::AcpWake { agent_id }).await
+        self.ask(ask::AcpWake { agent_id }).await
     }
 
     pub async fn attentions(&self) -> Result<Vec<Attention>, ClientError> {
-        match self.request(Request::Attentions).await? {
-            Response::Attentions { attentions } => Ok(attentions),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::Attentions).await
     }
 
     pub async fn workspace(&self) -> Result<Workspace, ClientError> {
-        match self.request(Request::Workspace).await? {
-            Response::Workspace { workspace } => Ok(workspace),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        self.ask(ask::Workspace).await
     }
 
     /// Starts a chat agent in one of the app's projects. Answers with the
@@ -930,32 +835,26 @@ impl CoreClient {
         project: String,
         model: Option<String>,
     ) -> Result<(String, ChatStart), ClientError> {
-        let request = Request::StartChat {
+        self.ask(ask::StartChat {
             launcher,
             project,
             permission_mode: None,
             model,
             effort: None,
-        };
-        match self.request(request).await? {
-            Response::ChatBegun { agent_id, start } => Ok((agent_id, start)),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        })
+        .await
     }
 
     /// Takes up again a chat the app published as recent, by its id in the
     /// device view. Answers like [`Self::start_chat`].
     pub async fn resume_chat(&self, recent: String) -> Result<(String, ChatStart), ClientError> {
-        let request = Request::ResumeChat {
+        self.ask(ask::ResumeChat {
             recent,
             permission_mode: None,
             model: None,
             effort: None,
-        };
-        match self.request(request).await? {
-            Response::ChatBegun { agent_id, start } => Ok((agent_id, start)),
-            _ => Err(ClientError::UnexpectedReply),
-        }
+        })
+        .await
     }
 
     pub async fn answer_pairing(
@@ -964,15 +863,14 @@ impl CoreClient {
         allow: bool,
         access: DeviceAccess,
     ) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::AnswerPairing { id, allow, access })
-            .await
+        self.remote(ask::AnswerPairing { id, allow, access }).await
     }
 
     pub async fn allow_devices(
         &self,
         devices: Vec<AllowedDevice>,
     ) -> Result<RemoteStatus, ClientError> {
-        self.remote_request(Request::AllowDevices { devices }).await
+        self.remote(ask::AllowDevices { devices }).await
     }
 }
 

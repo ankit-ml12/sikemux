@@ -18,9 +18,9 @@ use sikemux_wire::grid::{
     decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput,
 };
 use sikemux_wire::protocol::{
-    CallId, ChatAccount, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event,
-    LaunchIdentity, NetworkChange, PermissionMode, RemoteStatus, Request, Response, SessionId,
-    SpawnTarget, StreamId, TerminalSpawn, WindowAnswer, WindowCall,
+    ask, CallId, ChatAccount, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView,
+    Event, LaunchIdentity, NetworkChange, PermissionMode, RemoteStatus, SessionId, SpawnTarget,
+    StreamId, TerminalSpawn, WindowAnswer, WindowCall,
 };
 use sikemux_wire::pty::shell_protocol::{PtyShellMetadataEvent, ShellMetadataSnapshot};
 use tokio::sync::{mpsc, oneshot};
@@ -584,14 +584,14 @@ async fn open_chat_on(client: Arc<CoreClient>, ask: Ask, begun: Option<oneshot::
             mode,
             started,
         } => {
-            let asked = client.request(Request::StartChat {
+            let asked = client.ask(ask::StartChat {
                 launcher,
                 project: project.clone(),
                 permission_mode: mode,
                 model: None,
                 effort: None,
             });
-            let (answer, shown) = {
+            let (begun, shown) = {
                 let early = async {
                     let agent = begun?.await.ok()?;
                     open_tab(&client, &project, &agent).await;
@@ -602,11 +602,6 @@ async fn open_chat_on(client: Arc<CoreClient>, ask: Ask, begun: Option<oneshot::
                     answer = &mut asked => (answer, None),
                     shown = &mut early => (asked.await, shown),
                 }
-            };
-            let begun = match answer {
-                Ok(Response::ChatBegun { agent_id, start }) => Ok((agent_id, start)),
-                Ok(_) => Err(ClientError::UnexpectedReply),
-                Err(error) => Err(error),
             };
             (begun, project, started, shown)
         }
@@ -1190,7 +1185,7 @@ async fn run(
                                         let Ok(client) = linked.client(&host).await else {
                                             return;
                                         };
-                                        if let Ok(Response::Host { host: info }) = client.request(Request::Host).await {
+                                        if let Ok(info) = client.ask(ask::Host).await {
                                             let home = info.home.to_string_lossy().into_owned();
                                             let _ = updates.send(Update::HostHome(host, home));
                                         }
@@ -1990,7 +1985,7 @@ impl Streams {
                 inclusive,
             } => {
                 let (updates, host) = (self.updates.clone(), self.host.clone());
-                let request = Request::TerminalFind {
+                let request = ask::TerminalFind {
                     id: session,
                     query,
                     options,

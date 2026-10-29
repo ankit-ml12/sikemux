@@ -14,9 +14,9 @@ use sikemux_core::client::{
 };
 use sikemux_core::grid::{decode_frame, Screen, MODE_ALT_SCREEN, MODE_MOUSE_ANY};
 use sikemux_core::protocol::{
-    encode_control, read_frame_sync, AgentState, AgentStateEvent, BuildIdentity, ClientMessage,
-    Continuation, Event, LaunchIdentity, Request, Response, ServerMessage, SessionExit, SessionId,
-    SpawnTarget, StreamId, TerminalSpawn, PROTOCOL, PROTOCOL_VERSION,
+    ask, encode_control, read_frame_sync, AgentState, AgentStateEvent, BuildIdentity,
+    ClientMessage, Continuation, Event, LaunchIdentity, Request, Response, ServerMessage,
+    SessionExit, SessionId, SpawnTarget, StreamId, TerminalSpawn, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
 use sikemux_pty::launch::{LaunchKind, PtyContext};
@@ -114,7 +114,7 @@ fn shutdown_sync(socket: &Path) {
     };
     let shutdown = ClientMessage::Request {
         request_id: 1,
-        request: Request::Shutdown { stop_all: true },
+        request: Request::Shutdown(ask::Shutdown { stop_all: true }),
     };
     let _ = stream.write_all(&encode_control(&hello).expect("hello"));
     let _ = stream.write_all(&encode_control(&shutdown).expect("shutdown"));
@@ -1083,10 +1083,10 @@ async fn a_spawn_reply_comes_before_the_session_exits() {
         let noted = sink.clone();
         let id = client
             .submit(
-                Request::Spawn {
+                Request::Spawn(ask::Spawn {
                     launch: launch(),
                     target: Box::new(task(dir.path(), "true")),
-                },
+                }),
                 move |reply| match reply {
                     Ok(Reply::Response(Response::Spawned { id })) => {
                         noted.note(format!("spawned {id}"));

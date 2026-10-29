@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Read};
 use std::path::PathBuf;
 
-use crate::grid::{FindOptions, FindResult, GridPoint, TerminalInput};
+use crate::grid::{FindOptions, FindResult, GridPoint};
 use crate::pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use crate::pty::launch::{PtyContext, PtyDirectCommand};
 use crate::pty::output_log::{OutputPage, OutputQuery};
@@ -16,6 +16,8 @@ use crate::pty::shell_protocol::{PtyShellMetadataEvent, ShellMetadataSnapshot, S
 use crate::pty::task::{TaskSource, TaskSpawnRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+pub mod ask;
 
 pub const PROTOCOL: &str = "sikemux-core";
 pub const PROTOCOL_VERSION: u32 = 13;
@@ -121,94 +123,27 @@ pub enum ClientMessage {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(tag = "op", rename_all = "camelCase")]
 pub enum Request {
-    Spawn {
-        launch: LaunchIdentity,
-        target: Box<SpawnTarget>,
-    },
-    Resize {
-        id: SessionId,
-        cols: u16,
-        rows: u16,
-    },
-    Kill {
-        id: SessionId,
-    },
+    Spawn(ask::Spawn),
+    Resize(ask::Resize),
+    Kill(ask::Kill),
     List,
-    /// Starts a stream of the session's cells, answered with a snapshot frame.
-    Attach {
-        id: SessionId,
-    },
-    Detach {
-        stream: StreamId,
-    },
-    /// A key, text, paste, mouse or focus change for the session's program.
-    TerminalInput {
-        id: SessionId,
-        input: TerminalInput,
-    },
-    /// History lines `start..start + count`, answered with a lines frame.
-    TerminalLines {
-        id: SessionId,
-        start: u64,
-        count: u32,
-    },
-    /// The text between two cells, or all the terminal holds without them.
-    TerminalText {
-        id: SessionId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        range: Option<(GridPoint, GridPoint)>,
-    },
-    /// Searches the session's history and screen. The current match is the
-    /// first after `from`, or before it going `backwards`, or at it when
-    /// `inclusive`.
-    TerminalFind {
-        id: SessionId,
-        query: String,
-        #[serde(default)]
-        options: FindOptions,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        from: Option<GridPoint>,
-        #[serde(default)]
-        backwards: bool,
-        #[serde(default)]
-        inclusive: bool,
-    },
-    /// Answers with the first line on the session's screen that contains
-    /// `containing`, once one shows, or with none when the session ends first.
-    /// Needs no client to watch the terminal.
-    TerminalWaitFor {
-        id: SessionId,
-        containing: String,
-    },
-    /// Moves the cursor's line to the top of the screen and drops the history
-    /// above it, without telling the program.
-    TerminalClear {
-        id: SessionId,
-    },
-    /// Turns off the input modes a crashed program may have left on, for the
-    /// core's screen and every attached client alike.
-    ResetModes {
-        id: SessionId,
-    },
-    TaskOutput {
-        id: SessionId,
-        query: OutputQuery,
-    },
-    /// Whether the session's shell is at its prompt, running nothing.
-    ShellAtPrompt {
-        id: SessionId,
-    },
-    /// Where the person's own agent detection rules live. Loads them at once.
-    Configure {
-        manifest_dir: Option<PathBuf>,
-    },
+    Attach(ask::Attach),
+    Detach(ask::Detach),
+    TerminalInput(ask::TerminalInput),
+    TerminalLines(ask::TerminalLines),
+    TerminalText(ask::TerminalText),
+    TerminalFind(ask::TerminalFind),
+    TerminalWaitFor(ask::TerminalWaitFor),
+    TerminalClear(ask::TerminalClear),
+    ResetModes(ask::ResetModes),
+    TaskOutput(ask::TaskOutput),
+    ShellAtPrompt(ask::ShellAtPrompt),
+    Configure(ask::Configure),
     ListManifests,
     ReloadManifests,
-    ExplainAgentDetection {
-        agent_id: String,
-    },
+    ExplainAgentDetection(ask::ExplainAgentDetection),
     /// Kills every session and keeps running.
     StopAll,
     /// This connection is the app's window from now on, replacing any other.
@@ -217,215 +152,55 @@ pub enum Request {
     /// The person did something in a plugin, such as signing in, that may
     /// change the tools it offers agents.
     PluginsChanged,
-    Shutdown {
-        stop_all: bool,
-    },
-    /// Starts a chat agent and answers once its session is ready. The client
-    /// that asks hears the agent's events from the start.
-    AcpStart {
-        launch: Box<ChatLaunch>,
-    },
-    /// Takes up a chat agent the core already runs: the answer replays what
-    /// it said so far, and its events follow. A client that watched the chat
-    /// before passes where it got to, and hears only what it missed when the
-    /// core still has that.
-    AcpAttach {
-        agent_id: String,
-        since: Option<ChatMark>,
-    },
-    /// The turns before event `before` of the chat's run `feed`, as many as
-    /// `turns`, for a phone paging back from its attachment's `older_before`.
-    AcpHistory {
-        agent_id: String,
-        feed: String,
-        before: u64,
-        turns: u32,
-    },
-    /// Stops the chat's events reaching this client.
-    AcpDetach {
-        agent_id: String,
-    },
+    Shutdown(ask::Shutdown),
+    AcpStart(ask::AcpStart),
+    AcpAttach(ask::AcpAttach),
+    AcpHistory(ask::AcpHistory),
+    AcpDetach(ask::AcpDetach),
     AcpList,
-    /// Asks the app to start a chat it put to sleep. Answers once it runs.
-    AcpWake {
-        agent_id: String,
-    },
-    AcpPrompt {
-        agent_id: String,
-        /// Names the message, so it can be edited later.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        message_id: Option<String>,
-        text: String,
-        paths: Vec<String>,
-        context: Vec<ChatContext>,
-    },
-    /// Takes the chat back to before the person's message `message_id`, and
-    /// sends `text` in its place.
-    AcpEdit {
-        agent_id: String,
-        message_id: String,
-        text: String,
-        paths: Vec<String>,
-        context: Vec<ChatContext>,
-    },
-    /// Puts a message into the running turn. Answered with `promptRequired`
-    /// when the turn ended first and the message should be a prompt instead.
-    AcpSteer {
-        agent_id: String,
-        text: String,
-        paths: Vec<String>,
-        context: Vec<ChatContext>,
-    },
-    /// A file from a device for a chat's next message, `data` in base64. Kept
-    /// on the host beside the pictures pasted into the app's chats, and
-    /// answered with its path there for the prompt's `paths`.
-    AttachFile {
-        agent_id: String,
-        name: String,
-        mime: String,
-        data: String,
-    },
-    /// A request by name, its `params` and answer as JSON. The core alone
-    /// knows each method, so a device gains one without its native code
-    /// changing. A method is never removed or renamed once released.
-    Call {
-        method: String,
-        #[serde(default)]
-        params: Value,
-    },
-    AcpCancel {
-        agent_id: String,
-    },
-    AcpStopTask {
-        agent_id: String,
-        task_id: String,
-    },
-    AcpPermissionReply {
-        agent_id: String,
-        request_id: String,
-        option_id: Option<String>,
-    },
-    AcpStop {
-        agent_id: String,
-    },
-    AcpSetPermissionMode {
-        agent_id: String,
-        mode: PermissionMode,
-    },
-    AcpSetConfig {
-        agent_id: String,
-        config_id: String,
-        value: String,
-    },
-    /// Starts the chat's agent again on `account`, on the same session. A turn
-    /// that just failed because of the old account is sent again.
-    AcpSwitchAccount {
-        agent_id: String,
-        account: ChatAccount,
-    },
+    AcpWake(ask::AcpWake),
+    AcpPrompt(ask::AcpPrompt),
+    AcpEdit(ask::AcpEdit),
+    AcpSteer(ask::AcpSteer),
+    AttachFile(ask::AttachFile),
+    Call(ask::Call),
+    AcpCancel(ask::AcpCancel),
+    AcpStopTask(ask::AcpStopTask),
+    AcpPermissionReply(ask::AcpPermissionReply),
+    AcpStop(ask::AcpStop),
+    AcpSetPermissionMode(ask::AcpSetPermissionMode),
+    AcpSetConfig(ask::AcpSetConfig),
+    AcpSwitchAccount(ask::AcpSwitchAccount),
     RemoteStatus,
-    /// Lets paired devices reach the core from other machines, or stops it
-    /// and disconnects them. Only a signed-in host can turn it on. Kept across
-    /// restarts.
-    SetRemoteAccess {
-        enabled: bool,
-    },
-    SetDeviceAccess {
-        id: String,
-        access: DeviceAccess,
-    },
-    /// Forgets a paired device and ends its connections.
-    RevokeDevice {
-        id: String,
-    },
+    SetRemoteAccess(ask::SetRemoteAccess),
+    SetDeviceAccess(ask::SetDeviceAccess),
+    RevokeDevice(ask::RevokeDevice),
     /// A paired device forgetting this host: removes it from the paired
     /// devices and closes its connection once answered.
     Unpair,
-    /// A paired phone's key for sealing its notifications from this host,
-    /// and what it wants to hear about. Sent again whenever either changes;
-    /// a new key replaces the old one.
-    SetNotifications {
-        key_id: u32,
-        key: String,
-        prefs: NotifyPrefs,
-    },
+    SetNotifications(ask::SetNotifications),
     /// A paired phone wants no more notifications from this host.
     ClearNotifications,
-    /// Whether the phone's app is in front, which it is when it connects.
-    /// A phone in front showing a chat gets no notifications about it.
-    SetForeground {
-        foreground: bool,
-    },
-    /// Signs the text that registers this core with an account, built by
-    /// `accounts::registration_message` from the server's challenge.
-    SignRegistration {
-        nonce: String,
-        user_id: String,
-    },
-    /// The account this host is signed in to, or none after signing out.
-    /// Signing in turns remote access on. Signing out turns it off and takes
-    /// this host off the account, waiting a few seconds for the server to
-    /// confirm. Kept across restarts.
-    SetOwner {
-        owner: Option<String>,
-    },
-    /// The person's answer to a phone that came with a ticket from the
-    /// account.
-    AnswerPairing {
-        id: String,
-        allow: bool,
-        access: DeviceAccess,
-    },
-    /// Phones on the account the person let in when signing this host in.
-    /// One already waiting to join gets in at once; the others get in
-    /// without asking when they first connect.
-    AllowDevices {
-        devices: Vec<AllowedDevice>,
-    },
-    /// What the app draws behind its panes, so devices draw the same.
-    /// Replaces what it published before.
-    PublishBackdrop {
-        texture: bool,
-        image: Option<BackdropImage>,
-    },
+    SetForeground(ask::SetForeground),
+    SignRegistration(ask::SignRegistration),
+    SetOwner(ask::SetOwner),
+    AnswerPairing(ask::AnswerPairing),
+    AllowDevices(ask::AllowDevices),
+    PublishBackdrop(ask::PublishBackdrop),
     /// The picture published with the backdrop, as a data URL.
     BackdropImage,
-    /// The agents the app shows now, replacing the last list, and whether its
-    /// window is in front. An agent on screen in a window in front is never
-    /// left unread, and one on screen is not put to sleep.
-    PublishOnScreen {
-        agent_ids: Vec<String>,
-        focused: bool,
-    },
+    PublishOnScreen(ask::PublishOnScreen),
     /// Sends this client the [`DeviceView`] now and whenever it changes, as
     /// paired devices get it.
     WatchView,
-    /// Asks the app's window to show this agent. Refused when no window is
-    /// open; a window that opens within a minute shows it then.
-    FocusAgent {
-        agent_id: String,
-    },
+    FocusAgent(ask::FocusAgent),
     Workspace,
     /// What agents wait on a person for now.
     Attentions,
     /// The computer this core runs on, so a device can name it.
     Host,
-    /// Starts a chat agent the way the app would, in one of its projects.
-    StartChat {
-        launcher: String,
-        project: String,
-        permission_mode: Option<PermissionMode>,
-        model: Option<String>,
-        effort: Option<String>,
-    },
-    /// Takes up again one of the recent saved chats in the device view,
-    /// named by its [`RecentInfo::id`], and answers like `StartChat`.
-    ResumeChat {
-        recent: String,
-        permission_mode: Option<PermissionMode>,
-        model: Option<String>,
-        effort: Option<String>,
-    },
+    StartChat(ask::StartChat),
+    ResumeChat(ask::ResumeChat),
 }
 
 /// Everything the core needs to start a chat agent, resolved by the app: the
@@ -2615,7 +2390,7 @@ mod tests {
     fn control_messages_are_tagged_camel_case_json() {
         let message = ClientMessage::Request {
             request_id: 4,
-            request: Request::Shutdown { stop_all: true },
+            request: Request::Shutdown(ask::Shutdown { stop_all: true }),
         };
         let value = serde_json::to_value(&message).unwrap();
         assert_eq!(

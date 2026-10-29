@@ -13,7 +13,7 @@ use crate::launch::terminal::{self, TerminalRun};
 use crate::launch::tools::Tools;
 use crate::launch::{AgentSpec, PermissionMode};
 use crate::protocol::{
-    ChatAccount, ChatLaunch, ChatStart, Continuation, Event, RequestId, Response, SessionId,
+    ask, ChatAccount, ChatLaunch, ChatStart, Continuation, Event, RequestId, SessionId,
     SpawnTarget, TerminalSpawn, WAKE_WAIT,
 };
 use serde_json::{json, Value};
@@ -354,15 +354,15 @@ pub(crate) async fn wake(core: &Arc<Core>, agent_id: String) -> CoreResult<()> {
 
 /// Wakes an agent's chat and answers once it is ready, so a client taking it
 /// up next finds it there.
-pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<Response> {
+pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<()> {
     let deadline = tokio::time::Instant::now() + WAKE_WAIT;
     tokio::time::timeout_at(deadline, lifecycle::ensure_running(core, &agent_id, false))
         .await
         .map_err(|_| CoreError::from("the chat did not wake in time"))??;
     tokio::time::timeout_at(deadline, chat::until_ready(core, &agent_id))
         .await
-        .map_err(|_| CoreError::from("the chat did not wake in time"))??;
-    Ok(Response::Done)
+        .map_err(|_| CoreError::from("the chat did not wake in time"))?
+        .map(drop)
 }
 
 /// Starts a new chat in one of the projects and answers `client` once its
@@ -375,10 +375,8 @@ pub(crate) fn start_chat(
 ) {
     let (core, client) = (core.clone(), client.clone());
     tokio::spawn(async move {
-        let result = start_new(&core, Some(&client), choice)
-            .await
-            .map(|(agent_id, start)| Response::ChatBegun { agent_id, start });
-        client.respond(request_id, result);
+        let result = start_new(&core, Some(&client), choice).await;
+        client.answer::<ask::StartChat>(request_id, result);
     });
 }
 

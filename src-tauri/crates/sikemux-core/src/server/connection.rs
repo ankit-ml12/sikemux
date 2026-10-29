@@ -10,9 +10,9 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    decode_input, encode_control, encode_lines, fits, read_frame, ClientMessage, FrameKind,
-    HostRegistration, LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId,
-    SpawnTarget, StreamId, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
+    ask, ask::Ask, decode_input, encode_control, encode_lines, fits, read_frame, ClientMessage,
+    FrameKind, HostRegistration, LaunchIdentity, Request, RequestId, Response, ServerMessage,
+    SessionId, SpawnTarget, StreamId, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 use super::access::{self, Needs, Peer};
@@ -185,6 +185,11 @@ impl ClientConn {
                 message: error.to_string(),
             },
         });
+    }
+
+    /// Answers a request with what its kind of request is answered with.
+    pub(crate) fn answer<A: Ask>(&self, request_id: RequestId, result: CoreResult<A::Answer>) {
+        self.respond(request_id, result.map(A::reply));
     }
 
     pub(crate) fn note_stream(&self, stream: StreamId, id: SessionId) {
@@ -453,7 +458,7 @@ fn write_to_program(
         messages::worked(core, agent.agent_id());
     }
     if bytes.is_empty() {
-        client.respond(request_id, Ok(Response::Done));
+        client.answer::<ask::TerminalInput>(request_id, Ok(()));
         return;
     }
     let reply_to = client.clone();
@@ -462,10 +467,7 @@ fn write_to_program(
         bytes,
         typist(client),
         Box::new(move |result| {
-            reply_to.respond(
-                request_id,
-                result.map(|()| Response::Done).map_err(CoreError::from),
-            );
+            reply_to.answer::<ask::TerminalInput>(request_id, result.map_err(CoreError::from));
         }),
     );
 }
@@ -507,7 +509,7 @@ async fn run_requests(
             continue;
         }
         match request {
-            Request::Spawn { launch, target } => {
+            Request::Spawn(ask::Spawn { launch, target }) => {
                 tokio::spawn(async move {
                     let started_by = client.peer.device_id();
                     let launch = match started_by {
@@ -517,7 +519,7 @@ async fn run_requests(
                     match spawn(core.clone(), launch, target, started_by).await {
                         Ok(pending) => {
                             let id = pending.id();
-                            client.respond(request_id, Ok(Response::Spawned { id }));
+                            client.answer::<ask::Spawn>(request_id, Ok(id));
                             let stopped = pending
                                 .task()
                                 .is_some_and(|task| core.harness.session_started(id, task));
@@ -537,7 +539,7 @@ async fn run_requests(
                     }
                 });
             }
-            Request::Kill { id } => {
+            Request::Kill(ask::Kill { id }) => {
                 tokio::spawn(async move {
                     let result = match core.take_session_for_kill(id) {
                         Some(target) => {
@@ -550,19 +552,19 @@ async fn run_requests(
                         }
                         None => Ok(()),
                     };
-                    client.respond(request_id, result.map(|()| Response::Done));
+                    client.answer::<ask::Kill>(request_id, result);
                 });
             }
-            Request::TaskOutput { id, query } => {
+            Request::TaskOutput(ask::TaskOutput { id, query }) => {
                 tokio::spawn(async move {
                     let result = match session_or_missing(&core, id) {
                         Ok(target) => blocking(move || session::task_output(&target, &query)).await,
                         Err(_) => Err("Task output expired or task no longer exists".into()),
                     };
-                    client.respond(request_id, result.map(|page| Response::TaskOutput { page }));
+                    client.answer::<ask::TaskOutput>(request_id, result);
                 });
             }
-            Request::Shutdown { stop_all } => {
+            Request::Shutdown(ask::Shutdown { stop_all }) => {
                 tokio::spawn(shutdown(core, client, request_id, stop_all));
             }
             Request::StopAll => {
@@ -573,7 +575,7 @@ async fn run_requests(
                         Ok(())
                     })
                     .await;
-                    client.respond(request_id, result.map(|()| Response::Done));
+                    client.answer::<ask::StopAll>(request_id, result);
                 });
             }
             Request::RegisterWindow => {
@@ -584,35 +586,29 @@ async fn run_requests(
                     crate::waiting::wake(&listening.config.socket);
                 }
                 core.agents_changed();
-                client.respond(request_id, Ok(Response::Done));
+                client.answer::<ask::RegisterWindow>(request_id, Ok(()));
             }
             Request::PluginsChanged => {
                 core.harness.plugins_changed();
-                client.respond(request_id, Ok(Response::Done));
+                client.answer::<ask::PluginsChanged>(request_id, Ok(()));
             }
-            Request::Configure { manifest_dir } => {
+            Request::Configure(ask::Configure { manifest_dir }) => {
                 tokio::spawn(async move {
                     let result = blocking(move || core.configure_manifests(manifest_dir)).await;
-                    client.respond(
-                        request_id,
-                        result.map(|report| Response::Manifests { report }),
-                    );
+                    client.answer::<ask::Configure>(request_id, result);
                 });
             }
             Request::ReloadManifests => {
                 tokio::spawn(async move {
                     let result = blocking(move || core.reload_manifests()).await;
-                    client.respond(
-                        request_id,
-                        result.map(|report| Response::Manifests { report }),
-                    );
+                    client.answer::<ask::ReloadManifests>(request_id, result);
                 });
             }
             Request::ListManifests => {
                 let report = core.manifest_report();
-                client.respond(request_id, Ok(Response::Manifests { report }));
+                client.answer::<ask::ListManifests>(request_id, Ok(report));
             }
-            Request::ExplainAgentDetection { agent_id } => {
+            Request::ExplainAgentDetection(ask::ExplainAgentDetection { agent_id }) => {
                 let result = match core.agent_session(&agent_id) {
                     Some(target) => {
                         let explaining = core.clone();
@@ -624,14 +620,9 @@ async fn run_requests(
                     }
                     None => Err("invalid argument: agent has no live terminal".into()),
                 };
-                client.respond(
-                    request_id,
-                    result.map(|explain| Response::DetectionExplain {
-                        explain: Box::new(explain),
-                    }),
-                );
+                client.answer::<ask::ExplainAgentDetection>(request_id, result.map(Box::new));
             }
-            Request::Attach { id } => {
+            Request::Attach(ask::Attach { id }) => {
                 let result = match session_or_missing(&core, id) {
                     Ok(target) => {
                         let subscriber = client.clone();
@@ -644,7 +635,7 @@ async fn run_requests(
                     Err(error) => client.respond(request_id, Err(error)),
                 }
             }
-            Request::ResetModes { id } => {
+            Request::ResetModes(ask::ResetModes { id }) => {
                 let result = match session_or_missing(&core, id) {
                     Ok(target) => {
                         let resetting = core.clone();
@@ -652,86 +643,86 @@ async fn run_requests(
                     }
                     Err(error) => Err(error),
                 };
-                client.respond(request_id, result.map(|()| Response::Done));
+                client.answer::<ask::ResetModes>(request_id, result);
             }
-            Request::TerminalInput { id, input } => match session_or_missing(&core, id) {
-                Ok(target) => {
-                    let bytes = session::encode(&target, &input);
-                    write_to_program(&core, &client, request_id, &target, bytes);
+            Request::TerminalInput(ask::TerminalInput { id, input }) => {
+                match session_or_missing(&core, id) {
+                    Ok(target) => {
+                        let bytes = session::encode(&target, &input);
+                        write_to_program(&core, &client, request_id, &target, bytes);
+                    }
+                    Err(error) => client.respond(request_id, Err(error)),
                 }
-                Err(error) => client.respond(request_id, Err(error)),
-            },
-            Request::TerminalLines { id, start, count } => match session_or_missing(&core, id) {
-                Ok(target) => {
-                    tokio::spawn(async move {
-                        let lines =
-                            blocking(move || Ok(session::lines(&target, start, count))).await;
-                        match lines {
-                            Ok(lines) => {
-                                client.send(encode_lines(request_id, &lines).into());
+            }
+            Request::TerminalLines(ask::TerminalLines { id, start, count }) => {
+                match session_or_missing(&core, id) {
+                    Ok(target) => {
+                        tokio::spawn(async move {
+                            let lines =
+                                blocking(move || Ok(session::lines(&target, start, count))).await;
+                            match lines {
+                                Ok(lines) => {
+                                    client.send(encode_lines(request_id, &lines).into());
+                                }
+                                Err(error) => client.respond(request_id, Err(error)),
                             }
-                            Err(error) => client.respond(request_id, Err(error)),
-                        }
-                    });
+                        });
+                    }
+                    Err(error) => client.respond(request_id, Err(error)),
                 }
-                Err(error) => client.respond(request_id, Err(error)),
-            },
-            Request::TerminalText { id, range } => {
+            }
+            Request::TerminalText(ask::TerminalText { id, range }) => {
                 let result = match session_or_missing(&core, id) {
                     Ok(target) => blocking(move || Ok(session::text(&target, range))).await,
                     Err(error) => Err(error),
                 };
-                client.respond(
-                    request_id,
-                    result.map(|text| Response::TerminalText { text }),
-                );
+                client.answer::<ask::TerminalText>(request_id, result);
             }
-            Request::TerminalFind {
+            Request::TerminalFind(ask::TerminalFind {
                 id,
                 query,
                 options,
                 from,
                 backwards,
                 inclusive,
-            } => match session_or_missing(&core, id) {
+            }) => match session_or_missing(&core, id) {
                 Ok(target) => {
                     tokio::spawn(async move {
                         let result = blocking(move || {
                             session::find(&target, &query, &options, from, backwards, inclusive)
                         })
                         .await;
-                        client.respond(request_id, result.map(|result| Response::Found { result }));
+                        client.answer::<ask::TerminalFind>(request_id, result);
                     });
                 }
                 Err(error) => client.respond(request_id, Err(error)),
             },
-            Request::TerminalWaitFor { id, containing } => match session_or_missing(&core, id) {
-                Ok(target) => {
-                    let shown = session::line_shown(&target, containing);
-                    drop(target);
-                    tokio::spawn(async move {
-                        let line = shown.await.unwrap_or(None);
-                        client.respond(request_id, Ok(Response::TerminalLine { line }));
-                    });
+            Request::TerminalWaitFor(ask::TerminalWaitFor { id, containing }) => {
+                match session_or_missing(&core, id) {
+                    Ok(target) => {
+                        let shown = session::line_shown(&target, containing);
+                        drop(target);
+                        tokio::spawn(async move {
+                            let line = shown.await.unwrap_or(None);
+                            client.answer::<ask::TerminalWaitFor>(request_id, Ok(line));
+                        });
+                    }
+                    Err(error) => client.respond(request_id, Err(error)),
                 }
-                Err(error) => client.respond(request_id, Err(error)),
-            },
-            Request::TerminalClear { id } => {
+            }
+            Request::TerminalClear(ask::TerminalClear { id }) => {
                 let result =
                     session_or_missing(&core, id).map(|target| session::clear(&core, &target));
-                client.respond(request_id, result.map(|()| Response::Done));
+                client.answer::<ask::TerminalClear>(request_id, result);
             }
-            Request::ShellAtPrompt { id } => {
+            Request::ShellAtPrompt(ask::ShellAtPrompt { id }) => {
                 let result = match session_or_missing(&core, id) {
                     Ok(target) => blocking(move || Ok(target.shell_at_prompt())).await,
                     Err(error) => Err(error),
                 };
-                client.respond(
-                    request_id,
-                    result.map(|at_prompt| Response::ShellAtPrompt { at_prompt }),
-                );
+                client.answer::<ask::ShellAtPrompt>(request_id, result);
             }
-            Request::Detach { stream } => {
+            Request::Detach(ask::Detach { stream }) => {
                 if let Some(target) = client
                     .stream_session(stream)
                     .and_then(|id| core.session(id))
@@ -744,9 +735,9 @@ async fn run_requests(
                 }
                 client.forget_stream(stream);
                 core.view_changed();
-                client.respond(request_id, Ok(Response::Done));
+                client.answer::<ask::Detach>(request_id, Ok(()));
             }
-            Request::Resize { id, cols, rows } => {
+            Request::Resize(ask::Resize { id, cols, rows }) => {
                 core.spares.note_size(cols, rows);
                 let result = match validate_pty_dimensions(cols, rows) {
                     Ok(()) => match session_or_missing(&core, id) {
@@ -758,81 +749,69 @@ async fn run_requests(
                 if result.is_ok() {
                     core.view_changed();
                 }
-                client.respond(request_id, result.map(|()| Response::Done));
+                client.answer::<ask::Resize>(request_id, result);
             }
             Request::List => {
-                client.respond(
-                    request_id,
-                    Ok(Response::Sessions {
-                        sessions: core.session_infos(),
-                    }),
-                );
+                client.answer::<ask::List>(request_id, Ok(core.session_infos()));
             }
-            Request::AcpStart { launch } => {
+            Request::AcpStart(ask::AcpStart { launch }) => {
                 match chat::begin(&core, *launch, Some(&client), None, false) {
                     Ok(started) => {
                         tokio::spawn(async move {
                             let result = chat::until_started(&core, started).await;
-                            client.respond(
-                                request_id,
-                                result.map(|start| Response::ChatStarted { start }),
-                            );
+                            client.answer::<ask::AcpStart>(request_id, result);
                         });
                     }
                     Err(error) => client.respond(request_id, Err(error)),
                 }
             }
-            Request::AcpAttach { agent_id, since } => {
+            Request::AcpAttach(ask::AcpAttach { agent_id, since }) => {
                 tokio::spawn(async move {
                     chat::attach(&core, &client, request_id, &agent_id, since).await;
                 });
             }
-            Request::AcpHistory {
+            Request::AcpHistory(ask::AcpHistory {
                 agent_id,
                 feed,
                 before,
                 turns,
-            } => {
+            }) => {
                 tokio::spawn(async move {
                     let reading = core.clone();
                     let page =
                         blocking(move || chat::history(&reading, &agent_id, &feed, before, turns))
                             .await;
-                    client.respond(request_id, page);
+                    client.answer::<ask::AcpHistory>(request_id, page);
                 });
             }
-            Request::AcpDetach { agent_id } => {
+            Request::AcpDetach(ask::AcpDetach { agent_id }) => {
                 chat::detach(&core, client.id, &agent_id);
-                client.respond(request_id, Ok(Response::Done));
+                client.answer::<ask::AcpDetach>(request_id, Ok(()));
             }
-            Request::AcpWake { agent_id } => {
+            Request::AcpWake(ask::AcpWake { agent_id }) => {
                 tokio::spawn(async move {
                     let result = super::launching::wake_chat(&core, agent_id).await;
-                    client.respond(request_id, result);
+                    client.answer::<ask::AcpWake>(request_id, result);
                 });
             }
             Request::AcpList => {
-                client.respond(
-                    request_id,
-                    Ok(Response::Chats {
-                        chats: if client.peer.is_local() {
-                            core.chats.list()
-                        } else {
-                            core.workspaces.listed(core.chats.list())
-                        },
-                    }),
-                );
+                let chats = if client.peer.is_local() {
+                    core.chats.list()
+                } else {
+                    core.workspaces.listed(core.chats.list())
+                };
+                client.answer::<ask::AcpList>(request_id, Ok(chats));
             }
-            Request::AcpPrompt {
+            Request::AcpPrompt(ask::AcpPrompt {
                 agent_id,
                 message_id,
                 text,
                 paths,
                 context,
-            } => {
+            }) => {
                 if core.workspaces.in_terminal(&agent_id) {
                     let result = super::messages::from_person(&core, &agent_id, text);
-                    client.respond(request_id, result.map(|()| Response::Done));
+                    client.answer::<ask::AcpPrompt>(request_id, result);
                 } else if chat::stopped(&core, &agent_id) || chat::mentions::wakes(&context) {
                     tokio::spawn(async move {
                         let mut context = context;
@@ -843,20 +822,20 @@ async fn run_requests(
                                 }
                                 Err(error) => Err(error),
                             };
-                        client.respond(request_id, result.map(|()| Response::Done));
+                        client.answer::<ask::AcpPrompt>(request_id, result);
                     });
                 } else {
                     let result = chat::prompt(&core, &agent_id, message_id, text, paths, context);
-                    client.respond(request_id, result.map(|()| Response::Done));
+                    client.answer::<ask::AcpPrompt>(request_id, result);
                 }
             }
-            Request::AcpEdit {
+            Request::AcpEdit(ask::AcpEdit {
                 agent_id,
                 message_id,
                 text,
                 paths,
                 context,
-            } => {
+            }) => {
                 tokio::spawn(async move {
                     let mut context = context;
                     let result = match chat::wake_for_message(&core, &agent_id, &mut context).await
@@ -866,26 +845,26 @@ async fn run_requests(
                         }
                         Err(error) => Err(error),
                     };
-                    client.respond(request_id, result.map(|()| Response::Done));
+                    client.answer::<ask::AcpEdit>(request_id, result);
                 });
             }
-            Request::AcpSteer {
+            Request::AcpSteer(ask::AcpSteer {
                 agent_id,
                 text,
                 paths,
                 context,
-            } if core.workspaces.in_terminal(&agent_id) => {
+            }) if core.workspaces.in_terminal(&agent_id) => {
                 let _ = (paths, context);
                 let result = super::messages::from_person(&core, &agent_id, text);
-                let outcome = "queued".to_owned();
-                client.respond(request_id, result.map(|()| Response::Steered { outcome }));
+                let outcome = result.map(|()| "queued".to_owned());
+                client.answer::<ask::AcpSteer>(request_id, outcome);
             }
-            Request::AcpSteer {
+            Request::AcpSteer(ask::AcpSteer {
                 agent_id,
                 text,
                 paths,
                 context,
-            } => {
+            }) => {
                 tokio::spawn(async move {
                     let mut context = context;
                     let result = match chat::wake_for_message(&core, &agent_id, &mut context).await
@@ -893,18 +872,15 @@ async fn run_requests(
                         Ok(()) => chat::steer(&core, &agent_id, text, paths, context).await,
                         Err(error) => Err(error),
                     };
-                    client.respond(
-                        request_id,
-                        result.map(|outcome| Response::Steered { outcome }),
-                    );
+                    client.answer::<ask::AcpSteer>(request_id, result);
                 });
             }
-            Request::AttachFile {
+            Request::AttachFile(ask::AttachFile {
                 agent_id,
                 name,
                 mime,
                 data,
-            } => {
+            }) => {
                 let dir = core
                     .listening
                     .get()
@@ -922,112 +898,89 @@ async fn run_requests(
                             let result =
                                 blocking(move || attachments::save(&dir, &name, &mime, &data))
                                     .await;
-                            client.respond(
-                                request_id,
-                                result.map(|path| Response::Attached { path }),
-                            );
+                            client.answer::<ask::AttachFile>(request_id, result);
                         });
                     }
                     Err(error) => client.respond(request_id, Err(error)),
                 }
             }
-            Request::Call { method, params } => {
+            Request::Call(ask::Call { method, params }) => {
                 core.activity_log.call_used(&method, &params, &client.peer);
                 let device = client.peer.device_id();
                 tokio::spawn(super::layout::asked_by(device, async move {
                     let result = calls::call(core, &client, &method, params).await;
-                    client.respond(request_id, result.map(|result| Response::Called { result }));
+                    client.answer::<ask::Call>(request_id, result);
                 }));
             }
-            Request::AcpCancel { agent_id } => {
+            Request::AcpCancel(ask::AcpCancel { agent_id }) => {
                 let result = chat::cancel(&core, &agent_id);
-                client.respond(request_id, result.map(|()| Response::Done));
+                client.answer::<ask::AcpCancel>(request_id, result);
             }
-            Request::AcpStopTask { agent_id, task_id } => {
+            Request::AcpStopTask(ask::AcpStopTask { agent_id, task_id }) => {
                 let result = chat::stop_task(&core, &agent_id, task_id);
-                client.respond(request_id, result.map(|()| Response::Done));
+                client.answer::<ask::AcpStopTask>(request_id, result);
             }
-            Request::AcpPermissionReply {
+            Request::AcpPermissionReply(ask::AcpPermissionReply {
                 agent_id,
                 request_id: permission,
                 option_id,
-            } => {
+            }) => {
                 let result = chat::reply_permission(&core, &agent_id, &permission, option_id);
-                client.respond(request_id, result.map(|()| Response::Done));
+                client.answer::<ask::AcpPermissionReply>(request_id, result);
             }
-            Request::AcpStop { agent_id } => {
+            Request::AcpStop(ask::AcpStop { agent_id }) => {
                 if let Some(chat) = core.chats.get(&agent_id) {
                     core.workspaces.note_stopping(&chat);
                 }
                 if core.chats.stop(&agent_id) {
                     core.note_agent_gone(&agent_id);
                 }
-                client.respond(request_id, Ok(Response::Done));
+                client.answer::<ask::AcpStop>(request_id, Ok(()));
             }
-            Request::AcpSetPermissionMode { agent_id, mode } => {
+            Request::AcpSetPermissionMode(ask::AcpSetPermissionMode { agent_id, mode }) => {
                 tokio::spawn(async move {
                     let result = chat::set_permission_mode(&core, &agent_id, mode).await;
-                    client.respond(request_id, result.map(|()| Response::Done));
+                    client.answer::<ask::AcpSetPermissionMode>(request_id, result);
                 });
             }
             Request::RemoteStatus => {
-                client.respond(
-                    request_id,
-                    Ok(Response::Remote {
-                        status: Box::new(core.remote.status()),
-                    }),
-                );
+                let status = Box::new(core.remote.status());
+                client.answer::<ask::RemoteStatus>(request_id, Ok(status));
             }
-            Request::SetRemoteAccess { enabled } => {
+            Request::SetRemoteAccess(ask::SetRemoteAccess { enabled }) => {
                 tokio::spawn(async move {
                     let result = remote::set_enabled(&core, enabled).await;
-                    client.respond(
-                        request_id,
-                        result.map(|status| Response::Remote {
-                            status: Box::new(status),
-                        }),
-                    );
+                    client.answer::<ask::SetRemoteAccess>(request_id, result.map(Box::new));
                 });
             }
-            Request::SetDeviceAccess { id, access } => {
+            Request::SetDeviceAccess(ask::SetDeviceAccess { id, access }) => {
                 let result = remote::set_access(&core, &id, access);
-                client.respond(
-                    request_id,
-                    result.map(|status| Response::Remote {
-                        status: Box::new(status),
-                    }),
-                );
+                client.answer::<ask::SetDeviceAccess>(request_id, result.map(Box::new));
             }
-            Request::PublishBackdrop { texture, image } => {
+            Request::PublishBackdrop(ask::PublishBackdrop { texture, image }) => {
                 let result = core.workspaces.publish_backdrop(texture, image);
-                client.respond(request_id, result.map(|()| Response::Done));
+                client.answer::<ask::PublishBackdrop>(request_id, result);
             }
             Request::BackdropImage => {
-                client.respond(
-                    request_id,
-                    Ok(Response::BackdropImage {
-                        data_url: core.workspaces.backdrop_image(),
-                    }),
-                );
+                let data_url = core.workspaces.backdrop_image();
+                client.answer::<ask::BackdropImage>(request_id, Ok(data_url));
             }
-            Request::PublishOnScreen { agent_ids, focused } => {
+            Request::PublishOnScreen(ask::PublishOnScreen { agent_ids, focused }) => {
                 super::launching::show_terminals(&core, &agent_ids);
                 core.seen.show(client.id, agent_ids, focused);
                 core.view_changed();
-                client.respond(request_id, Ok(Response::Done));
+                client.answer::<ask::PublishOnScreen>(request_id, Ok(()));
             }
-            Request::FocusAgent { agent_id } => {
+            Request::FocusAgent(ask::FocusAgent { agent_id }) => {
                 let shown = core.window.focus(agent_id);
-                client.respond(
-                    request_id,
-                    if shown {
-                        Ok(Response::Done)
-                    } else {
-                        Err(window::not_open("show that agent").into())
-                    },
-                );
+                let result = if shown {
+                    Ok(())
+                } else {
+                    Err(window::not_open("show that agent").into())
+                };
+                client.answer::<ask::FocusAgent>(request_id, result);
             }
-            Request::SetNotifications { key_id, key, prefs } => {
+            Request::SetNotifications(ask::SetNotifications { key_id, key, prefs }) => {
                 let result = match &client.peer {
                     Peer::Device { id } => core.remote.set_notifications(id, key_id, &key, prefs),
                     Peer::App | Peer::Local | Peer::Share { .. } => {
@@ -1037,7 +990,7 @@ async fn run_requests(
                 if result.is_ok() {
                     remote::announce(&core);
                 }
-                client.respond(request_id, result.map(|()| Response::Done));
+                client.answer::<ask::SetNotifications>(request_id, result);
             }
             Request::ClearNotifications => {
                 let result = match &client.peer {
@@ -1049,47 +1002,37 @@ async fn run_requests(
                 if result.is_ok() {
                     remote::announce(&core);
                 }
-                client.respond(request_id, result.map(|()| Response::Done));
+                client.answer::<ask::ClearNotifications>(request_id, result);
             }
-            Request::SetForeground { foreground } => {
+            Request::SetForeground(ask::SetForeground { foreground }) => {
                 client.foreground.store(foreground, Ordering::Release);
-                client.respond(request_id, Ok(Response::Done));
+                client.answer::<ask::SetForeground>(request_id, Ok(()));
             }
             Request::WatchView => {
                 client.watches_view.store(true, Ordering::Release);
                 core.view_watched();
-                client.respond(request_id, Ok(Response::Done));
+                client.answer::<ask::WatchView>(request_id, Ok(()));
                 core.send_device_view(&client);
             }
             Request::Attentions => {
-                client.respond(
-                    request_id,
-                    Ok(Response::Attentions {
-                        attentions: core.chats.attentions(),
-                    }),
-                );
+                client.answer::<ask::Attentions>(request_id, Ok(core.chats.attentions()));
             }
             Request::Host => {
                 tokio::spawn(async move {
                     let host = blocking(|| Ok(host::info())).await;
-                    client.respond(request_id, host.map(|host| Response::Host { host }));
+                    client.answer::<ask::Host>(request_id, host);
                 });
             }
             Request::Workspace => {
-                client.respond(
-                    request_id,
-                    Ok(Response::Workspace {
-                        workspace: core.workspace_view(),
-                    }),
-                );
+                client.answer::<ask::Workspace>(request_id, Ok(core.workspace_view()));
             }
-            Request::StartChat {
+            Request::StartChat(ask::StartChat {
                 launcher,
                 project,
                 permission_mode,
                 model,
                 effort,
-            } => {
+            }) => {
                 let choice = workspace::ChatChoice {
                     launcher,
                     project,
@@ -1102,12 +1045,12 @@ async fn run_requests(
                 };
                 super::launching::start_chat(&core, &client, request_id, choice);
             }
-            Request::ResumeChat {
+            Request::ResumeChat(ask::ResumeChat {
                 recent,
                 permission_mode,
                 model,
                 effort,
-            } => {
+            }) => {
                 let choice = workspace::ResumeChoice {
                     recent,
                     permission_mode,
@@ -1116,26 +1059,16 @@ async fn run_requests(
                 };
                 super::launching::resume_chat(&core, &client, request_id, choice);
             }
-            Request::AnswerPairing { id, allow, access } => {
+            Request::AnswerPairing(ask::AnswerPairing { id, allow, access }) => {
                 let result = core
                     .remote
                     .answer(&id, allow.then_some(access))
                     .map(|()| remote::announce(&core));
-                client.respond(
-                    request_id,
-                    result.map(|status| Response::Remote {
-                        status: Box::new(status),
-                    }),
-                );
+                client.answer::<ask::AnswerPairing>(request_id, result.map(Box::new));
             }
-            Request::AllowDevices { devices } => {
+            Request::AllowDevices(ask::AllowDevices { devices }) => {
                 let result = core.remote.allow(devices).map(|()| remote::announce(&core));
-                client.respond(
-                    request_id,
-                    result.map(|status| Response::Remote {
-                        status: Box::new(status),
-                    }),
-                );
+                client.answer::<ask::AllowDevices>(request_id, result.map(Box::new));
             }
             Request::Unpair => {
                 let Peer::Device { id } = &client.peer else {
@@ -1147,14 +1080,14 @@ async fn run_requests(
                 };
                 let id = id.clone();
                 tokio::spawn(async move {
-                    client.respond(request_id, Ok(Response::Done));
+                    client.answer::<ask::Unpair>(request_id, Ok(()));
                     client.wait_flushed(SHUTDOWN_FLUSH).await;
                     if let Err(error) = remote::revoke(&core, &id) {
                         eprintln!("sikemux core: could not unpair {id}: {error}");
                     }
                 });
             }
-            Request::SignRegistration { nonce, user_id } => {
+            Request::SignRegistration(ask::SignRegistration { nonce, user_id }) => {
                 let signed = core
                     .remote
                     .may_join(&user_id, &client.peer)
@@ -1164,56 +1097,41 @@ async fn run_requests(
                         Ok((key, signature)) => {
                             blocking(|| Ok(host::info()))
                                 .await
-                                .map(|host| Response::Registration {
-                                    registration: HostRegistration {
-                                        key,
-                                        name: host.name,
-                                        channel: host.channel,
-                                        signature,
-                                    },
+                                .map(|host| HostRegistration {
+                                    key,
+                                    name: host.name,
+                                    channel: host.channel,
+                                    signature,
                                 })
                         }
                         Err(error) => Err(error),
                     };
-                    client.respond(request_id, result);
+                    client.answer::<ask::SignRegistration>(request_id, result);
                 });
             }
-            Request::SetOwner { owner } => {
+            Request::SetOwner(ask::SetOwner { owner }) => {
                 tokio::spawn(async move {
                     let result = remote::set_owner(&core, owner, &client.peer).await;
-                    client.respond(
-                        request_id,
-                        result.map(|status| Response::Remote {
-                            status: Box::new(status),
-                        }),
-                    );
+                    client.answer::<ask::SetOwner>(request_id, result.map(Box::new));
                 });
             }
-            Request::RevokeDevice { id } => {
+            Request::RevokeDevice(ask::RevokeDevice { id }) => {
                 let result = remote::revoke(&core, &id);
-                client.respond(
-                    request_id,
-                    result.map(|status| Response::Remote {
-                        status: Box::new(status),
-                    }),
-                );
+                client.answer::<ask::RevokeDevice>(request_id, result.map(Box::new));
             }
-            Request::AcpSetConfig {
+            Request::AcpSetConfig(ask::AcpSetConfig {
                 agent_id,
                 config_id,
                 value,
-            } => {
+            }) => {
                 tokio::spawn(async move {
                     let result = chat::set_config(&core, &agent_id, config_id, value).await;
-                    client.respond(
-                        request_id,
-                        result.map(|value| Response::ChatConfig { value }),
-                    );
+                    client.answer::<ask::AcpSetConfig>(request_id, result);
                 });
             }
-            Request::AcpSwitchAccount { agent_id, account } => {
+            Request::AcpSwitchAccount(ask::AcpSwitchAccount { agent_id, account }) => {
                 let result = chat::switch_account(&core, &agent_id, account);
-                client.respond(request_id, result.map(|()| Response::Done));
+                client.answer::<ask::AcpSwitchAccount>(request_id, result);
             }
         }
     }
@@ -1296,7 +1214,7 @@ async fn shutdown(core: Arc<Core>, client: Arc<ClientConn>, request_id: RequestI
             .pid
             .map_or_else(|| "unknown".to_owned(), |pid| pid.to_string())
     );
-    client.respond(request_id, Ok(Response::Done));
+    client.answer::<ask::Shutdown>(request_id, Ok(()));
     client.wait_flushed(SHUTDOWN_FLUSH).await;
     core.begin_shutdown();
 }

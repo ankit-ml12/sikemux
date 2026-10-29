@@ -19,8 +19,8 @@ use sikemux_core::cli::protocol::{
 };
 use sikemux_core::client::{probe, ClientEvent, CoreClient};
 use sikemux_core::protocol::{
-    encode_control, read_frame_sync, ClientMessage, Request, WindowAnswer, WindowCall, PROTOCOL,
-    PROTOCOL_VERSION,
+    ask, encode_control, read_frame_sync, ClientMessage, Request, WindowAnswer, WindowCall,
+    PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -80,7 +80,7 @@ impl TestCore {
             };
             let shutdown = ClientMessage::Request {
                 request_id: 1,
-                request: Request::Shutdown { stop_all: true },
+                request: Request::Shutdown(ask::Shutdown { stop_all: true }),
             };
             let _ = stream.write_all(&encode_control(&hello).expect("hello"));
             let _ = stream.write_all(&encode_control(&shutdown).expect("shutdown"));

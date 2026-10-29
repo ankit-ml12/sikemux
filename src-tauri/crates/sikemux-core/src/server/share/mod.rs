@@ -451,11 +451,10 @@ async fn answer(core: Arc<Core>, id: String, viewer: String, sealed: String) -> 
     let failed = match ask {
         ShareAsk::Page { feed, before, .. } => {
             match chat::history(&core, &agent_id, &feed, before, PAGE_TURNS) {
-                Ok(crate::protocol::Response::ChatHistory { page }) => {
+                Ok(page) => {
                     reply.page = Some(page);
                     None
                 }
-                Ok(_) => Some("the host answered something else".to_owned()),
                 Err(error) => Some(error.to_string()),
             }
         }
