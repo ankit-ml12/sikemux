@@ -139,6 +139,8 @@ export type PullChecks = 'pending' | 'passing' | 'failing';
 export interface ProjectCodeHost {
   /** The host's plugin, such as `github`. */
   host: string;
+  /** What people call the host, such as GitHub. */
+  label: string;
   /** `owner/name`. */
   repo: string;
   /** What the host calls its CI, such as Actions or Pipelines. */

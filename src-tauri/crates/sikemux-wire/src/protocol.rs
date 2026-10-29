@@ -1008,6 +1008,8 @@ pub struct ProjectInfo {
 pub struct ProjectCodeHost {
     /// The host's plugin, such as `github`.
     pub host: String,
+    /// What people call the host, such as GitHub.
+    pub label: String,
     /// `owner/name`.
     pub repo: String,
     /// What the host calls its CI, such as Actions or Pipelines.
