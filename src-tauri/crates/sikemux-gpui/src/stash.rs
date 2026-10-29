@@ -3,11 +3,14 @@
 //! a chat's draft from the pane, by dragging it onto the chat, from the chip over a composer when
 //! items are new, or with `&` in the draft. The chat's core puts it there.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, AnyElement, App, Context, Div, FontWeight, InteractiveElement, IntoElement,
-    ObjectFit, ParentElement, Pixels, Point, SharedString, StatefulInteractiveElement, Styled,
-    StyledImage, Window,
+    div, img, px, AnyElement, App, Bounds, Context, Div, FontWeight, InteractiveElement,
+    IntoElement, ObjectFit, ParentElement, Pixels, Point, SharedString, StatefulInteractiveElement,
+    Styled, StyledImage, Window,
 };
 use serde_json::{json, Value};
 
@@ -591,11 +594,13 @@ pub fn tray(
         .into_any_element()
 }
 
-/// A page an item links to, and what the server read of it.
+/// A page an item links to, what the server read of it, and for a pull request or issue the
+/// state the core knows it in.
 #[derive(Clone, Copy)]
 struct Page<'a> {
     url: &'a str,
     preview: &'a Value,
+    state: Option<&'a str>,
 }
 
 impl Page<'_> {
@@ -620,10 +625,15 @@ fn bare_url(url: &str) -> String {
         .to_owned()
 }
 
-/// A word of an item's text, or something it names, drawn as the chat draws its chip.
+/// A word of an item's text, or something it names, drawn as the chat draws its chip; a pull
+/// request or issue in the colour of its state, when the core knows it.
 enum Piece {
     Word(String),
-    Pill { id: String, label: String },
+    Pill {
+        id: String,
+        label: String,
+        state: Option<String>,
+    },
 }
 
 /// What a row shows of an item: its words, and what it carries besides them.
@@ -651,6 +661,7 @@ fn said<'a>(item: &'a Value, agents: &[(String, String)]) -> Said<'a> {
             .map(|url| Page {
                 url,
                 preview: &item["preview"],
+                state: None,
             })
             .into_iter()
             .collect(),
@@ -659,14 +670,12 @@ fn said<'a>(item: &'a Value, agents: &[(String, String)]) -> Said<'a> {
                 Some(Page {
                     url: link["url"].as_str()?,
                     preview: &link["preview"],
+                    state: link["state"].as_str(),
                 })
             })
             .collect(),
     };
-    let text = match item["kind"].as_str() {
-        Some("text" | "prompt") => item["text"].as_str().unwrap_or_default(),
-        _ => "",
-    };
+    let text = item["words"].as_str().unwrap_or_default();
     let names: Vec<String> = (attachments.iter())
         .filter_map(|file| file["name"].as_str().map(str::to_owned))
         .collect();
@@ -701,32 +710,45 @@ fn said<'a>(item: &'a Value, agents: &[(String, String)]) -> Said<'a> {
     }
 }
 
-/// The words of `text` with what `named` names in them as pills, and its links taken out, but for
-/// one to a pull request or issue that nothing named, which reads as GitHub writes it.
+/// The words the core made of an item's text, with what `named` names in them as pills. The
+/// core leaves in only links to pull requests and issues: one a mention names goes, and any
+/// other reads as GitHub writes it.
 fn pieces(text: &str, named: &[crate::chat::Mention], pages: &[Page]) -> Vec<Piece> {
-    let mut marks: Vec<(usize, usize, Option<(String, String)>)> = Vec::new();
+    let state_of = |url: &str| {
+        (pages.iter())
+            .find(|page| page.url == url)
+            .and_then(|page| page.state.map(str::to_owned))
+    };
+    let mut marks: Vec<(usize, usize, Option<Piece>)> = Vec::new();
     for mention in named {
         let id = match mention.id.strip_prefix("image:") {
             Some(name) => format!("file:{name}"),
             None => mention.id.clone(),
         };
-        let pill = Some((id, mention.label.clone()));
+        let pill = || Piece::Pill {
+            id: id.clone(),
+            label: mention.label.clone(),
+            state: state_of(&mention.carried),
+        };
         let found = text.match_indices(mention.written.as_str());
-        marks.extend(found.map(|(at, written)| (at, at + written.len(), pill.clone())));
+        marks.extend(found.map(|(at, written)| (at, at + written.len(), Some(pill()))));
     }
     for page in pages {
         let carried = named.iter().any(|mention| mention.carried == page.url);
-        let pill = sikemux_markdown::reference(page.url)
-            .filter(|_| !carried)
-            .map(|reference| {
-                let kind = match page.url.contains("/pull") || reference.contains('!') {
-                    true => "pull",
-                    false => "issue",
-                };
-                (format!("tracked:{kind}:{}", page.url), reference)
-            });
+        let pill = || {
+            let reference = sikemux_markdown::reference(page.url).filter(|_| !carried)?;
+            let kind = match page.url.contains("/pull") || reference.contains('!') {
+                true => "pull",
+                false => "issue",
+            };
+            Some(Piece::Pill {
+                id: format!("tracked:{kind}:{}", page.url),
+                label: reference,
+                state: page.state.map(str::to_owned),
+            })
+        };
         let found = text.match_indices(page.url);
-        marks.extend(found.map(|(at, url)| (at, at + url.len(), pill.clone())));
+        marks.extend(found.map(|(at, url)| (at, at + url.len(), pill())));
     }
     marks.sort_by_key(|(at, end, _)| (*at, std::cmp::Reverse(*end)));
     let words = |text: &str| {
@@ -741,7 +763,7 @@ fn pieces(text: &str, named: &[crate::chat::Mention], pages: &[Page]) -> Vec<Pie
             continue;
         }
         pieces.extend(words(&text[from..at]));
-        pieces.extend(pill.map(|(id, label)| Piece::Pill { id, label }));
+        pieces.extend(pill);
         from = end;
     }
     pieces.extend(words(&text[from..]));
@@ -765,9 +787,9 @@ fn tray_row(
     let t = Tokens::get(cx).clone();
     let said = said(item, agents);
     let words = match (said.words.is_empty(), said.lead) {
-        (false, _) => sentence(&said.words, bench, &t, cx),
-        (true, Some(page)) => sentence(&[Piece::Word(page.title())], bench, &t, cx),
-        (true, None) => sentence(&[Piece::Word(name_of(item, &said))], bench, &t, cx),
+        (false, _) => sentence(item["id"].as_str(), &said.words, bench, &t, cx),
+        (true, Some(page)) => sentence(None, &[Piece::Word(page.title())], bench, &t, cx),
+        (true, None) => sentence(None, &[Piece::Word(name_of(item, &said))], bench, &t, cx),
     };
     let under = match (said.lead, item["kind"].as_str()) {
         (Some(page), _) => {
@@ -778,7 +800,7 @@ fn tray_row(
                     .items_center()
                     .gap(px(5.))
                     .min_w_0()
-                    .child(favicon_small(bench, page.url, &t))
+                    .child(favicon_small(bench, page, &t))
                     .child(
                         ui::text(
                             if said_more { page.title() } else { page.site() },
@@ -875,26 +897,67 @@ fn name_of(item: &Value, said: &Said) -> String {
     }
 }
 
-/// Up to two lines of words, with what they name as the chat's chips.
-fn sentence(pieces: &[Piece], bench: &Workbench, t: &Tokens, cx: &App) -> AnyElement {
+/// Where a row's words end early, on a count of the pills that did not fit in two lines, and how
+/// wide the words were when it was worked out, by the item's id.
+#[derive(Clone, Copy)]
+struct Cut {
+    kept: usize,
+    hidden: usize,
+    width: Pixels,
+}
+
+#[derive(Default)]
+struct Cuts(std::collections::HashMap<String, Cut>);
+
+impl gpui_kit::Global for Cuts {}
+
+/// How wide the count that ends cut words is, at most.
+const MORE: f32 = 32.;
+
+/// Up to two lines of words, with what they name as the chat's chips. Words of the item `key` whose
+/// pills run past the two lines end on a count of them, worked out once they are laid out.
+fn sentence(
+    key: Option<&str>,
+    pieces: &[Piece],
+    bench: &Workbench,
+    t: &Tokens,
+    cx: &App,
+) -> AnyElement {
+    let cut = key.and_then(|key| cx.try_global::<Cuts>()?.0.get(key).copied());
+    let shown = &pieces[..cut.map_or(pieces.len(), |cut| cut.kept.min(pieces.len()))];
     let space = px(3.5);
-    let laid = pieces.iter().enumerate().map(|(at, piece)| {
+    let pill_line = |pill: Div| {
+        pill.h(theme::ui_text(LINE - 3.))
+            .max_w(px(PILL_WIDEST))
+            .text_size(theme::ui_text(12.))
+    };
+    let laid = shown.iter().enumerate().map(|(at, piece)| {
         let held = matches!(
-            pieces.get(at + 1),
+            shown.get(at + 1),
             Some(Piece::Word(next)) if next.starts_with([',', '.', ';', ':', '!', '?', ')'])
         );
         let gap = if held { px(0.) } else { space };
         match piece {
             Piece::Word(word) => div().mr(gap).child(word.clone()).into_any_element(),
-            Piece::Pill { id, label } => crate::chat::pill(id, label, bench, cx)
-                .mr(gap)
-                .h(theme::ui_text(LINE - 3.))
-                .max_w(px(PILL_WIDEST))
-                .text_size(theme::ui_text(12.))
-                .into_any_element(),
+            Piece::Pill { id, label, state } => {
+                let mark = state.as_deref().and_then(|state| state_mark(id, state, t));
+                pill_line(crate::chat::pill(id, label, mark, bench, cx))
+                    .mr(gap)
+                    .into_any_element()
+            }
         }
     });
-    div()
+    let more = cut.map(|cut| {
+        pill_line(div())
+            .px(px(5.))
+            .flex()
+            .items_center()
+            .rounded(theme::RADIUS_2)
+            .bg(t.surface_chosen)
+            .text_color(t.text_secondary)
+            .child(format!("+{}", cut.hidden))
+    });
+    let words = div()
         .flex()
         .flex_wrap()
         .items_center()
@@ -904,7 +967,82 @@ fn sentence(pieces: &[Piece], bench: &Workbench, t: &Tokens, cx: &App) -> AnyEle
         .line_height(theme::ui_text(LINE))
         .text_color(t.text_primary)
         .children(laid)
+        .children(more);
+    let Some(key) = key.map(str::to_owned) else {
+        return words.into_any_element();
+    };
+    let laid_out: Rc<Cell<Vec<Bounds<Pixels>>>> = Rc::default();
+    let pills: Vec<bool> = (pieces.iter())
+        .map(|piece| matches!(piece, Piece::Pill { .. }))
+        .collect();
+    let told = laid_out.clone();
+    div()
+        .w_full()
+        .child(words.on_children_prepainted(move |bounds, _, _| told.set(bounds)))
+        .on_children_prepainted(move |frame, window, cx| {
+            let Some(frame) = frame.first() else {
+                return;
+            };
+            let worked = cut_of(&laid_out.take(), &pills, frame, space);
+            let fresh = match (cut, worked) {
+                (Some(cut), _) if (cut.width - frame.size.width).abs() < px(0.5) => return,
+                (Some(_), _) => None,
+                (None, None) => return,
+                (None, Some(worked)) => Some(worked),
+            };
+            let cuts = &mut cx.default_global::<Cuts>().0;
+            match fresh {
+                Some(fresh) => cuts.insert(key.clone(), fresh),
+                None => cuts.remove(&key),
+            };
+            window.refresh();
+        })
         .into_any_element()
+}
+
+/// Where words laid out in full in `frame` must end so every pill past their two lines is counted
+/// at the end of the second: none when no pill falls past them.
+fn cut_of(
+    laid: &[Bounds<Pixels>],
+    pills: &[bool],
+    frame: &Bounds<Pixels>,
+    space: Pixels,
+) -> Option<Cut> {
+    let mut lines = Vec::with_capacity(laid.len());
+    let mut line = 0;
+    for (at, bounds) in laid.iter().enumerate() {
+        if at > 0 && bounds.origin.x < laid[at - 1].origin.x {
+            line += 1;
+        }
+        lines.push(line);
+    }
+    let mut kept = lines.iter().take_while(|line| **line < 2).count();
+    let hidden = |kept: usize| (pills.iter().skip(kept)).filter(|pill| **pill).count();
+    if hidden(kept) == 0 {
+        return None;
+    }
+    let right = frame.origin.x + frame.size.width;
+    while kept > 0 && laid[kept - 1].origin.x + laid[kept - 1].size.width + space + px(MORE) > right
+    {
+        kept -= 1;
+    }
+    Some(Cut {
+        kept,
+        hidden: hidden(kept),
+        width: frame.size.width,
+    })
+}
+
+/// A pull request's or issue's glyph in the colour of `state`.
+fn state_mark(id: &str, state: &str, t: &Tokens) -> Option<AnyElement> {
+    let (glyph, ink, _) = match id.starts_with("tracked:pull") {
+        true => crate::codehost::pull_look(serde_json::from_value(json!(state)).ok()?, t),
+        false if state == "notPlanned" => {
+            crate::codehost::issue_look("closed", Some("not_planned"), t)
+        }
+        false => crate::codehost::issue_look(state, None, t),
+    };
+    Some(ui::icon(glyph, 13.).text_color(ink).into_any_element())
 }
 
 /// The row's square: its first photo, counted when there are more; its own picture or its page's;
@@ -1034,14 +1172,29 @@ fn pages_chip(bench: &Workbench, said: &Said, t: &Tokens) -> Div {
             .border_1()
             .border_color(t.line)
             .overflow_hidden()
-            .child(favicon_small(bench, page.url, t))
+            .child(favicon_small(bench, *page, t))
     });
     chip(t).child(div().flex().children(icons)).child(words)
 }
 
-/// A page's site icon, small, else a globe.
-fn favicon_small(bench: &Workbench, url: &str, t: &Tokens) -> AnyElement {
-    crate::chat::site_icon(url, true, Icon::Globe, Some(&bench.asks), t)
+/// A page's site icon, small: the one the page names, else the site's `favicon.ico`, else a globe.
+fn favicon_small(bench: &Workbench, page: Page, t: &Tokens) -> AnyElement {
+    let site = crate::chat::site_icon(page.url, true, Icon::Globe, Some(&bench.asks), t);
+    let Some(named) = page.preview["iconUrl"].as_str() else {
+        return site;
+    };
+    let shown = Picture::Remote(Remote::new(named.to_owned(), bench.asks.clone()));
+    let fallback = std::cell::RefCell::new(Some(site));
+    img(shown.source_at(px(14.)))
+        .size(px(14.))
+        .object_fit(ObjectFit::Contain)
+        .with_fallback(move || {
+            fallback
+                .borrow_mut()
+                .take()
+                .unwrap_or_else(|| div().into_any_element())
+        })
+        .into_any_element()
 }
 
 /// A prompt's opening words over a row of its files' thumbnails.

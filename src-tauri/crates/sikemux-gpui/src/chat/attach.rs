@@ -638,11 +638,20 @@ fn chip_face(
         })
 }
 
-/// A mention as the draft draws its chip, on a line of the size around it.
-pub(crate) fn pill(id: &str, label: &str, bench: &Workbench, cx: &App) -> Div {
+/// A mention as the draft draws its chip, on a line of the size around it, wearing `mark` in
+/// place of its own when given one.
+pub(crate) fn pill(
+    id: &str,
+    label: &str,
+    mark: Option<gpui_kit::AnyElement>,
+    bench: &Workbench,
+    cx: &App,
+) -> Div {
     let (key, title) = chip_words(id, &label.to_owned().into());
-    let named = (id.strip_prefix("agent:")).and_then(|agent| bench.agent_by_id(agent));
-    let mark = mark_of(id, Tokens::get(cx).text_tertiary, named, cx);
+    let mark = mark.unwrap_or_else(|| {
+        let named = (id.strip_prefix("agent:")).and_then(|agent| bench.agent_by_id(agent));
+        mark_of(id, Tokens::get(cx).text_tertiary, named, cx)
+    });
     chip_face(key, title, false, mark, cx)
 }
 

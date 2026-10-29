@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Context, Entity, FontWeight, InteractiveElement,
+    div, px, AnyElement, App, AppContext, Context, Entity, FontWeight, Hsla, InteractiveElement,
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription,
     Window,
 };
@@ -72,9 +72,13 @@ pub struct NewIssue {
     _typing: Subscription,
 }
 
-pub(super) fn mark(issue: &Issue, size: f32, cx: &App) -> AnyElement {
-    let t = Tokens::get(cx);
-    let (glyph, ink, label) = match (issue.state.as_str(), issue.state_reason.as_deref()) {
+/// An issue's state, with why it was closed, as a glyph, its colour and its name.
+pub(crate) fn look(
+    state: &str,
+    reason: Option<&str>,
+    t: &Tokens,
+) -> (Icon, Hsla, &'static str) {
+    match (state, reason) {
         ("open", _) => (Icon::Issues, t.live, "Open"),
         (_, Some("not_planned")) => (
             Icon::MarkCancelled,
@@ -82,7 +86,11 @@ pub(super) fn mark(issue: &Issue, size: f32, cx: &App) -> AnyElement {
             "Closed as not planned",
         ),
         _ => (Icon::Check, t.accent, "Closed"),
-    };
+    }
+}
+
+pub(super) fn mark(issue: &Issue, size: f32, cx: &App) -> AnyElement {
+    let (glyph, ink, label) = look(&issue.state, issue.state_reason.as_deref(), Tokens::get(cx));
     div()
         .id(SharedString::from(format!("issue-mark-{}", issue.number)))
         .flex_none()

@@ -5,6 +5,7 @@ mod compose;
 mod diffs;
 pub mod inbox;
 mod issues;
+pub(crate) use issues::look as issue_look;
 mod logs;
 mod pictures;
 mod pull;
@@ -975,16 +976,20 @@ fn list_head(area: Area, host: &ProjectCodeHost, cx: &App) -> Div {
         )
 }
 
-/// A pull request's state as a mark in its colour: green while open, red once closed,
-/// purple once merged, grey as a draft.
-fn pull_mark(state: PullState, size: f32, cx: &App) -> AnyElement {
-    let t = Tokens::get(cx);
-    let (glyph, ink, label) = match state {
+/// A pull request's state as a glyph, its colour and its name: green while open, red once
+/// closed, purple once merged, grey as a draft.
+pub(crate) fn pull_look(state: PullState, t: &Tokens) -> (Icon, Hsla, &'static str) {
+    match state {
         PullState::Open => (Icon::PullRequest, t.live, "Open"),
         PullState::Draft => (Icon::PullRequest, t.text_tertiary, "Draft"),
         PullState::Closed => (Icon::PullRequest, t.danger, "Closed"),
         PullState::Merged => (Icon::Merge, t.accent, "Merged"),
-    };
+    }
+}
+
+/// A pull request's state as a mark in its colour.
+fn pull_mark(state: PullState, size: f32, cx: &App) -> AnyElement {
+    let (glyph, ink, label) = pull_look(state, Tokens::get(cx));
     div()
         .id(SharedString::from(format!("pull-mark-{label}")))
         .flex_none()
