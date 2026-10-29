@@ -22,9 +22,9 @@ use self::log::{Entry, MessageLog, Outcome};
 use super::chat::{self, Delivery};
 use super::connection::blocking;
 use super::kept::Kept;
-use super::names::project_of;
 use super::session::{self, Session};
 use super::wake::{sooner, Wake};
+use super::workspace::project_of;
 use super::{agent, launching, Core, CoreResult};
 
 mod log;
@@ -814,10 +814,8 @@ pub(crate) fn caller_project(core: &Core, request: &HarnessRequest) -> String {
         .and_then(|agent_id| core.names.get(agent_id))
         .map(|named| named.project)
         .unwrap_or_else(|| {
-            project_of(
-                std::path::Path::new(&request.project),
-                &core.workspaces.project_paths(),
-            )
+            core.workspaces
+                .project_of(std::path::Path::new(&request.project))
         })
 }
 

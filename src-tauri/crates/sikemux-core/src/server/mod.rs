@@ -683,7 +683,7 @@ impl Core {
     ) {
         let starting = names::Starting {
             agent_id,
-            project: names::project_of(cwd, &self.workspaces.project_paths()),
+            project: self.workspaces.project_of(cwd),
             provider,
             resume_id,
         };

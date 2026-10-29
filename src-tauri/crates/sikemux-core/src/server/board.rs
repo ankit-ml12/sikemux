@@ -21,7 +21,6 @@ use crate::text::clipped;
 use super::connection::blocking;
 use super::kept::Kept;
 use super::messages;
-use super::names::project_of;
 use super::wake::{sooner, Wake};
 use super::Core;
 use sikemux_wire::inbox::InboxRecording;
@@ -607,7 +606,7 @@ fn ticket_of(value: &Value) -> Result<Option<Ticket>, String> {
 
 /// The project a board call names, as agents' names place it.
 fn board_project(core: &Core, path: &str) -> String {
-    project_of(Path::new(path), &core.workspaces.project_paths())
+    core.workspaces.project_of(Path::new(path))
 }
 
 pub(crate) fn caller_project(core: &Core, request: &HarnessRequest) -> String {

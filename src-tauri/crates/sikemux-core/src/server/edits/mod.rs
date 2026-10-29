@@ -32,7 +32,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use super::chat::Chat;
-use super::names::project_of;
+use super::workspace::project_of;
 use super::Core;
 pub(crate) use lines::{changed, hunk, replaced, Lines, Replaced};
 pub(crate) use owners::{authors, before, commit_lines, git, owners_at, CommitLines, Owners};

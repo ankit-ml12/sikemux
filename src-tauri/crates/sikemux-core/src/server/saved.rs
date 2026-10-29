@@ -19,7 +19,7 @@ use crate::sessions::search::{self, Scope, SearchRequest, SearchResult, SessionM
 
 use super::connection::blocking;
 use super::messages::{self, Reach};
-use super::names::project_of;
+use super::workspace::project_of;
 use super::{Core, CoreResult};
 
 const DEFAULT_LIMIT: usize = 8;

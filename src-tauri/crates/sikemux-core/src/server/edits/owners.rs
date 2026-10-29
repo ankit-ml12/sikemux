@@ -14,7 +14,6 @@ use sikemux_process::sync::Locked;
 
 use super::{line_count, read_text, Edit, Lines};
 use crate::git::Git;
-use crate::server::names::project_of;
 use crate::server::Core;
 
 const TIMEOUT: Duration = Duration::from_secs(60);
@@ -435,7 +434,7 @@ fn record_over(core: &Core, dir: &Path, staged: bool, diff: &Diff) -> Owners {
         .collect();
     let mut owners = Owners::default();
     if !paths.is_empty() {
-        let project = project_of(dir, &core.workspaces.project_paths());
+        let project = core.workspaces.project_of(dir);
         let wanted = paths.keys().cloned().collect();
         let edits = core.edits.touching(&project, &wanted);
         let mut agents = Agents::default();
@@ -609,7 +608,7 @@ fn notes(changes: &[(u64, u64)], lines: &[Run]) -> Vec<Note> {
 
 /// `agent_id` as its latest edit in `dir`'s project names it.
 pub(super) fn latest(core: &Core, dir: &Path, agent_id: &str) -> Option<Author> {
-    let project = project_of(dir, &core.workspaces.project_paths());
+    let project = core.workspaces.project_of(dir);
     core.edits
         .matching(&project, |edit| edit.agent_id == agent_id)
         .pop()

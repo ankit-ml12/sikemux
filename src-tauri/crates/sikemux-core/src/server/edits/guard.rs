@@ -12,7 +12,7 @@ use super::owners::{git, traced};
 use crate::cli::protocol::HarnessRequest;
 use crate::server::connection::blocking;
 use crate::server::messages::{listed, Reach};
-use crate::server::names::project_of;
+use crate::server::workspace::project_of;
 use crate::server::Core;
 
 /// The other agents than `agent_id` with uncommitted lines in `paths`, as

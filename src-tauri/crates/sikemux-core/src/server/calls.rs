@@ -13,7 +13,7 @@ use super::attachments;
 use super::changed::Topic;
 use super::connection::{blocking, ClientConn};
 use super::edits::{self, Edit, Filter, Owners};
-use super::names::{project_of, AgentName, ClosedAgent, NameTheme};
+use super::names::{AgentName, ClosedAgent, NameTheme};
 use super::workspace;
 use super::{
     agent_accounts, agent_sign_in, board, inbox, messages, model_providers, plugins, questions,
@@ -857,7 +857,7 @@ async fn agent_messages(core: &Arc<Core>, params: AgentMessagesParams) -> CoreRe
     let path = path.to_owned();
     let core = core.clone();
     blocking(move || {
-        let project = project_of(&path, &core.workspaces.project_paths());
+        let project = core.workspaces.project_of(&path);
         let entries = messages::logged(&core, &project, params.limit);
         Ok(json!({ "project": project, "entries": entries }))
     })
@@ -873,7 +873,7 @@ async fn agent_message_rows(core: &Arc<Core>, params: AgentMessagesParams) -> Co
     let path = path.to_owned();
     let core = core.clone();
     blocking(move || {
-        let project = project_of(&path, &core.workspaces.project_paths());
+        let project = core.workspaces.project_of(&path);
         let rows = super::messages::logged_rows(&core, &project);
         Ok(json!({ "project": project, "rows": rows }))
     })
@@ -1185,7 +1185,7 @@ async fn closed_agents(
 ) -> CoreResult<Vec<ClosedAgent>> {
     let core = core.clone();
     blocking(move || {
-        let project = project_of(&params.cwd, &core.workspaces.project_paths());
+        let project = core.workspaces.project_of(&params.cwd);
         Ok(core.names.closed(&project, core.open_agents()))
     })
     .await
@@ -1306,7 +1306,7 @@ async fn commit_staged(core: &Arc<Core>, params: CommitParams) -> CoreResult<Str
 async fn edits(core: &Arc<Core>, filter: Filter) -> CoreResult<Vec<Edit>> {
     let core = core.clone();
     blocking(move || {
-        let project = project_of(&filter.project, &core.workspaces.project_paths());
+        let project = core.workspaces.project_of(&filter.project);
         Ok(core.edits.read(&project, &filter))
     })
     .await

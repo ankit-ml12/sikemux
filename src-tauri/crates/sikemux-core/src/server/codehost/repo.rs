@@ -12,8 +12,8 @@ use crate::protocol::{
     CiAbilities, CodeHostChoice, ProjectCodeHost, ProjectPull, PullAbilities, PullChecks,
 };
 use crate::server::board::Pull;
-use crate::server::names::project_of;
 use crate::server::plugins::{self, Category, Failure};
+use crate::server::workspace::project_of;
 use crate::server::Core;
 
 /// A code host the core reaches through its plugin, `sikemux.<id>`.

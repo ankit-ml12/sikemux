@@ -6,8 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
-use git2::Repository;
-
 use super::codehost::repo as codehost;
 use super::connection::blocking;
 use crate::protocol::{ProjectCodeHost, ProjectGit, ProjectPull, PullChecks};
@@ -188,11 +186,7 @@ fn of_a_project(asked: &Path, projects: &[PathBuf]) -> bool {
     let Ok(asked) = asked.canonicalize() else {
         return false;
     };
-    let shared = |path: &Path| {
-        Repository::discover(path)
-            .ok()
-            .and_then(|repo| repo.commondir().canonicalize().ok())
-    };
+    let shared = |path: &Path| crate::git::main_checkout(path);
     let asked_shared = shared(&asked);
     projects.iter().any(|project| {
         let Ok(project) = project.canonicalize() else {

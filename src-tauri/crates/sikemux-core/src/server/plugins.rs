@@ -127,7 +127,7 @@ pub(crate) fn agent_environment(core: &Core, cwd: &Path) -> BTreeMap<String, Str
     let Some(plugins) = PLUGINS.get() else {
         return BTreeMap::new();
     };
-    let project = super::names::project_of(cwd, &core.workspaces.project_paths());
+    let project = super::workspace::project_of(cwd, &core.workspaces.project_paths());
     plugins.agent_environment(Path::new(&project))
 }
 

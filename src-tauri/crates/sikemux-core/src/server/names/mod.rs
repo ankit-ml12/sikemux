@@ -8,7 +8,7 @@
 mod words;
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -958,46 +958,4 @@ fn valid_name(name: &str) -> Result<String, String> {
             "a name is one word of up to {MAX_NAME_CHARS} letters and digits, starting with a letter"
         ))
     }
-}
-
-/// The project an agent working in `cwd` belongs to: the app's project that
-/// holds it, else `cwd` itself. A folder in a git worktree counts as the same
-/// folder in the main checkout.
-pub(crate) fn project_of(cwd: &Path, projects: &[PathBuf]) -> String {
-    let canonical = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
-    let cwd = canonical(cwd);
-    let path = in_main_checkout(&cwd).unwrap_or(cwd);
-    projects
-        .iter()
-        .map(|project| canonical(project))
-        .filter(|project| path.starts_with(project))
-        .max_by_key(|project| project.as_os_str().len())
-        .unwrap_or(path)
-        .to_string_lossy()
-        .into_owned()
-}
-
-/// The folder in the main checkout matching `cwd` in a linked git worktree.
-fn in_main_checkout(cwd: &Path) -> Option<PathBuf> {
-    let root = cwd.ancestors().find(|dir| dir.join(".git").exists())?;
-    let main = main_checkout(root)?;
-    let inside = cwd.strip_prefix(root).ok()?;
-    Some(if inside.as_os_str().is_empty() {
-        main
-    } else {
-        main.join(inside)
-    })
-}
-
-/// Where a linked git worktree's main checkout is. A linked worktree's `.git`
-/// is a file naming its folder under the main checkout's `.git`.
-fn main_checkout(root: &Path) -> Option<PathBuf> {
-    let link = std::fs::read_to_string(root.join(".git")).ok()?;
-    let gitdir = root.join(link.strip_prefix("gitdir:")?.trim());
-    let common = std::fs::read_to_string(gitdir.join("commondir")).ok()?;
-    let common = std::fs::canonicalize(gitdir.join(common.trim())).ok()?;
-    if common.file_name()? != ".git" {
-        return None;
-    }
-    common.parent().map(Path::to_path_buf)
 }

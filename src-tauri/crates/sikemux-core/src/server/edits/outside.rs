@@ -19,7 +19,6 @@ use super::{changed, line_count, owners::run, Edit, Store};
 use crate::protocol::AgentStatus;
 use crate::server::collisions::{Written, GRACE_MS};
 use crate::server::messages::{listed, Listed};
-use crate::server::names::project_of;
 use crate::server::wake::sooner;
 use crate::server::Core;
 
@@ -144,7 +143,7 @@ impl Outside {
         let Some(watcher) = watch(&top, seen.clone(), Arc::downgrade(core)) else {
             return;
         };
-        let project = project_of(&top, &core.workspaces.project_paths());
+        let project = core.workspaces.project_of(&top);
         reconcile(store, &top, &project, &seen, Look::Whole { since });
         let mut checkouts = self.checkouts.locked();
         if checkouts.len() >= MAX_CHECKOUTS {

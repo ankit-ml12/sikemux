@@ -22,7 +22,7 @@ use super::connection::blocking;
 use super::follow::{self, TerminalAnswer};
 use super::hosts::spawn::{self as elsewhere, Hired};
 use super::messages;
-use super::names::{self, Adopted, AgentName, Worker};
+use super::names::{Adopted, AgentName, Worker};
 use super::saved::{self, Saved};
 use super::workspace::{Lead, Paid};
 use super::worktree::{self, AgentWorktree};
@@ -215,7 +215,7 @@ pub(crate) fn start_for_host(core: &Arc<Core>, plan: ForHost) -> Result<Value, S
     {
         launch.permission_mode = PermissionMode::parse(mode)?;
     }
-    let project = names::project_of(&launch.cwd, &core.workspaces.project_paths());
+    let project = core.workspaces.project_of(&launch.cwd);
     let named = core.names.adopt(
         Adopted {
             agent_id: &plan.agent_id,
@@ -318,7 +318,7 @@ fn start(
         saved::same_account(&provider, &launch, saved)?;
     }
     launch.resume_id = resume.map(|saved| saved.session_id.clone());
-    let project = names::project_of(&launch.cwd, &core.workspaces.project_paths());
+    let project = core.workspaces.project_of(&launch.cwd);
     let (agent_id, named) = match hired {
         Some(hired) => {
             let named = core.names.adopt(

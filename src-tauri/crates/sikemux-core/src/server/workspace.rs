@@ -35,7 +35,6 @@ use super::chat;
 use super::connection::blocking;
 use super::kept;
 use super::model_providers::checks::Checks;
-use super::names::project_of;
 use super::wake::Wake;
 use super::{Core, CoreError, CoreResult};
 use crate::acp::pickers;
@@ -228,6 +227,35 @@ pub(crate) fn launcher_for<'a>(
 /// The agent's title when it has one beyond its CLI's name.
 fn named(agent: &WorkspaceAgent) -> Option<String> {
     Some(agent.title.clone()).filter(|title| !title.trim().is_empty() && title != &agent.provider)
+}
+
+/// The project an agent working in `cwd` belongs to: the app's project that
+/// holds it, else `cwd` itself. A folder in a git worktree counts as the same
+/// folder in the main checkout.
+pub(crate) fn project_of(cwd: &Path, projects: &[PathBuf]) -> String {
+    let canonical = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    let cwd = canonical(cwd);
+    let path = in_main_checkout(&cwd).unwrap_or(cwd);
+    projects
+        .iter()
+        .map(|project| canonical(project))
+        .filter(|project| path.starts_with(project))
+        .max_by_key(|project| project.as_os_str().len())
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// The folder in the main checkout matching `cwd` in a linked git worktree.
+fn in_main_checkout(cwd: &Path) -> Option<PathBuf> {
+    let root = cwd.ancestors().find(|dir| dir.join(".git").exists())?;
+    let main = crate::git::main_checkout(root)?;
+    let inside = cwd.strip_prefix(root).ok()?;
+    Some(if inside.as_os_str().is_empty() {
+        main
+    } else {
+        main.join(inside)
+    })
 }
 
 fn is_chat_provider(provider: &str) -> bool {
@@ -685,7 +713,7 @@ impl Workspaces {
     /// The project `cwd` is in, added when it is in none, for an agent that
     /// started there.
     pub(crate) fn project_for(&self, cwd: &Path) -> CoreResult<String> {
-        let path = PathBuf::from(project_of(cwd, &self.project_paths()));
+        let path = PathBuf::from(self.project_of(cwd));
         Ok(self.add_project(path, None, None)?.id)
     }
 
@@ -1608,6 +1636,12 @@ impl Workspaces {
             .iter()
             .map(|project| project.path.clone())
             .collect()
+    }
+
+    /// The project an agent working in `cwd` belongs to, as [`project_of`] finds it among
+    /// this host's projects.
+    pub(crate) fn project_of(&self, cwd: &Path) -> String {
+        project_of(cwd, &self.project_paths())
     }
 
     /// What the person or the agent named an agent, when it has a name beyond its CLI's.

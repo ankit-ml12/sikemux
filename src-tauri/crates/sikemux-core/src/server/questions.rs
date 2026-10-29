@@ -24,7 +24,6 @@ use super::changed::Topic;
 use super::connection::ClientId;
 use super::kept::Kept;
 use super::messages;
-use super::names::project_of;
 use super::notify::Signal;
 use super::wake::{sooner, Wake};
 use super::Core;
@@ -662,12 +661,9 @@ fn open(
         .as_ref()
         .map(|named| named.name.clone())
         .unwrap_or_else(|| agent_id.to_owned());
-    let project = named.map(|named| named.project).unwrap_or_else(|| {
-        project_of(
-            std::path::Path::new(project),
-            &core.workspaces.project_paths(),
-        )
-    });
+    let project = named
+        .map(|named| named.project)
+        .unwrap_or_else(|| core.workspaces.project_of(std::path::Path::new(project)));
     let cli = cli_of(core, agent_id);
     let at = epoch_ms();
     let questions: Vec<Question> = asked

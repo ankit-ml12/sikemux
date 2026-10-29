@@ -15,7 +15,7 @@ use crate::cli::protocol::{is_tool_agent_id, HarnessRequest};
 use crate::protocol::AgentStatus;
 
 use super::super::connection::blocking;
-use super::super::names::{self, Adopted, Worker};
+use super::super::names::{Adopted, Worker};
 use super::super::spawn::{self as local, ForHost};
 use super::super::worktree;
 use super::super::Core;
@@ -276,7 +276,7 @@ pub(super) async fn start_here(
         Checked::Needs(tips) => return Ok(json!({ "needs": "bundle", "tips": tips })),
         Checked::Ready(tree, cwd) => (tree, cwd),
     };
-    let project = names::project_of(&cwd, &core.workspaces.project_paths());
+    let project = core.workspaces.project_of(&cwd);
     let lead = &params.lead;
     if core.hosts.team.get(&lead.agent_id).is_none() {
         core.hosts.team.add(Foreign {

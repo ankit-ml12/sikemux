@@ -21,7 +21,6 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use super::edits::{self, authors, before, changed, line_count, replaced, Change, Changes, Edit};
-use super::names::project_of;
 use super::wake::{sooner, Wake};
 use super::Core;
 pub(crate) use checks::Failing;
@@ -766,7 +765,7 @@ impl Collisions {
         message: &str,
     ) {
         let now = epoch_ms();
-        let project = project_of(top, &core.workspaces.project_paths());
+        let project = core.workspaces.project_of(top);
         let mut state = self.state.locked();
         for path in paths {
             let path = real(&top.join(path));
@@ -983,7 +982,7 @@ fn mended_note(
     base: &Copy,
     kept: &[std::ops::Range<usize>],
 ) -> String {
-    let project = project_of(path, &core.workspaces.project_paths());
+    let project = core.workspaces.project_of(path);
     let file = shown(path, &project);
     let mut by = changed_by(core, state, agent_id, path, base.at);
     if by.is_empty() {
@@ -1231,7 +1230,7 @@ impl Collisions {
             written,
         } = change;
         let at = written.at;
-        let project = project_of(&path, &core.workspaces.project_paths());
+        let project = core.workspaces.project_of(&path);
         let listed = super::messages::listed(core);
         let (shells, terminals) = self.writers(core, &listed, &project, &path, written);
         let writer = match (shells.len(), terminals.len()) {
@@ -1364,7 +1363,7 @@ impl Collisions {
         if unclaimed.is_empty() {
             return false;
         }
-        let project = project_of(path, &core.workspaces.project_paths());
+        let project = core.workspaces.project_of(path);
         let listed = super::messages::listed(core);
         unclaimed.into_iter().any(|written| {
             let (shells, terminals) = self.writers(core, &listed, &project, path, written);

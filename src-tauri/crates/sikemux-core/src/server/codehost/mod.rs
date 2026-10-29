@@ -27,9 +27,9 @@ pub(crate) mod repo;
 use super::changed::Topic;
 use super::connection::ClientId;
 use super::job_graph::{self, WorkflowFiles};
-use super::names::project_of;
 use super::plugins::{Category, Failure, Outcome as Answer};
 use super::shown_cache::{self, ShownCache, Shows};
+use super::workspace::project_of;
 use super::Core;
 use repo::{of_project, Repo, RepoId};
 

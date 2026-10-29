@@ -1115,7 +1115,7 @@ async fn owning_project(core: &Arc<Core>, path: &Path, root: &str) -> CoreResult
         .iter()
         .map(|project| project.path.clone())
         .collect();
-    let owner = super::names::project_of(path, &paths);
+    let owner = super::workspace::project_of(path, &paths);
     let canonical = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
     if let Some(project) = projects
         .iter()

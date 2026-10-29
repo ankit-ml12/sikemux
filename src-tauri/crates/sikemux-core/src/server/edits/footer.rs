@@ -17,7 +17,6 @@ use super::owners::{git, latest, run, staged_in, Author};
 use crate::cli::protocol::HarnessRequest;
 use crate::server::callers::{self, CommitGrant};
 use crate::server::connection::blocking;
-use crate::server::names::project_of;
 use crate::server::saved;
 use crate::server::Core;
 use crate::trailers::{self, Agent, Commit, PendingNote};
@@ -204,7 +203,7 @@ pub(crate) fn verified(core: &Core, dir: &Path, commit: &str) -> Result<Vec<Agen
     let Some((_, agents)) = trailers::verify(message, &commit, &core.remote.host_keys()) else {
         return Ok(Vec::new());
     };
-    let project = project_of(dir, &core.workspaces.project_paths());
+    let project = core.workspaces.project_of(dir);
     Ok(agents
         .into_iter()
         .filter(|agent| recorded(core, &project, agent))
