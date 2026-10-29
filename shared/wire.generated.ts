@@ -2690,6 +2690,21 @@ export interface AgentParams {
     agentId: string;
 }
 
+export interface AgentWorktreeParams {
+    agentId: string;
+    /** What the agent was asked first, which names the branch. */
+    message: string;
+    /** The repository to use when the agent's folder holds several. */
+    repo?: string | null;
+}
+
+export interface MadeAgentWorktree {
+    worktree: AgentWorktree;
+    cwd: string;
+    /** Why the project's worktree setup did not all finish, when it did not. */
+    setupError: string | null;
+}
+
 export interface ChatAccountsParams {
     agentId: string;
 }
@@ -2708,6 +2723,67 @@ export interface NamedAccount {
 export interface MoveChatParams {
     agentId: string;
     accountId: string;
+}
+
+export interface PairingAnswer {
+    id: string;
+    allow: boolean;
+    access: DeviceAccess;
+}
+
+export interface DeviceChange {
+    id: string;
+    /** None unpairs the device. */
+    access?: DeviceAccess | null;
+}
+
+export interface StashPromptParams {
+    agentId: string;
+}
+
+export interface StashedPrompt {
+    id: string;
+}
+
+export interface AttachStashParams {
+    id: string;
+    agentId: string;
+    /**
+     * False when the app keeps its own draft: the item's file is only kept here, and the app
+     * adds it to its message and marks the item used once it is sent.
+     */
+    draft?: boolean | null;
+}
+
+/** What attaching an item put in the chat's draft. */
+export interface AttachedStash {
+    agentId: string;
+    /** Where the item's file was kept on this host, when it has one. */
+    path?: string;
+    /** Where each of the item's files was kept: its own, or a prompt's. */
+    paths: string[];
+}
+
+export interface StashItemParams {
+    id: string;
+}
+
+export interface SetDraftParams {
+    key: string;
+    text: string;
+    extra?: unknown | null;
+    /** The draft's revision the app last read. */
+    rev?: number | null;
+}
+
+/** Whether a new chat in the project at the folder `project` starts in a worktree of its own. */
+export interface WorktreeDefaultParams {
+    project: string;
+    on: boolean;
+}
+
+export interface ApprovalSetting {
+    requireApproval: boolean;
 }
 
 export interface AgentMessagesParams {
@@ -2767,9 +2843,23 @@ export interface CoreCalls {
     chatToolDetail: { params: ToolDetailParams; answer: ToolDetail };
     dropQueued: { params: QueuedParams; answer: null };
     closeChat: { params: AgentParams; answer: null };
+    createAgentWorktree: { params: AgentWorktreeParams; answer: MadeAgentWorktree };
+    cancelResume: { params: ChatAccountsParams; answer: null };
+    retryFailed: { params: ChatAccountsParams; answer: null };
+    discardFailed: { params: ChatAccountsParams; answer: null };
     chatAccounts: { params: ChatAccountsParams; answer: ChatAccounts };
     moveChatAccount: { params: MoveChatParams; answer: null };
+    pairing: { params: NoParams; answer: RemotePairing };
+    answerPairing: { params: PairingAnswer; answer: RemotePairing };
+    changeDevice: { params: DeviceChange; answer: RemotePairing };
     preferences: { params: NoParams; answer: Preferences };
+    stashPrompt: { params: StashPromptParams; answer: StashedPrompt };
+    attachStash: { params: AttachStashParams; answer: AttachedStash };
+    removeStash: { params: StashItemParams; answer: null };
+    setDraft: { params: SetDraftParams; answer: null };
+    setWorktreeDefault: { params: WorktreeDefaultParams; answer: null };
+    requireApproval: { params: NoParams; answer: ApprovalSetting };
+    setRequireApproval: { params: ApprovalSetting; answer: RemoteStatus };
     questions: { params: NoParams; answer: AgentQuestion[] };
     agentMessageRows: { params: AgentMessagesParams; answer: AgentMessageRows };
     boards: { params: NoParams; answer: ProjectBoard[] };

@@ -22,6 +22,7 @@ pub(crate) struct ForAgentParams {
     /// What the agent was asked first, which names the branch.
     message: String,
     /// The repository to use when the agent's folder holds several.
+    #[serde(default)]
     repo: Option<PathBuf>,
 }
 

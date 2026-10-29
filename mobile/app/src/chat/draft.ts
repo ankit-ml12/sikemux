@@ -3,6 +3,7 @@ import { File } from 'expo-file-system';
 
 import type { ChatRows } from '@shared/chat/rows';
 
+import { callHost } from '@/core/hostCalls';
 import type { DraftStore } from './kept';
 import { editDraft, keptTokens, outgoing, tokensOf, trackedOf, type DraftToken } from './mentions';
 import { fitting, pathsOf, type Attachment } from './uploads';
@@ -216,7 +217,7 @@ export class Draft {
       ...(this.rev === undefined ? {} : { rev: this.rev }),
     };
     try {
-      await connection.call('setDraft', JSON.stringify(draft));
+      await callHost(connection, 'setDraft', draft);
     } catch {
       return;
     }

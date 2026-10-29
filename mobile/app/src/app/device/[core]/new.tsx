@@ -29,6 +29,7 @@ import { contextChip, stashQuery, withContext, withoutQuery } from '@/stash/word
 import { MAX_ATTACHMENTS } from '@shared/wire.generated';
 import type { LauncherInfo } from '@/core/protocol';
 import { problem as problemOf } from '@/core/problem';
+import { callHost } from '@/core/hostCalls';
 import { useLive } from '@/devices/hub';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { haptics } from '@/ui/haptics';
@@ -217,7 +218,7 @@ export default function NewChat() {
     if (!project || live.status !== 'open') return;
     const on = !worktree;
     setFlipped({ project: project.id, on });
-    live.connection.call('setWorktreeDefault', JSON.stringify({ project: project.path, on })).catch((error: unknown) => {
+    callHost(live.connection, 'setWorktreeDefault', { project: project.path, on }).catch((error: unknown) => {
       setFlipped(undefined);
       setProblem(`Could not change the worktree default: ${problemOf(error)}`);
     });

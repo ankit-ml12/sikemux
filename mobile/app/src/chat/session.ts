@@ -242,7 +242,7 @@ export class ChatSession {
   /** Has the host put stash items in this chat's draft: files beside it, links and text as chips, notes in its words. */
   attachStash = async (items: readonly StashItem[]) => {
     const connection = this.openConnection();
-    for (const item of items) await connection.call('attachStash', JSON.stringify({ id: item.id, agentId: this.agentId }));
+    for (const item of items) await callHost(connection, 'attachStash', { id: item.id, agentId: this.agentId });
   };
 
   removeChip = (uri: string) => {
@@ -262,7 +262,7 @@ export class ChatSession {
       draft.edited();
     }
     if (!(await draft.saveNow())) throw new Error('the draft did not reach the host');
-    const { id } = JSON.parse(await connection.call('stashPrompt', JSON.stringify({ agentId: this.agentId }))) as { id: string };
+    const { id } = await callHost(connection, 'stashPrompt', { agentId: this.agentId });
     draft.clear();
     this.emit();
     return id;
@@ -271,8 +271,8 @@ export class ChatSession {
   /** Puts a stashed prompt back in the draft and takes it out of the stash. */
   unstashPrompt = async (id: string) => {
     const connection = this.openConnection();
-    await connection.call('attachStash', JSON.stringify({ id, agentId: this.agentId }));
-    await connection.call('removeStash', JSON.stringify({ id }));
+    await callHost(connection, 'attachStash', { id, agentId: this.agentId });
+    await callHost(connection, 'removeStash', { id });
   };
 
   removeAttachment = (id: string) => {
@@ -329,7 +329,7 @@ export class ChatSession {
 
   /** Acts on the turn that failed: sends it again, lets it go, or keeps it from resuming once a usage limit resets. */
   failedTurn = (method: 'retryFailed' | 'discardFailed' | 'cancelResume') => {
-    void this.ask((connection) => connection.call(method, JSON.stringify({ agentId: this.agentId })), 'Could not do that');
+    void this.ask((connection) => callHost(connection, method, { agentId: this.agentId }), 'Could not do that');
   };
 
   /** Carries the chat on in another of the person's accounts, a turn that failed sent again there. */

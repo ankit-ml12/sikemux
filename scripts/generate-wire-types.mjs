@@ -33,6 +33,8 @@ const SOURCES = [
   `${CORE}/server/agent_accounts.rs`,
   `${CORE}/server/messages.rs`,
   `${CORE}/server/messages/log.rs`,
+  `${CORE}/server/stash.rs`,
+  `${CORE}/server/worktree/agent.rs`,
   `${WIRE}/changed.rs`,
   `${CORE}/server/board.rs`,
   `${CORE}/server/board/auto.rs`,
@@ -75,6 +77,17 @@ const RENAMES = {
     Outcome: "MessageOutcome",
     Tone: "MessageTone",
     Entry: "MessageEntry",
+  },
+  [`${CORE}/server/stash.rs`]: {
+    PromptParams: "StashPromptParams",
+    Stashed: "StashedPrompt",
+    ItemParams: "StashItemParams",
+    AttachParams: "AttachStashParams",
+    Attached: "AttachedStash",
+  },
+  [`${CORE}/server/worktree/agent.rs`]: {
+    ForAgentParams: "AgentWorktreeParams",
+    ForAgent: "MadeAgentWorktree",
   },
   [`${WIRE}/changed.rs`]: { Topic: "CoreChangeTopic" },
   [`${CORE}/server/board.rs`]: {

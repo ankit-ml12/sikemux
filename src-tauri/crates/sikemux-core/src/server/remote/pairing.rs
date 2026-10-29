@@ -54,13 +54,14 @@ pub(crate) fn answer_pairing(core: &Core, answer: PairingAnswer) -> CoreResult<P
 pub(crate) struct DeviceChange {
     id: String,
     /// None unpairs the device.
+    #[serde(default)]
     access: Option<DeviceAccess>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApprovalSetting {
-    require_approval: bool,
+    pub require_approval: bool,
 }
 
 /// Turns the lock of ADR 0018 on or off: whether each new device and host

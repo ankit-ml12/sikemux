@@ -5,7 +5,8 @@ import type { ConnectionLike } from '@sikemux/native';
 
 import { ACCESS_OPTIONS, platformName } from '@shared/remote/access';
 import { formatAgo } from '@shared/lib/format';
-import { type DeviceAccess, type LinkedHost, type DeviceInfo, type RemotePairing, readPairing } from '@/core/protocol';
+import type { DeviceAccess, LinkedHost, DeviceInfo, RemotePairing } from '@/core/protocol';
+import { callHost } from '@/core/hostCalls';
 import { useDeviceId } from '@/phone/identity';
 import { problem as problemOf } from '@/core/problem';
 import { connectionOf, useDevices, useLive } from '@/devices/hub';
@@ -33,10 +34,10 @@ function usePairing(connection: ConnectionLike | undefined) {
   useEffect(() => {
     if (!connection) return;
     let current = true;
-    connection.call('pairing', 'null').then(
-      (text) => {
+    callHost(connection, 'pairing', {}).then(
+      (pairing) => {
         if (!current) return;
-        setPairing(readPairing(text));
+        setPairing(pairing);
         setProblem(undefined);
       },
       (error: unknown) => {
@@ -55,11 +56,11 @@ function usePairing(connection: ConnectionLike | undefined) {
     return () => listener.remove();
   }, []);
 
-  const change = async (id: string, method: 'answerPairing' | 'changeDevice', params: object) => {
+  const change = async (id: string, ask: (connection: ConnectionLike) => Promise<RemotePairing>) => {
     if (!connection || busy) return;
     setBusy(id);
     try {
-      setPairing(readPairing(await connection.call(method, JSON.stringify({ id, ...params }))));
+      setPairing(await ask(connection));
       setProblem(undefined);
       haptics.success();
     } catch (error) {
@@ -76,8 +77,10 @@ function usePairing(connection: ConnectionLike | undefined) {
     problem,
     busy,
     reread: () => setReads((count) => count + 1),
-    answer: (id: string, access: DeviceAccess | null) => change(id, 'answerPairing', { allow: access !== null, access: access ?? 'watch' }),
-    setAccess: (id: string, access: DeviceAccess | null) => change(id, 'changeDevice', { access }),
+    answer: (id: string, access: DeviceAccess | null) =>
+      change(id, (connection) => callHost(connection, 'answerPairing', { id, allow: access !== null, access: access ?? 'watch' })),
+    setAccess: (id: string, access: DeviceAccess | null) =>
+      change(id, (connection) => callHost(connection, 'changeDevice', { id, access })),
   };
 }
 
@@ -140,8 +143,8 @@ function ApprovalRow({ connection }: { connection: ConnectionLike | undefined })
   useEffect(() => {
     if (!connection) return;
     let current = true;
-    connection.call('requireApproval', 'null').then(
-      (text) => current && setOn((JSON.parse(text) as { requireApproval: boolean }).requireApproval),
+    callHost(connection, 'requireApproval', {}).then(
+      (setting) => current && setOn(setting.requireApproval),
       (error: unknown) => current && setProblem(problemOf(error)),
     );
     return () => {
@@ -152,7 +155,7 @@ function ApprovalRow({ connection }: { connection: ConnectionLike | undefined })
     if (!connection) return;
     setOn(next);
     try {
-      await connection.call('setRequireApproval', JSON.stringify({ requireApproval: next }));
+      await callHost(connection, 'setRequireApproval', { requireApproval: next });
       setProblem(undefined);
     } catch (error) {
       setOn(!next);

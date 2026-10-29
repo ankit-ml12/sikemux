@@ -19,7 +19,7 @@ use super::{
     agent_accounts, agent_sign_in, board, inbox, messages, model_providers, plugins, questions,
     remote, saved, saved_sessions, share, skill_library, who_wrote, Core, CoreError, CoreResult,
 };
-use crate::protocol::{AgentBuddy, Preferences};
+use crate::protocol::{AgentBuddy, Preferences, RemoteStatus};
 use sikemux_wire::catalog::CatalogAgent;
 use sikemux_wire::chat::ToolDetail;
 use sikemux_wire::questions::AgentQuestion;
@@ -187,7 +187,9 @@ calls! { core, client, params;
     "moveAgentToFolder": Person => answer(super::move_agent::move_to_folder(&core, parse(params)?).await?),
     "closeAgents": Person => answer(workspace::close_agents(&core, parse(params)?)?),
     "closeChat" (AgentParams) -> (): Full => workspace::close_agent(&core, params.agent_id)?,
-    "createAgentWorktree": Person => answer(super::worktree::agent::for_agent(&core, parse(params)?).await?),
+    "createAgentWorktree" (super::worktree::agent::ForAgentParams) -> super::worktree::agent::ForAgent: Person => {
+        super::worktree::agent::for_agent(&core, params).await?
+    },
     "agentReview": Watch => answer(super::worktree::removal::review(&core, parse(params)?).await?),
     "worktreeMerged": Watch => answer(super::worktree::removal::merged(&core, parse(params)?).await?),
     "worktreeRemoval": Person => answer(super::worktree::removal::removal(&core, parse(params)?).await?),
@@ -282,10 +284,7 @@ calls! { core, client, params;
         let params: TriggerParams = parse(params)?;
         answer(super::triggers::remove(&core, params.trigger))
     },
-    "cancelResume": Full => {
-        agent_accounts::cancel_resume(&core, parse(params)?);
-        answer(())
-    },
+    "cancelResume" (agent_accounts::Resuming) -> (): Full => agent_accounts::cancel_resume(&core, params),
     "setAgentAccounts": Person => {
         agent_accounts::set(&core, parse(params)?).await?;
         answer(())
@@ -305,8 +304,8 @@ calls! { core, client, params;
     "setAccountAutoSwitch": Local => {
         answer(agent_accounts::set_auto_switch(&core, parse(params)?).await?)
     },
-    "retryFailed": Full => answer(agent_accounts::retry_failed(&core, parse(params)?)?),
-    "discardFailed": Full => answer(agent_accounts::discard_failed(&core, parse(params)?)?),
+    "retryFailed" (agent_accounts::Resuming) -> (): Full => agent_accounts::retry_failed(&core, params)?,
+    "discardFailed" (agent_accounts::Resuming) -> (): Full => agent_accounts::discard_failed(&core, params)?,
     "chatAccounts" (agent_accounts::Resuming) -> agent_accounts::ChatAccounts: Full => {
         agent_accounts::chat_accounts(&core, params)?
     },
@@ -329,7 +328,7 @@ calls! { core, client, params;
         answer(share::stop(&core, &params.id)?)
     },
     "shares": Full, any_program => answer(share::list(&core)),
-    "pairing": Person, any_program => answer(remote::pairing(&core)),
+    "pairing" (NoParams) -> remote::Pairing: Person, any_program => remote::pairing(&core),
     "deviceChallenge": Person => answer(super::hosts::account::device_challenge(&core).await?),
     "approveHostSignIn": Person => {
         answer(super::hosts::account::approve_host_sign_in(&core, parse(params)?).await?)
@@ -345,8 +344,8 @@ calls! { core, client, params;
         let params: NonceParams = parse(params)?;
         answer(signed(core.remote.sign_share_viewer(&params.nonce)?))
     },
-    "answerPairing": Person => answer(remote::answer_pairing(&core, parse(params)?)?),
-    "changeDevice": Person => answer(remote::change_device(&core, parse(params)?)?),
+    "answerPairing" (remote::PairingAnswer) -> remote::Pairing: Person => remote::answer_pairing(&core, params)?,
+    "changeDevice" (remote::DeviceChange) -> remote::Pairing: Person => remote::change_device(&core, params)?,
     "projectFiles": Full => {
         let params = parse(params)?;
         answer(blocking(move || super::project_files::read(params).map_err(CoreError::from)).await?)
@@ -389,24 +388,23 @@ calls! { core, client, params;
         let params = serde_json::from_value(params).unwrap_or_default();
         answer(super::stash::list(&core, params).await?)
     },
-    "stashPrompt": Person => answer(super::stash::stash_prompt(&core, parse(params)?).await?),
+    "stashPrompt" (super::stash::PromptParams) -> super::stash::Stashed: Person => {
+        super::stash::stash_prompt(&core, params).await?
+    },
     "seeStash": Person => answer(super::stash::see(&core, parse(params)?).await?),
     "stashFile": Person => answer(super::stash::keep(&core, parse(params)?).await?),
     "stashPicture": Person => answer(super::stash::picture(&core, parse(params)?).await?),
-    "attachStash": Person => answer(super::stash::attach(&core, parse(params)?).await?),
-    "removeStash": Person => {
-        super::stash::remove(&core, parse(params)?).await?;
-        answer(json!({}))
+    "attachStash" (super::stash::AttachParams) -> super::stash::Attached: Person => {
+        super::stash::attach(&core, params).await?
     },
+    "removeStash" (super::stash::ItemParams) -> (): Person => super::stash::remove(&core, params).await?,
     "drafts": Watch => {
         let params: DraftsParams = serde_json::from_value(params).unwrap_or_default();
         answer(core.drafts.get(params.keys.as_deref()))
     },
-    "setDraft": Person => {
-        let params: SetDraftParams = parse(params)?;
+    "setDraft" (SetDraftParams) -> (): Person => {
         core.drafts.save(&params.key, params.text, params.extra, params.rev)?;
         super::drafts::changed(&core, vec![params.key]);
-        answer(json!({}))
     },
     "diagramLayout": Person => {
         let params: DiagramParams = parse(params)?;
@@ -438,8 +436,7 @@ calls! { core, client, params;
         core.changes.changed(Topic::Preferences, None, None);
         answer(preferences)
     },
-    "setWorktreeDefault": Person => {
-        let params: WorktreeDefaultParams = parse(params)?;
+    "setWorktreeDefault" (WorktreeDefaultParams) -> (): Person => {
         let mut defaults = core.preferences.get().agent_worktree_defaults;
         match params.on {
             true => defaults.insert(params.project, true),
@@ -448,7 +445,6 @@ calls! { core, client, params;
         core.preferences.set("agentWorktreeDefaults", serde_json::to_value(defaults)?)?;
         core.view_changed();
         core.changes.changed(Topic::Preferences, None, None);
-        answer(json!({}))
     },
     "theme": Watch, any_program => {
         let params: ThemeParams = serde_json::from_value(params).unwrap_or_default();
@@ -531,8 +527,12 @@ calls! { core, client, params;
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
     "openOnHost": Person => answer(super::hosts::open::open_on(&core, parse(params)?).await?),
     "sendSession": Person => answer(super::hosts::transfer::send_session(&core, parse(params)?).await?),
-    "requireApproval": Person => answer(json!({ "requireApproval": core.remote.requires_approval() })),
-    "setRequireApproval": Person => answer(remote::set_require_approval(&core, parse(params)?)?),
+    "requireApproval" (NoParams) -> remote::ApprovalSetting: Person => remote::ApprovalSetting {
+        require_approval: core.remote.requires_approval(),
+    },
+    "setRequireApproval" (remote::ApprovalSetting) -> RemoteStatus: Person => {
+        remote::set_require_approval(&core, params)?
+    },
     "questions" (NoParams) -> Vec<AgentQuestion>: Watch, any_program => questions::views(&core),
     "answerQuestion": Full => answer(questions::answer(&core, parse(params)?).await?),
     "answerQuestions": Full => answer(questions::answer_all(&core, parse(params)?).await?),

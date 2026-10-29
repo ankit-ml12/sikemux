@@ -3,7 +3,7 @@
  * core adds reaches the phone with an over-the-air update. The types are generated from the core's Rust.
  */
 
-import type { DeviceView, HostInfo, Inbox, RemotePairing } from '@shared/wire.generated';
+import type { DeviceView, HostInfo, Inbox } from '@shared/wire.generated';
 
 export type {
   AgentFace,
@@ -93,4 +93,3 @@ function keepInbox(previous: Inbox, next: Inbox): Inbox {
 }
 
 export const readHost = (json: string) => JSON.parse(json) as HostInfo;
-export const readPairing = (json: string) => JSON.parse(json) as RemotePairing;

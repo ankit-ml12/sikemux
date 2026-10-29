@@ -2,6 +2,7 @@ import { File } from 'expo-file-system';
 import type { ConnectionLike } from '@sikemux/native';
 
 import { problem as problemOf } from '@/core/problem';
+import { callHost } from '@/core/hostCalls';
 import { chatSession } from './useChat';
 import { uploadEach, type Attachment } from './uploads';
 
@@ -46,10 +47,7 @@ export async function startChat(connection: ConnectionLike, first: FirstMessage,
     }
     if (first.worktree && !inWorktree) {
       progress.step('Creating worktree');
-      const made = JSON.parse(await connection.call('createAgentWorktree', JSON.stringify({ agentId, message: first.text }))) as {
-        worktree?: { path?: string };
-        setupError?: string;
-      };
+      const made = await callHost(connection, 'createAgentWorktree', { agentId, message: first.text });
       inWorktree = true;
       if (made.setupError) return failed(`${made.setupError}. The worktree is kept at ${made.worktree?.path}; send again to start there.`);
       progress.step('Starting the agent in the worktree');
