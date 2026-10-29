@@ -1056,7 +1056,7 @@ async fn run_requests(
             }
             Request::WatchView => {
                 client.watches_view.store(true, Ordering::Release);
-                core.view_watched.notify_one();
+                core.view_watched();
                 client.respond(request_id, Ok(Response::Done));
                 core.send_device_view(&client);
             }

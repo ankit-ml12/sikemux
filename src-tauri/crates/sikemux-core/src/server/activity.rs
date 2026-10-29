@@ -106,19 +106,6 @@ impl Core {
         self.view_changed();
     }
 
-    /// Something a device's view of this host shows changed; the view goes
-    /// out again shortly, once with any changes that follow it.
-    pub(crate) fn view_changed(&self) {
-        self.view_stale.notify_one();
-    }
-
-    /// Something the person did changed the view, such as the tab in front, so it goes out
-    /// at once: a window shows its tabs as the view says.
-    pub(crate) fn view_changed_now(&self) {
-        self.view_due.notify_one();
-        self.view_changed();
-    }
-
     /// Whether the agent's turns are told to a lead still here, who reads them
     /// in the person's place.
     fn reports_to_open_lead(&self, agent_id: &str) -> bool {
