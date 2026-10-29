@@ -262,6 +262,7 @@ class Connection {
     return CHATS[0].agentId;
   }
   async unpair() {}
+  async setForeground() {}
   async saveBackdrop() {
     return undefined;
   }
