@@ -1699,18 +1699,30 @@ fn project_view(core: &Core, project: &str) -> BoardView {
 
 fn project_param(core: &Core, params: &Value) -> Result<String, String> {
     match params.get("project") {
-        Some(Value::String(path)) if Path::new(path).is_absolute() && path.len() <= 4096 => {
-            Ok(board_project(core, path))
-        }
+        Some(Value::String(path)) => project_at(core, path),
         _ => Err("project must be the project's absolute path".into()),
     }
 }
 
+fn project_at(core: &Core, path: &str) -> Result<String, String> {
+    if Path::new(path).is_absolute() && path.len() <= 4096 {
+        Ok(board_project(core, path))
+    } else {
+        Err("project must be the project's absolute path".into())
+    }
+}
+
+/// The project a board call is about, by its absolute path.
+#[derive(Deserialize)]
+pub(crate) struct BoardParams {
+    project: String,
+}
+
 /// One project's board, empty when it has no cards yet.
-pub(crate) async fn board(core: &Arc<Core>, params: Value) -> Result<BoardView, String> {
+pub(crate) async fn board(core: &Arc<Core>, params: BoardParams) -> Result<BoardView, String> {
     let core = core.clone();
     blocking(move || {
-        let project = project_param(&core, &params)?;
+        let project = project_at(&core, &params.project)?;
         Ok(project_view(&core, &project))
     })
     .await

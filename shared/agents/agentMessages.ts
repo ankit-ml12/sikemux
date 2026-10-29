@@ -1,34 +1,4 @@
-/** What a message between agents was: a message, a worker's report to its lead, a question, its answer, or a note from Sikemux itself. */
-export type MessageKind = "message" | "report" | "question" | "answer" | "notice";
-
-/** What became of a message, as the core logs it. */
-export type MessageOutcome = "steered" | "newTurn" | "typed" | "waiting" | "delivered" | "returned" | "repeat" | "refused" | "dropped";
-
-/** Held waits for its agent; failed never reached it. */
-export type MessageTone = "held" | "failed" | null;
-
-/** One message between agents, from being sent to what last became of it, as the core folds its log. Never its text. */
-export interface MessageRow {
-    sentAt: number;
-    at: number;
-    /** The sender's agent id, or `person`, `board`, `auto` or `sikemux`; none for one that came back unread. */
-    from: string | null;
-    /** The sending agent's name now, else when it was logged; none for senders that are not agents. */
-    fromName: string | null;
-    to: string;
-    toName: string | null;
-    kind: MessageKind | null;
-    outcome: MessageOutcome;
-    /** It waited for its agent before it got where it is. */
-    waited: boolean;
-    tone: MessageTone;
-}
-
-/** What the core's `agentMessageRows` call answers: the project's own path and its messages, newest first. */
-export interface AgentMessageRows {
-    project: string;
-    rows: MessageRow[];
-}
+import type { MessageKind, MessageOutcome, MessageRow } from "../wire.generated";
 
 const SENDERS: Readonly<Record<string, string>> = { person: "You", board: "Agent board", auto: "Auto", sikemux: "Sikemux" };
 

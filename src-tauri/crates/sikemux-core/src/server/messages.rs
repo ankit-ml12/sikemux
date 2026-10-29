@@ -27,7 +27,7 @@ use super::wake::{sooner, Wake};
 use super::workspace::project_of;
 use super::{agent, launching, Core, CoreResult};
 
-mod log;
+pub(crate) mod log;
 
 const FILE: &str = "agent-mailbox.json";
 const MAX_TEXT_BYTES: usize = 64 * 1024;
@@ -588,10 +588,8 @@ pub(crate) fn logged(core: &Core, project: &str, limit: Option<usize>) -> Vec<En
 }
 
 /// The project's messages between agents, one row each, newest first.
-pub(crate) fn logged_rows(core: &Core, project: &str) -> Value {
-    json!(log::rows(&logged(core, project, None), |id| core
-        .names
-        .name(id)))
+pub(crate) fn logged_rows(core: &Core, project: &str) -> Vec<log::Row> {
+    log::rows(&logged(core, project, None), |id| core.names.name(id))
 }
 
 /// Notes in the log of the project of agent `to` what became of messages

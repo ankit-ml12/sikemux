@@ -2640,9 +2640,25 @@ export interface SharedFile {
     data: string;
 }
 
+export interface PromptChatParams {
+    agentId: string;
+    messageId?: string | null;
+    text: string;
+    paths?: string[];
+    context?: ChatContext[];
+}
+
+/** Something read elsewhere and handed to the agent whole, such as an issue. */
+export interface ChatContext {
+    uri: string;
+    title: string;
+    text: string;
+}
+
 /** What a call that takes nothing is sent; whatever a client sends reads as nothing. */
 export interface NoParams {}
 
+/** Messages waiting behind an agent's turn, by id. */
 export interface QueuedParams {
     agentId: string;
     ids: string[];
@@ -2657,11 +2673,12 @@ export interface QueuedMessageParams {
     context?: ChatContext[];
 }
 
-/** Something read elsewhere and handed to the agent whole, such as an issue. */
-export interface ChatContext {
-    uri: string;
-    title: string;
+/** A person's message `message_id` written again as `text`, sent with the files at `paths`. */
+export interface EditParams {
+    agentId: string;
+    messageId: string;
     text: string;
+    paths?: string[];
 }
 
 export interface ToolDetailParams {
@@ -2693,10 +2710,60 @@ export interface MoveChatParams {
     accountId: string;
 }
 
+export interface AgentMessagesParams {
+    project: string;
+    limit?: number | null;
+}
+
+/**
+ * A project's messages between agents, one row each, newest first, under the
+ * project's own path.
+ */
+export interface AgentMessageRows {
+    project: string;
+    rows: MessageRow[];
+}
+
+/** One message between agents, from being sent to what last became of it. */
+export interface MessageRow {
+    sentAt: number;
+    at: number;
+    /** The sending agent's id, or `person`, `board`, `auto` or `sikemux`. */
+    from: string | null;
+    /**
+     * The sending agent's name now, else when it was logged; none for those that are
+     * not agents.
+     */
+    fromName: string | null;
+    to: string;
+    toName: string | null;
+    kind: MessageKind | null;
+    outcome: MessageOutcome;
+    /** It waited for its agent before it got where it is. */
+    waited: boolean;
+    tone: MessageTone | null;
+}
+
+/** What a message between agents is. */
+export type MessageKind = "message" | "report" | "question" | "answer" | "notice";
+
+/** What became of a message. */
+export type MessageOutcome = "steered" | "newTurn" | "typed" | "waiting" | "delivered" | "returned" | "repeat" | "refused" | "dropped";
+
+/** Whether a message still waits for its agent, or never reached it. */
+export type MessageTone = "held" | "failed";
+
+/** The project a board call is about, by its absolute path. */
+export interface BoardParams {
+    project: string;
+}
+
 /** The core's calls that name what they take and answer, by method. */
 export interface CoreCalls {
+    promptChat: { params: PromptChatParams; answer: null };
     agentCatalog: { params: NoParams; answer: CatalogAgent[] };
     steerQueued: { params: QueuedParams; answer: null };
+    editMessage: { params: EditParams; answer: null };
     chatToolDetail: { params: ToolDetailParams; answer: ToolDetail };
     dropQueued: { params: QueuedParams; answer: null };
     closeChat: { params: AgentParams; answer: null };
@@ -2704,7 +2771,9 @@ export interface CoreCalls {
     moveChatAccount: { params: MoveChatParams; answer: null };
     preferences: { params: NoParams; answer: Preferences };
     questions: { params: NoParams; answer: AgentQuestion[] };
+    agentMessageRows: { params: AgentMessagesParams; answer: AgentMessageRows };
     boards: { params: NoParams; answer: ProjectBoard[] };
+    board: { params: BoardParams; answer: ProjectBoard };
 }
 
 /** What the core's `Preferences::default()` serializes to. */

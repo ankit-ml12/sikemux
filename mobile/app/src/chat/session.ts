@@ -469,8 +469,7 @@ export class ChatSession {
     this.feed.apply((chat) => applyChanges(chat, [{ op: 'drop', from: rowId }]));
     this.emit();
     void this.ask(
-      (connection) =>
-        connection.call('editMessage', JSON.stringify({ agentId: this.agentId, messageId, text, paths: row.attachments ?? [] })),
+      (connection) => callHost(connection, 'editMessage', { agentId: this.agentId, messageId, text, paths: row.attachments ?? [] }),
       'Could not edit the message',
       undefined,
       this.retry,

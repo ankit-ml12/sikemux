@@ -31,6 +31,8 @@ const SOURCES = [
   `${CORE}/server/calls.rs`,
   `${CORE}/server/chat/queue.rs`,
   `${CORE}/server/agent_accounts.rs`,
+  `${CORE}/server/messages.rs`,
+  `${CORE}/server/messages/log.rs`,
   `${WIRE}/changed.rs`,
   `${CORE}/server/board.rs`,
   `${CORE}/server/board/auto.rs`,
@@ -66,6 +68,13 @@ const RENAMES = {
     Resuming: "ChatAccountsParams",
     Moving: "MoveChatParams",
     Named: "NamedAccount",
+  },
+  [`${CORE}/server/messages.rs`]: { Kind: "MessageKind" },
+  [`${CORE}/server/messages/log.rs`]: {
+    Row: "MessageRow",
+    Outcome: "MessageOutcome",
+    Tone: "MessageTone",
+    Entry: "MessageEntry",
   },
   [`${WIRE}/changed.rs`]: { Topic: "CoreChangeTopic" },
   [`${CORE}/server/board.rs`]: {

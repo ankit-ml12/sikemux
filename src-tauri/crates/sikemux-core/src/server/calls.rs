@@ -93,7 +93,7 @@ calls! { core, client, params;
     "page": Watch, any_program => answer(page(&core, parse(params)?).await?),
     "nameAgent": Local => answer(name_agent(&core, parse(params)?).await?),
     "renameAgent": Full => answer(rename_agent(&core, parse(params)?).await?),
-    "promptChat": Full => answer(prompt_chat(&core, parse(params)?).await?),
+    "promptChat" (PromptChatParams) -> (): Full => prompt_chat(&core, params).await?,
     "closedAgents": Full => answer(closed_agents(&core, parse(params)?).await?),
     "agentNames": Watch, any_program => answer(agent_names(&core).await?),
     "agentCatalog" (NoParams) -> Vec<CatalogAgent>: Watch, any_program => super::catalog::view(),
@@ -145,7 +145,7 @@ calls! { core, client, params;
     "steerQueued" (QueuedParams) -> (): Full => {
         super::chat::queue::steer(&core, &params.agent_id, params.ids, params.message).await?
     },
-    "editMessage": Full => answer(edit_message(&core, parse(params)?).await?),
+    "editMessage" (EditParams) -> (): Full => edit_message(&core, params).await?,
     "chatPage": Watch, any_program => {
         let params: ChatPageParams = parse(params)?;
         let reading = core.clone();
@@ -537,9 +537,11 @@ calls! { core, client, params;
     "answerQuestion": Full => answer(questions::answer(&core, parse(params)?).await?),
     "answerQuestions": Full => answer(questions::answer_all(&core, parse(params)?).await?),
     "agentMessages": Watch, any_program => answer(agent_messages(&core, parse(params)?).await?),
-    "agentMessageRows": Watch, any_program => answer(agent_message_rows(&core, parse(params)?).await?),
+    "agentMessageRows" (AgentMessagesParams) -> AgentMessageRows: Watch, any_program => {
+        agent_message_rows(&core, params).await?
+    },
     "boards" (NoParams) -> Vec<board::BoardView>: Watch, any_program => board::boards(&core),
-    "board": Watch, any_program => answer(board::board(&core, params).await?),
+    "board" (board::BoardParams) -> board::BoardView: Watch, any_program => board::board(&core, params).await?,
     "boardAdd": Full => answer(board::person_add(&core, params).await?),
     "boardAddTicket": Full => answer(board::person_add_ticket(&core, params).await?),
     "boardUpdate": Full => answer(board::person_update(&core, params).await?),
@@ -849,7 +851,17 @@ struct TrustAnswerParams {
 #[serde(rename_all = "camelCase")]
 struct AgentMessagesParams {
     project: String,
+    #[serde(default)]
     limit: Option<usize>,
+}
+
+/// A project's messages between agents, one row each, newest first, under the
+/// project's own path.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentMessageRows {
+    project: String,
+    rows: Vec<messages::log::Row>,
 }
 
 /// The project's log of messages between agents, newest first, under the
@@ -870,7 +882,10 @@ async fn agent_messages(core: &Arc<Core>, params: AgentMessagesParams) -> CoreRe
 }
 
 /// The project's messages between agents folded into one row each, newest first.
-async fn agent_message_rows(core: &Arc<Core>, params: AgentMessagesParams) -> CoreResult<Value> {
+async fn agent_message_rows(
+    core: &Arc<Core>,
+    params: AgentMessagesParams,
+) -> CoreResult<AgentMessageRows> {
     let path = Path::new(&params.project);
     if !path.is_absolute() {
         return Err("project must be the project's absolute path".into());
@@ -880,7 +895,7 @@ async fn agent_message_rows(core: &Arc<Core>, params: AgentMessagesParams) -> Co
     blocking(move || {
         let project = core.workspaces.project_of(&path);
         let rows = super::messages::logged_rows(&core, &project);
-        Ok(json!({ "project": project, "rows": rows }))
+        Ok(AgentMessageRows { project, rows })
     })
     .await
 }
@@ -1083,7 +1098,6 @@ struct AccountPictureParams {
     hash: String,
 }
 
-/// Messages waiting behind an agent's turn, by id.
 /// A person's message `message_id` written again as `text`, sent with the files at `paths`.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1108,6 +1122,7 @@ async fn edit_message(core: &Arc<Core>, params: EditParams) -> CoreResult<()> {
     super::chat::edit(core, &agent_id, message_id, text, paths, Vec::new()).await
 }
 
+/// Messages waiting behind an agent's turn, by id.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QueuedParams {
@@ -1229,7 +1244,7 @@ struct PromptChatParams {
 
 /// Sends the person's message as `AcpPrompt` does, for a client whose own request
 /// carries no context: the agents, earlier chats and issues the message names.
-async fn prompt_chat(core: &Arc<Core>, params: PromptChatParams) -> CoreResult<Value> {
+async fn prompt_chat(core: &Arc<Core>, params: PromptChatParams) -> CoreResult<()> {
     let PromptChatParams {
         agent_id,
         message_id,
@@ -1243,7 +1258,7 @@ async fn prompt_chat(core: &Arc<Core>, params: PromptChatParams) -> CoreResult<V
         super::chat::wake_for_prompt(core, &agent_id, &mut context).await?;
         super::chat::prompt(core, &agent_id, message_id, text, paths, context)?;
     }
-    Ok(json!({}))
+    Ok(())
 }
 
 #[derive(Deserialize)]

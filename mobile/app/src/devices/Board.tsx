@@ -3,20 +3,12 @@ import { Text, View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import type { ConnectionLike } from '@sikemux/native';
 
-import {
-  cardQuestion,
-  COLUMN_LABELS,
-  RUN_WAITS_ON_PERSON,
-  shortTitle,
-  type BoardCard,
-  type BoardColumn,
-  type ProjectBoard,
-} from '@shared/agents/agentBoard';
+import { cardQuestion, COLUMN_LABELS, RUN_WAITS_ON_PERSON, shortTitle, type BoardCard, type BoardColumn } from '@shared/agents/agentBoard';
 import type { ChatTrigger } from '@shared/wire.generated';
-import { kindLabel, outcomeLabel, rowKeys, whoLabel, type AgentMessageRows } from '@shared/agents/agentMessages';
+import { kindLabel, outcomeLabel, rowKeys, whoLabel } from '@shared/agents/agentMessages';
 import { formatAge } from '@shared/lib/format';
 import type { AgentQuestion, ProjectInfo, Snapshot } from '@/core/protocol';
-import { useHostCall, type HostRead } from '@/core/hostCalls';
+import { useHostCall } from '@/core/hostCalls';
 import { projectAt, projectName } from '@/devices/words';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Row, Rows, SectionLabel } from '@/ui/list';
@@ -83,7 +75,7 @@ function OneBoard({
   questions: readonly AgentQuestion[];
   seen: string;
 }) {
-  const read = useHostCall(connection, 'board', { project: scope.path }, seen) as HostRead<ProjectBoard>;
+  const read = useHostCall(connection, 'board', { project: scope.path }, seen);
   if (read.problem) return <Problem what="the board" text={read.problem} />;
   if (!read.data) return null;
   const cards = [...read.data.cards].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -165,7 +157,7 @@ function BetweenAgents({ connection, snapshot, project }: { connection: Connecti
   const styles = useStyles(makeStyles);
   const [logged, setLogged] = useState(project);
   const latest = snapshot.inbox.agentMessages[logged] ?? 0;
-  const read = useHostCall(connection, 'agentMessageRows', { project }, String(latest)) as HostRead<AgentMessageRows>;
+  const read = useHostCall(connection, 'agentMessageRows', { project }, String(latest));
   const answered = read.data?.project;
   if (answered && answered !== logged) setLogged(answered);
   if (read.problem) return <Problem what="the messages between agents" text={read.problem} />;

@@ -250,7 +250,7 @@ export class Outbox {
   /** Sends a message; one that names agents, chats or issues goes as a call, since the phone's own request carries none. */
   private async prompt(connection: ConnectionLike, messageId: string, text: string, paths: string[], context: readonly ContextChip[]) {
     if (!context.length) return connection.prompt(this.agentId, messageId, text, paths);
-    await connection.call('promptChat', JSON.stringify({ agentId: this.agentId, messageId, text, paths, context }));
+    await callHost(connection, 'promptChat', { agentId: this.agentId, messageId, text, paths, context: [...context] });
   }
 
   private inOrder(work: () => Promise<void>): Promise<void> {
