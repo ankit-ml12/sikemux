@@ -951,7 +951,7 @@ impl Workbench {
     /// Puts the keys in the view `id` of the tab in front: a terminal's screen or a chat's draft.
     pub(crate) fn focus_view(&self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.place() != crate::hosts::Place::This {
-            return self.focus.focus(window, cx);
+            return self.keys.focus.focus(window, cx);
         }
         let Some(Pane::View { kind, target, .. }) =
             self.tab().and_then(|tab| view_in(&tab.pane, id))
@@ -978,7 +978,7 @@ impl Workbench {
                     composing.draft.read(cx).focus_handle(cx).focus(window, cx);
                 }
             }
-            _ => self.focus.focus(window, cx),
+            _ => self.keys.focus.focus(window, cx),
         }
     }
 

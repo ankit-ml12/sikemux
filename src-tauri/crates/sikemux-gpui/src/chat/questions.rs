@@ -943,7 +943,7 @@ impl Workbench {
     /// The chat in front while its question asks and nothing else holds the keys, as when the
     /// person clicked away from every field, so the question takes its keys from anywhere.
     pub fn asking_freely(&self, window: &Window) -> Option<String> {
-        if !self.focus.is_focused(window) {
+        if !self.keys.focus.is_focused(window) {
             return None;
         }
         self.front_asks()

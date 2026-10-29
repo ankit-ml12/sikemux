@@ -154,7 +154,7 @@ pub fn toggle(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workb
 
 pub fn close(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
     leave(bench, cx);
-    bench.focus.focus(window, cx);
+    bench.keys.focus.focus(window, cx);
 }
 
 /// Closes Settings, leaving the keyboard to whatever the stage gives it next.

@@ -587,7 +587,7 @@ impl Workbench {
         palette
             .before
             .as_ref()
-            .unwrap_or(&self.focus)
+            .unwrap_or(&self.keys.focus)
             .focus(window, cx);
         self.parts.redraw(&self.parts.finder, cx);
         cx.notify();

@@ -99,14 +99,7 @@ pub struct Workbench {
     /// Dictation, heard into the chat or terminal holding the keyboard.
     pub voice: Entity<crate::voice::Dictation>,
     _voice_heard: [Subscription; 4],
-    /// Catches the keys pressed while nothing holds the keyboard, and the shortcuts Settings
-    /// answers first.
-    _before_shortcuts: Subscription,
-    /// Give the view in front the keyboard whenever nothing else holds it: once a view in
-    /// focus stops being drawn, the window comes forward or the workbench itself is given it.
-    _keys_settle: [Subscription; 3],
-    /// What the person just opened, which takes the keyboard once it shows.
-    takes_keys: Cell<Option<PendingKeys>>,
+    pub keys: Keyboard,
     window_active: bool,
     /// Whether any of the window shows: not minimised, hidden or wholly behind another window.
     window_shown: bool,
@@ -224,8 +217,6 @@ pub struct Workbench {
     pub(crate) skills_offered: HashSet<String>,
     /// The account host whose trust questions `host-trust` holds, asked beside this host's.
     trust_host: Option<String>,
-    /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
-    pub focus: FocusHandle,
     /// The window the store draws, for what is said in it from outside a draw.
     pub(crate) window: AnyWindowHandle,
     pub parts: Parts,
@@ -590,28 +581,36 @@ impl Workbench {
             slow_start: false,
             voice,
             _voice_heard: voice_heard,
-            _before_shortcuts: {
-                let this = cx.weak_entity();
-                cx.intercept_keystrokes(move |event, window, cx| {
-                    let _ = this.update(cx, |bench, cx| {
-                        if !bench.catch_loose_keys(event, window, cx) {
-                            crate::settings::before_shortcut(bench, &event.keystroke, window, cx)
+            keys: Keyboard {
+                pending: Cell::new(None),
+                _settle: [
+                    cx.on_focus_lost(window, |bench, window, cx| bench.settle_keys(window, cx)),
+                    cx.observe_window_activation(window, |bench, window, cx| {
+                        if window.is_window_active() {
+                            bench.settle_keys(window, cx)
                         }
-                    });
-                })
-            },
-            _keys_settle: [
-                cx.on_focus_lost(window, |bench, window, cx| bench.settle_keys(window, cx)),
-                cx.observe_window_activation(window, |bench, window, cx| {
-                    if window.is_window_active() {
+                    }),
+                    cx.on_focus(&focus, window, |bench, window, cx| {
                         bench.settle_keys(window, cx)
-                    }
-                }),
-                cx.on_focus(&focus, window, |bench, window, cx| {
-                    bench.settle_keys(window, cx)
-                }),
-            ],
-            takes_keys: Cell::new(None),
+                    }),
+                ],
+                _before_shortcuts: {
+                    let this = cx.weak_entity();
+                    cx.intercept_keystrokes(move |event, window, cx| {
+                        let _ = this.update(cx, |bench, cx| {
+                            if !bench.catch_loose_keys(event, window, cx) {
+                                crate::settings::before_shortcut(
+                                    bench,
+                                    &event.keystroke,
+                                    window,
+                                    cx,
+                                )
+                            }
+                        });
+                    })
+                },
+                focus,
+            },
             window_active: window.is_window_active(),
             window_shown: window.is_visible(),
             on_screen: None,
@@ -714,7 +713,6 @@ impl Workbench {
             plugin_opening: HashMap::new(),
             top_bar_hovered: false,
             settings: None,
-            focus,
             window: window.window_handle(),
             parts: Parts::new(cx),
             panes: crate::panes::Panes::default(),
@@ -723,7 +721,7 @@ impl Workbench {
             _filtering: None,
             _older: None,
         };
-        bench.focus.focus(window, cx);
+        bench.keys.focus.focus(window, cx);
         bench.wait_patiently(cx);
         crate::handover::follow(&mut bench, cx);
         bench
@@ -1655,7 +1653,7 @@ impl Workbench {
         self.chats.focused = Some(shown);
         let held = window.focused(cx);
         let free = held.as_ref().is_none_or(|held| {
-            *held == self.focus
+            *held == self.keys.focus
                 || self.chats.open.values().any(|chat| {
                     chat.composer
                         .as_ref()
@@ -2478,7 +2476,7 @@ impl Workbench {
 
     /// Gives the workbench the keyboard if `held`, which is going away, has it.
     fn release_keys(&self, held: FocusHandle, cx: &mut Context<Self>) {
-        let (window, focus) = (self.window, self.focus.clone());
+        let (window, focus) = (self.window, self.keys.focus.clone());
         cx.defer(move |cx| {
             let _ = window.update(cx, |_, window, cx| {
                 if held.is_focused(window) {
@@ -3571,16 +3569,16 @@ impl Workbench {
     /// The stage draws again at once, so a view already in front takes the keys too.
     pub fn take_keys_when_shown(&self, wants: TakesKeys, cx: &mut App) {
         let from = self.tab().map(|tab| tab.id.clone());
-        self.takes_keys.set(Some(PendingKeys { wants, from }));
+        self.keys.pending.set(Some(PendingKeys { wants, from }));
         self.parts.redraw(&self.parts.stage, cx);
     }
 
     /// Whether `shown`, now drawn, is what waits for the keyboard. It stops waiting once claimed.
     pub fn claims_keys(&self, shown: TakesKeys) -> bool {
-        match self.takes_keys.take() {
+        match self.keys.pending.take() {
             Some(pending) if pending.wants == shown => true,
             other => {
-                self.takes_keys.set(other);
+                self.keys.pending.set(other);
                 false
             }
         }
@@ -3591,7 +3589,7 @@ impl Workbench {
         let Some(held) = window.focused(cx) else {
             return Keys::Loose;
         };
-        if held == self.focus {
+        if held == self.keys.focus {
             return Keys::Loose;
         }
         let stack = window.context_stack();
@@ -3618,7 +3616,7 @@ impl Workbench {
         if kept {
             // What holds them may be a field not drawn yet, which takes them once it is.
             if held.is_none() {
-                self.focus.focus(window, cx);
+                self.keys.focus.focus(window, cx);
             }
             return;
         }
@@ -3626,7 +3624,7 @@ impl Workbench {
             self.focus_view(&view, window, cx);
         }
         if window.focused(cx) == held {
-            self.focus.focus(window, cx);
+            self.keys.focus.focus(window, cx);
         }
     }
 
@@ -3642,8 +3640,8 @@ impl Workbench {
         if event.context_stack.len() > 1 {
             return false;
         }
-        self.focus.focus(window, cx);
-        if !self.focus.is_focused(window) {
+        self.keys.focus.focus(window, cx);
+        if !self.keys.focus.is_focused(window) {
             return false;
         }
         cx.stop_propagation();
@@ -3655,16 +3653,16 @@ impl Workbench {
     }
 
     fn waits_for_keys(&self) -> bool {
-        let pending = self.takes_keys.take();
+        let pending = self.keys.pending.take();
         let waits = pending.is_some();
-        self.takes_keys.set(pending);
+        self.keys.pending.set(pending);
         waits
     }
 
     /// Stops waiting to give the keyboard away once another kind of tab comes to the front,
     /// so what failed to open never takes the keys later.
     fn settle_takes_keys(&self) {
-        let Some(pending) = self.takes_keys.take() else {
+        let Some(pending) = self.keys.pending.take() else {
             return;
         };
         let front = self.tab();
@@ -3673,7 +3671,7 @@ impl Workbench {
             .and_then(|tab| tabs::first_view(&tab.pane))
             .is_some_and(|(kind, _)| pending.wants.kind() == kind);
         if !moved || shows {
-            self.takes_keys.set(Some(pending));
+            self.keys.pending.set(Some(pending));
         }
     }
 
@@ -4696,6 +4694,20 @@ enum Keys {
     Held,
 }
 
+/// Where the window's keys go when nothing drawn holds them.
+pub struct Keyboard {
+    /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
+    pub(crate) focus: FocusHandle,
+    /// What the person just opened, which takes the keyboard once it shows.
+    pending: Cell<Option<PendingKeys>>,
+    /// Give the view in front the keyboard whenever nothing else holds it: once a view in
+    /// focus stops being drawn, the window comes forward or the workbench itself is given it.
+    _settle: [Subscription; 3],
+    /// Catches the keys pressed while nothing holds the keyboard, and the shortcuts Settings
+    /// answers first.
+    _before_shortcuts: Subscription,
+}
+
 /// A view waiting to take the keyboard, and the tab in front when it was asked for.
 struct PendingKeys {
     wants: TakesKeys,
@@ -4921,7 +4933,7 @@ impl Render for Workbench {
         div()
             .id("shell")
             .key_context(SHELL)
-            .track_focus(&self.focus)
+            .track_focus(&self.keys.focus)
             .relative()
             .size_full()
             .capture_any_mouse_down(|_, _, _| keyboard_back())
