@@ -86,7 +86,7 @@ pub(crate) async fn list(core: &Core, params: ListParams) -> CoreResult<Shown> {
 /// Adds to an item, as the server keeps it, what apps draw it by: a text's or prompt's `words`,
 /// its text with the links to pages taken out, and the `state` of each pull request or issue it
 /// links to that `states` holds, by its address.
-pub fn shown_item(item: &mut Value, states: &HashMap<String, String>) {
+fn shown_item(item: &mut Value, states: &HashMap<String, String>) {
     if !matches!(item["kind"].as_str(), Some("text" | "prompt")) {
         return;
     }
