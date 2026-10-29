@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -10,6 +10,7 @@ import type { ChatMessage } from '@shared/chat/types';
 import { agentLabel } from '@shared/agents/catalog';
 import { ComposerAttachments } from '@/chat/Attachments';
 import { ChatTitle } from '@/chat/ChatTitle';
+import { newChatDraft, type NewChatDraft } from '@/chat/kept';
 import { Activity, Message } from '@/chat/Transcript';
 import { chatSession } from '@/chat/useChat';
 import { AttachSheet } from '@/chat/AttachSheet';
@@ -37,6 +38,14 @@ import { Nav, Screen, useKeyboardShown } from '@/ui/screen';
 import { Working } from '@/ui/status';
 import { Sheet, SheetLabel } from '@/ui/Sheet';
 import { fonts, type Palette, useColors, useStyles, useType } from '@/ui/theme';
+
+/** How long typing rests before the new chat's draft is written down. */
+const DRAFT_KEEP_MS = 400;
+
+function keepNewChat(store: ReturnType<typeof newChatDraft>, held: NewChatDraft) {
+  if (held.text || held.attachments.length || held.chips.length) store.save(held);
+  else store.clear();
+}
 
 const IDLE = composerPlaceholder({ connection: 'ready', running: false }, { resuming: false, disconnected: false });
 
@@ -165,11 +174,15 @@ export default function NewChat() {
   const [launcherId, setLauncherId] = useState<string>();
   const [chosenMode, setChosenMode] = useState<string>();
   const [projectId, setProjectId] = useState<string | undefined>(linkedProject);
-  const [draft, setDraft] = useState('');
+  const kept = useMemo(() => newChatDraft(core), [core]);
+  const [held] = useState(() => kept.load());
+  const [draft, setDraft] = useState(held?.text ?? '');
   const [sheet, setSheet] = useState<'agent' | 'project' | 'attach' | 'stash' | 'settings'>();
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>(
+    () => held?.attachments.filter((attachment) => new File(attachment.uri).exists) ?? [],
+  );
   /** Stashed links and text picked for the message, shown as chips and sent as words. */
-  const [chips, setChips] = useState<StashItem[]>([]);
+  const [chips, setChips] = useState<StashItem[]>(held?.chips ?? []);
   const [sending, setSending] = useState<Sending>();
   const starting = Boolean(sending);
   const [problem, setProblem] = useState<string>();
@@ -238,6 +251,20 @@ export default function NewChat() {
   const absent: Glyph | undefined = noAgents ? 'IconAgent' : live.status === 'open' && workspace && !project ? 'IconFolder' : undefined;
   const busy = useRef(false);
 
+  const unsent = useRef<NewChatDraft>(undefined);
+  useEffect(() => {
+    const now = { text: draft, attachments, chips };
+    unsent.current = now;
+    const timer = setTimeout(() => keepNewChat(kept, now), DRAFT_KEEP_MS);
+    return () => clearTimeout(timer);
+  }, [kept, draft, attachments, chips]);
+  useEffect(
+    () => () => {
+      if (!busy.current && unsent.current) keepNewChat(kept, unsent.current);
+    },
+    [kept],
+  );
+
   const attach = (picking: Promise<Attachment[]>) => {
     picking
       .then((picked) => {
@@ -301,6 +328,7 @@ export default function NewChat() {
       chatSession(core, agentId).sendWhenAttached(text, sent);
       void takeStash(stashIdsOf(shown.attachments, chips));
       setChips([]);
+      kept.clear();
       router.replace({ pathname: '/device/[core]/chat/[agent]', params: { core, agent: agentId, started: '1' } });
     } catch (error) {
       giveBack(shown, shown.attachments, problemOf(error));

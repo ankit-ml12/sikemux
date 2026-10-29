@@ -3,6 +3,7 @@ import * as Updates from 'expo-updates';
 import type { ChatRows } from '@shared/chat/rows';
 
 import { writeWhole } from '@/devices/disk';
+import type { StashItem } from '@/stash/api';
 import type { ContextChip } from '@/stash/words';
 import type { Attachment } from './uploads';
 
@@ -66,20 +67,20 @@ export type DraftStore = { load: () => UnsavedDraft | undefined; save: (draft: U
 /** Kept with the app's documents rather than its cache, so writing survives the app quitting before the host has it. */
 const drafts = new Directory(Paths.document, 'drafts');
 
-export function unsavedDraft(core: string, agentId: string): DraftStore {
-  const file = new File(drafts, `${encodeURIComponent(`${core}:${agentId}`)}.json`);
+function documentFile<T>(name: string) {
+  const file = new File(drafts, `${encodeURIComponent(name)}.json`);
   return {
-    load: () => {
+    load: (): T | undefined => {
       try {
-        return file.exists ? (JSON.parse(file.textSync()) as UnsavedDraft) : undefined;
+        return file.exists ? (JSON.parse(file.textSync()) as T) : undefined;
       } catch {
         return undefined;
       }
     },
-    save: (draft) => {
+    save: (value: T) => {
       try {
         drafts.create({ idempotent: true, intermediates: true });
-        writeWhole(file, JSON.stringify(draft));
+        writeWhole(file, JSON.stringify(value));
       } catch {}
     },
     clear: () => {
@@ -89,3 +90,10 @@ export function unsavedDraft(core: string, agentId: string): DraftStore {
     },
   };
 }
+
+export const unsavedDraft = (core: string, agentId: string): DraftStore => documentFile<UnsavedDraft>(`${core}:${agentId}`);
+
+/** What the new-chat screen held when it was left, so coming back to it finds it as it was. */
+export type NewChatDraft = { text: string; attachments: Attachment[]; chips: StashItem[] };
+
+export const newChatDraft = (core: string) => documentFile<NewChatDraft>(`${core}:new`);
