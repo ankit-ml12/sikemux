@@ -1,35 +1,12 @@
 import { Directory, File, Paths, UploadTask, UploadType } from 'expo-file-system';
-import type { ApiError, StashItem, StashTarget } from '@protocol';
-import { ApiProblem } from '@protocol/api';
+import type { StashItem, StashTarget } from '@protocol';
+import { answerProblem, ApiProblem, bearer } from '@protocol/api';
 
-import { api, type TokenSource } from '@/account/api';
+import { api, OFFLINE, type TokenSource } from '@/account/api';
 import { apiUrl } from '@/account/config';
 import type { Attachment } from '@/chat/uploads';
 
 export type { StashItem, StashTarget };
-
-/** The most the server keeps of one item. */
-export const MAX_STASH_BYTES = 25 * 1024 * 1024;
-/** The longest text the server takes as text; longer text goes as a file. */
-export const MAX_STASH_TEXT = 16_000;
-
-const OFFLINE = "Can't reach Sikemux. Check the phone is online.";
-
-export const stashApi = (token: TokenSource) => api(token);
-
-async function bearer(token: TokenSource): Promise<string> {
-  const signedIn = await token();
-  if (!signedIn) throw new ApiProblem('Sign in again.', 401);
-  return signedIn;
-}
-
-function failure(status: number, body: string): ApiProblem {
-  let detail: Partial<ApiError> | null = null;
-  try {
-    detail = JSON.parse(body) as Partial<ApiError>;
-  } catch {}
-  return new ApiProblem(detail?.error?.message ?? `The accounts server answered ${status}.`, status, detail?.error);
-}
 
 /** Stashes a file from this phone as its bytes, reporting how much has gone. */
 export async function stashFile(
@@ -64,8 +41,16 @@ export async function stashFile(
   } finally {
     task.release();
   }
-  if (answer.status < 200 || answer.status >= 300) throw failure(answer.status, answer.body);
+  if (answer.status < 200 || answer.status >= 300) throw answerProblem(answer.status, readJson(answer.body));
   return JSON.parse(answer.body) as StashItem;
+}
+
+function readJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 const DRAWN = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -106,11 +91,11 @@ export async function stashPrompt(
   token: TokenSource,
   prompt: { text: string; files: readonly { uri: string; name: string; mime: string }[] },
 ): Promise<StashItem> {
-  const item = await stashApi(token).addStash({ kind: 'prompt', text: prompt.text, attachmentCount: prompt.files.length });
+  const item = await api(token).addStash({ kind: 'prompt', text: prompt.text, attachmentCount: prompt.files.length });
   try {
     for (const file of prompt.files) await stashFile(token, file, { prompt: item.id });
   } catch (error) {
-    await stashApi(token)
+    await api(token)
       .deleteStash(item.id)
       .catch(() => {});
     throw error;

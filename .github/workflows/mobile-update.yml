@@ -31,6 +31,7 @@ on:
       - "server/protocol/src/account.ts"
       - "server/protocol/src/api.ts"
       - "server/protocol/src/live.ts"
+      - "server/protocol/src/stash.ts"
       - .github/workflows/mobile-update.yml
   workflow_dispatch:
     inputs:

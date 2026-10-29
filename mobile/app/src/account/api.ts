@@ -17,8 +17,10 @@ export class AccountDeleting extends Error {
   }
 }
 
+export const OFFLINE = "Can't reach Sikemux. Check the phone is online.";
+
 /** The API's routes, signed in with `token`. */
-export const api = (token: TokenSource) => connectApi({ url: apiUrl(), token, offline: "Can't reach Sikemux. Check the phone is online." });
+export const api = (token: TokenSource) => connectApi({ url: apiUrl(), token, offline: OFFLINE });
 
 /**
  * Adds this phone to the account, proving it holds its key. Doing it again only updates its name.

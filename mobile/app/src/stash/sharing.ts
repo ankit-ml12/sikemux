@@ -1,9 +1,10 @@
 import { File, Paths } from 'expo-file-system';
 import type { StashAdd } from '@protocol';
+import { MAX_STASH_FILE_BYTES, MAX_STASH_TEXT } from '@protocol/stash';
 
 import type { Shared, SharedFile } from '../../modules/stash';
-import type { TokenSource } from '@/account/api';
-import { MAX_STASH_BYTES, MAX_STASH_TEXT, stashApi, stashFile, type StashItem, type StashTarget } from './api';
+import { api, type TokenSource } from '@/account/api';
+import { stashFile, type StashItem, type StashTarget } from './api';
 
 /** One thing being shared, as it will be stashed. */
 export type Outgoing = { kind: 'link'; url: string; title?: string } | { kind: 'text'; text: string } | { kind: 'file'; file: SharedFile };
@@ -28,7 +29,7 @@ export function outgoingOf(shared: Shared): Outgoing[] {
 }
 
 export function tooBig(item: Outgoing): boolean {
-  return item.kind === 'file' && (!item.file.uri || item.file.size > MAX_STASH_BYTES);
+  return item.kind === 'file' && (!item.file.uri || item.file.size > MAX_STASH_FILE_BYTES);
 }
 
 /** Text longer than the server takes as text goes as a text file. */
@@ -63,7 +64,7 @@ export async function stashAll(
       );
     } else if (item.kind !== 'file') {
       const body: StashAdd = item.kind === 'link' ? { kind: 'link', url: item.url, ...extra } : { kind: 'text', text: item.text, ...extra };
-      stashed.push(await stashApi(token).addStash(body));
+      stashed.push(await api(token).addStash(body));
     }
     done += weight;
     onProgress(done / total);

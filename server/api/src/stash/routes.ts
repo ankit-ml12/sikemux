@@ -7,6 +7,7 @@ import {
   type StashSeen,
   type StashTarget,
 } from "@sikemux/protocol";
+import { MAX_STASH_FILE_BYTES } from "@sikemux/protocol/stash";
 import { Hono, type Context } from "hono";
 import { sql, type Kysely } from "kysely";
 
@@ -36,7 +37,6 @@ import {
   checkTarget,
   holdAccount,
   ITEM_ID,
-  MAX_FILE_BYTES,
   toItem,
   withAttachments,
   type ItemRow,
@@ -326,11 +326,11 @@ export function stashRoutes(
     const { userId } = identity;
     const { kind, mime, name, note, target, prompt } = readUpload(c);
     const declared = Number(c.req.header("content-length") ?? 0);
-    if (declared > MAX_FILE_BYTES)
+    if (declared > MAX_STASH_FILE_BYTES)
       throw new ApiFailure(
         413,
         "payload_too_large",
-        `A stashed file is limited to ${MAX_FILE_BYTES} bytes.`,
+        `A stashed file is limited to ${MAX_STASH_FILE_BYTES} bytes.`,
       );
     await checkSpace(db, userId, declared);
     if (target) await checkTarget(db, userId, target);
@@ -339,7 +339,7 @@ export function stashRoutes(
     const written = await store.write(
       id,
       c.req.raw.body ?? (async function* () {})(),
-      MAX_FILE_BYTES,
+      MAX_STASH_FILE_BYTES,
     );
     try {
       c.get("checkBody")(written.sha256);

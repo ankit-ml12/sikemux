@@ -24,14 +24,40 @@ export class ApiProblem extends Error {
 
 export interface Connection {
   url: string;
-  /** The sign-in to send; null when the person must sign in again. */
-  token: () => Promise<string | null>;
+  /** The sign-in to send, for routes that need one; null when the person must sign in again. */
+  token?: () => Promise<string | null>;
   /** What to tell the person when the API cannot be reached. */
   offline: string;
+  /** How long a request may take before it counts as out of reach. */
+  timeoutMs?: number;
 }
 
-/** The API's routes over fetch, signed in with `token`, every failure an ApiProblem. */
-export function connectApi({ url, token, offline }: Connection): ApiClient {
+/** The sign-in `token` gives, or a problem asking the person to sign in again. */
+export async function bearer(
+  token: () => Promise<string | null>,
+): Promise<string> {
+  const signedIn = await token();
+  if (!signedIn) throw new ApiProblem("Sign in again.", 401);
+  return signedIn;
+}
+
+/** The problem an answer with `status` describes in `body`, the API's error as JSON when it sent one. */
+export function answerProblem(status: number, body: unknown): ApiProblem {
+  const detail = (body as Partial<ApiError> | null)?.error;
+  return new ApiProblem(
+    detail?.message ?? `The accounts server answered ${status}.`,
+    status,
+    detail,
+  );
+}
+
+/** The API's routes over fetch, signed in with `token` when given, every failure an ApiProblem. */
+export function connectApi({
+  url,
+  token,
+  offline,
+  timeoutMs,
+}: Connection): ApiClient {
   return apiClient(
     async <Answer>(
       method: Method,
@@ -39,34 +65,36 @@ export function connectApi({ url, token, offline }: Connection): ApiClient {
       body?: unknown,
     ): Promise<Answer> => {
       let response: Response;
+      const abort = new AbortController();
+      const timer =
+        timeoutMs === undefined
+          ? undefined
+          : setTimeout(() => abort.abort(), timeoutMs);
       try {
-        const bearer = await token();
-        if (!bearer) throw new ApiProblem("Sign in again.", 401);
         response = await fetch(`${url}${path}`, {
           method,
           headers: {
-            authorization: `Bearer ${bearer}`,
+            ...(token
+              ? { authorization: `Bearer ${await bearer(token)}` }
+              : {}),
             ...(body === undefined
               ? {}
               : { "content-type": "application/json" }),
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          signal: abort.signal,
         });
       } catch (error) {
         if (error instanceof ApiProblem) throw error;
         throw new ApiProblem(offline);
+      } finally {
+        clearTimeout(timer);
       }
-      if (!response.ok) {
-        const failure = (await response
-          .json()
-          .catch(() => null)) as Partial<ApiError> | null;
-        throw new ApiProblem(
-          failure?.error?.message ??
-            `The accounts server answered ${response.status}.`,
+      if (!response.ok)
+        throw answerProblem(
           response.status,
-          failure?.error,
+          await response.json().catch(() => null),
         );
-      }
       return (
         response.status === 204 ? undefined : await response.json()
       ) as Answer;

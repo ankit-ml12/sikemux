@@ -3,6 +3,7 @@ import type {
   StashItem,
   StashTarget,
 } from "@sikemux/protocol";
+import { MAX_STASH_ACCOUNT_BYTES } from "@sikemux/protocol/stash";
 import type { Kysely, Selectable, Transaction } from "kysely";
 
 import type { Tables } from "../db.ts";
@@ -10,8 +11,6 @@ import { appendEvent } from "../events/log.ts";
 import { ApiFailure, badRequest } from "../http.ts";
 
 export const ITEM_ID = /^[A-Za-z0-9_-]{22}$/;
-export const MAX_FILE_BYTES = 25 * 1024 * 1024;
-export const MAX_ACCOUNT_BYTES = 1024 * 1024 * 1024;
 export const TAKEN_KEPT_DAYS = 30;
 export const UNFINISHED_PROMPT_DAYS = 1;
 
@@ -132,7 +131,7 @@ export async function checkSpace(
     )
     .where("user_id", "=", userId)
     .executeTakeFirstOrThrow();
-  if (Number(used) + bytes > MAX_ACCOUNT_BYTES)
+  if (Number(used) + bytes > MAX_STASH_ACCOUNT_BYTES)
     throw new ApiFailure(
       413,
       "payload_too_large",

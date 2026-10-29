@@ -17,7 +17,8 @@ import { YoloToggle } from '@/chat/Composer';
 import { WorktreeSwitch } from '@/chat/Worktree';
 import { ComposerInput } from '@/chat/ComposerInput';
 import { fitting, type Attachment } from '@/chat/uploads';
-import { stashApi, stashPrompt, type StashItem } from '@/stash/api';
+import { api } from '@/account/api';
+import { stashPrompt, type StashItem } from '@/stash/api';
 import { downloadedFile, intoMessage, stashIdsOf } from '@/stash/attach';
 import { StashButton } from '@/stash/StashButton';
 import { StashChip } from '@/stash/StashChip';
@@ -247,7 +248,7 @@ export default function NewChat() {
       const token = stashToken();
       const held = stashedFrom.current;
       if (held) putBack(held);
-      if (token) await stashApi(token).deleteStash(id);
+      if (token) await api(token).deleteStash(id);
     },
     report: setProblem,
   });

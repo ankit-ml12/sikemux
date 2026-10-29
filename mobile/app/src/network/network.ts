@@ -1,9 +1,11 @@
 import { File, Paths } from 'expo-file-system';
-import type { MinimumVersions, Relay } from '@protocol';
+import type { MinimumVersions, Network, Relay } from '@protocol';
+import { connectApi } from '@protocol/api';
 import type { RelaySetting } from '@sikemux/native';
 
 import { externalValue, useExternalValue } from '@shared/lib/externalValue';
 
+import { OFFLINE } from '@/account/api';
 import { apiUrl } from '@/account/config';
 import { onNetworkChange } from './connectivity';
 import { installedRelease } from './installed';
@@ -41,19 +43,11 @@ function minimumVersions(value: unknown): MinimumVersions | null {
   return fine('ios') && fine('android') && fine('macos') ? (minimum as MinimumVersions) : null;
 }
 
-async function fetchNetwork(): Promise<{ relays?: unknown; minimumVersions?: unknown } | null> {
-  const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(`${apiUrl()}/v1/network`, { signal: abort.signal });
-    if (!response.ok) return null;
-    const body: unknown = await response.json();
-    return typeof body === 'object' && body !== null ? body : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
+/** The server's answer, or null when it could not be reached in time; the saved copy stands in then. */
+async function fetchNetwork(): Promise<Network | null> {
+  return connectApi({ url: apiUrl(), offline: OFFLINE, timeoutMs: FETCH_TIMEOUT_MS })
+    .getNetwork()
+    .catch(() => null);
 }
 
 async function savedRelays(): Promise<Relay[]> {

@@ -3,9 +3,9 @@ import { useAuth } from '@clerk/expo';
 
 import { externalValue, useExternalValue } from '@shared/lib/externalValue';
 
-import type { TokenSource } from '@/account/api';
 import { problem as problemOf } from '@/core/problem';
-import { stashApi, type StashItem } from './api';
+import { api, type TokenSource } from '@/account/api';
+import type { StashItem } from './api';
 
 /**
  * What the phone knows of the stash: `loading` until the first read, `offline` while the last read failed.
@@ -33,7 +33,7 @@ export async function refreshStash() {
     let seenAt: string | null = null;
     let cursor: string | undefined;
     do {
-      const page = await stashApi(token).listStash({ taken: 'false', ...(cursor ? { cursor } : {}) });
+      const page = await api(token).listStash({ taken: 'false', ...(cursor ? { cursor } : {}) });
       items.push(...page.items);
       seenAt = page.seenAt;
       cursor = page.cursor;
@@ -56,7 +56,7 @@ export async function takeStash(ids: readonly string[]) {
   const signedIn = token;
   const now = stash.get();
   stash.set({ ...now, items: now.items.filter((item) => !ids.includes(item.id)) });
-  await Promise.allSettled(ids.map((id) => stashApi(signedIn).updateStash(id, { taken: true })));
+  await Promise.allSettled(ids.map((id) => api(signedIn).updateStash(id, { taken: true })));
 }
 
 export async function removeStash(id: string) {
@@ -64,7 +64,7 @@ export async function removeStash(id: string) {
   const before = stash.get().items;
   stash.set({ ...stash.get(), items: before.filter((item) => item.id !== id) });
   try {
-    await stashApi(token).deleteStash(id);
+    await api(token).deleteStash(id);
   } catch (error) {
     stash.set({ ...stash.get(), items: before });
     throw error;
@@ -84,7 +84,7 @@ export async function seeStash() {
   if (!token || !newest || !newInStash(now).length) return;
   stash.set({ ...now, seenAt: newest });
   try {
-    const { at } = await stashApi(token).markStashSeen({ at: newest });
+    const { at } = await api(token).markStashSeen({ at: newest });
     stash.set({ ...stash.get(), seenAt: at });
   } catch (error) {
     console.warn('sikemux: could not mark the stash seen on the account', error);
