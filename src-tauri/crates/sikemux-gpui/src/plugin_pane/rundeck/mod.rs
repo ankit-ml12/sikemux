@@ -21,8 +21,8 @@ use sikemux_plugin_rundeck_views::{
     ActivityPage, ActivityRequest, CheckRequest, Connection, DeployForm, DeployRequest,
     DeployTarget, EnvTone, ExecutionPage, ExecutionRequest, GroupNode, JobCatalog, JobOption,
     JobPage, JobRequest, JobRow, Jobs, JobsRequest, LiveRun, OptionChoice, OptionKind, OutputLine,
-    OutputTick, Picked, Plan, Run, RunCheck, RunNotice, RunStep, Section, StatusKind, StepState,
-    TargetRequest, TermColor, Tone, Tree,
+    OutputTick, Picked, Plan, PlanRequest, Run, RunCheck, RunNotice, RunStep, Section, StatusKind,
+    StepState, TargetRequest, TermColor, Tone, Tree,
 };
 
 use super::{after, listen, Failure, Host, Panel, PluginPane, Streamed};

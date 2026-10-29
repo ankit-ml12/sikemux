@@ -356,8 +356,25 @@ pub struct Plan {
     pub current_branch: Option<String>,
     /// The checkout is pushed before the run starts.
     pub pushes: bool,
+    /// The checkout to push before the run starts: the one the job deploys, while it is on the
+    /// branch being deployed.
+    pub push_first: Option<String>,
     pub checks: Vec<PlanCheck>,
     pub detail: Option<String>,
+}
+
+/// What a deploy's plan is asked about: the job, the branch it would deploy, and the checkout
+/// in front, which the plan compares and pushes when the job is named after its folder.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanRequest {
+    pub job_id: String,
+    pub project: String,
+    pub service: String,
+    pub name: String,
+    pub target_branch: String,
+    #[serde(default)]
+    pub checkout: Option<String>,
 }
 
 /// A step of a run, as its page lists it.

@@ -4,9 +4,9 @@
 use std::collections::BTreeMap;
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
-use serde::Deserialize;
 use sikemux_plugin_rundeck_views::{
-    CheckRequest, DeployForm, DeployRequest, JobOption, OptionKind, Plan, PlanCheck, RunCheck, Tone,
+    CheckRequest, DeployForm, DeployRequest, JobOption, OptionKind, Plan, PlanCheck, PlanRequest,
+    RunCheck, Tone,
 };
 
 use crate::client::Session;
@@ -358,22 +358,14 @@ fn fill_option_refs(url: &str, values: &BTreeMap<String, String>) -> String {
     out
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanViewRequest {
-    job_id: String,
-    project: String,
-    service: String,
-    target_branch: String,
-    #[serde(default)]
-    repo_path: String,
-}
-
 pub async fn plan_view(
     session: &Session,
     settings: &Settings,
-    request: PlanViewRequest,
+    request: PlanRequest,
 ) -> RundeckResult<Plan> {
+    let checkout = request
+        .checkout
+        .filter(|checkout| deploys(&request.name, checkout));
     let result = plan::plan(
         session,
         plan::PlanRequest {
@@ -381,12 +373,20 @@ pub async fn plan_view(
             project: request.project,
             service: request.service,
             target_branch: request.target_branch,
-            repo_path: request.repo_path,
+            repo_path: checkout.clone().unwrap_or_default(),
             branch_options: settings.branch_options.clone(),
         },
     )
     .await?;
-    Ok(plan_of(result))
+    let mut plan = plan_of(result);
+    plan.push_first = checkout
+        .filter(|_| plan.pushes && plan.current_branch.as_ref() == Some(&plan.target_branch));
+    Ok(plan)
+}
+
+/// Whether the job `name` deploys the checkout at `checkout`: it is named after its folder.
+fn deploys(name: &str, checkout: &str) -> bool {
+    checkout.trim_end_matches('/').rsplit('/').next() == Some(name)
 }
 
 fn plan_of(plan: PlanResult) -> Plan {
@@ -493,6 +493,7 @@ fn plan_of(plan: PlanResult) -> Plan {
         deployed_branch: plan.deployed_branch,
         current_branch: plan.current_branch,
         pushes,
+        push_first: None,
         checks,
         detail: plan.branch_relation_detail,
     }

@@ -58,20 +58,9 @@ impl Rundeck {
                     .unwrap_or_default()
             })
             .unwrap_or_default();
-        let repo = repo_of(host, &form_data.name, cx);
         let plan = (form_data.runs_branch && !target.is_empty()).then(|| {
-            host.view(
-                "planView",
-                json!({
-                    "jobId": form_data.job_id,
-                    "project": form_data.project,
-                    "service": form_data.service,
-                    "targetBranch": target,
-                    "repoPath": repo,
-                }),
-                cx,
-            )
-            .read::<Plan>()
+            host.view("planView", plan_request(host, &form_data, &target, cx), cx)
+                .read::<Plan>()
         });
         let plan_ready = !form_data.runs_branch
             || matches!(&plan, Some(Ok(Some(plan))) if plan.target_branch == target);
@@ -691,29 +680,16 @@ impl Rundeck {
                 false,
             ));
         }
-        let repo = repo_of(host, &form_data.name, cx);
-        let plan = form_data
+        let push = form_data
             .runs_branch
             .then(|| {
-                host.view(
-                    "planView",
-                    json!({
-                        "jobId": form_data.job_id,
-                        "project": form_data.project,
-                        "service": form_data.service,
-                        "targetBranch": target,
-                        "repoPath": repo,
-                    }),
-                    cx,
-                )
-                .read::<Plan>()
-                .ok()
-                .flatten()
+                host.view("planView", plan_request(host, &form_data, &target, cx), cx)
+                    .read::<Plan>()
+                    .ok()
+                    .flatten()
             })
-            .flatten();
-        let push = plan
-            .filter(|plan| plan.pushes && plan.current_branch.as_deref() == Some(target.as_str()))
-            .and(repo);
+            .flatten()
+            .and_then(|plan| plan.push_first.clone());
         let mut options = request;
         options["jobId"] = json!(form_data.job_id);
         options["options"] = json!(ready.send);
@@ -1059,9 +1035,14 @@ fn plan_card(
     card("Plan", String::new(), body, cx)
 }
 
-/// The front project, when the job is named after its folder: the checkout a deploy pushes.
-fn repo_of(host: &Host, job: &str, cx: &App) -> Option<String> {
-    let project = host.watched_project(cx)?;
-    let folder = project.trim_end_matches('/').rsplit('/').next()?;
-    (folder == job).then_some(project)
+/// What the plan of deploying `target` with the job is asked, with the checkout in front.
+fn plan_request(host: &Host, form_data: &DeployForm, target: &str, cx: &App) -> PlanRequest {
+    PlanRequest {
+        job_id: form_data.job_id.clone(),
+        project: form_data.project.clone(),
+        service: form_data.service.clone(),
+        name: form_data.name.clone(),
+        target_branch: target.to_owned(),
+        checkout: host.watched_project(cx),
+    }
 }
