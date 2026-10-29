@@ -423,6 +423,18 @@ calls! { core, client, params;
         core.changes.changed(Topic::Preferences, None, None);
         answer(preferences)
     },
+    "setWorktreeDefault": Person => {
+        let params: WorktreeDefaultParams = parse(params)?;
+        let mut defaults = core.preferences.get().agent_worktree_defaults;
+        match params.on {
+            true => defaults.insert(params.project, true),
+            false => defaults.remove(&params.project),
+        };
+        core.preferences.set("agentWorktreeDefaults", serde_json::to_value(defaults)?)?;
+        core.view_changed();
+        core.changes.changed(Topic::Preferences, None, None);
+        answer(json!({}))
+    },
     "theme": Watch, any_program => {
         let params: ThemeParams = serde_json::from_value(params).unwrap_or_default();
         match params.id {
@@ -1159,6 +1171,13 @@ async fn closed_agents(
         Ok(core.names.closed(&project, core.open_agents()))
     })
     .await
+}
+
+/// Whether a new chat in the project at the folder `project` starts in a worktree of its own.
+#[derive(Deserialize)]
+struct WorktreeDefaultParams {
+    project: String,
+    on: bool,
 }
 
 #[derive(Deserialize)]

@@ -15,6 +15,7 @@ import { Activity, Message } from '@/chat/Transcript';
 import { chatSession } from '@/chat/useChat';
 import { AttachSheet } from '@/chat/AttachSheet';
 import { YoloToggle } from '@/chat/Composer';
+import { WorktreeSwitch } from '@/chat/Worktree';
 import { ComposerInput } from '@/chat/ComposerInput';
 import { fitting, uploadEach, type Attachment } from '@/chat/uploads';
 import { stashApi, stashPrompt, type StashItem } from '@/stash/api';
@@ -191,6 +192,12 @@ export default function NewChat() {
   const starting = Boolean(sending);
   const [problem, setProblem] = useState<string>();
   const [started, setStarted] = useState<string>();
+  /** What the person flipped the worktree switch to for a project, until the host's own view says so. */
+  const [flipped, setFlipped] = useState<{ project: string; on: boolean }>();
+  /** Where the first message is while the host makes its worktree and starts the agent there. */
+  const [step, setStep] = useState<string>();
+  /** The host made this chat's worktree, so sending again starts the agent there rather than making another. */
+  const [inWorktree, setInWorktree] = useState(false);
   const typing = useKeyboardShown();
   const launcher = useMemo(
     () => workspace?.launchers.find((known) => known.id === launcherId) ?? workspace?.launchers[0],
@@ -205,6 +212,16 @@ export default function NewChat() {
     [workspace, projectId],
   );
   const mode = chosenMode ?? launcher?.permissionMode ?? '';
+  const worktree = (flipped?.project === project?.id ? flipped?.on : undefined) ?? project?.worktreeDefault ?? false;
+  const flipWorktree = () => {
+    if (!project || live.status !== 'open') return;
+    const on = !worktree;
+    setFlipped({ project: project.id, on });
+    live.connection.call('setWorktreeDefault', JSON.stringify({ project: project.path, on })).catch((error: unknown) => {
+      setFlipped(undefined);
+      setProblem(`Could not change the worktree default: ${problemOf(error)}`);
+    });
+  };
   const room = MAX_ATTACHMENTS - attachments.length;
   const mention = stashQuery(draft);
   const stashable = Boolean(draft.trim() || attachments.length || chips.length) && !starting;
@@ -309,6 +326,7 @@ export default function NewChat() {
     setDraft(shown.draft);
     setAttachments(files);
     setSending(undefined);
+    setStep(undefined);
   };
 
   const start = async () => {
@@ -326,6 +344,22 @@ export default function NewChat() {
       if (!agentId) {
         agentId = await live.connection.startChat(launcher.id, project.id, chosenMode);
         setStarted(agentId);
+      }
+      if (worktree && !inWorktree) {
+        setStep('Creating worktree');
+        const made = JSON.parse(await live.connection.call('createAgentWorktree', JSON.stringify({ agentId, message: text }))) as {
+          worktree?: { path?: string };
+          setupError?: string;
+        };
+        setInWorktree(true);
+        if (made.setupError) {
+          return giveBack(
+            shown,
+            shown.attachments,
+            `${made.setupError}. The worktree is kept at ${made.worktree?.path}; send again to start there.`,
+          );
+        }
+        setStep('Starting the agent in the worktree');
       }
       const { sent, files } = await upload(live.connection, agentId, shown.attachments);
       if (!sent) return giveBack(shown, files, 'Could not send every file to the host');
@@ -360,7 +394,7 @@ export default function NewChat() {
         {sending ? (
           <View style={styles.sending}>
             <Message message={sending.message} unsent={{ state: 'sending' }} sentFiles={sending.files} />
-            {launcher ? <Activity provider={launcher.provider} label="Starting" since={sending.since} /> : null}
+            {launcher ? <Activity provider={launcher.provider} label={step ?? 'Starting'} since={sending.since} /> : null}
           </View>
         ) : (
           <View style={styles.welcome}>
@@ -383,18 +417,21 @@ export default function NewChat() {
           {prompt.toast}
           {mention !== undefined ? <StashMenu query={mention} onPick={(item) => fromStash([item], withoutQuery(draft))} /> : null}
           {project ? (
-            <Pressable
-              style={styles.strip}
-              onPress={() => setSheet('project')}
-              disabled={Boolean(started)}
-              accessibilityRole="button"
-              accessibilityLabel="Project">
-              <Icon name="IconFolder" size={13} color={colors.live} />
-              <Text style={styles.stripName}>{project.name}</Text>
-              <View style={{ transform: [{ rotate: '90deg' }] }}>
-                <Icon name="IconChevron" size={10} color={colors.inkFaint} />
-              </View>
-            </Pressable>
+            <View style={styles.strip}>
+              <Pressable
+                style={styles.stripProject}
+                onPress={() => setSheet('project')}
+                disabled={Boolean(started)}
+                accessibilityRole="button"
+                accessibilityLabel="Project">
+                <Icon name="IconFolder" size={13} color={colors.live} />
+                <Text style={styles.stripName}>{project.name}</Text>
+                <View style={{ transform: [{ rotate: '90deg' }] }}>
+                  <Icon name="IconChevron" size={10} color={colors.inkFaint} />
+                </View>
+              </Pressable>
+              {project.git ? <WorktreeSwitch on={worktree || inWorktree} disabled={starting || inWorktree} onFlip={flipWorktree} /> : null}
+            </View>
           ) : null}
           <View style={styles.composer}>
             {attachments.length || chips.length ? (
@@ -524,11 +561,12 @@ const makeStyles = (colors: Palette) => {
     strip: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 7,
+      justifyContent: 'space-between',
       marginHorizontal: 14,
       marginBottom: -1,
-      paddingVertical: 9,
-      paddingHorizontal: 12,
+      paddingVertical: 5,
+      paddingLeft: 12,
+      paddingRight: 6,
       borderWidth: 1,
       borderBottomWidth: 0,
       borderColor: colors.border,
@@ -536,6 +574,7 @@ const makeStyles = (colors: Palette) => {
       borderTopRightRadius: 12,
       backgroundColor: colors.composer,
     },
+    stripProject: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 4 },
     stripName: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink },
     composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
     bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },

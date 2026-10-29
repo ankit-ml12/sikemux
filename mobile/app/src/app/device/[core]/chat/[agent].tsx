@@ -22,6 +22,7 @@ import { askTitle, Composer, RecentSheet } from '@/chat/Composer';
 import { FoldsContext, rowFold, shownRows } from '@/chat/folds';
 import { useTranscriptScroll } from '@/chat/transcriptScroll';
 import { HostContext } from '@/chat/hostFiles';
+import { WorktreeNote, worktreeOf } from '@/chat/Worktree';
 import { LiveSheet, LiveStrip } from '@/chat/Live';
 import { AnsweredQuestion, AssumedQuestion, QuestionDock } from '@/chat/Question';
 import { useQuestions } from '@/chat/questions';
@@ -321,6 +322,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const preferences = useHostCall<Preferences>(connection, 'preferences', null, String(state.running)).data;
   const steers = steerable && preferences?.midTurnSend !== 'queue';
   const saved = live.snapshot?.workspace.agents?.find((shown) => shown.id === agentId);
+  const worktree = worktreeOf(saved?.worktree);
   const startOver = saved
     ? () => {
         const launcher = live.snapshot?.workspace.launchers.find(
@@ -391,8 +393,12 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                             // Folded work draws nothing, so it is never recycled into a whole answer.
                             getItemType={(message) => (rowFold(message, workOpen).hidden ? 'folded' : message.role)}
                             extraData={marks}
-                            renderItem={({ item }) => {
+                            renderItem={({ item, index }) => {
                               const { summary: fold, hidden, from } = rowFold(item, workOpen);
+                              const note =
+                                index === 0 && worktree && !chat.hasEarlier ? (
+                                  <WorktreeNote branch={worktree.branch} path={worktree.path} />
+                                ) : null;
                               const summary = fold ? (
                                 <WorkSummary
                                   took={fold.took}
@@ -402,9 +408,18 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                                   onToggle={() => toggleWork(fold.id)}
                                 />
                               ) : null;
-                              if (hidden) return summary ?? <View />;
+                              if (hidden)
+                                return note || summary ? (
+                                  <>
+                                    {note}
+                                    {summary}
+                                  </>
+                                ) : (
+                                  <View />
+                                );
                               return (
                                 <>
+                                  {note}
                                   {summary}
                                   <Message
                                     message={item}

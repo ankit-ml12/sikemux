@@ -5,7 +5,7 @@
 use std::rc::Rc;
 
 use gpui_kit::{Context, Window};
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 use super::Chat;
 use crate::core::ChatAsk;
@@ -35,18 +35,12 @@ impl Workbench {
             preparing,
             on,
         )?;
-        let mut defaults = self.preferences().agent_worktree_defaults;
-        defaults.insert(project.path.to_string_lossy().into_owned(), !on);
-        let flipped: Map<String, Value> = defaults
-            .into_iter()
-            .filter(|(_, on)| *on)
-            .map(|(folder, on)| (folder, Value::Bool(on)))
-            .collect();
+        let folder = project.path.to_string_lossy().into_owned();
         let asks = self.asks.clone();
         let flip: Flip = Rc::new(move |_, _| {
             let _ = asks.send(crate::core::Ask::Call {
-                method: "setPreference",
-                params: json!({ "key": "agentWorktreeDefaults", "value": flipped }),
+                method: "setWorktreeDefault",
+                params: json!({ "project": folder, "on": !on }),
             });
         });
         Some((switch, flip))

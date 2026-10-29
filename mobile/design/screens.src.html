@@ -1027,6 +1027,17 @@
   .mention-menu .item .a { flex: none; font-size: 12px; color: var(--ink-faint); }
   .mention-menu .none { min-height: 44px; display: flex; align-items: center; padding: 0 14px; font-size: 13px; color: var(--text-tertiary); }
   .tok { color: var(--acc); background: color-mix(in oklab, var(--ink) 8%, transparent); border-radius: 3px; }
+  .ps-worktree { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border-radius: 13px; font-size: 12px; color: var(--text-tertiary); }
+  .ps-worktree .ico { color: var(--text-tertiary); }
+  .ps-worktree.on { color: var(--ink); }
+  .ps-worktree.on .ico { color: var(--acc); }
+  .ps-worktree.off { opacity: .55; }
+  .wt-note { display: flex; align-items: center; gap: 10px; padding: 12px 0 4px; }
+  .wt-note .tile { flex: none; width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center; background: color-mix(in oklab, var(--acc) 16%, transparent); color: var(--acc); }
+  .wt-note .lines { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wt-note .l1 { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wt-note .l1 code { font-family: var(--mono); color: var(--ink); }
+  .wt-note .l2 { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
 </style>
 </head>
 <body>
@@ -3878,7 +3889,7 @@ expected 1 write, got 2</div>
         <div class="composer-wrap">
           <div class="project-strip">
             <span class="ps-project"><span class="folder">{{IconFolder:13}}</span><b>sikemux</b><span class="ch">{{IconChevron:10}}</span></span>
-            <span class="ps-branch">{{IconGit:12}}main</span>
+            <span class="ps-worktree">{{IconGit:12}}worktree</span>
           </div>
           <div class="composer">
             <div class="ta ph">Ask about this project, or type / for commands</div>
@@ -4004,6 +4015,102 @@ expected 1 write, got 2</div>
 
   </div>
 </section>
+
+<section class="flow on-host">
+  <h2>A chat in a worktree of its own</h2>
+  <p>As on the Mac, before the first message a pill at the end of the project strip says whether the chat starts in a new git worktree on a branch of its own. It shows only for a project in a git repository, and starts as the person last chose for that project. Flipping it keeps the choice for the project on the host, for the Mac and every phone.</p>
+  <div class="phones">
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>New Claude chat</b></span></span><span class="end"></span></div>
+        <div class="welcome-chat">
+          <div class="wc-head"><span class="claude">{{IconClaude:36}}</span><b>sikemux</b></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="project-strip">
+            <span class="ps-project"><span class="folder">{{IconFolder:13}}</span><b>sikemux</b><span class="ch">{{IconChevron:10}}</span></span>
+            <span class="ps-worktree on">{{IconGit:12}}worktree</span>
+          </div>
+          <div class="composer focus">
+            <div class="ta">Remember the last email on the login form<span class="caret"></span></div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn">{{IconStack:16}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Claude<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Worktree on</b><div class="note">Off, the pill is quiet; on, its git mark turns purple and its word bright. A tap flips it and saves it as the project's default.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>New Claude chat</b></span></span><span class="end"></span></div>
+        <div class="chat">
+          <div class="msg-user" style="opacity:.7">Remember the last email on the login form</div>
+          <div style="align-self:flex-end;margin-top:-4px;font-size:12px;color:var(--ink-faint)">Sending…</div>
+          <div class="activity"><span class="glyph claude">{{IconClaude:20}}</span><span class="lbl">Creating worktree…</span><span class="el">3s</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="project-strip">
+            <span class="ps-project"><span class="folder">{{IconFolder:13}}</span><b>sikemux</b><span class="ch">{{IconChevron:10}}</span></span>
+            <span class="ps-worktree on off">{{IconGit:12}}worktree</span>
+          </div>
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn">{{IconStack:16}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Claude<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Making the worktree</b><div class="note">The first message shows at once while the host makes the worktree, named after the message, and the line under it reads Creating worktree, then Starting the agent in the worktree. If the host cannot set it up, the message goes back to the composer with why and where the worktree is kept; sending again starts the agent there.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remember the last email</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat">
+          <div class="wt-note"><span class="tile">{{IconGit:14}}</span><span class="lines"><span class="l1">Working in a worktree on <code>remember-the-last-email</code></span><span class="l2">/Users/edon/code/sikemux.worktrees/remember-the-last-email</span></span></div>
+          <div class="msg-user">Remember the last email on the login form</div>
+          <div class="prose">The form now keeps the email in session storage and fills it back in after a failed attempt.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="stash-btn">{{IconStack:16}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="claude">{{IconClaude:16}}</span>Claude<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>The note above the first message</b><div class="note">A chat that works in a worktree, made here or on the Mac, says so above its first message: the branch in the code face, then the folder more quietly, cut from the start so its end shows.</div></figcaption>
+    </figure>
+
+  </div>
+</section>
+
 
 <!-- ================================================================ -->
 <section class="flow on-host">
