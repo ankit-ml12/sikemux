@@ -781,8 +781,10 @@ pub struct ProjectInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectCodeHost {
-    /// The host's plugin, such as `github`.
+    /// The code host, such as `github`.
     pub host: String,
+    /// The plugin that speaks for the host, such as `sikemux.github`.
+    pub plugin: String,
     /// What people call the host, such as GitHub.
     pub label: String,
     /// `owner/name`.

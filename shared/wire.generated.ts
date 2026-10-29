@@ -137,8 +137,10 @@ export type PullChecks = "pending" | "passing" | "failing";
 
 /** A project's repository on a code host, and what Sikemux shows of it. */
 export interface ProjectCodeHost {
-    /** The host's plugin, such as `github`. */
+    /** The code host, such as `github`. */
     host: string;
+    /** The plugin that speaks for the host, such as `sikemux.github`. */
+    plugin: string;
     /** What people call the host, such as GitHub. */
     label: string;
     /** `owner/name`. */

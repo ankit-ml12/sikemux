@@ -333,6 +333,7 @@ pub(crate) async fn shown(
     let (host, owner, name) = locate(core, url, picks).await?;
     Some(ProjectCodeHost {
         host: host.id().to_owned(),
+        plugin: host.plugin().to_owned(),
         label: host.spec.label.clone(),
         repo: format!("{owner}/{name}"),
         ci_name: host.spec.ci_name.clone(),
