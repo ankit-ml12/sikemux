@@ -291,63 +291,6 @@ body {
   user-select: none;
   cursor: default;
 }
-
-/* `.pane` is the only surface not in this list: it is what you read through,
-   and a transcript over the wallpaper is a transcript nobody can read. The tab
-   strips are chrome like the rails, so they go when the rails go — their tabs
-   are pills that carry their own hairline and fill, and stay legible with no
-   band behind them. */
-html.is-transparent .top-bar,
-html.is-transparent .side-rail,
-html.is-transparent .workspace-rail,
-html.is-transparent .stage,
-html.is-transparent .window-layer,
-html.is-transparent .tabbar,
-html.is-transparent .browser-toolbar {
-  background: transparent;
-}
-
-/* The settings pane paints every one of its surfaces, so every one of them
-   has to let go together — a single opaque box inside a transparent window
-   reads as a bug rather than a choice. */
-html.is-transparent
-  :where(
-    .settings-pane,
-    .settings-rail,
-    .settings-main,
-    .settings-input,
-    .settings-btn:not(.primary),
-    .settings-rows,
-    .settings-list,
-    .settings-list-add,
-    .settings-empty,
-    .settings-depth,
-    .settings-knob-num,
-    .theme-pick-current,
-    .theme-pick-search,
-    .theme-pick-tones,
-    .theme-pick-list,
-    .settings-theme-act,
-    .keymap-search,
-    .keymap-status,
-    .keymap-list,
-    .keymap-recorder,
-    .custom-command-list,
-    .cli-paths,
-    .cli-usage,
-    .devices-row,
-    .devices-panel,
-    .provider-profile-layout,
-    .provider-profile-editor,
-    .theme-editor,
-    .theme-editor-name,
-    .theme-editor-tabs,
-    .theme-preview,
-    .theme-field,
-    .agent-mode-settings button
-  ) {
-  background: transparent;
-}
 button {
   font: inherit;
   color: inherit;
@@ -358,34 +301,6 @@ button {
 
 ::selection {
   background: color-mix(in srgb, var(--acc) 38%, transparent);
-}
-
-.cm-scroller::-webkit-scrollbar {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-}
-.cm-scroller::-webkit-scrollbar-track,
-.cm-scroller::-webkit-scrollbar-corner {
-  background: transparent;
-}
-.cm-scroller::-webkit-scrollbar-thumb {
-  background: var(--ink-faint);
-  border-radius: 0;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-.cm-scroller::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-dim);
-  background-clip: padding-box;
-}
-
-.picker-group {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
 }
 
 .kbd {

@@ -107,10 +107,6 @@
   background: var(--warn);
 }
 
-.editor-insights-severity.information {
-  background: var(--acc);
-}
-
 .editor-insights-severity.hint {
   background: var(--text-secondary);
 }

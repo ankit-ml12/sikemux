@@ -10,77 +10,13 @@
   text-align: center;
 }
 
-.chat-welcome {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  width: min(calc(100% - 44px), 756px);
-  margin-inline: auto;
-}
-
 .chat-scroll-content:has(> .chat-welcome) {
   margin-block: auto;
-}
-
-.chat-welcome-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.chat-welcome-mark {
-  display: flex;
-  color: var(--ink-dim);
-}
-
-.chat-welcome-burn {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.chat-welcome-burn-count {
-  color: var(--ink);
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: var(--tracking-display);
-  line-height: 1.1;
-}
-
-.chat-welcome-burn-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--ink-faint);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-.chat-welcome-project {
-  color: var(--ink);
-}
-
-.chat-welcome-more {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: auto;
-  padding: 2px 0;
-  color: var(--ink-faint);
-  font-size: var(--text-2xs);
-  transition: color 100ms;
-}
-
-.chat-welcome-more:hover {
-  color: var(--ink);
 }
 
 /* Lines up with the text in a message: the transcript is 800px wide with 22px
    of padding either side. */
 .chat-activity,
-.chat-error,
 .chat-permission,
 .chat-plan,
 .chat-reconnect {
@@ -250,11 +186,6 @@
   }
 }
 
-.chat-connection-actions {
-  display: flex;
-  gap: 8px;
-}
-
 .chat-connection-state button,
 .chat-reconnect button {
   height: 28px;
@@ -284,78 +215,6 @@
   border-radius: var(--radius-control);
   color: var(--ink-faint);
   font-size: var(--text-2xs);
-}
-
-.chat-recovery-detail {
-  flex-basis: 100%;
-  max-width: 100%;
-  max-height: 9em;
-  overflow: auto;
-  color: var(--ink-dim);
-  font-family: var(--mono);
-  text-align: center;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  user-select: text;
-  cursor: text;
-}
-
-.chat-error {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 9px 11px;
-  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line));
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
-  color: color-mix(in srgb, var(--danger) 72%, var(--ink));
-  font-size: var(--text-2xs);
-}
-
-.chat-error > span:not(.chat-error-actions) {
-  flex: 1 1 12em;
-  min-width: 0;
-  white-space: pre-line;
-}
-
-/* What fixes the failure sits beside it: a sign-in, or another account. */
-/* What the agent itself said about a failed turn, opened from Details. */
-.chat-error-details {
-  flex-basis: 100%;
-  max-height: 160px;
-  margin: 0;
-  padding: 6px 8px;
-  overflow: auto;
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--danger) 6%, transparent);
-  font-family: var(--mono);
-  font-size: 11px;
-  white-space: pre-wrap;
-}
-
-.chat-error-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.chat-error-actions button {
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  background: var(--rail-2);
-  color: var(--ink-dim);
-  font-size: calc(10.5px * var(--chat-text-em, 1));
-  white-space: nowrap;
-}
-
-.chat-error-actions button:hover {
-  border-color: var(--border-strong);
-  color: var(--ink);
 }
 
 .chat-permission {

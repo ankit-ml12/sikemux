@@ -257,8 +257,7 @@
   padding-left: 22px;
 }
 
-.chat-markdown code,
-.chat-slash-menu code {
+.chat-markdown code {
   font-family: var(--mono);
 }
 
