@@ -34,16 +34,7 @@ pub struct Composing {
     pub refusal: Option<SharedString>,
     /// The stash item the draft was just stashed as, while it can still be put back.
     pub stashed: Option<String>,
-    /// What the core is doing to start the chat in a worktree, while it does.
-    pub preparing: Option<String>,
-    /// The message waits for the chat to be ready in its new worktree.
-    pub send_when_ready: bool,
-    /// The agent the message waits for while it installs, or whose install failed under it.
-    pub install: Option<(String, Installing)>,
-    /// The last message as it was written, chips, files and all, until the core takes it.
-    pub sent: Option<Sent>,
-    /// A turned-down message, going back into the draft when it next draws.
-    pub returned: Option<Sent>,
+    pub stage: ComposeStage,
     /// The draft as the core last kept it.
     pub synced: Value,
     /// The core's revision of the draft this one has taken in, which a save names so the core
@@ -53,6 +44,29 @@ pub struct Composing {
     pub arrived: Option<(Sent, Value, u64)>,
     pub _keeping: Task<()>,
     pub _heard: [Subscription; 2],
+}
+
+/// Where the message being sent stands.
+#[derive(Default)]
+pub enum ComposeStage {
+    #[default]
+    Writing,
+    /// The core is starting the chat in a worktree, at `step`; the message goes once the chat
+    /// is ready there when `sends`.
+    Worktree { step: String, sends: bool },
+    /// The message waits for `agent` to install, or its install failed under it.
+    Installing { agent: String, state: Installing },
+    /// The message as it was written, chips, files and all, until the core takes it.
+    Sent(Sent),
+    /// A turned-down message, going back into the draft when it next draws.
+    Returned(Sent),
+}
+
+impl ComposeStage {
+    /// Whether the message waits on the core or an install.
+    pub fn waits(&self) -> bool {
+        !matches!(self, ComposeStage::Writing | ComposeStage::Returned(_))
+    }
 }
 
 /// A message as the composer held it when it was sent.
@@ -678,7 +692,6 @@ impl Chat {
     ) -> Option<Ask> {
         if let Some(composing) = self.composer.as_mut() {
             composing.refusal = None;
-            composing.install = None;
             composing.attachments.clear();
             composing.context.clear();
             composing.tracked_context.clear();

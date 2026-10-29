@@ -87,7 +87,7 @@ pub(crate) use installing::installs_moved;
 mod worktree;
 
 pub use attach::lasting;
-pub use composing::{dictate, ComposerView, Composing, Sent};
+pub use composing::{dictate, ComposeStage, ComposerView, Composing, Sent};
 pub use draft::key as draft_key;
 pub use questions::{question_keys, Question};
 
@@ -872,12 +872,10 @@ impl Chat {
             && self.stopping.is_empty()
             && self.replying.is_none()
             && !self.awaits_agent
-            && self.composer.as_ref().is_none_or(|composing| {
-                composing.sent.is_none()
-                    && !composing.send_when_ready
-                    && composing.install.is_none()
-                    && composing.preparing.is_none()
-            })
+            && self
+                .composer
+                .as_ref()
+                .is_none_or(|composing| !composing.stage.waits())
     }
 
     /// The core took the ask to stop `task`, or says why not.

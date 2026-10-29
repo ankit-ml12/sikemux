@@ -27,7 +27,7 @@ use sikemux_wire::protocol::{
 use tokio::sync::mpsc;
 
 use crate::battery::Battery;
-use crate::chat::{Chat, Composing, Question, Sent};
+use crate::chat::{Chat, ComposeStage, Composing, Question, Sent};
 use crate::codehost::{Area, HostArea, OpenArea};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Target, Update, Watch};
 use crate::desk::{
@@ -940,6 +940,16 @@ impl Workbench {
                             self.ask_chat(ask);
                         }
                     }
+                    ChatNews::Taken(attachment) => {
+                        if let Some(composing) = chat.composer.as_mut() {
+                            if matches!(composing.stage, ComposeStage::Sent(_)) {
+                                composing.stage = ComposeStage::Writing;
+                            }
+                        }
+                        if let Some(ask) = attachment.and_then(|it| chat.attached(&agent, it, cx)) {
+                            self.ask_chat(ask);
+                        }
+                    }
                     ChatNews::Changes { seq, changes } => {
                         let gap = chat.changed(seq, changes, cx);
                         let (since, wanted) = (chat.mark.clone(), chat.wanted());
@@ -971,16 +981,19 @@ impl Workbench {
                     ChatNews::Refused { error, text } => {
                         if let Some(composing) = chat.composer.as_mut() {
                             composing.refusal = Some(error.into());
-                            let held = composing
-                                .sent
-                                .take()
-                                .filter(|sent| sent.content.text().trim() == text);
-                            composing.returned = Some(held.unwrap_or_else(|| Sent {
-                                content: text.into(),
-                                attachments: Vec::new(),
-                                context: Vec::new(),
-                                tracked_context: HashMap::new(),
-                            }));
+                            let held = match std::mem::take(&mut composing.stage) {
+                                ComposeStage::Sent(sent) if sent.content.text().trim() == text => {
+                                    Some(sent)
+                                }
+                                _ => None,
+                            };
+                            composing.stage =
+                                ComposeStage::Returned(held.unwrap_or_else(|| Sent {
+                                    content: text.into(),
+                                    attachments: Vec::new(),
+                                    context: Vec::new(),
+                                    tracked_context: HashMap::new(),
+                                }));
                         }
                         return self.parts.redraw(&self.parts.stage, cx);
                     }
@@ -1543,11 +1556,7 @@ impl Workbench {
             tracked_context: HashMap::new(),
             refusal: None,
             stashed: None,
-            preparing: None,
-            send_when_ready: false,
-            install: None,
-            sent: None,
-            returned: None,
+            stage: ComposeStage::Writing,
             synced: json!({ "text": "" }),
             read_rev: 0,
             arrived: None,
@@ -1643,7 +1652,14 @@ impl Workbench {
         let mut returned = false;
         if let Some(composing) = chat.composer.as_mut() {
             let empty = composing.draft.read(cx).value().trim().is_empty();
-            if let Some(held) = composing.returned.take().filter(|_| empty) {
+            let returned_held = match std::mem::take(&mut composing.stage) {
+                ComposeStage::Returned(held) => Some(held),
+                stage => {
+                    composing.stage = stage;
+                    None
+                }
+            };
+            if let Some(held) = returned_held.filter(|_| empty) {
                 composing
                     .draft
                     .update(cx, |draft, cx| draft.set_value(held.content, window, cx));
@@ -1730,7 +1746,7 @@ impl Workbench {
             .chats
             .get(agent)
             .and_then(|chat| chat.composer.as_ref())
-            .is_some_and(|composing| composing.preparing.is_some());
+            .is_some_and(|composing| matches!(composing.stage, ComposeStage::Worktree { .. }));
         if preparing || self.hold_for_install(agent, cx) {
             return;
         }
@@ -1792,7 +1808,7 @@ impl Workbench {
             agent,
             |chat, open| {
                 if let Some(composing) = chat.composer.as_mut() {
-                    composing.sent = Some(sent);
+                    composing.stage = ComposeStage::Sent(sent);
                 }
                 chat.sent(agent, text, outgoing, primary == steers, open)
             },

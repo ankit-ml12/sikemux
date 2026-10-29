@@ -90,6 +90,8 @@ pub enum Update {
 
 pub enum ChatNews {
     Attached(ChatAttachment),
+    /// The core took the message sent, and what it answered the attach that followed it.
+    Taken(Option<ChatAttachment>),
     /// The chat's changes numbered `seq`, read on the thread that heard them, or why they
     /// did not read.
     Changes {
@@ -1678,11 +1680,12 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             .acp_prompt(agent.clone(), None, text.clone(), paths, context)
             .await
         {
-            Ok(()) if !attaching => return,
+            Ok(()) if !attaching => (agent, ChatNews::Taken(None)),
             Ok(()) => match attach(client, &agent, None).await {
-                Ok(attachment) => (agent, ChatNews::Attached(attachment)),
+                Ok(attachment) => (agent, ChatNews::Taken(Some(attachment))),
                 Err(error) => {
-                    return eprintln!("sikemux: the core refused to attach chat {agent}: {error}")
+                    eprintln!("sikemux: the core refused to attach chat {agent}: {error}");
+                    (agent, ChatNews::Taken(None))
                 }
             },
             Err(error) => (

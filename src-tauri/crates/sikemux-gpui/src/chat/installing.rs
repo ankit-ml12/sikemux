@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use gpui_kit::{Context, WeakEntity};
 
-use super::Composing;
+use super::{ComposeStage, Composing};
 use crate::agents::setup::{self, Installing};
 use crate::chat::composer::Notice;
 use crate::hosts::Place;
@@ -33,7 +33,7 @@ impl Workbench {
             .and_then(|chat| chat.composer.as_mut())
         {
             composing.refusal = None;
-            composing.install = Some((kind, state));
+            composing.stage = ComposeStage::Installing { agent: kind, state };
         }
         cx.notify();
         true
@@ -47,14 +47,23 @@ pub(crate) fn installs_moved(bench: &mut Workbench, cx: &mut Context<Workbench>)
         let Some(composing) = chat.composer.as_mut() else {
             continue;
         };
-        let Some((kind, Installing::Running)) = composing.install.clone() else {
+        let ComposeStage::Installing {
+            agent: kind,
+            state: Installing::Running,
+        } = &composing.stage
+        else {
             continue;
         };
-        match bench.agent_setup.installing(&kind) {
+        match bench.agent_setup.installing(kind) {
             Some(Installing::Running) => {}
-            Some(Installing::Failed) => composing.install = Some((kind, Installing::Failed)),
+            Some(Installing::Failed) => {
+                composing.stage = ComposeStage::Installing {
+                    agent: kind.clone(),
+                    state: Installing::Failed,
+                }
+            }
             None => {
-                composing.install = None;
+                composing.stage = ComposeStage::Writing;
                 ready.push(agent.clone());
             }
         }
@@ -82,7 +91,9 @@ pub(super) fn notice(
     composing: &Composing,
     this: &WeakEntity<Workbench>,
 ) -> Option<Notice> {
-    let (kind, state) = composing.install.as_ref()?;
+    let ComposeStage::Installing { agent: kind, state } = &composing.stage else {
+        return None;
+    };
     let label = bench.agent_name(kind);
     Some(match state {
         Installing::Running => {

@@ -7,7 +7,7 @@ use std::rc::Rc;
 use gpui_kit::{Context, Window};
 use serde_json::{json, Value};
 
-use super::Chat;
+use super::{Chat, ComposeStage};
 use crate::core::ChatAsk;
 use crate::workbench::Workbench;
 use crate::worktree_switch::{Flip, Switch};
@@ -26,7 +26,10 @@ impl Workbench {
         let started = saved.resume_id.is_some() || chat.is_none_or(|chat| !chat.is_empty(cx));
         let preparing = chat
             .and_then(|chat| chat.composer.as_ref())
-            .and_then(|composing| composing.preparing.as_deref());
+            .and_then(|composing| match &composing.stage {
+                ComposeStage::Worktree { step, .. } => Some(step.as_str()),
+                _ => None,
+            });
         let on = project.worktree_default;
         let switch = crate::worktree_switch::state(
             saved.worktree.as_ref(),
@@ -63,7 +66,10 @@ impl Workbench {
         else {
             return;
         };
-        composing.preparing = Some("Creating worktree".into());
+        composing.stage = ComposeStage::Worktree {
+            step: "Creating worktree".into(),
+            sends: false,
+        };
         composing.refusal = None;
         let made = self.chat_target(agent).request(
             "createAgentWorktree",
@@ -97,12 +103,14 @@ impl Workbench {
         };
         match refused {
             Some(refused) => {
-                composing.preparing = None;
+                composing.stage = ComposeStage::Writing;
                 composing.refusal = Some(refused.into());
             }
             None => {
-                composing.preparing = Some("Starting the agent in the worktree".into());
-                composing.send_when_ready = true;
+                composing.stage = ComposeStage::Worktree {
+                    step: "Starting the agent in the worktree".into(),
+                    sends: true,
+                };
                 self.ask_chat(ChatAsk::Attach {
                     agent: agent.to_owned(),
                     since: None,
@@ -131,12 +139,13 @@ impl Workbench {
             .chats
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
-            .filter(|composing| composing.send_when_ready && ready)
+            .filter(|composing| {
+                ready && matches!(composing.stage, ComposeStage::Worktree { sends: true, .. })
+            })
         else {
             return;
         };
-        composing.send_when_ready = false;
-        composing.preparing = None;
+        composing.stage = ComposeStage::Writing;
         self.send(agent, false, window, cx);
     }
 }
