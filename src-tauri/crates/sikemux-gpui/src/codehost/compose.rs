@@ -399,7 +399,7 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
 
 fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let host = super::host_label(&area.host.host);
+    let host = area.host.label.as_str();
     let composing = area
         .composing
         .as_ref()

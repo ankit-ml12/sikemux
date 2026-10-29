@@ -237,7 +237,7 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
     let right = match shown {
         None => notice("Nothing released yet.", None, cx),
         Some(release) => {
-            let host = super::host_label(&area.host.host);
+            let host = area.host.label.as_str();
             let author = release.author.clone().unwrap_or_else(|| "someone".into());
             let url = release.url.clone();
             let pen = Pen::new(Rc::new(crate::editor::preview::reading_linked(

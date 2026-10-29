@@ -14,7 +14,7 @@ use serde_json::json;
 use sikemux_plugin_api::codehost::RepoListing;
 use sikemux_wire::protocol::CodeHostChoice;
 
-use super::{host_label, HostArea, Said};
+use super::{HostArea, Said};
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::palette::{Mark, Row, Spec};
@@ -492,7 +492,7 @@ impl HostArea {
                 }
             }
             Ok(status) => {
-                let host = host_label(&self.host.host);
+                let host = self.host.label.as_str();
                 self.refuse(
                     status
                         .message
@@ -515,7 +515,7 @@ impl HostArea {
 
     fn sign_out(&mut self, cx: &mut Context<Self>) {
         let login = self.login().unwrap_or("out").to_owned();
-        let host = host_label(&self.host.host).to_owned();
+        let host = self.host.label.clone();
         let out = self.plugin("signOut", json!({}));
         cx.spawn(async move |area, cx| {
             let out = out.await;
@@ -878,10 +878,7 @@ impl HostArea {
         );
         let mut title = format!(
             "{login} on {}",
-            status
-                .host
-                .as_deref()
-                .unwrap_or(host_label(&self.host.host))
+            status.host.as_deref().unwrap_or(self.host.label.as_str())
         );
         title.push_str(&format!(" · {}", self.host.repo));
         if status.can_write_workflows == Some(false) {
@@ -904,7 +901,7 @@ impl HostArea {
 /// Who is signed in, at the end of a list's head, opening the account menu.
 pub fn account(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let host = host_label(&area.host.host);
+    let host = area.host.label.as_str();
     let Some(login) = area.login().map(str::to_owned) else {
         return sign_in_chip(area, cx);
     };
@@ -929,7 +926,7 @@ pub fn account(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
 /// ground, a hairline, then the words. It opens Pull requests, which asks for the sign-in.
 fn sign_in_chip(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let host = host_label(&area.host.host).to_owned();
+    let host = area.host.label.clone();
     let logo = Icon::named(&area.host.host).unwrap_or(Icon::Git);
     let bench = area.bench.clone();
     div()
@@ -967,11 +964,7 @@ fn sign_in_chip(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
 /// The note while the host's rate limit is spent or nearly so.
 pub fn budget_note(area: &HostArea, cx: &mut Context<HostArea>) -> Option<AnyElement> {
     let t = Tokens::get(cx).clone();
-    let (spent, words) = rate_note(
-        host_label(&area.host.host),
-        area.budget.as_ref()?,
-        now_secs(),
-    )?;
+    let (spent, words) = rate_note(area.host.label.as_str(), area.budget.as_ref()?, now_secs())?;
     let ink = if spent { t.danger } else { t.warn };
     Some(
         div()
@@ -993,7 +986,7 @@ pub fn budget_note(area: &HostArea, cx: &mut Context<HostArea>) -> Option<AnyEle
 /// Asking the person to sign in to the host, in place of its areas.
 pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let host = host_label(&area.host.host).to_owned();
+    let host = area.host.label.clone();
     match &area.status {
         None => return super::notice(format!("Connecting to {host}"), None, cx),
         Some(Err(error)) => {

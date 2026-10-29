@@ -184,7 +184,7 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
         _ => ui::picture(Icon::Git, 12., if git.dirty { t.warn } else { t.live }),
     };
     let mut about: Vec<String> = host
-        .map(|host| vec![host_label(&host.host).to_owned(), host.repo.clone()])
+        .map(|host| vec![host.label.clone(), host.repo.clone()])
         .unwrap_or_default();
     about.push(git.branch.clone());
     about.push(if git.dirty {
@@ -372,15 +372,6 @@ fn battery_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             )
             .into_any_element(),
     )
-}
-
-fn host_label(host: &str) -> &str {
-    match host {
-        "github" => "GitHub",
-        "gitlab" => "GitLab",
-        "bitbucket" => "Bitbucket",
-        other => other,
-    }
 }
 
 /// Runs the project's task, or stops the run going, and says how the last one went.

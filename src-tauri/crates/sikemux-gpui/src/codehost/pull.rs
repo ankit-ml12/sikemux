@@ -674,7 +674,7 @@ fn reviews(view: &OpenPull) -> (Outcome, &'static str) {
 /// Whether it can merge as the host says, and what to do about it when not; none from a
 /// host that does not say.
 fn readiness(view: &OpenPull, area: &HostArea) -> Option<(Outcome, String, Option<String>)> {
-    let host = super::host_label(&area.host.host);
+    let host = area.host.label.as_str();
     let base = view.pull.base.as_deref().unwrap_or("the base branch");
     if view.pull.draft {
         return Some((
@@ -811,7 +811,7 @@ fn mergeable(view: &OpenPull) -> bool {
 /// it on the host, then its title, then who wants to merge what into what.
 fn header(area: &HostArea, found: &OpenPull, cx: &mut Context<HostArea>) -> Div {
     let t = Tokens::get(cx).clone();
-    let host = super::host_label(&area.host.host);
+    let host = area.host.label.as_str();
     let narrow = area.pull.as_ref().is_some_and(|opened| opened.narrow);
     let pull = &found.pull;
     let author = pull.author.clone().unwrap_or_else(|| "someone".into());
@@ -1778,7 +1778,7 @@ fn composer(
     cx: &mut Context<HostArea>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let host = super::host_label(&area.host.host).to_owned();
+    let host = area.host.label.clone();
     let Some(opened) = area.pull.as_mut() else {
         return div().into_any_element();
     };

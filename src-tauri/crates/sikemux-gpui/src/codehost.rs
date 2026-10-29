@@ -1034,15 +1034,6 @@ fn tally_summary(tally: &CheckTally) -> String {
     .join(", ")
 }
 
-pub(crate) fn host_label(host: &str) -> &str {
-    match host {
-        "github" => "GitHub",
-        "gitlab" => "GitLab",
-        "bitbucket" => "Bitbucket",
-        other => other,
-    }
-}
-
 fn outcome_label(outcome: Outcome) -> &'static str {
     match outcome {
         Outcome::Running => "Running",

@@ -11,7 +11,7 @@ use serde_json::json;
 use sikemux_plugin_api::codehost::Notification;
 use sikemux_wire::protocol::ProjectCodeHost;
 
-use super::{answer, call_of, host_label, notice, Area, Read};
+use super::{answer, call_of, notice, Area, Read};
 use crate::core::Target;
 use crate::theme::Tokens;
 use crate::toast;
@@ -168,7 +168,7 @@ impl Inbox {
 impl Render for Inbox {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
-        let host = host_label(&self.host.host).to_owned();
+        let host = self.host.label.clone();
         let list = match &self.list {
             None => {
                 return div()

@@ -439,7 +439,7 @@ impl Workbench {
             return None;
         }
         let project = self.project()?;
-        let host = crate::codehost::host_label(&project.code_host.as_ref()?.host).to_owned();
+        let host = project.code_host.as_ref()?.label.clone();
         let path = project.path.to_string_lossy().into_owned();
         let answer = self
             .chat_target(agent)

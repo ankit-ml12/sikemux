@@ -572,7 +572,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
     let t = Tokens::get(cx).clone();
     let opened = area.runs.open.as_ref().expect("a run is open");
     let ci = &area.host.ci;
-    let host = super::host_label(&area.host.host);
+    let host = area.host.label.as_str();
     let run = &found.run;
     let live = found.unfinished;
     let took = found
@@ -850,7 +850,7 @@ fn main(
     cx: &mut Context<HostArea>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let host = super::host_label(&area.host.host);
+    let host = area.host.label.as_str();
     let opened = area.runs.open.as_ref().expect("a run is open");
     let run = &found.run;
     let actor = run.actor.clone().unwrap_or_else(|| "someone".into());

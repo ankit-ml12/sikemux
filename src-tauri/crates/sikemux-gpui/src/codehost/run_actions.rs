@@ -418,7 +418,7 @@ pub fn more_choices(area: &HostArea, run: &MoreRun, cx: &mut Context<HostArea>) 
     let ci = &area.host.ci;
     let finished = run.finished;
     let writable = area.can_write_ci();
-    let host = super::host_label(&area.host.host);
+    let host = area.host.label.as_str();
     let this = cx.entity().downgrade();
     let act = move |then: super::Then| {
         let this = this.clone();
@@ -637,7 +637,7 @@ pub fn approvals(area: &HostArea, view: &OpenRun, cx: &mut Context<HostArea>) ->
 pub fn job_bar(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> Div {
     let t = Tokens::get(cx).clone();
     let ci = &area.host.ci;
-    let host = super::host_label(&area.host.host);
+    let host = area.host.label.as_str();
     let completed = job.status == "completed";
     let busy = area.runs.open.as_ref().is_some_and(|opened| opened.busy);
     let url = job.url.clone();
