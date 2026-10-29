@@ -11,7 +11,8 @@ use gpui_kit::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use sikemux_plugin_api::codehost::RepoListing;
+use sikemux_plugin_api::codehost::{RepoListing, Signed, TokenSource};
+use sikemux_plugin_api::SignInStatus;
 use sikemux_wire::protocol::CodeHostChoice;
 
 use super::{HostArea, Said};
@@ -22,24 +23,7 @@ use crate::theme::{Tokens, RADIUS_2};
 use crate::ui::{self, sign_in, Button, Choice, Variant};
 
 /// Who is signed in to the host, as its plugin says.
-#[derive(Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Status {
-    pub ok: bool,
-    pub message: Option<String>,
-    pub account: Option<String>,
-    pub host: Option<String>,
-    pub login: Option<String>,
-    /// Where a token found before anyone signed in came from: `ghCli` or `environment`.
-    pub token_source: Option<String>,
-    pub token_variable: Option<String>,
-    /// The host can be signed in to through the browser.
-    pub browser_sign_in: bool,
-    pub can_write_workflows: Option<bool>,
-    /// GitLab's and Bitbucket's word for what GitHub calls writing workflows.
-    pub can_write_ci: Option<bool>,
-    pub avatar_url: Option<String>,
-}
+pub type Status = SignInStatus<Signed>;
 
 /// An account signed in to the host.
 #[derive(Clone, Deserialize)]
@@ -159,10 +143,13 @@ impl HostArea {
                                 .map_err(|error| error.to_string().into())
                         })
                         .map(|mut status| {
-                            let drawn = status.avatar_url.is_none() && area.host.host == "github";
-                            if let (true, Some(login)) = (drawn, status.login.clone()) {
-                                let host = status.host.as_deref().unwrap_or("github.com");
-                                status.avatar_url = Some(if host == "github.com" {
+                            let signed = &mut status.details;
+                            let drawn = signed.avatar_url.is_none() && area.host.host == "github";
+                            let login =
+                                Some(signed.login.clone()).filter(|login| !login.is_empty());
+                            if let (true, Some(login)) = (drawn, login) {
+                                let host = signed.host.as_deref().unwrap_or("github.com");
+                                signed.avatar_url = Some(if host == "github.com" {
                                     format!("https://avatars.githubusercontent.com/{login}?s=64")
                                 } else {
                                     format!("https://{host}/{login}.png?size=64")
@@ -191,7 +178,9 @@ impl HostArea {
 
     pub(super) fn login(&self) -> Option<&str> {
         match &self.status {
-            Some(Ok(status)) => status.login.as_deref().filter(|login| !login.is_empty()),
+            Some(Ok(status)) => {
+                Some(status.details.login.as_str()).filter(|login| !login.is_empty())
+            }
             _ => None,
         }
     }
@@ -240,14 +229,13 @@ impl HostArea {
         self.status
             .as_ref()
             .and_then(|status| status.as_ref().ok())
-            .and_then(|status| status.can_write_workflows.or(status.can_write_ci))
-            .unwrap_or(false)
+            .is_some_and(|status| status.details.can_write_ci)
     }
 
     fn start_sign_in(&mut self, adding: bool, window: &mut Window, cx: &mut Context<Self>) {
         let status = self.status.as_ref().and_then(|status| status.as_ref().ok());
         let server = status
-            .and_then(|status| status.host.clone())
+            .and_then(|status| status.details.host.clone())
             .filter(|host| !matches!(host.as_str(), "github.com" | "gitlab.com"))
             .unwrap_or_default();
         let Some(form) = self.token_form(cx) else {
@@ -312,7 +300,7 @@ impl HostArea {
             .status
             .as_ref()
             .and_then(|status| status.as_ref().ok())
-            .and_then(|status| status.host.clone())
+            .and_then(|status| status.details.host.clone())
             .unwrap_or_else(|| "github.com".into());
         if let Some(signing) = &mut self.signing {
             signing.busy = true;
@@ -398,7 +386,7 @@ impl HostArea {
                 let adding = self.signing.as_ref().is_some_and(|signing| signing.adding);
                 self.signing = None;
                 if adding || self.account.is_some() {
-                    self.choose_account(status.account.clone(), cx);
+                    self.choose_account(status.details.account.clone(), cx);
                 } else {
                     self.read_status(cx);
                 }
@@ -459,7 +447,7 @@ impl HostArea {
         let Some(id) = self
             .status
             .as_ref()
-            .and_then(|status| status.as_ref().ok()?.account.clone())
+            .and_then(|status| status.as_ref().ok()?.details.account.clone())
         else {
             return;
         };
@@ -682,8 +670,8 @@ impl HostArea {
             return None;
         }
         let status = self.status.as_ref()?.as_ref().ok()?.clone();
-        let login = status.login.clone().unwrap_or_default();
-        let current = status.account.clone();
+        let login = status.details.login.clone();
+        let current = status.details.account.clone();
         let mut choices: Vec<Choice> = Vec::new();
         let area = cx.entity().downgrade();
         if self.accounts.len() > 1 {
@@ -790,10 +778,14 @@ impl HostArea {
         );
         let mut title = format!(
             "{login} on {}",
-            status.host.as_deref().unwrap_or(self.host.label.as_str())
+            status
+                .details
+                .host
+                .as_deref()
+                .unwrap_or(self.host.label.as_str())
         );
         title.push_str(&format!(" · {}", self.host.repo));
-        if status.can_write_workflows == Some(false) {
+        if self.host.host == "github" && !status.details.can_write_ci {
             title.push_str(
                 " · cannot start or re-run workflows: the token lacks the workflow scope",
             );
@@ -940,13 +932,14 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
         .map(|(_, input)| input.read(cx).value().to_string())
         .unwrap_or_default();
     let page = form.token_page(&server);
-    let borrowed = match status.token_source.as_deref() {
-        Some("ghCli") => Some((
+    let borrowed = match status.details.token_source {
+        Some(TokenSource::GhCli) => Some((
             "Continue with the gh CLI".to_owned(),
             "The gh CLI is signed in here, so Sikemux uses its token.".to_owned(),
         )),
-        Some("environment") => {
+        Some(TokenSource::Environment) => {
             let variable = status
+                .details
                 .token_variable
                 .clone()
                 .unwrap_or_else(|| "that token".into());
@@ -959,7 +952,7 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
     }
     .filter(|_| area.host.host == "github" && !signing.adding);
     let mark = Icon::named(&area.host.host).unwrap_or(Icon::Git);
-    let tokens_too = borrowed.is_some() || status.browser_sign_in;
+    let tokens_too = borrowed.is_some() || status.details.browser_sign_in;
     let mut screen = sign_in::Screen::new(
         "host-sign-in-page",
         ui::picture(mark, 26., t.text_primary),
@@ -981,7 +974,7 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
             )
             .child(sign_in::note(note, cx));
     }
-    if status.browser_sign_in {
+    if status.details.browser_sign_in {
         screen = screen.child(match signing.browser.is_some() {
             true => sign_in::waiting(
                 "host-browser",

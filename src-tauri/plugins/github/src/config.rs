@@ -19,13 +19,7 @@ pub const DEFAULT_HOST: &str = "github.com";
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
 const OUTPUT_LIMIT: usize = 64 * 1024;
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-pub enum TokenSource {
-    Keychain,
-    Environment,
-    GhCli,
-}
+pub use sikemux_plugin_api::codehost::TokenSource;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]

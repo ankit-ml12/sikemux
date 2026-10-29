@@ -9,6 +9,7 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use sikemux_plugin_api::account::{as_account, chosen};
 use sikemux_plugin_api::codehost::asks::RepoRef;
+use sikemux_plugin_api::codehost::Signed;
 use sikemux_plugin_api::store::{self, Accounts};
 use sikemux_plugin_api::SignInStatus;
 
@@ -58,21 +59,6 @@ pub async fn identify(session: &Session) -> GithubResult<Identity> {
     })
 }
 
-#[derive(Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct Signed {
-    /// Which account this is about; absent while a token the shell or `gh`
-    /// holds is used before anybody has signed in.
-    pub account: Option<String>,
-    pub host: String,
-    pub login: String,
-    pub token_source: Option<TokenSource>,
-    pub token_variable: Option<&'static str>,
-    pub scopes: Vec<String>,
-    /// Whether the token may read and start workflow runs, not only read code.
-    pub can_write_workflows: bool,
-}
-
 pub type Status = SignInStatus<Signed>;
 
 /// A classic token needs the `workflow` scope to re-run or dispatch. A
@@ -100,7 +86,7 @@ pub async fn status(data_dir: &Path) -> Status {
         .map_or_else(|| config.host_hint(), |account| account.host.clone());
     let mut signed = Signed {
         account: saved.as_ref().map(|account| account.id.clone()),
-        host: host.clone(),
+        host: Some(host.clone()),
         login: saved
             .as_ref()
             .map(|account| account.login.clone())
@@ -133,12 +119,12 @@ pub async fn status(data_dir: &Path) -> Status {
         signed.login = identity.login.clone();
         signed.scopes = identity.scopes.clone();
     }
-    signed.token_variable = variable_for(signed.token_source, &host);
+    signed.token_variable = variable_for(signed.token_source, &host).map(str::to_owned);
     let configured =
         signed.token_source.is_some() && !matches!(check, Err(GithubError::Unconfigured));
     let mut status = Status::checked(configured, signed, &check);
     status.auth_failed |= matches!(check, Err(GithubError::Forbidden(_)));
-    status.details.can_write_workflows = status.ok && can_write(&status.details.scopes);
+    status.details.can_write_ci = status.ok && can_write(&status.details.scopes);
     status
 }
 

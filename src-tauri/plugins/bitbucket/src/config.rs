@@ -14,14 +14,7 @@ use crate::error::BitbucketResult;
 /// Each account's refresh token or API token, under `Account::keychain_account`.
 pub const KEYCHAIN: Secrets = Secrets::new(keychain_service!("sikemux-bitbucket-token"));
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-pub enum Method {
-    /// Signed in through the browser; the Keychain holds a refresh token.
-    Oauth,
-    /// A pasted API token or access token; the Keychain holds the token.
-    Token,
-}
+pub use sikemux_plugin_api::codehost::SignedInWith as Method;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]

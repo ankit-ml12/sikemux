@@ -31,6 +31,48 @@ pub fn numeric_id_if_any<'de, D: Deserializer<'de>>(
         .transpose()
 }
 
+/// Where the token a code host's plugin uses came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TokenSource {
+    Keychain,
+    Environment,
+    GhCli,
+}
+
+/// How an account signed in, on a host that offers more than one way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SignedInWith {
+    /// Through the browser; the Keychain holds a refresh token.
+    Oauth,
+    /// A pasted API token or access token; the Keychain holds the token.
+    Token,
+}
+
+/// Who is signed in to a code host, as every code host's sign-in reads it.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Signed {
+    /// Which account this is about; absent while a token the shell or `gh`
+    /// holds is used before anybody has signed in.
+    pub account: Option<String>,
+    /// The server, on a host a company can run its own of.
+    pub host: Option<String>,
+    pub login: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub method: Option<SignedInWith>,
+    pub token_source: Option<TokenSource>,
+    /// The shell variable a borrowed token was read from.
+    pub token_variable: Option<String>,
+    pub scopes: Vec<String>,
+    /// The sign-in may start, re-run and stop CI runs, not only read them.
+    pub can_write_ci: bool,
+    /// It can be signed in to through the browser.
+    pub browser_sign_in: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Repo {

@@ -8,6 +8,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sikemux_plugin_api::account::{as_account, chosen};
 use sikemux_plugin_api::codehost::asks::RepoRef;
+use sikemux_plugin_api::codehost::Signed;
 use sikemux_plugin_api::http;
 use sikemux_plugin_api::oauth::Tokens;
 use sikemux_plugin_api::store::{self, Accounts};
@@ -31,21 +32,6 @@ async fn identify(credential: &Credential) -> BitbucketResult<User> {
         return Err(client::classify(status, &bytes));
     }
     Ok(serde_json::from_slice(&bytes)?)
-}
-
-#[derive(Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct Signed {
-    /// Which account this is about.
-    pub account: Option<String>,
-    pub method: Option<Method>,
-    pub login: String,
-    pub display_name: Option<String>,
-    pub avatar_url: Option<String>,
-    /// Whether this sign-in may start and stop pipelines, not only read them.
-    pub can_write_ci: bool,
-    /// A build without the OAuth secret can only take a pasted token.
-    pub browser_sign_in: bool,
 }
 
 pub type Status = SignInStatus<Signed>;
@@ -86,6 +72,7 @@ pub async fn status(data_dir: &Path) -> Status {
             .and_then(|account| account.avatar_url.clone()),
         can_write_ci: false,
         browser_sign_in: oauth::APP.available(),
+        ..Signed::default()
     };
     let check = match Session::current(data_dir).await {
         Ok(session) => {

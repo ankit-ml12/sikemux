@@ -21,7 +21,7 @@ impl HostArea {
     /// The signed-in account's picture.
     pub(super) fn avatar(&self) -> Option<&str> {
         let status = self.status.as_ref()?.as_ref().ok()?;
-        status.avatar_url.as_deref()
+        status.details.avatar_url.as_deref()
     }
 
     /// Fetches the pictures the last frame drew without.

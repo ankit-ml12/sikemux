@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::service::{Service, ServiceError};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignInStatus<D> {
     pub configured: bool,
