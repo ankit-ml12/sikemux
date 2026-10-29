@@ -17,6 +17,14 @@ const CORE = "src-tauri/crates/sikemux-core/src";
 const PLUGIN_API = "src-tauri/crates/sikemux-plugin-api/src";
 const SOURCES = [
   `${WIRE}/protocol.rs`,
+  `${WIRE}/protocol/chats.rs`,
+  `${WIRE}/protocol/agent.rs`,
+  `${WIRE}/protocol/workspace.rs`,
+  `${WIRE}/protocol/prefs.rs`,
+  `${WIRE}/protocol/device.rs`,
+  `${WIRE}/protocol/session.rs`,
+  `${WIRE}/protocol/event.rs`,
+  `${WIRE}/protocol/layout.rs`,
   `${WIRE}/chat.rs`,
   `${WIRE}/theme.rs`,
   `${WIRE}/notch.rs`,
@@ -211,13 +219,13 @@ const DEFAULTS = ["Preferences", "ToolRow"];
 /** Limits the clients check before they send, read from where the core enforces them. */
 const LIMITS = [
   [`${WIRE}/protocol.rs`, "MAX_ATTACHMENT_BYTES"],
-  [`${WIRE}/protocol.rs`, "DEFAULT_TERMINAL_FONT_SIZE"],
-  [`${WIRE}/protocol.rs`, "MIN_TERMINAL_FONT_SIZE"],
-  [`${WIRE}/protocol.rs`, "MAX_TERMINAL_FONT_SIZE"],
-  [`${WIRE}/protocol.rs`, "DEFAULT_TEXT_SCALE"],
-  [`${WIRE}/protocol.rs`, "MIN_TEXT_SCALE"],
-  [`${WIRE}/protocol.rs`, "MAX_TEXT_SCALE"],
-  [`${WIRE}/protocol.rs`, "MAX_PROJECT_DEPTH"],
+  [`${WIRE}/protocol/prefs.rs`, "DEFAULT_TERMINAL_FONT_SIZE"],
+  [`${WIRE}/protocol/prefs.rs`, "MIN_TERMINAL_FONT_SIZE"],
+  [`${WIRE}/protocol/prefs.rs`, "MAX_TERMINAL_FONT_SIZE"],
+  [`${WIRE}/protocol/prefs.rs`, "DEFAULT_TEXT_SCALE"],
+  [`${WIRE}/protocol/prefs.rs`, "MIN_TEXT_SCALE"],
+  [`${WIRE}/protocol/prefs.rs`, "MAX_TEXT_SCALE"],
+  [`${WIRE}/protocol/prefs.rs`, "MAX_PROJECT_DEPTH"],
   [`${CORE}/acp/mod.rs`, "MAX_ATTACHMENTS"],
 ];
 

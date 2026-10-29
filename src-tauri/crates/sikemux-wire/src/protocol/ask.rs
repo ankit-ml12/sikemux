@@ -1,6 +1,18 @@
 //! Each request a client sends the core, and what the core answers it with.
 
-use super::*;
+use std::path::PathBuf;
+
+use crate::grid::{FindOptions, FindResult, GridPoint};
+use crate::pty::agent_detection::{DetectionExplain, ManifestReloadReport};
+use crate::pty::output_log::{OutputPage, OutputQuery};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use super::{
+    AllowedDevice, Attention, ChatAccount, ChatAttachment, ChatContext, ChatInfo, ChatLaunch,
+    ChatMark, ChatStart, DeviceAccess, HostInfo, HostRegistration, LaunchIdentity, NotifyPrefs,
+    PermissionMode, Request, Response, SessionId, SessionInfo, SpawnTarget, StreamId,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
