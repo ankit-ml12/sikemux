@@ -66,7 +66,13 @@ export default function DeviceLayout() {
               </SwipeStack>
             </>
           ) : (
-            <Stack screenOptions={{ headerShown: false, freezeOnBlur: true, contentStyle: { backgroundColor: palette.ground } }}>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                freezeOnBlur: true,
+                fullScreenGestureEnabled: true,
+                contentStyle: { backgroundColor: palette.ground },
+              }}>
               <Stack.Screen name="chat/[agent]" options={({ route }) => ({ animation: started(route) ? 'none' : 'default' })} />
             </Stack>
           )}

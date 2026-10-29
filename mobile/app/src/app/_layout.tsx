@@ -132,7 +132,13 @@ function Routes({ background }: { background: string }) {
           </SwipeStack>
         </View>
       ) : (
-        <Stack screenOptions={{ headerShown: false, freezeOnBlur: true, contentStyle: { backgroundColor: background } }}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            freezeOnBlur: true,
+            fullScreenGestureEnabled: true,
+            contentStyle: { backgroundColor: background },
+          }}>
           <Stack.Screen name="index" />
           <Stack.Protected guard={!!isSignedIn}>
             <Stack.Screen name="device/[core]" />
