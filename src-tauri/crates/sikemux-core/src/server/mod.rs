@@ -77,6 +77,7 @@ mod seen;
 mod session;
 mod session_watch;
 mod share;
+mod shown_cache;
 mod skill_library;
 mod spare;
 mod spawn;

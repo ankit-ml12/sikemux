@@ -5,7 +5,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -20,7 +19,6 @@ use sikemux_wire::codehost::{
     Pull, PullCounts, PullList, PullState, Release, ReleaseList, Review, ReviewVerdict, Run,
     RunDetail, RunList, RunPage, RunTiming, TrackedItem, TrackedKind, WorkflowFile,
 };
-use tokio::sync::Notify;
 use tokio::task::JoinSet;
 
 pub(crate) mod ci;
@@ -31,15 +29,14 @@ use super::connection::ClientId;
 use super::job_graph::{self, WorkflowFiles};
 use super::names::project_of;
 use super::plugins::{Failure, Outcome as Answer};
+use super::shown_cache::{self, ShownCache, Shows};
 use super::Core;
 use repo::{of_project, Repo, RepoId};
 
 /// A list read this recently is answered as it is.
 const FRESH: Duration = Duration::from_secs(60);
-/// A list no connection shows any more is kept this long after it was asked for.
+/// A repository no connection shows any more is kept this long.
 const GRACE: Duration = Duration::from_secs(60);
-const TICK: Duration = Duration::from_secs(15);
-const KEPT_AT_MOST: usize = 64;
 /// The repository's latest runs, among which most open pull requests' commits are.
 const RECENT_RUNS: u32 = 100;
 /// Pull requests whose commits are past those that ask for their own runs.
@@ -51,8 +48,6 @@ const COMMITS_AT_MOST: usize = 500;
 const LIVE_RUN: Duration = Duration::from_secs(4);
 /// And the log of a job still going.
 const LIVE_LOG: Duration = Duration::from_secs(5);
-/// The soonest the core reads anything again.
-const QUICKEST: Duration = Duration::from_secs(1);
 /// A commit's workflow files never change, but are dropped after a while.
 const WORKFLOWS_KEPT: Duration = Duration::from_secs(3600);
 const WORKFLOWS_AT_MOST: usize = 32;
@@ -158,15 +153,6 @@ impl Key {
     }
 }
 
-struct Kept {
-    answer: Value,
-    repo: Repo,
-    read: Instant,
-    /// How long after `read` it is read again while shown.
-    fresh: Duration,
-    asked: Instant,
-}
-
 /// A list as the code host gave it, and how long it holds.
 struct Read {
     answer: Value,
@@ -196,10 +182,6 @@ struct CommitRuns {
 
 #[derive(Default)]
 struct State {
-    kept: HashMap<Key, Kept>,
-    /// The list of each kind each connection last asked for, which it shows
-    /// until it asks for another or leaves.
-    shown: HashMap<(ClientId, Place, u8), Key>,
     /// By project.
     found: HashMap<String, Found>,
     /// By repository and commit.
@@ -210,10 +192,77 @@ struct State {
 
 #[derive(Default)]
 pub(crate) struct Lists {
+    lists: ShownCache<Listed>,
     state: Mutex<State>,
-    ticking: AtomicBool,
-    /// Wakes the reading loop when a list arrives that is read again soon.
-    wake: Arc<Notify>,
+}
+
+/// The lists connections show, each kept for the place and kind of list it is
+/// shown as.
+struct Listed;
+
+impl Shows for Listed {
+    type Key = Key;
+    type Slot = (Place, u8);
+    type With = Repo;
+    const LONGEST_BACKOFF: Duration = FRESH;
+
+    fn cache(core: &Core) -> &ShownCache<Self> {
+        &core.code_host_lists.lists
+    }
+
+    fn served_within(_pace: Duration) -> Duration {
+        FRESH
+    }
+
+    async fn read(core: Arc<Core>, key: Key, repo: Repo) -> Result<(Value, Duration), Failure> {
+        let read = read(&core, &repo, &key.list).await?;
+        Ok((read.answer, read.fresh))
+    }
+
+    /// Tells clients about each project that shows a list that changed.
+    fn moved(core: &Core, moved: Vec<(Key, Vec<(Place, u8)>)>) {
+        let mut names: HashMap<Option<String>, HashSet<&'static str>> = HashMap::new();
+        for (key, slots) in moved {
+            let mut showing: Vec<Option<String>> = slots
+                .into_iter()
+                .map(|(place, _)| match place {
+                    Place::Project(project) => Some(project),
+                    Place::Repo(_) => None,
+                })
+                .collect();
+            if showing.is_empty() {
+                showing.push(None);
+            }
+            for project in showing {
+                names.entry(project).or_default().insert(key.list.name());
+            }
+        }
+        for (project, names) in names {
+            let names = names.into_iter().map(str::to_owned).collect();
+            core.changes
+                .changed(Topic::CodeHost, project.as_deref(), Some(names));
+        }
+    }
+
+    fn tidy(core: &Core, shown: &HashSet<(Place, u8)>) {
+        let projects: HashSet<&String> = shown
+            .iter()
+            .filter_map(|(place, _)| match place {
+                Place::Project(project) => Some(project),
+                Place::Repo(_) => None,
+            })
+            .collect();
+        let mut state = core.code_host_lists.state.locked();
+        state
+            .commits
+            .retain(|_, commit| commit.read.elapsed() < SETTLED_RUNS);
+        state
+            .found
+            .retain(|project, found| projects.contains(project) || found.read.elapsed() < GRACE);
+        state
+            .workflows
+            .retain(|_, (_, read)| read.elapsed() < WORKFLOWS_KEPT);
+    }
 }
 
 fn listed_state(state: Option<String>) -> Result<String, Failure> {
@@ -420,10 +469,7 @@ pub(crate) struct JobLogParams {
 /// The connection shows none of the code host's lists any more, so they stop being read
 /// again for it until it asks for one.
 pub(crate) fn away(core: &Core, client: ClientId) {
-    let mut state = core.code_host_lists.state.locked();
-    state
-        .shown
-        .retain(|(shown_to, _, _), _| *shown_to != client);
+    core.code_host_lists.lists.away(client, |_| true);
 }
 
 pub(crate) async fn job_log(core: &Arc<Core>, client: ClientId, params: JobLogParams) -> Answer {
@@ -478,21 +524,13 @@ async fn answered_at(core: &Arc<Core>, client: ClientId, place: Place, list: Lis
     };
     let kind = list.kind();
     let key = Key::of(&repo, list);
-    let kept = {
-        let mut state = core.code_host_lists.state.locked();
-        state.shown.insert((client, place, kind), key.clone());
-        state.kept.get_mut(&key).and_then(|kept| {
-            kept.asked = Instant::now();
-            (kept.read.elapsed() < FRESH).then(|| kept.answer.clone())
-        })
-    };
-    if let Some(answer) = kept {
+    if let Some(answer) = core.code_host_lists.lists.show(client, (place, kind), &key) {
         return Answer::Value(answer);
     }
     match read(core, &repo, &key.list).await {
         Ok(read) => {
             let answer = read.answer.clone();
-            keep(core, key, read, repo);
+            shown_cache::keep::<Listed>(core, key, read.answer, read.fresh, repo);
             Answer::Value(answer)
         }
         Err(failure) => Answer::Failed(failure),
@@ -544,9 +582,7 @@ pub(crate) fn known_states(core: &Core, urls: &[&str]) -> HashMap<String, String
     if urls.is_empty() {
         return known;
     }
-    let state = core.code_host_lists.state.locked();
-    for kept in state.kept.values() {
-        let answer = &kept.answer;
+    core.code_host_lists.lists.each(|_, answer| {
         let pulls = answer["pulls"].as_array().into_iter().flatten();
         for listed in pulls {
             if let (Some(url), Some(state)) =
@@ -575,162 +611,8 @@ pub(crate) fn known_states(core: &Core, urls: &[&str]) -> HashMap<String, String
                     .or_insert_with(|| "open".to_owned());
             }
         }
-    }
-    known
-}
-
-fn keep(core: &Arc<Core>, key: Key, read: Read, repo: Repo) {
-    {
-        let mut state = core.code_host_lists.state.locked();
-        let now = Instant::now();
-        let kept = Kept {
-            answer: read.answer,
-            repo,
-            read: now,
-            fresh: read.fresh,
-            asked: now,
-        };
-        state.kept.insert(key, kept);
-        while state.kept.len() > KEPT_AT_MOST {
-            let Some(oldest) = state
-                .kept
-                .iter()
-                .min_by_key(|(_, kept)| kept.asked)
-                .map(|(key, _)| key.clone())
-            else {
-                break;
-            };
-            state.kept.remove(&oldest);
-        }
-    }
-    core.code_host_lists.wake.notify_one();
-    follow(core);
-}
-
-/// Reads the lists connections still show again as each goes stale, until
-/// none shows one.
-fn follow(core: &Arc<Core>) {
-    if core.code_host_lists.ticking.swap(true, Ordering::AcqRel) {
-        return;
-    }
-    let weak = Arc::downgrade(core);
-    let wake = core.code_host_lists.wake.clone();
-    tokio::spawn(async move {
-        let mut wait = QUICKEST;
-        loop {
-            tokio::select! {
-                () = tokio::time::sleep(wait) => {}
-                () = wake.notified() => {}
-            }
-            let Some(core) = weak.upgrade() else { return };
-            let connected: HashSet<ClientId> =
-                core.clients().iter().map(|client| client.id).collect();
-            let due = {
-                let mut state = core.code_host_lists.state.locked();
-                state
-                    .shown
-                    .retain(|(client, _, _), _| connected.contains(client));
-                let shown: HashSet<Key> = state.shown.values().cloned().collect();
-                state
-                    .kept
-                    .retain(|key, kept| shown.contains(key) || kept.asked.elapsed() < GRACE);
-                state
-                    .commits
-                    .retain(|_, commit| commit.read.elapsed() < SETTLED_RUNS);
-                let projects: HashSet<String> = state
-                    .shown
-                    .keys()
-                    .filter_map(|(_, place, _)| match place {
-                        Place::Project(project) => Some(project.clone()),
-                        Place::Repo(_) => None,
-                    })
-                    .collect();
-                state.found.retain(|project, found| {
-                    projects.contains(project) || found.read.elapsed() < GRACE
-                });
-                state
-                    .workflows
-                    .retain(|_, (_, read)| read.elapsed() < WORKFLOWS_KEPT);
-                if state.kept.is_empty() {
-                    core.code_host_lists.ticking.store(false, Ordering::Release);
-                    return;
-                }
-                let shown_kept = || state.kept.iter().filter(|(key, _)| shown.contains(*key));
-                wait = shown_kept()
-                    .map(|(_, kept)| kept.fresh.saturating_sub(kept.read.elapsed()))
-                    .min()
-                    .unwrap_or(TICK)
-                    .clamp(QUICKEST, TICK);
-                shown_kept()
-                    .filter(|(_, kept)| kept.read.elapsed() >= kept.fresh)
-                    .map(|(key, _)| key.clone())
-                    .collect::<Vec<_>>()
-            };
-            if !due.is_empty() {
-                refresh(&core, due).await;
-                wait = QUICKEST;
-            }
-        }
     });
-}
-
-/// Reads `keys` again, telling clients about each project that shows a list
-/// that changed.
-async fn refresh(core: &Arc<Core>, keys: Vec<Key>) {
-    let mut reading = JoinSet::new();
-    for key in keys {
-        let repo = core
-            .code_host_lists
-            .state
-            .locked()
-            .kept
-            .get(&key)
-            .map(|kept| kept.repo.clone());
-        let Some(repo) = repo else { continue };
-        let core = core.clone();
-        reading.spawn(async move {
-            let read = read(&core, &repo, &key.list).await;
-            (key, read)
-        });
-    }
-    let mut moved: HashMap<Option<String>, HashSet<&'static str>> = HashMap::new();
-    while let Some(Ok((key, read))) = reading.join_next().await {
-        let mut state = core.code_host_lists.state.locked();
-        let Some(kept) = state.kept.get_mut(&key) else {
-            continue;
-        };
-        kept.read = Instant::now();
-        let Ok(read) = read else {
-            // A host that turned the read down, or limits how often it is asked, is asked less and less often.
-            kept.fresh = (kept.fresh * 2).min(FRESH.max(kept.fresh));
-            continue;
-        };
-        kept.fresh = read.fresh;
-        if kept.answer == read.answer {
-            continue;
-        }
-        kept.answer = read.answer;
-        let mut showing: Vec<Option<String>> = state
-            .shown
-            .iter()
-            .filter(|(_, shown)| **shown == key)
-            .map(|((_, place, _), _)| match place {
-                Place::Project(project) => Some(project.clone()),
-                Place::Repo(_) => None,
-            })
-            .collect();
-        if showing.is_empty() {
-            showing.push(None);
-        }
-        for project in showing {
-            moved.entry(project).or_default().insert(key.list.name());
-        }
-    }
-    for (project, names) in moved {
-        let names = names.into_iter().map(str::to_owned).collect();
-        core.changes
-            .changed(Topic::CodeHost, project.as_deref(), Some(names));
-    }
+    known
 }
 
 /// The person picked another repository or account for the project at
@@ -766,9 +648,6 @@ const WRITES: &[&str] = &[
     "setIssueState",
     "setPullState",
 ];
-/// A host lists a change a moment after it took it.
-const SETTLING: Duration = Duration::from_millis(1500);
-
 /// A window changed the repository `owner/name` through the plugin `plugin`,
 /// so its lists are read again at once, and again once the host has settled.
 pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str, params: &Value) {
@@ -783,83 +662,46 @@ pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str, params: &Value
         owner: owner.to_owned(),
         name: name.to_owned(),
     };
-    let keys: Vec<Key> = core
-        .code_host_lists
-        .state
-        .locked()
-        .kept
-        .keys()
-        .filter(|key| key.repo == repo)
-        .cloned()
-        .collect();
-    if keys.is_empty() {
-        return;
-    }
-    let core = core.clone();
-    tokio::spawn(async move {
-        refresh(&core, keys.clone()).await;
-        tokio::time::sleep(SETTLING).await;
-        refresh(&core, keys).await;
-    });
+    let keys = core.code_host_lists.lists.keys(|key| key.repo == repo);
+    shown_cache::read_again_settled::<Listed>(core, keys);
 }
 
 /// The refs of `projects` moved, as a push, pull or commit moves them, so
 /// their pull requests and runs are read again now.
 pub(crate) fn refs_moved(core: &Arc<Core>, projects: &[String]) {
-    let keys: Vec<Key> = {
+    let repos: HashSet<RepoId> = {
         let state = core.code_host_lists.state.locked();
-        let repos: HashSet<RepoId> = projects
+        projects
             .iter()
             .filter_map(|project| state.found.get(project))
             .map(|found| found.repo.id())
-            .collect();
-        state
-            .kept
-            .keys()
-            .filter(|key| {
-                repos.contains(&key.repo)
-                    && matches!(
-                        key.list,
-                        List::Pulls { .. }
-                            | List::Runs(_)
-                            | List::Tracked
-                            | List::Pull { .. }
-                            | List::PullFiles { .. }
-                    )
-            })
-            .cloned()
             .collect()
     };
-    if keys.is_empty() {
-        return;
-    }
-    let core = core.clone();
-    tokio::spawn(async move { refresh(&core, keys).await });
+    let keys = core.code_host_lists.lists.keys(|key| {
+        repos.contains(&key.repo)
+            && matches!(
+                key.list,
+                List::Pulls { .. }
+                    | List::Runs(_)
+                    | List::Tracked
+                    | List::Pull { .. }
+                    | List::PullFiles { .. }
+            )
+    });
+    shown_cache::read_again::<Listed>(core, keys);
 }
 
 /// The runs of the repository `repo` moved, so its runs and the checks on its
 /// pull requests are read again now.
 pub(crate) fn ci_moved(core: &Arc<Core>, repo: &RepoId) {
-    let keys: Vec<Key> = core
-        .code_host_lists
-        .state
-        .locked()
-        .kept
-        .keys()
-        .filter(|key| {
-            &key.repo == repo
-                && matches!(
-                    key.list,
-                    List::Pulls { .. } | List::Runs(_) | List::Pull { .. } | List::Run { .. }
-                )
-        })
-        .cloned()
-        .collect();
-    if keys.is_empty() {
-        return;
-    }
-    let core = core.clone();
-    tokio::spawn(async move { refresh(&core, keys).await });
+    let keys = core.code_host_lists.lists.keys(|key| {
+        &key.repo == repo
+            && matches!(
+                key.list,
+                List::Pulls { .. } | List::Runs(_) | List::Pull { .. } | List::Run { .. }
+            )
+    });
+    shown_cache::read_again::<Listed>(core, keys);
 }
 
 async fn read(core: &Arc<Core>, repo: &Repo, list: &List) -> Result<Read, Failure> {
@@ -1789,20 +1631,20 @@ async fn job_log_of(core: &Core, repo: &Repo, run: &str, job: &str) -> Result<Re
 
 /// The job `job` of the run `run` as the core last read the run.
 fn shown_job(core: &Core, repo: &RepoId, run: &str, job: &str) -> Option<Job> {
-    let state = core.code_host_lists.state.locked();
-    state
-        .kept
-        .iter()
-        .filter(|(key, _)| {
-            &key.repo == repo && matches!(&key.list, List::Run { id, .. } if id == run)
-        })
-        .find_map(|(_, kept)| {
-            kept.answer["jobs"]
-                .as_array()?
-                .iter()
-                .find(|listed| listed["job"]["id"] == job)
-                .and_then(|listed| serde_json::from_value(listed["job"].clone()).ok())
-        })
+    let mut found = None;
+    core.code_host_lists.lists.each(|key, answer| {
+        if found.is_some()
+            || &key.repo != repo
+            || !matches!(&key.list, List::Run { id, .. } if id == run)
+        {
+            return;
+        }
+        found = answer["jobs"]
+            .as_array()
+            .and_then(|jobs| jobs.iter().find(|listed| listed["job"]["id"] == job))
+            .and_then(|listed| serde_json::from_value(listed["job"].clone()).ok());
+    });
+    found
 }
 
 async fn release_list(repo: &Repo) -> Result<ReleaseList, Failure> {
