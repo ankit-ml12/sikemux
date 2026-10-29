@@ -126,6 +126,8 @@ pub(crate) enum KeptKey {
 
 pub(crate) struct Diagram {
     schema: Rc<Schema>,
+    /// The row each reference meets at either end, from and to.
+    anchors: Rc<Vec<Anchors>>,
     cards: Vec<Card>,
     /// The tables in the order they are drawn, the last on top.
     order: Vec<usize>,
@@ -185,6 +187,7 @@ impl Diagram {
     fn with(source: &str, open: Option<OpenLine>, embedded: bool) -> Self {
         let mut diagram = Diagram {
             schema: Rc::new(Schema::default()),
+            anchors: Rc::default(),
             cards: Vec::new(),
             order: Vec::new(),
             measured: false,
@@ -360,6 +363,7 @@ impl Diagram {
     fn read(&mut self, source: &str) {
         self.source = source.to_owned();
         self.schema = Rc::new(dbml::parse(source));
+        self.anchors = Rc::new(anchors(&self.schema));
         self.cards = (self.schema.tables.iter())
             .map(|table| match self.kept.get(&table.name) {
                 Some(at) => Card {
@@ -677,6 +681,7 @@ impl Render for Diagram {
         }
         let frame = Frame {
             schema: self.schema.clone(),
+            anchors: self.anchors.clone(),
             cards: self.cards.clone(),
             order: self.order.clone(),
             pan: self.pan,
@@ -686,7 +691,7 @@ impl Render for Diagram {
             dragging: matches!(self.drag, Some(Drag::Card { .. } | Drag::Pan { .. })),
             waiting: self.fit_pending,
             hidden: self.loading,
-            lanes: lanes(&self.schema, &self.cards),
+            lanes: lanes(&self.schema, &self.anchors, &self.cards),
             map: !self.embedded,
             t: t.clone(),
         };
@@ -939,6 +944,7 @@ fn listen(this: &WeakEntity<Diagram>, hitbox: &Hitbox, window: &mut Window) {
 /// What one frame draws, taken from the diagram when it renders.
 struct Frame {
     schema: Rc<Schema>,
+    anchors: Rc<Vec<Anchors>>,
     cards: Vec<Card>,
     order: Vec<usize>,
     pan: Point<f32>,
@@ -1132,10 +1138,10 @@ impl Frame {
         }
     }
 
-    fn anchor(&self, end: &dbml::End) -> f32 {
+    fn anchor(&self, end: &dbml::End, row: Option<usize>) -> f32 {
         let card = &self.cards[end.table];
-        match end.columns.first() {
-            Some(column) => card.y + HEADER + (*column as f32 + 0.5) * ROW,
+        match row {
+            Some(row) => card.y + HEADER + (row as f32 + 0.5) * ROW,
             None => card.y + HEADER / 2.,
         }
     }
@@ -1148,7 +1154,11 @@ impl Frame {
             &self.cards[reference.from.table],
             &self.cards[reference.to.table],
         );
-        let (ya, yb) = (self.anchor(&reference.from), self.anchor(&reference.to));
+        let (from, to) = self.anchors[index];
+        let (ya, yb) = (
+            self.anchor(&reference.from, from),
+            self.anchor(&reference.to, to),
+        );
         if reference.from.table == reference.to.table {
             let out = a.right() + STUB * 1.4;
             let points = vec![
@@ -1679,9 +1689,34 @@ fn minimap(cards: &[Card], bounds: Bounds<Pixels>, pan: Point<f32>, zoom: f32) -
     })
 }
 
+/// The row a reference meets at its start and at its end.
+type Anchors = (Option<usize>, Option<usize>);
+
+/// The row each reference meets at either end: its column's, or for a reference over several
+/// columns, the one fewest other references share, so references that share a column, such as
+/// `(org_id, repo_id)` and `(org_id, team_id)`, leave from rows of their own.
+fn anchors(schema: &Schema) -> Vec<Anchors> {
+    let mut uses: HashMap<(usize, usize), usize> = HashMap::new();
+    for reference in &schema.refs {
+        for end in [&reference.from, &reference.to] {
+            for &column in &end.columns {
+                *uses.entry((end.table, column)).or_default() += 1;
+            }
+        }
+    }
+    let row = |end: &dbml::End| {
+        (end.columns.iter().enumerate())
+            .min_by_key(|(at, column)| (uses[&(end.table, **column)], usize::MAX - at))
+            .map(|(_, column)| *column)
+    };
+    (schema.refs.iter())
+        .map(|reference| (row(&reference.from), row(&reference.to)))
+        .collect()
+}
+
 /// Spreads the turns of lines that cross the same gap between two tables evenly across it,
 /// in the order of their height so they do not cross each other there.
-fn lanes(schema: &Schema, cards: &[Card]) -> HashMap<usize, f32> {
+fn lanes(schema: &Schema, anchors: &[Anchors], cards: &[Card]) -> HashMap<usize, f32> {
     let mut gaps: HashMap<(i32, i32), Vec<(f32, usize)>> = HashMap::new();
     for (index, reference) in schema.refs.iter().enumerate() {
         let (a, b) = (&cards[reference.from.table], &cards[reference.to.table]);
@@ -1692,11 +1727,11 @@ fn lanes(schema: &Schema, cards: &[Card]) -> HashMap<usize, f32> {
         } else {
             continue;
         };
-        let y = |end: &dbml::End| {
-            let card = &cards[end.table];
-            card.y + HEADER + end.columns.first().map_or(0., |c| *c as f32 * ROW)
+        let y = |end: &dbml::End, row: Option<usize>| {
+            cards[end.table].y + HEADER + row.map_or(0., |row| row as f32 * ROW)
         };
-        let height = y(&reference.from).min(y(&reference.to));
+        let (from, to) = anchors[index];
+        let height = y(&reference.from, from).min(y(&reference.to, to));
         let key = (gap.0.round() as i32, gap.1.round() as i32);
         gaps.entry(key).or_default().push((height, index));
     }
