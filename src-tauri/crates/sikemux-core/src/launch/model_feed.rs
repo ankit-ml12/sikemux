@@ -275,13 +275,14 @@ async fn refresh(path: PathBuf, held: Arc<Mutex<Held>>) {
 }
 
 async fn download() -> Option<Vec<u8>> {
-    let tls = sikemux_client::accounts::tls_config()?;
-    let client = reqwest::Client::builder()
-        .tls_backend_preconfigured((*tls).clone())
+    let client = crate::accounts::client().ok()?;
+    let response = client
+        .get(URL)
         .timeout(TIMEOUT)
-        .user_agent(concat!("sikemux/", env!("CARGO_PKG_VERSION")))
-        .build()
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
         .ok()?;
-    let response = client.get(URL).send().await.ok()?.error_for_status().ok()?;
     Some(response.bytes().await.ok()?.to_vec())
 }

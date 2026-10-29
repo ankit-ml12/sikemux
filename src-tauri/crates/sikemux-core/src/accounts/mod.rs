@@ -93,6 +93,20 @@ impl HostRequest {
 
 /// Where the accounts API is. Dev builds talk to a server on this computer,
 /// or to `SIKEMUX_API_URL`.
+/// The client for the accounts server and the sign-in it relies on. A request waits up to
+/// 20 seconds unless it sets its own deadline.
+pub fn client() -> Result<&'static reqwest::Client, String> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let unreachable = || "this host cannot reach the accounts server".to_owned();
+    let tls = tls_config().ok_or_else(unreachable)?;
+    crate::http::shared(&CLIENT, || {
+        crate::http::builder()
+            .tls_backend_preconfigured((*tls).clone())
+            .timeout(std::time::Duration::from_secs(20))
+    })
+    .map_err(|_| unreachable())
+}
+
 pub fn api_base() -> String {
     if cfg!(debug_assertions) {
         std::env::var("SIKEMUX_API_URL").unwrap_or_else(|_| "http://127.0.0.1:4000".into())

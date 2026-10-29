@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use reqwest::{Client, Method};
+use reqwest::Method;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -26,23 +26,10 @@ use crate::protocol::Event;
 use super::super::{Core, CoreError, CoreResult};
 use super::join::{link_with, LinkParams};
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 /// How soon a pass that found one already running looks again.
 const AGAIN: Duration = Duration::from_secs(5);
 /// How long the accounts server remembers a signature, refusing it if it comes again.
 const SIGNATURE_MEMORY_SECS: u64 = 60;
-
-pub(crate) fn client() -> CoreResult<&'static Client> {
-    static CLIENT: OnceLock<Client> = OnceLock::new();
-    let unreachable = || CoreError::from("this host cannot reach the accounts server");
-    let tls = sikemux_client::accounts::tls_config().ok_or_else(unreachable)?;
-    crate::http::shared(&CLIENT, || {
-        crate::http::builder()
-            .tls_backend_preconfigured((*tls).clone())
-            .timeout(REQUEST_TIMEOUT)
-    })
-    .map_err(|_| unreachable())
-}
 
 /// What the account asks one of the person's devices to sign before this host adds it:
 /// the account's nonce, who owns the account, and what the account calls this host.
@@ -231,7 +218,8 @@ pub(crate) async fn host_send(
         body_sha256,
     };
     let (key, signature) = core.remote.sign_host_request(&request)?;
-    let mut sent = client()?
+    let mut sent = crate::accounts::client()
+        .map_err(CoreError::from)?
         .request(method, format!("{}{path}", base.trim_end_matches('/')))
         .header(
             "authorization",

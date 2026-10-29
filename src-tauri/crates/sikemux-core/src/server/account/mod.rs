@@ -27,8 +27,9 @@ use crate::protocol::AccountInfo;
 
 use super::access::Peer;
 use super::changed::Topic;
-use super::hosts::account::{as_host, client};
+use super::hosts::account::as_host;
 use super::{remote, Core, CoreError, CoreResult};
+use crate::accounts::client;
 
 /// The Clerk instance accounts live in, and this host's OAuth client there.
 /// Dev builds use Clerk's development instance, which the accounts server on
