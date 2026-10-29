@@ -14,8 +14,9 @@ use crate::cli::protocol::{HarnessRequest, CORE_REPLY_TIMEOUT};
 use crate::protocol::WindowCall;
 
 use super::plugins::{self, Gated};
-use super::questions::{self, Choice};
+use super::questions;
 use super::Core;
+use sikemux_wire::questions::QuestionChoice;
 
 /// A development build keeps entries of its own, so it never reads or deletes the
 /// installed app's.
@@ -219,7 +220,7 @@ pub(crate) async fn propose(
     let choices = proposal
         .choices
         .into_iter()
-        .map(|offered| Choice {
+        .map(|offered| QuestionChoice {
             label: offered.label,
             detail: offered.detail,
             recommended: false,

@@ -21,7 +21,6 @@ use gpui_transcript::{
     AwayChanged, Change, CodeColours, EmptyChanged, FoundChanged, Markdown, Pen, Row, RowsChanged,
     Style, Transcript,
 };
-use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_wire::catalog::Driver;
 use sikemux_wire::chat::{
@@ -33,6 +32,7 @@ use sikemux_wire::protocol::{
     AgentStatus, ChatAttachment, ChatContext, ChatMark, ConfigPicker, MidTurnSend, PermissionMode,
     WorkspaceAgent, DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE, MIN_TEXT_SCALE,
 };
+use sikemux_wire::questions::{AgentQuestion, QuestionState};
 
 use crate::agent_setup::Installing;
 use crate::composer::{Act, Composer, Notice, Strip};
@@ -610,56 +610,36 @@ pub struct Sent {
 }
 
 /// A question an agent put to the person, as the core's `questions` call lists it.
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct Question {
-    id: String,
-    agent_id: String,
-    name: String,
-    text: String,
-    header: Option<String>,
-    #[serde(default)]
-    choices: Vec<Choice>,
-    #[serde(default)]
-    multi: bool,
-    assumption: Option<String>,
-    #[serde(default)]
-    secret: bool,
-    /// `lead` while the asker's lead has it, `open`, `assumed` or `answered`.
-    state: String,
-    via_note: Option<String>,
-    secret_note: Option<String>,
-    /// The person's answer, once answered; none for a secret.
-    answer: Option<String>,
+    pub asked: AgentQuestion,
     /// The account host whose agent asks, by its key; none for this host's own.
-    #[serde(skip)]
     pub(crate) host: Option<String>,
+}
+
+impl std::ops::Deref for Question {
+    type Target = AgentQuestion;
+
+    fn deref(&self) -> &AgentQuestion {
+        &self.asked
+    }
 }
 
 impl Question {
     /// Who asked and what, while `agent_id` waits on the person's answer.
     pub(crate) fn open_from(&self, agent_id: &str) -> Option<(&str, &str)> {
-        (self.agent_id == agent_id && self.state == "open").then_some((&self.name, &self.text))
+        self.of(agent_id, QuestionState::Open)
+            .then_some((&self.name, &self.text))
     }
-}
 
-#[derive(Clone, Deserialize)]
-struct Choice {
-    label: String,
-    detail: Option<String>,
-    #[serde(default)]
-    recommended: bool,
-}
-
-impl Question {
-    pub fn of(&self, agent: &str, state: &str) -> bool {
+    pub fn of(&self, agent: &str, state: QuestionState) -> bool {
         self.agent_id == agent && self.state == state
     }
 
     /// Whether the person can answer it in `agent`'s chat: it waits on them, or the agent went
     /// on assuming an answer they may still change.
     pub fn asks(&self, agent: &str) -> bool {
-        self.of(agent, "open") || self.of(agent, "assumed")
+        self.of(agent, QuestionState::Open) || self.of(agent, QuestionState::Assumed)
     }
 
     fn title(&self, ix: usize, count: usize) -> String {
@@ -1957,7 +1937,7 @@ pub fn pane(
     let answered: Vec<&Question> = bench
         .questions
         .iter()
-        .filter(|question| question.of(&agent.id, "answered"))
+        .filter(|question| question.of(&agent.id, QuestionState::Answered))
         .collect();
     if !answered.is_empty() {
         let sent = answered
@@ -3569,7 +3549,7 @@ impl Workbench {
                 .update(cx, |bench, cx| {
                     if error.is_none() {
                         bench.keep_questions(|question| {
-                            question.state == "answered" || !ids.contains(&question.id)
+                            question.state == QuestionState::Answered || !ids.contains(&question.id)
                         });
                     }
                     if let Some(chat) = bench.chats.get_mut(&agent) {

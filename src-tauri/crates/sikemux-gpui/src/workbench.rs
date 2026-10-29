@@ -45,6 +45,7 @@ use crate::terminal::NewTerminal;
 use crate::theme::{self, Tokens};
 use crate::toast;
 use crate::{agents, home, rail, tabs, terminal};
+use sikemux_wire::questions::AgentQuestion;
 
 /// A click in the app's own window takes the keyboard back from a page holding it. On
 /// Linux a page is a window of another connection, which X would otherwise leave it with.
@@ -1016,16 +1017,20 @@ impl Workbench {
                 }
             }
             Update::Read(key @ ("questions" | "host-questions"), value) => {
-                match serde_json::from_value::<Vec<Question>>(value) {
-                    Ok(mut questions) if key == "host-questions" => {
-                        for question in &mut questions {
-                            question.host = self.trust_host.clone();
+                let host = (key == "host-questions")
+                    .then(|| self.trust_host.clone())
+                    .flatten();
+                match serde_json::from_value::<Vec<AgentQuestion>>(value) {
+                    Ok(asked) => {
+                        let questions = asked.into_iter().map(|asked| Question {
+                            asked,
+                            host: host.clone(),
+                        });
+                        if key == "host-questions" {
+                            self.host_questions = questions.collect();
+                        } else {
+                            self.questions = questions.collect();
                         }
-                        self.host_questions = questions;
-                    }
-                    Ok(questions) => {
-                        self.questions = questions;
-                        self.questions.retain(|question| question.host.is_none());
                     }
                     Err(error) => eprintln!("sikemux: the core's questions do not read: {error}"),
                 }

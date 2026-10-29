@@ -11,4 +11,5 @@ pub mod inbox;
 pub mod notch;
 pub mod protocol;
 pub mod pty;
+pub mod questions;
 pub mod theme;

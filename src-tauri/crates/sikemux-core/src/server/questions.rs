@@ -17,6 +17,7 @@ use sikemux_process::sync::Locked;
 use crate::cli::protocol::HarnessRequest;
 use crate::protocol::WindowCall;
 use crate::text::clipped;
+use sikemux_wire::questions::{AgentQuestion, QuestionChoice, QuestionState};
 
 use super::activity::Activity;
 use super::approvals::{Approval, Keeper};
@@ -47,17 +48,6 @@ const MAX_ANSWERED: usize = 32;
 /// it counts as passing it over only once this long has gone by.
 const LEAD_GRACE_MS: u64 = 3_000;
 const WINDOW_ANSWER_WAIT: Duration = Duration::from_secs(10);
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Choice {
-    pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-    /// The agent marked it as the one it would pick.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub recommended: bool,
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "stage")]
@@ -93,7 +83,7 @@ struct Question {
     text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     header: Option<String>,
-    choices: Vec<Choice>,
+    choices: Vec<QuestionChoice>,
     /// The person may pick more than one of `choices`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     multi: bool,
@@ -119,61 +109,8 @@ struct Question {
     approval: Option<Approval>,
 }
 
-/// Where a question stands for the person.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) enum QuestionState {
-    /// It waits on the lead it went to first.
-    Lead,
-    /// The asker waits on the person's answer.
-    Open,
-    /// The asker went on with its assumption, which the person may correct.
-    Assumed,
-    /// The person answered it and the asker has not read the answer yet.
-    Answered,
-}
-
-/// A question as the app, the notch and phones show it.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct View {
-    pub id: String,
-    pub agent_id: String,
-    /// The asker's name, such as Maple.
-    pub name: String,
-    pub cli: String,
-    pub project: String,
-    /// The asker's own words.
-    pub asked: String,
-    /// What the person is asked, which a lead that passed it on may have
-    /// reworded.
-    pub text: String,
-    /// Two or three words naming the question, such as Photo access.
-    pub header: Option<String>,
-    pub choices: Vec<Choice>,
-    /// The person may pick more than one of `choices`.
-    pub multi: bool,
-    /// The asker waits for the answer; otherwise it goes on with `assumption`.
-    pub blocked: bool,
-    pub assumption: Option<String>,
-    /// The answer is a secret, such as a password: typed into a masked field,
-    /// never the composer, and never shown again.
-    pub secret: bool,
-    pub at: u64,
-    pub state: QuestionState,
-    /// Why it reached the person rather than the lead it went to first, such
-    /// as "Maple didn't know".
-    pub via_note: Option<String>,
-    /// What the field a secret is typed into says beside it.
-    pub secret_note: Option<String>,
-    /// The person's answer, while its state is answered; none for a secret.
-    pub answer: Option<String>,
-    /// The ticket of the board card the asker is working, such as PROJ-12.
-    pub ticket: Option<String>,
-}
-
 impl Question {
-    fn view(&self) -> View {
+    fn view(&self) -> AgentQuestion {
         let (state, via_note) = match &self.stage {
             Stage::Lead { .. } => (QuestionState::Lead, None),
             Stage::Person { lead, passed } => (
@@ -192,7 +129,7 @@ impl Question {
                 }),
             ),
         };
-        View {
+        AgentQuestion {
             id: self.id.clone(),
             agent_id: self.agent_id.clone(),
             name: self.name.clone(),
@@ -297,7 +234,7 @@ pub(crate) struct ForPerson {
 struct Asked {
     text: String,
     header: Option<String>,
-    choices: Vec<Choice>,
+    choices: Vec<QuestionChoice>,
     multi: bool,
     blocked: bool,
     assumption: Option<String>,
@@ -535,7 +472,7 @@ fn text_param(params: &Value, key: &str, max: usize) -> Result<Option<String>, S
     }
 }
 
-fn choices(value: Option<&Value>) -> Result<Vec<Choice>, String> {
+fn choices(value: Option<&Value>) -> Result<Vec<QuestionChoice>, String> {
     let list = match value {
         None | Some(Value::Null) => return Ok(Vec::new()),
         Some(Value::Array(list)) => list,
@@ -564,7 +501,7 @@ fn choices(value: Option<&Value>) -> Result<Vec<Choice>, String> {
             if label.is_empty() {
                 return Err("each choice needs a label".to_owned());
             }
-            Ok(Choice {
+            Ok(QuestionChoice {
                 label: clipped(label, MAX_LABEL_CHARS),
                 detail: detail
                     .filter(|detail| !detail.trim().is_empty())
@@ -884,7 +821,7 @@ pub(crate) fn put_to_person(
     project: &str,
     header: String,
     text: String,
-    choices: Vec<Choice>,
+    choices: Vec<QuestionChoice>,
     approval: Approval,
 ) -> Result<(), String> {
     open(
@@ -932,7 +869,7 @@ fn pass_on(
     lead_id: &str,
     worker: &str,
     text: String,
-    choices: Vec<Choice>,
+    choices: Vec<QuestionChoice>,
 ) -> Result<Value, String> {
     let wanted = worker.trim().trim_start_matches('@');
     let lead_name = core
@@ -1044,7 +981,7 @@ pub(crate) fn ask_from_cli(core: &Arc<Core>, agent_id: &str, input: &Value) -> S
 
 /// The open questions and the answers their askers have not read, for the
 /// app, the notch and phones.
-pub(crate) fn views(core: &Core) -> Vec<View> {
+pub(crate) fn views(core: &Core) -> Vec<AgentQuestion> {
     let (open, answered) = {
         let state = core.harness.questions.state.locked();
         (state.open.clone(), state.answered.clone())
@@ -1053,7 +990,7 @@ pub(crate) fn views(core: &Core) -> Vec<View> {
 }
 
 /// Each question's view, with the ticket of the card its asker holds.
-fn views_of(core: &Core, open: Vec<Question>, answered: Vec<Answered>) -> Vec<View> {
+fn views_of(core: &Core, open: Vec<Question>, answered: Vec<Answered>) -> Vec<AgentQuestion> {
     let open = open.iter().map(|question| (question.view(), question));
     let answered = answered.iter().map(|answered| {
         let mut view = answered.question.view();
