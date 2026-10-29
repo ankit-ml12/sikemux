@@ -160,6 +160,12 @@ function readFile(uri: string): Promise<ArrayBuffer> {
   return new File(uri).arrayBuffer();
 }
 
+/** Whether a delivery that catches this phone up after it fell behind starts from `taken`. */
+function follows(changes: readonly ChatChange[], taken: bigint): boolean {
+  const first = changes[0];
+  return first?.op === 'head' && first.follows !== undefined && BigInt(first.follows) === taken;
+}
+
 function animationFrame(run: () => void): () => void {
   const frame = requestAnimationFrame(run);
   return () => cancelAnimationFrame(frame);
@@ -1019,8 +1025,15 @@ export class ChatSession {
 
   private take(deliveries: ChatDelivery[]) {
     for (const delivery of deliveries) {
-      if (this.taken !== undefined && delivery.seq <= this.taken) continue;
-      this.pending.push(...(JSON.parse(delivery.changesJson) as ChatChange[]));
+      const taken = this.taken;
+      if (taken !== undefined && delivery.seq <= taken) continue;
+      const changes = JSON.parse(delivery.changesJson) as ChatChange[];
+      if (taken !== undefined && delivery.seq !== taken + 1n && !follows(changes, taken)) {
+        // Some changes never arrived: attaching again from what was taken sends them.
+        this.restart();
+        return;
+      }
+      this.pending.push(...changes);
       this.taken = delivery.seq;
     }
     // A stream of tokens is drawn once a frame, not once a change.

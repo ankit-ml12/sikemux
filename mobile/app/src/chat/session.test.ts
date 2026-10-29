@@ -160,6 +160,28 @@ describe('a chat session', () => {
     expect(first.attachChat.mock.calls[1][1]).toEqual({ feed: FEED, seq: 3n });
   });
 
+  it('attaches again from its mark when a delivery never arrived, but takes a catch-up that starts from it', async () => {
+    const { session, deliver, startAt, drawFrame } = harness();
+    const connection = fakeConnection(live([], 2));
+    session.hold(connection as unknown as ConnectionLike);
+    await settle();
+    startAt(2);
+    deliver(said('m3', 'one'));
+    startAt(9);
+    deliver({ op: 'head', set: { running: true }, follows: 3 });
+    drawFrame();
+    expect(texts(session)).toEqual(['one']);
+    expect(session.snapshot().view.running).toBe(true);
+    expect(connection.attachChat).toHaveBeenCalledTimes(1);
+
+    startAt(11);
+    deliver(said('m12', 'after the gap'));
+    await settle();
+    expect(connection.attachChat).toHaveBeenCalledTimes(2);
+    expect(connection.attachChat.mock.calls[1][1]).toEqual({ feed: FEED, seq: 10n });
+    expect(texts(session)).not.toContain('after the gap');
+  });
+
   it('marks a message the host did not take, sends it again on Retry, and shows it once the host does', async () => {
     const { session, deliver, startAt, drawFrame } = harness();
     const connection = fakeConnection(live([], 0));
