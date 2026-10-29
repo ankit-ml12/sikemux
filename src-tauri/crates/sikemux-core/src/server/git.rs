@@ -319,7 +319,7 @@ pub(crate) fn read_hosts(core: &Arc<Core>, folders: Vec<String>) {
                 let folder = PathBuf::from(&folder);
                 let core = core.clone();
                 blocking(move || {
-                    let origin = super::board::git::origin(&folder);
+                    let origin = crate::git::origin(&folder);
                     Ok((origin, super::codehost::repo::picks(&core, &folder)))
                 })
                 .await

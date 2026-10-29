@@ -286,10 +286,7 @@ pub(crate) async fn of_project(core: &Arc<Core>, project: &str) -> Result<Repo, 
         let folder = PathBuf::from(project);
         let core = core.clone();
         crate::server::connection::blocking(move || {
-            Ok((
-                crate::server::board::git::origin(&folder),
-                picks(&core, &folder),
-            ))
+            Ok((crate::git::origin(&folder), picks(&core, &folder)))
         })
         .await
     };

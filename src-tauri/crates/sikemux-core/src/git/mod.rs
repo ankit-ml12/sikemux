@@ -74,6 +74,12 @@ fn open_repo(path: &str) -> Result<Repository, String> {
 
 const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_COMMAND_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
+/// A git run on this computer alone, which ought to be over within a minute.
+const QUICK: Duration = Duration::from_secs(60);
+/// A git run that may take minutes, such as a fetch, a push or a big diff.
+const SLOW: Duration = Duration::from_secs(5 * 60);
+/// How much of a failure's output its error carries.
+const TAIL_CHARS: usize = 3000;
 
 fn kill_and_reap_process(child: &mut std::process::Child) {
     // SAFETY: kill only takes integers and touches no memory. A spawned child's id is
@@ -130,6 +136,16 @@ impl<'a> Git<'a> {
             timeout: GIT_COMMAND_TIMEOUT,
             limit: MAX_COMMAND_OUTPUT_BYTES,
         }
+    }
+
+    /// [`Self::at`] for a run on this computer alone, which ought to be over within a minute.
+    pub fn quick(dir: impl AsRef<std::path::Path>) -> Self {
+        Self::at(dir).timeout(QUICK)
+    }
+
+    /// [`Self::at`] for a run that may take minutes, such as a fetch, a push or a big diff.
+    pub fn slow(dir: impl AsRef<std::path::Path>) -> Self {
+        Self::at(dir).timeout(SLOW)
     }
 
     /// Sets `key` for this run only, as `git -c key=value` does.
@@ -194,6 +210,74 @@ impl<'a> Git<'a> {
         self.stdout(args)
             .map(|out| String::from_utf8_lossy(&out).into_owned())
     }
+
+    /// What `git args` wrote, trimmed, or the end of all it wrote when it failed.
+    pub fn trimmed(self, args: &[&str]) -> Result<String, String> {
+        let output = self.output(args)?;
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned());
+        }
+        let said = said(&output);
+        Err(format!(
+            "git {} failed{}",
+            args.first().copied().unwrap_or_default(),
+            if said.is_empty() {
+                String::new()
+            } else {
+                format!(": {said}")
+            }
+        ))
+    }
+}
+
+/// The end of what a command wrote, which is where its error usually is.
+pub fn tail(text: &str) -> String {
+    let text = text.trim();
+    let count = text.chars().count();
+    if count <= TAIL_CHARS {
+        return text.to_owned();
+    }
+    let kept: String = text.chars().skip(count - TAIL_CHARS).collect();
+    format!("…{kept}")
+}
+
+/// The end of what a command said on both its outputs.
+pub fn said(output: &Output) -> String {
+    let mut text = String::from_utf8_lossy(&output.stderr).into_owned();
+    let out = String::from_utf8_lossy(&output.stdout);
+    if !out.trim().is_empty() {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(&out);
+    }
+    tail(&text)
+}
+
+/// The top folder of the main checkout of the repository `path` is in, whether `path` is in
+/// that checkout or in one of its linked worktrees. Read from git's own files, so no git runs.
+pub fn main_checkout(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let root = path.ancestors().find(|dir| dir.join(".git").exists())?;
+    let dot_git = root.join(".git");
+    if dot_git.is_dir() {
+        return Some(root.to_path_buf());
+    }
+    let link = std::fs::read_to_string(&dot_git).ok()?;
+    let gitdir = root.join(link.strip_prefix("gitdir:")?.trim());
+    let common = std::fs::read_to_string(gitdir.join("commondir")).ok()?;
+    let common = std::fs::canonicalize(gitdir.join(common.trim())).ok()?;
+    if common.file_name()? != ".git" {
+        return None;
+    }
+    common.parent().map(std::path::Path::to_path_buf)
+}
+
+/// Where `repo`'s remote named origin is, when it has one.
+pub fn origin(repo: &std::path::Path) -> Option<String> {
+    Git::quick(repo)
+        .trimmed(&["remote", "get-url", "origin"])
+        .ok()
+        .filter(|url| !url.is_empty())
 }
 
 fn run_git(repo: &str, args: &[&str]) -> Result<(bool, String, String), String> {

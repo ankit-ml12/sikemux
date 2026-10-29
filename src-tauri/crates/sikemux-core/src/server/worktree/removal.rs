@@ -8,12 +8,12 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::connection::blocking;
-use super::sandbox::AgentWorktree;
-use super::{board, ports, tasks};
-use super::{Core, CoreError, CoreResult};
+use super::AgentWorktree;
 use crate::git::Git;
 use crate::protocol::{AgentState, WorkspaceAgent};
+use crate::server::connection::blocking;
+use crate::server::{board, ports, tasks};
+use crate::server::{Core, CoreError, CoreResult};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

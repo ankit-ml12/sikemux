@@ -23,9 +23,9 @@ use super::follow::{self, TerminalAnswer};
 use super::hosts::spawn::{self as elsewhere, Hired};
 use super::messages;
 use super::names::{self, Adopted, AgentName, Worker};
-use super::sandbox::{self, AgentWorktree};
 use super::saved::{self, Saved};
 use super::workspace::{Lead, Paid};
+use super::worktree::{self, AgentWorktree};
 use super::Core;
 
 const MAX_PROMPT_BYTES: usize = 64 * 1024;
@@ -289,7 +289,7 @@ fn start(
     let (mut checkout, cwd) = if own {
         let name = text_param(params, "prompt", MAX_PROMPT_BYTES)?.unwrap_or("teammate");
         let name: String = name.chars().take(48).collect();
-        let (checkout, tree_cwd) = sandbox::cut_for(&cwd, &cwd, &name)?;
+        let (checkout, tree_cwd) = worktree::agent::cut_for(&cwd, &cwd, &name)?;
         (Unclaimed(Some(checkout)), tree_cwd)
     } else {
         (Unclaimed(None), cwd)
@@ -394,7 +394,7 @@ struct Unclaimed(Option<AgentWorktree>);
 impl Drop for Unclaimed {
     fn drop(&mut self) {
         if let Some(tree) = self.0.take() {
-            sandbox::remove(&tree.repo, &tree.path, &tree.branch);
+            worktree::remove(&tree.repo, &tree.path, &tree.branch);
         }
     }
 }
@@ -541,7 +541,9 @@ async fn hand_task(core: &Arc<Core>, started: Started, prompt: String) {
     let lead_id = chat.origin.started_by.clone().unwrap_or_default();
     if let Some(checkout) = checkout {
         let cwd = chat.launch.cwd.clone();
-        if let Some(error) = sandbox::set_up(core, &checkout.repo, Some(&agent_id), &cwd).await {
+        if let Some(error) =
+            worktree::agent::set_up(core, &checkout.repo, Some(&agent_id), &cwd).await
+        {
             messages::report_as(
                 core,
                 agent_id.clone(),

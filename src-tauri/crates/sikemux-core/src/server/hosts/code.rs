@@ -11,14 +11,13 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::super::board::git::{git, git_in, git_with, inside, slug, SLOW};
 use super::super::connection::blocking;
-use super::super::sandbox;
-use super::super::warm;
+use super::super::worktree::{self, inside, slug};
 use super::super::Core;
 use super::link::Received;
 use super::name_of;
 use super::team::{Role, Tree};
+use crate::git::Git;
 
 /// More than this of uncommitted changes the lead commits first.
 const MAX_PATCH_BYTES: usize = 6 * 1024 * 1024;
@@ -74,22 +73,22 @@ fn is_commit_id(text: &str) -> bool {
 }
 
 fn has_commit(repo: &Path, commit: &str) -> bool {
-    git(repo, &["cat-file", "-e", &format!("{commit}^{{commit}}")]).is_ok()
+    Git::quick(repo)
+        .trimmed(&["cat-file", "-e", &format!("{commit}^{{commit}}")])
+        .is_ok()
 }
 
 /// What the lead working in `cwd` would hand a worker on another host.
 pub(crate) fn package(cwd: &Path) -> Result<Packed, String> {
     let repo = PathBuf::from(
-        git(
-            cwd,
-            &["rev-parse", "--path-format=absolute", "--show-toplevel"],
-        )
-        .map_err(|_| {
-            "your folder is not in a git repository, so its code cannot go to another host"
-                .to_owned()
-        })?,
+        Git::quick(cwd)
+            .trimmed(&["rev-parse", "--path-format=absolute", "--show-toplevel"])
+            .map_err(|_| {
+                "your folder is not in a git repository, so its code cannot go to another host"
+                    .to_owned()
+            })?,
     );
-    let commit = git(&repo, &["rev-parse", "HEAD"]).map_err(|_| {
+    let commit = Git::quick(&repo).trimmed(&["rev-parse", "HEAD"]).map_err(|_| {
         "your repository has no commit yet, so a worker on another host has nothing to start from"
             .to_owned()
     })?;
@@ -99,10 +98,13 @@ pub(crate) fn package(cwd: &Path) -> Result<Packed, String> {
         .unwrap_or_else(|| "project".to_owned());
     let code = Code {
         project,
-        remote: git(&repo, &["remote", "get-url", "origin"])
+        remote: Git::quick(&repo)
+            .trimmed(&["remote", "get-url", "origin"])
             .ok()
             .filter(|url| !url.is_empty()),
-        branch: git(&repo, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok(),
+        branch: Git::quick(&repo)
+            .trimmed(&["symbolic-ref", "--quiet", "--short", "HEAD"])
+            .ok(),
         inside: inside(cwd, &repo).to_string_lossy().into_owned(),
         patch: uncommitted(&repo)?,
         commit,
@@ -113,33 +115,30 @@ pub(crate) fn package(cwd: &Path) -> Result<Packed, String> {
 /// Everything not committed, new files too, as a patch on `HEAD`, worked out
 /// in an index of its own so the lead's staging stays as it is.
 fn uncommitted(repo: &Path) -> Result<Option<String>, String> {
-    let index = git(
-        repo,
-        &["rev-parse", "--path-format=absolute", "--git-path", "index"],
-    )?;
+    let index = Git::quick(repo).trimmed(&[
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-path",
+        "index",
+    ])?;
     let scratch = Scratch::new("index");
     if Path::new(&index).exists() {
         std::fs::copy(&index, scratch.path())
             .map_err(|error| format!("could not read the repository's index: {error}"))?;
     }
-    let scratch_index = scratch.path().to_string_lossy().into_owned();
-    let envs = [("GIT_INDEX_FILE", scratch_index.as_str())];
-    git_with(repo, &["add", "--all"], &envs, SLOW)?;
+    Git::slow(repo)
+        .index(scratch.path())
+        .trimmed(&["add", "--all"])?;
     let patch = Scratch::new("patch");
     let output = format!("--output={}", patch.path().display());
-    git_with(
-        repo,
-        &[
-            "diff",
-            "--cached",
-            "--binary",
-            "--no-color",
-            &output,
-            "HEAD",
-        ],
-        &envs,
-        SLOW,
-    )?;
+    Git::slow(repo).index(scratch.path()).trimmed(&[
+        "diff",
+        "--cached",
+        "--binary",
+        "--no-color",
+        &output,
+        "HEAD",
+    ])?;
     let text = std::fs::read_to_string(patch.path()).unwrap_or_default();
     if text.len() > MAX_PATCH_BYTES {
         return Err(format!(
@@ -153,7 +152,7 @@ fn uncommitted(repo: &Path) -> Result<Option<String>, String> {
 /// A bundle of `commit` without what a host holding `tips` already has.
 pub(crate) fn bundle(repo: &Path, commit: &str, tips: &[String]) -> Result<Scratch, String> {
     let reference = format!("refs/sikemux/outgoing/{}", uuid::Uuid::new_v4().simple());
-    git(repo, &["update-ref", &reference, commit])?;
+    Git::quick(repo).trimmed(&["update-ref", &reference, commit])?;
     let scratch = Scratch::new("bundle");
     let target = scratch.path().to_string_lossy().into_owned();
     let excluded: Vec<String> = tips
@@ -164,8 +163,8 @@ pub(crate) fn bundle(repo: &Path, commit: &str, tips: &[String]) -> Result<Scrat
         .collect();
     let mut args = vec!["bundle", "create", "--quiet", &target, &reference];
     args.extend(excluded.iter().map(String::as_str));
-    let made = git_in(repo, &args, SLOW);
-    let _ = git(repo, &["update-ref", "-d", &reference]);
+    let made = Git::slow(repo).trimmed(&args);
+    let _ = Git::quick(repo).trimmed(&["update-ref", "-d", &reference]);
     made?;
     Ok(scratch)
 }
@@ -173,7 +172,7 @@ pub(crate) fn bundle(repo: &Path, commit: &str, tips: &[String]) -> Result<Scrat
 /// The one branch tip a bundle carries.
 fn bundled_ref(repo: &Path, bundle: &Path) -> Result<String, String> {
     let bundle = bundle.to_string_lossy().into_owned();
-    let heads = git(repo, &["bundle", "list-heads", &bundle])?;
+    let heads = Git::quick(repo).trimmed(&["bundle", "list-heads", &bundle])?;
     heads
         .lines()
         .find_map(|line| line.split_whitespace().nth(1))
@@ -184,26 +183,20 @@ fn bundled_ref(repo: &Path, bundle: &Path) -> Result<String, String> {
 
 /// Fetches what `bundle` holds into `repo`, under `into`.
 fn fetch(repo: &Path, bundle: &Path, into: &str) -> Result<(), String> {
-    git_in(
-        repo,
-        &["bundle", "verify", "--quiet", &bundle.to_string_lossy()],
-        SLOW,
-    )
-    .map_err(|error| format!("the bundle does not fit this repository: {error}"))?;
+    Git::slow(repo)
+        .trimmed(&["bundle", "verify", "--quiet", &bundle.to_string_lossy()])
+        .map_err(|error| format!("the bundle does not fit this repository: {error}"))?;
     let reference = bundled_ref(repo, bundle)?;
     let refspec = format!("+{reference}:{into}");
-    git_in(
-        repo,
-        &[
+    Git::slow(repo)
+        .trimmed(&[
             "fetch",
             "--quiet",
             "--no-write-fetch-head",
             &bundle.to_string_lossy(),
             &refspec,
-        ],
-        SLOW,
-    )
-    .map(drop)
+        ])
+        .map(drop)
 }
 
 /// The checkout of a project here whose `origin` is `remote`.
@@ -213,13 +206,13 @@ fn project_with(core: &Core, remote: &str) -> Option<PathBuf> {
         .project_paths()
         .into_iter()
         .find_map(|project| {
-            let repo = git(
-                &project,
-                &["rev-parse", "--path-format=absolute", "--show-toplevel"],
-            )
-            .ok()?;
+            let repo = Git::quick(&project)
+                .trimmed(&["rev-parse", "--path-format=absolute", "--show-toplevel"])
+                .ok()?;
             let repo = PathBuf::from(repo);
-            let origin = git(&repo, &["remote", "get-url", "origin"]).ok()?;
+            let origin = Git::quick(&repo)
+                .trimmed(&["remote", "get-url", "origin"])
+                .ok()?;
             (crate::git::remote::normalized_remote(&origin) == wanted).then_some(repo)
         })
 }
@@ -244,19 +237,17 @@ fn clone_dir(core: &Core, host: &str, code: &Code) -> PathBuf {
 
 /// The commits a host with `repo` has, so a bundle need not carry them.
 fn tips(repo: &Path) -> Vec<String> {
-    git(
-        repo,
-        &[
+    Git::quick(repo)
+        .trimmed(&[
             "for-each-ref",
             "--count=64",
             "--sort=-committerdate",
             "--format=%(objectname)",
             "refs/heads",
             "refs/remotes",
-        ],
-    )
-    .map(|out| out.lines().map(str::to_owned).collect())
-    .unwrap_or_default()
+        ])
+        .map(|out| out.lines().map(str::to_owned).collect())
+        .unwrap_or_default()
 }
 
 /// Where a project the person opened on this host from another one lives, or
@@ -286,10 +277,12 @@ fn folder_name(code: &Code) -> String {
 
 /// Whether `dir` is a checkout whose `origin` is `remote`.
 fn has_origin(dir: &Path, remote: &str) -> bool {
-    git(dir, &["remote", "get-url", "origin"]).is_ok_and(|origin| {
-        crate::git::remote::normalized_remote(&origin)
-            == crate::git::remote::normalized_remote(remote)
-    })
+    Git::quick(dir)
+        .trimmed(&["remote", "get-url", "origin"])
+        .is_ok_and(|origin| {
+            crate::git::remote::normalized_remote(&origin)
+                == crate::git::remote::normalized_remote(remote)
+        })
 }
 
 /// Where a project opened from another host goes: beside most of this host's
@@ -353,7 +346,10 @@ pub(crate) fn open_project(
     }
     let dir = opened_dir(core, code)?;
     // A clone this made before it had the commit is still its own to check out.
-    let reused = dir.exists() && git(&dir, &["config", "--get", OPENING]).is_err();
+    let reused = dir.exists()
+        && Git::quick(&dir)
+            .trimmed(&["config", "--get", OPENING])
+            .is_err();
     if !dir.exists() {
         if let (Some(remote), None) = (&code.remote, bundle) {
             let parent = dir
@@ -362,13 +358,10 @@ pub(crate) fn open_project(
             let target = dir.to_string_lossy().into_owned();
             let ssh = sikemux_process::user_environment::var("GIT_SSH_COMMAND")
                 .unwrap_or_else(|| "ssh -o BatchMode=yes -o ConnectTimeout=20".into());
-            let cloned = git_with(
-                parent,
-                &["clone", "--quiet", "--", remote, &target],
-                &[("GIT_SSH_COMMAND", &ssh)],
-                SLOW,
-            )
-            .and_then(|_| git(&dir, &["config", OPENING, "true"]));
+            let cloned = Git::slow(parent)
+                .env("GIT_SSH_COMMAND", &ssh)
+                .trimmed(&["clone", "--quiet", "--", remote, &target])
+                .and_then(|_| Git::quick(&dir).trimmed(&["config", OPENING, "true"]));
             if cloned.is_err() {
                 let _ = std::fs::remove_dir_all(&dir);
             }
@@ -379,10 +372,10 @@ pub(crate) fn open_project(
             };
             std::fs::create_dir_all(&dir)
                 .map_err(|error| format!("could not make {}: {error}", dir.display()))?;
-            git(&dir, &["init", "--quiet"])?;
-            git(&dir, &["config", OPENING, "true"])?;
+            Git::quick(&dir).trimmed(&["init", "--quiet"])?;
+            Git::quick(&dir).trimmed(&["config", OPENING, "true"])?;
             if let Some(remote) = &code.remote {
-                let _ = git(&dir, &["remote", "add", "origin", remote]);
+                let _ = Git::quick(&dir).trimmed(&["remote", "add", "origin", remote]);
             }
         }
     }
@@ -392,17 +385,19 @@ pub(crate) fn open_project(
         };
         let incoming = format!("refs/sikemux/incoming/{}", uuid::Uuid::new_v4().simple());
         fetch(&dir, bundle, &incoming)?;
-        let _ = git(&dir, &["update-ref", "-d", &incoming]);
+        let _ = Git::quick(&dir).trimmed(&["update-ref", "-d", &incoming]);
         if !has_commit(&dir, &code.commit) {
             return Err("the bundle did not hold the project's commit".into());
         }
     }
     if !reused {
         match &code.branch {
-            Some(branch) => git(&dir, &["checkout", "--quiet", "-B", branch, &code.commit])?,
-            None => git(&dir, &["checkout", "--quiet", "--detach", &code.commit])?,
+            Some(branch) => {
+                Git::quick(&dir).trimmed(&["checkout", "--quiet", "-B", branch, &code.commit])?
+            }
+            None => Git::quick(&dir).trimmed(&["checkout", "--quiet", "--detach", &code.commit])?,
         };
-        git(&dir, &["config", "--unset", OPENING])?;
+        Git::quick(&dir).trimmed(&["config", "--unset", OPENING])?;
     }
     Ok(Opened::Ready(dir))
 }
@@ -455,9 +450,9 @@ pub(crate) fn checkout(
                 };
                 std::fs::create_dir_all(&dir)
                     .map_err(|error| format!("could not make {}: {error}", dir.display()))?;
-                git(&dir, &["init", "--quiet"])?;
+                Git::quick(&dir).trimmed(&["init", "--quiet"])?;
                 if let Some(remote) = &code.remote {
-                    let _ = git(&dir, &["remote", "add", "origin", remote]);
+                    let _ = Git::quick(&dir).trimmed(&["remote", "add", "origin", remote]);
                 }
             }
             dir
@@ -469,20 +464,20 @@ pub(crate) fn checkout(
         };
         fetch(&repo, bundle, &incoming)?;
         if !has_commit(&repo, &code.commit) {
-            let _ = git(&repo, &["update-ref", "-d", &incoming]);
+            let _ = Git::quick(&repo).trimmed(&["update-ref", "-d", &incoming]);
             return Err("the lead's bundle did not hold its commit".into());
         }
     }
-    let added = sandbox::cut(&repo, name, &code.commit);
-    let _ = git(&repo, &["update-ref", "-d", &incoming]);
+    let added = worktree::cut(&repo, name, &code.commit);
+    let _ = Git::quick(&repo).trimmed(&["update-ref", "-d", &incoming]);
     let (branch, path) = added?;
     if let Some(patch) = &code.patch {
         if let Err(error) = apply(&path, patch) {
-            sandbox::remove(&repo, &path, &branch);
+            worktree::remove(&repo, &path, &branch);
             return Err(error);
         }
     }
-    warm::seed_in_background(&repo, &path);
+    worktree::seed_in_background(&repo, &path);
     Ok(Checked::Ready(
         Tree {
             agent_id: agent_id.to_owned(),
@@ -502,26 +497,24 @@ pub(crate) fn lay_over(tree: &Path, patch: &str) -> Result<(), String> {
     let file = Scratch::new("patch");
     std::fs::write(file.path(), patch)
         .map_err(|error| format!("could not write the changes: {error}"))?;
-    git(
-        tree,
-        &[
+    Git::quick(tree)
+        .trimmed(&[
             "apply",
             "--binary",
             "--whitespace=nowarn",
             &file.path().to_string_lossy(),
-        ],
-    )
-    .map(drop)
-    .map_err(|error| format!("the uncommitted changes do not apply here: {error}"))
+        ])
+        .map(drop)
+        .map_err(|error| format!("the uncommitted changes do not apply here: {error}"))
 }
 
 /// Applies the lead's uncommitted changes and commits them on their own, so
 /// the worker's work reads apart from the lead's.
 fn apply(tree: &Path, patch: &str) -> Result<(), String> {
     lay_over(tree, patch)?;
-    git(tree, &["add", "--all"])?;
+    Git::quick(tree).trimmed(&["add", "--all"])?;
     let mut args = Vec::new();
-    if git(tree, &["config", "user.email"]).is_err() {
+    if Git::quick(tree).trimmed(&["config", "user.email"]).is_err() {
         args.extend([
             "-c",
             "user.name=Sikemux",
@@ -536,23 +529,21 @@ fn apply(tree: &Path, patch: &str) -> Result<(), String> {
         "-m",
         "The lead's uncommitted changes, as they were when it started this worker",
     ]);
-    git_in(tree, &args, SLOW).map(drop)
+    Git::slow(tree).trimmed(&args).map(drop)
 }
 
 /// A bundle at `into` of the worker's commits since the lead's commit, and
 /// the commit it ends at and how many it holds, unless nothing is new since
 /// the last went back.
 pub(crate) fn commits(tree: &Tree, into: &Path) -> Result<Option<(String, usize)>, String> {
-    let head = git(&tree.path, &["rev-parse", "HEAD"])?;
+    let head = Git::quick(&tree.path).trimmed(&["rev-parse", "HEAD"])?;
     if head == tree.base || tree.sent.as_deref() == Some(head.as_str()) {
         return Ok(None);
     }
-    let count: usize = git(
-        &tree.path,
-        &["rev-list", "--count", &format!("{}..{head}", tree.base)],
-    )?
-    .parse()
-    .unwrap_or(0);
+    let count: usize = Git::quick(&tree.path)
+        .trimmed(&["rev-list", "--count", &format!("{}..{head}", tree.base)])?
+        .parse()
+        .unwrap_or(0);
     if count == 0 {
         return Ok(None);
     }
@@ -598,7 +589,7 @@ pub(crate) async fn land(
     let landed = {
         let branch = branch.clone();
         blocking(move || {
-            git(&repo, &["check-ref-format", "--branch", &branch])?;
+            Git::quick(&repo).trimmed(&["check-ref-format", "--branch", &branch])?;
             fetch(&repo, body.path(), &format!("refs/heads/{branch}"))?;
             Ok(())
         })

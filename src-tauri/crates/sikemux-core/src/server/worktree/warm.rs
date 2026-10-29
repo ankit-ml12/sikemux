@@ -6,8 +6,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::board::git::git;
-use super::sandbox::included;
+use super::included;
+use crate::git::Git;
 
 #[cfg(target_os = "macos")]
 use clone::bring;
@@ -39,17 +39,14 @@ pub(crate) fn seed_in_background(main: &Path, tree: &Path) {
 /// can build from: Cargo's output, installed packages `tree` has the same
 /// lockfile for, and the folders `.worktreeinclude` lists.
 pub(crate) fn seed(main: &Path, tree: &Path) {
-    let Ok(listed) = git(
-        main,
-        &[
-            "ls-files",
-            "-z",
-            "--others",
-            "--ignored",
-            "--exclude-standard",
-            "--directory",
-        ],
-    ) else {
+    let Ok(listed) = Git::quick(main).trimmed(&[
+        "ls-files",
+        "-z",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
+    ]) else {
         return;
     };
     let ignored: Vec<PathBuf> = listed

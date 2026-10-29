@@ -12,12 +12,12 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use super::review::Review;
-use super::{blind, finish, git, Board, Card, Status, Team};
+use super::{blind, finish, Board, Card, Status, Team};
 use crate::protocol::Event;
 use crate::server::connection::blocking;
 use crate::server::names::Starting;
-use crate::server::sandbox::AgentWorktree;
 use crate::server::spawn::Ending;
+use crate::server::worktree::{self, AgentWorktree};
 use crate::server::{chat, messages, Core};
 
 pub(super) const MAX_SLOTS: u32 = 8;
@@ -457,7 +457,7 @@ pub(super) fn start_free(core: &Arc<Core>) {
 }
 
 /// What the agent is asked to do.
-fn task(card: &Card, tree: &git::Tree, settings: &Settings, ticket: Option<String>) -> String {
+fn task(card: &Card, tree: &worktree::Tree, settings: &Settings, ticket: Option<String>) -> String {
     let mut text = format!(
         "Sikemux's Auto started you to do card #{} of this project's board on your own, in a git worktree nobody else works in.\n\nCard #{}: {}",
         card.id, card.id, card.title
@@ -502,7 +502,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
         });
         (card, board.settings.clone(), ticket)
     };
-    let slug = git::slug(&match &card.ticket {
+    let slug = worktree::slug(&match &card.ticket {
         Some(ticket) => format!("{} {}", ticket.key, card.title),
         None => format!("card {} {}", card.id, card.title),
     });
@@ -514,7 +514,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
             settings.clone(),
         );
         blocking(move || {
-            let tree = git::add_worktree(Path::new(&project), &slug)?;
+            let tree = worktree::cut_for_card(Path::new(&project), &slug)?;
             let started = core.workspaces.auto_launch(
                 settings.launcher.as_deref(),
                 &tree.cwd,
@@ -524,7 +524,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
             let (mut launch, launcher) = match started {
                 Ok(started) => started,
                 Err(error) => {
-                    git::remove_worktree(&tree.repo, &tree.path, &tree.branch, true);
+                    worktree::remove_with_remote(&tree.repo, &tree.path, &tree.branch, true);
                     return Err(error.into());
                 }
             };
@@ -563,7 +563,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
     });
     if !placed {
         blocking(move || {
-            git::remove_worktree(&tree.repo, &tree.path, &tree.branch, true);
+            worktree::remove_with_remote(&tree.repo, &tree.path, &tree.branch, true);
             Ok(())
         })
         .await

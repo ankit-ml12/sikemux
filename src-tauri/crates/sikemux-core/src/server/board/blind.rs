@@ -20,6 +20,7 @@ use crate::protocol::Event;
 use crate::server::connection::blocking;
 use crate::server::names::Starting;
 use crate::server::spawn::Ending;
+use crate::server::worktree;
 use crate::server::{chat, messages, Core};
 
 const MAX_DIFF_BYTES: usize = 200 * 1024;
@@ -208,7 +209,7 @@ async fn start(core: &Arc<Core>, step: &Step, agent: &str, head: &str) -> Result
     let checkout = blocking(move || {
         let from = git::fork_point(&repo, &base, &head_sha).unwrap_or(start_sha);
         let (diff, cut) = git::diff(&repo, &from, &head_sha, MAX_DIFF_BYTES)?;
-        let checkout = git::add_checkout(&repo, Path::new(&project), &head_sha, &slug)?;
+        let checkout = worktree::add_checkout(&repo, Path::new(&project), &head_sha, &slug)?;
         Ok((checkout, from, diff, cut))
     })
     .await
@@ -227,7 +228,7 @@ async fn start(core: &Arc<Core>, step: &Step, agent: &str, head: &str) -> Result
     if !recorded {
         let repo = PathBuf::from(&run.repo);
         let _ = blocking(move || {
-            git::remove_checkout(&repo, &checkout.path);
+            worktree::remove_checkout(&repo, &checkout.path);
             Ok(())
         })
         .await;
@@ -508,7 +509,7 @@ pub(super) async fn dismiss(core: &Arc<Core>, reviewer: Reviewer) {
         PathBuf::from(reviewer.checkout),
     );
     let _ = blocking(move || {
-        git::remove_checkout(&repo, &path);
+        worktree::remove_checkout(&repo, &path);
         Ok(())
     })
     .await;

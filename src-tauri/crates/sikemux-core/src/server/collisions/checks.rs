@@ -130,24 +130,25 @@ pub(super) fn start(core: &Arc<Core>, state: &mut State) {
                 .iter()
                 .flat_map(|commit| commit.agents.iter().cloned())
                 .collect();
-            let outcome = match crate::server::sandbox::integration(&core, &dir, &newest).await {
-                Ok(checkout) => {
-                    let (owner, command) = (core.clone(), command.clone());
-                    tokio::task::spawn_blocking(move || {
-                        use crate::server::edits::generate::regenerate;
-                        match regenerate(&owner, &dir, &checkout, &newest, &agents) {
-                            Ok(Some(_)) => Ok(None),
-                            Ok(None) => {
-                                crate::server::board::run_check(&checkout, &command).map(Some)
+            let outcome =
+                match crate::server::worktree::agent::integration(&core, &dir, &newest).await {
+                    Ok(checkout) => {
+                        let (owner, command) = (core.clone(), command.clone());
+                        tokio::task::spawn_blocking(move || {
+                            use crate::server::edits::generate::regenerate;
+                            match regenerate(&owner, &dir, &checkout, &newest, &agents) {
+                                Ok(Some(_)) => Ok(None),
+                                Ok(None) => {
+                                    crate::server::board::run_check(&checkout, &command).map(Some)
+                                }
+                                Err(error) => Ok(Some((false, error))),
                             }
-                            Err(error) => Ok(Some((false, error))),
-                        }
-                    })
-                    .await
-                    .unwrap_or_else(|error| Err(error.to_string()))
-                }
-                Err(error) => Err(format!("the integration checkout is not ready: {error}")),
-            };
+                        })
+                        .await
+                        .unwrap_or_else(|error| Err(error.to_string()))
+                    }
+                    Err(error) => Err(format!("the integration checkout is not ready: {error}")),
+                };
             let outcome = match outcome {
                 Ok(Some(outcome)) => Ok(outcome),
                 Ok(None) => {

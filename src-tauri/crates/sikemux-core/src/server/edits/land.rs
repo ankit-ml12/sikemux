@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use super::owners::{git, run};
 use super::push::{line, replay, Signing, Unpushed};
-use crate::server::sandbox::AgentWorktree;
+use crate::server::worktree::AgentWorktree;
 use crate::server::Core;
 
 const ATTEMPTS: usize = 4;

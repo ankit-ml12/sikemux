@@ -433,7 +433,7 @@ async fn start_new(
         .to_owned();
     let project = core.workspaces.project_path(&choice.project)?;
     let (cwd, worktree) = match choice.cwd {
-        Some(cwd) => blocking(move || Ok(super::sandbox::resumed_in(cwd, project))).await?,
+        Some(cwd) => blocking(move || Ok(super::worktree::agent::resumed_in(cwd, project))).await?,
         None => (project, None),
     };
     if let Some(launcher) = core.workspaces.terminal_launcher(&choice.launcher) {

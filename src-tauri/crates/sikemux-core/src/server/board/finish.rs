@@ -17,6 +17,7 @@ use crate::server::codehost::ci;
 use crate::server::codehost::repo::{self as codehost, Checks, Feedback};
 use crate::server::connection::blocking;
 use crate::server::wake::sooner;
+use crate::server::worktree;
 use crate::server::{messages, Core};
 
 /// How long a pushed commit may go without a CI run before Auto takes it
@@ -160,7 +161,7 @@ async fn clear(core: &Arc<Core>, dropped: Dropped) {
         run.branch,
     );
     let _ = blocking(move || {
-        git::remove_worktree(&repo, &tree, &branch, remote);
+        worktree::remove_with_remote(&repo, &tree, &branch, remote);
         Ok(())
     })
     .await;
@@ -372,7 +373,7 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
         blocking(move || {
             git::commit_all(&core, &tree, &message, &agent)?;
             let ahead = git::ahead(&tree, &start)?;
-            Ok((ahead, git::origin(&repo)))
+            Ok((ahead, crate::git::origin(&repo)))
         })
         .await
         .map_err(|error| error.to_string())?
@@ -729,14 +730,17 @@ async fn failed(core: &Arc<Core>, step: &Step, what: &str) {
     if step.run.fixed {
         step.hold(
             core,
-            format!("Its checks failed again after a fix:\n{}", git::tail(what)),
+            format!(
+                "Its checks failed again after a fix:\n{}",
+                crate::git::tail(what)
+            ),
         );
         return;
     }
     let url = step.pull_url();
     let text = format!(
         "The checks on your pull request {url} failed:\n\n{}\n\nFix them on {} and commit. When your turn ends, Sikemux pushes and checks again. This is the one fix Auto asks for: if they fail again, the card goes back to the person.",
-        git::tail(what),
+        crate::git::tail(what),
         step.run.branch
     );
     ask(
@@ -900,7 +904,7 @@ async fn merged(core: &Arc<Core>, step: &Step) {
         step.run.branch.clone(),
     );
     let _ = blocking(move || {
-        git::remove_worktree(&repo, &tree, &branch, true);
+        worktree::remove_with_remote(&repo, &tree, &branch, true);
         Ok(())
     })
     .await;
