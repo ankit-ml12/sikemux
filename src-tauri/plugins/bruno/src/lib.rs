@@ -12,7 +12,8 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::Value;
 use sikemux_plugin_api::{
-    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, PluginResult,
+    params, reply, Category, Manifest, Plugin, PluginContext, PluginError, PluginFuture,
+    PluginResult,
 };
 
 use crate::send::BruSendRequest;
@@ -76,7 +77,7 @@ where
     let ask: Ask = params(input)?;
     let done = tokio::task::spawn_blocking(move || work(ask))
         .await
-        .map_err(|error| PluginError::new("internal", error.to_string()))?;
+        .map_err(|error| PluginError::new(Category::Internal, error.to_string()))?;
     reply(done?)
 }
 
@@ -114,7 +115,7 @@ mod tests {
             .call(&ctx, "send", json!({ "req": req }))
             .await
             .expect_err("refused");
-        assert_eq!(error.category, "bad-params");
+        assert_eq!(error.category, sikemux_plugin_api::Category::BadParams);
         assert_eq!(
             error.message,
             "invalid argument: only http(s) URLs are supported"

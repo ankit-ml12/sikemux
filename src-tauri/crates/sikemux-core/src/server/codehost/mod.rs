@@ -28,7 +28,7 @@ use super::changed::Topic;
 use super::connection::ClientId;
 use super::job_graph::{self, WorkflowFiles};
 use super::names::project_of;
-use super::plugins::{Failure, Outcome as Answer};
+use super::plugins::{Category, Failure, Outcome as Answer};
 use super::shown_cache::{self, ShownCache, Shows};
 use super::Core;
 use repo::{of_project, Repo, RepoId};
@@ -271,7 +271,7 @@ fn listed_state(state: Option<String>) -> Result<String, Failure> {
         "open" | "closed" | "all" => Ok(state),
         _ => Err(Failure::new(
             "codehost",
-            "invalid",
+            Category::Invalid,
             format!("{state} is not open, closed or all"),
         )),
     }
@@ -506,7 +506,7 @@ async fn named_or_project(
         (None, Some(repo)) => answered_at(core, client, Place::Repo(repo), list).await,
         (None, None) => Answer::Failed(Failure::new(
             "codehost",
-            "invalid",
+            Category::Invalid,
             "this needs its project or its repository",
         )),
     }
@@ -726,14 +726,14 @@ async fn read(core: &Arc<Core>, repo: &Repo, list: &List) -> Result<Read, Failur
 
 fn shaped(repo: &Repo, list: impl Serialize) -> Result<Value, Failure> {
     serde_json::to_value(list)
-        .map_err(|error| Failure::new(&repo.id().to_string(), "invalid", error.to_string()))
+        .map_err(|error| Failure::new(&repo.id().to_string(), Category::Invalid, error.to_string()))
 }
 
 fn typed<T: DeserializeOwned>(repo: &Repo, found: Value) -> Result<T, Failure> {
     serde_json::from_value(found).map_err(|error| {
         Failure::new(
             &repo.id().to_string(),
-            "invalid",
+            Category::Invalid,
             format!("the code host answered in an unknown shape: {error}"),
         )
     })
@@ -892,8 +892,13 @@ pub(crate) async fn checkout(core: &Arc<Core>, params: CheckoutParams) -> Answer
         Ok(repo) => repo,
         Err(failure) => return Answer::Failed(failure),
     };
-    let failed =
-        |message: String| Answer::Failed(Failure::new(&repo.id().to_string(), "checkout", message));
+    let failed = |message: String| {
+        Answer::Failed(Failure::new(
+            &repo.id().to_string(),
+            Category::own("checkout"),
+            message,
+        ))
+    };
     let pull: Pull = match repo.call("pull", json!({ "number": params.number })).await {
         Ok(found) => match typed(&repo, found) {
             Ok(pull) => pull,
@@ -1018,7 +1023,8 @@ pub(crate) struct WorkOnParams {
 /// Answers the agent.
 pub(crate) async fn work_on(core: &Arc<Core>, params: WorkOnParams) -> Answer {
     let folder = project_of(Path::new(&params.project), &core.workspaces.project_paths());
-    let failed = |message: &str| Answer::Failed(Failure::new("codehost", "workOn", message));
+    let failed =
+        |message: &str| Answer::Failed(Failure::new("codehost", Category::own("workOn"), message));
     let repo = match repo_of(core, &Place::Project(folder.clone())).await {
         Ok(repo) => repo,
         Err(failure) => return Answer::Failed(failure),

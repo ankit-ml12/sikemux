@@ -23,7 +23,7 @@ use std::pin::Pin;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-pub use error::{PluginError, PluginResult};
+pub use error::{Category, PluginError, PluginResult};
 pub use manifest::{is_valid_id, AgentTool, Manifest};
 pub use network::{unreachable, Unreachable};
 pub use service::{Service, ServiceError, ServiceResult};
@@ -114,7 +114,8 @@ pub fn params<T: DeserializeOwned>(params: Value) -> PluginResult<T> {
 }
 
 pub fn reply<T: serde::Serialize>(value: T) -> PluginResult<Value> {
-    serde_json::to_value(value).map_err(|error| PluginError::new("internal", error.to_string()))
+    serde_json::to_value(value)
+        .map_err(|error| PluginError::new(Category::Internal, error.to_string()))
 }
 
 /// Waits for a call's work and hands back what it found as JSON.

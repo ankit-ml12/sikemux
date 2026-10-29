@@ -3,7 +3,7 @@
 
 use std::error::Error as _;
 
-use crate::PluginError;
+use crate::{Category, PluginError};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Unreachable {
@@ -52,10 +52,10 @@ pub fn unreachable_message(kind: Unreachable, service: &str) -> String {
 }
 
 /// The error category the frontend reads to keep showing what it last loaded.
-pub fn category(kind: Unreachable) -> &'static str {
+pub fn category(kind: Unreachable) -> Category {
     match kind {
-        Unreachable::Offline => "offline",
-        Unreachable::Timeout => "timeout",
+        Unreachable::Offline => Category::Offline,
+        Unreachable::Timeout => Category::Timeout,
     }
 }
 
@@ -72,10 +72,10 @@ mod tests {
     #[test]
     fn the_words_name_the_service_and_the_category_says_why() {
         let offline = PluginError::unreachable(Unreachable::Offline, "Jira");
-        assert_eq!(offline.category, "offline");
+        assert_eq!(offline.category, Category::Offline);
         assert_eq!(offline.message, "Can't reach Jira. Check your connection.");
         let slow = PluginError::unreachable(Unreachable::Timeout, "Bitbucket");
-        assert_eq!(slow.category, "timeout");
+        assert_eq!(slow.category, Category::Timeout);
         assert_eq!(slow.message, "Bitbucket didn't answer in time.");
     }
 

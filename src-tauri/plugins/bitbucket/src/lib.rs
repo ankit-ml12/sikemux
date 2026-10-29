@@ -310,7 +310,7 @@ mod tests {
             .call(&ctx, "pulls", json!({ "owner": "a", "name": "b" }))
             .await
             .expect_err("signed out");
-        assert_eq!(error.category, "unconfigured");
+        assert_eq!(error.category, sikemux_plugin_api::Category::Unconfigured);
         std::fs::remove_dir_all(dir).ok();
     }
 }

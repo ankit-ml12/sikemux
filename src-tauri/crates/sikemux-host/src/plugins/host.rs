@@ -6,7 +6,7 @@ use std::time::Duration;
 use semver::Version;
 use serde_json::Value;
 use sikemux_plugin_api::{
-    AgentTool, Manifest, Plugin, PluginContext, PluginError, PluginResult, StreamSink,
+    AgentTool, Category, Manifest, Plugin, PluginContext, PluginError, PluginResult, StreamSink,
 };
 use sikemux_process::sync::{Locked, Shared};
 use tokio::runtime::{Handle, Runtime};
@@ -107,13 +107,16 @@ impl PluginHost {
         if !self.is_enabled(id) {
             return Err(failure(
                 id,
-                PluginError::new("disabled", format!("`{id}` is switched off in Settings")),
+                PluginError::new(
+                    Category::Disabled,
+                    format!("`{id}` is switched off in Settings"),
+                ),
             ));
         }
         self.plugins.get(id).ok_or_else(|| {
             failure(
                 id,
-                PluginError::new("not-installed", format!("no plugin named `{id}`")),
+                PluginError::new(Category::NotInstalled, format!("no plugin named `{id}`")),
             )
         })
     }
@@ -267,14 +270,14 @@ impl PluginHost {
         let (plugin, tool) = self.agent_tool(name).ok_or_else(|| {
             Failure::new(
                 "sikemux",
-                "other",
+                Category::own("other"),
                 format!("no plugin offers the tool `{name}`"),
             )
         })?;
         if tool.approve.is_some() {
             return Err(Failure::new(
                 plugin,
-                "other",
+                Category::own("other"),
                 format!("`{name}` runs only once the person approves it"),
             ));
         }
@@ -294,11 +297,11 @@ impl PluginHost {
         let abort = task.abort_handle();
         let outcome = match tokio::time::timeout(call_timeout, task).await {
             Ok(Ok(result)) => result,
-            Ok(Err(stopped)) => Err(PluginError::new("stopped", stopped.to_string())),
+            Ok(Err(stopped)) => Err(PluginError::new(Category::Stopped, stopped.to_string())),
             Err(_) => {
                 abort.abort();
                 Err(PluginError::new(
-                    "timed-out",
+                    Category::TimedOut,
                     format!(
                         "`{method}` did not answer within {}s",
                         call_timeout.as_secs()
@@ -326,9 +329,9 @@ impl PluginHost {
             .spawn(async move { plugin.stream(&context, &method, params, sink).await });
         let _stopping = StopOnDrop(task.abort_handle());
         let outcome = match task.await {
-            Ok(Err(error)) if error.category == PluginError::stream_closed().category => Ok(()),
+            Ok(Err(error)) if error.category == Category::StreamClosed => Ok(()),
             Ok(result) => result,
-            Err(stopped) => Err(PluginError::new("stopped", stopped.to_string())),
+            Err(stopped) => Err(PluginError::new(Category::Stopped, stopped.to_string())),
         };
         outcome.map_err(|error| failure(id, error))
     }
@@ -398,7 +401,8 @@ mod tests {
                     }
                     "hang" => std::future::pending().await,
                     "fail" => {
-                        Err(PluginError::new("unconfigured", "sign in first").with_status(401))
+                        Err(PluginError::new(Category::Unconfigured, "sign in first")
+                            .with_status(401))
                     }
                     _ => Err(PluginError::unknown_method(method)),
                 }

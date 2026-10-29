@@ -123,7 +123,7 @@ mod tests {
             .call(&ctx, "search", json!({}))
             .await
             .expect_err("signed out");
-        assert_eq!(error.category, "unconfigured");
+        assert_eq!(error.category, sikemux_plugin_api::Category::Unconfigured);
         assert!(!plugin.offers_agent_tools(&ctx, &[]).await.expect("answers"));
     }
 
@@ -134,7 +134,7 @@ mod tests {
             .call(&scratch("bad-key"), "signIn", json!({ "key": "xoxp-123" }))
             .await
             .expect_err("not a Linear key");
-        assert_eq!(error.category, "bad-params");
+        assert_eq!(error.category, sikemux_plugin_api::Category::BadParams);
         assert!(
             error.message.contains("Personal API keys"),
             "{}",

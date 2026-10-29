@@ -254,7 +254,11 @@ mod tests {
 
     fn category(status: u16, body: &str) -> String {
         let error = classify(StatusCode::from_u16(status).unwrap(), body.as_bytes()).unwrap_err();
-        sikemux_plugin_api::PluginError::from(error).category
+        let category = sikemux_plugin_api::PluginError::from(error).category;
+        serde_json::to_value(category)
+            .ok()
+            .and_then(|name| name.as_str().map(str::to_owned))
+            .unwrap_or_default()
     }
 
     #[test]

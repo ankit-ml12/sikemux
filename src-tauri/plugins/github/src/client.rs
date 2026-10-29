@@ -415,8 +415,17 @@ mod tests {
 
     fn category(status: u16, headers: &HeaderMap, body: &str) -> String {
         let status = StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
-        sikemux_plugin_api::PluginError::from(classify("test", status, headers, body.as_bytes()))
-            .category
+        let category = sikemux_plugin_api::PluginError::from(classify(
+            "test",
+            status,
+            headers,
+            body.as_bytes(),
+        ))
+        .category;
+        serde_json::to_value(category)
+            .ok()
+            .and_then(|name| name.as_str().map(str::to_owned))
+            .unwrap_or_default()
     }
 
     #[test]

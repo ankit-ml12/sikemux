@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use super::changed::Topic;
 use super::connection::ClientId;
-use super::plugins::{self, Failure, Outcome};
+use super::plugins::{self, Category, Failure, Outcome};
 use super::shown_cache::{self, ShownCache, Shows};
 use super::Core;
 
@@ -93,7 +93,7 @@ pub(crate) async fn view(core: &Arc<Core>, client: ClientId, asked: ViewParams) 
     let Some(every) = every(&asked.plugin, &asked.method) else {
         return Outcome::Failed(Failure::new(
             &asked.plugin,
-            "invalid",
+            Category::Invalid,
             format!("{} is not a view of {}", asked.method, asked.plugin),
         ));
     };

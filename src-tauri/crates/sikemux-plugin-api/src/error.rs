@@ -1,21 +1,68 @@
 use std::fmt;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+/// What kind of failure a call met. Clients branch on it, so it stays stable
+/// while the words in a failure's message may change.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Category {
+    /// Not signed in.
+    Unconfigured,
+    /// The service turned the sign-in down, so signing in again is what helps.
+    Auth,
+    /// Signed in, but this account may not do that.
+    Forbidden,
+    RateLimited,
+    Http,
+    BadParams,
+    NotFound,
+    Unsupported,
+    /// The repository does not take that way of merging.
+    MergeMethod,
+    Keychain,
+    /// The service answered in a shape the plugin did not expect.
+    Response,
+    UnknownMethod,
+    StreamClosed,
+    Internal,
+    Manifest,
+    TimedOut,
+    NotInstalled,
+    Disabled,
+    Stopped,
+    /// The service could not be reached at all.
+    Offline,
+    /// The service was reached but did not answer in time.
+    Timeout,
+    /// The core could not make sense of what it was asked or answered.
+    Invalid,
+    /// What only one service says, such as AWS's `aws-token-expired`, or a
+    /// service's own error, named by the service.
+    #[serde(untagged)]
+    Own(String),
+}
+
+impl Category {
+    pub fn own(name: &str) -> Self {
+        Self::Own(name.to_owned())
+    }
+}
 
 /// The frontend branches on `category`, so a plugin keeps its categories
 /// stable and puts the human-readable detail in `message`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PluginError {
-    pub category: String,
+    pub category: Category,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<u16>,
 }
 
 impl PluginError {
-    pub fn new(category: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn new(category: Category, message: impl Into<String>) -> Self {
         Self {
-            category: category.into(),
+            category,
             message: message.into(),
             status: None,
         }
@@ -29,26 +76,29 @@ impl PluginError {
     /// Signed in, but this account may not do that. The frontend keeps the
     /// person signed in, unlike category `auth` or `http` with status 401.
     pub fn forbidden(message: impl Into<String>) -> Self {
-        Self::new("forbidden", message).with_status(403)
+        Self::new(Category::Forbidden, message).with_status(403)
     }
 
     pub fn http(status: u16, message: impl Into<String>) -> Self {
         if status == 403 {
             return Self::forbidden(message);
         }
-        Self::new("http", message).with_status(status)
+        Self::new(Category::Http, message).with_status(status)
     }
 
     pub fn unknown_method(method: &str) -> Self {
-        Self::new("unknown-method", format!("no method named `{method}`"))
+        Self::new(
+            Category::UnknownMethod,
+            format!("no method named `{method}`"),
+        )
     }
 
     pub fn bad_params(message: impl Into<String>) -> Self {
-        Self::new("bad-params", message)
+        Self::new(Category::BadParams, message)
     }
 
     pub fn stream_closed() -> Self {
-        Self::new("stream-closed", "nobody is listening to this stream")
+        Self::new(Category::StreamClosed, "nobody is listening to this stream")
     }
 }
 

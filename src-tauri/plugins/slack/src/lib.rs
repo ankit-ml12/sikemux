@@ -113,7 +113,7 @@ mod tests {
             .call(&ctx, "channelsView", json!({}))
             .await
             .expect_err("signed out");
-        assert_eq!(error.category, "unconfigured");
+        assert_eq!(error.category, sikemux_plugin_api::Category::Unconfigured);
         assert!(!plugin.offers_agent_tools(&ctx, &[]).await.expect("answers"));
     }
 
@@ -124,7 +124,7 @@ mod tests {
             .call(&scratch("token"), "signIn", json!({ "token": "glpat-abc" }))
             .await
             .expect_err("refused");
-        assert_eq!(error.category, "bad-params");
+        assert_eq!(error.category, sikemux_plugin_api::Category::BadParams);
     }
 
     #[tokio::test]
@@ -134,6 +134,6 @@ mod tests {
             .call(&scratch("unknown"), "nonsense", Value::Null)
             .await
             .expect_err("refused");
-        assert_eq!(error.category, "unknown-method");
+        assert_eq!(error.category, sikemux_plugin_api::Category::UnknownMethod);
     }
 }

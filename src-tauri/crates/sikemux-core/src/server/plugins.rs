@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+pub use sikemux_plugin_api::Category;
 
 use crate::cli::protocol::HarnessRequest;
 
@@ -24,7 +25,7 @@ use super::{Core, CoreError, CoreResult};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Failure {
     pub plugin: String,
-    pub category: String,
+    pub category: Category,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<u16>,
@@ -37,10 +38,10 @@ impl From<Failure> for String {
 }
 
 impl Failure {
-    pub fn new(plugin: &str, category: &str, message: impl Into<String>) -> Self {
+    pub fn new(plugin: &str, category: Category, message: impl Into<String>) -> Self {
         Self {
             plugin: plugin.to_owned(),
-            category: category.to_owned(),
+            category,
             message: message.into(),
             status: None,
         }
@@ -114,7 +115,7 @@ fn plugins(plugin: &str) -> Result<&'static dyn Plugins, Failure> {
     PLUGINS.get().map(|plugins| &**plugins).ok_or_else(|| {
         Failure::new(
             plugin,
-            "not-installed",
+            Category::NotInstalled,
             format!("Sikemux's {plugin} plugin is not available to its background process"),
         )
     })
@@ -267,7 +268,7 @@ pub(crate) async fn listed() -> Vec<Listed> {
                         status["configured"] == Value::Bool(true)
                             && status["authFailed"] != Value::Bool(true),
                     ),
-                    Err(failure) if failure.category == "unknown-method" => None,
+                    Err(failure) if failure.category == Category::UnknownMethod => None,
                     Err(_) => Some(false),
                 }
             } else {
@@ -419,7 +420,7 @@ pub(crate) async fn call_agent_tool(
 /// An agent cannot sign in on the person's behalf, so a signed-out plugin says
 /// who can fix it and where.
 pub(crate) fn explain(failure: &Failure) -> String {
-    let signed_out = matches!(failure.category.as_str(), "unconfigured" | "auth")
+    let signed_out = matches!(failure.category, Category::Unconfigured | Category::Auth)
         || matches!(failure.status, Some(401 | 403));
     if signed_out {
         format!(
@@ -529,7 +530,7 @@ fn ssh_hostname(host: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn failure(category: &str, status: Option<u16>) -> Failure {
+    fn failure(category: Category, status: Option<u16>) -> Failure {
         Failure {
             status,
             ..Failure::new("sikemux.signoz", category, "signoz: not configured")
@@ -538,11 +539,14 @@ mod tests {
 
     #[test]
     fn a_signed_out_plugin_tells_the_agent_who_can_fix_it() {
-        for signed_out in [failure("unconfigured", None), failure("http", Some(401))] {
+        for signed_out in [
+            failure(Category::Unconfigured, None),
+            failure(Category::Http, Some(401)),
+        ] {
             assert!(explain(&signed_out).contains("Ask the person to sign in"));
         }
         assert_eq!(
-            explain(&failure("bad-params", None)),
+            explain(&failure(Category::BadParams, None)),
             "sikemux.signoz: signoz: not configured"
         );
     }

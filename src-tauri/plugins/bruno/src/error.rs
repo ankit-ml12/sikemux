@@ -1,7 +1,7 @@
 use std::fmt;
 use std::io;
 
-use sikemux_plugin_api::PluginError;
+use sikemux_plugin_api::{Category, PluginError};
 
 #[derive(Debug)]
 pub enum BrunoError {
@@ -35,9 +35,9 @@ impl From<reqwest::Error> for BrunoError {
 impl From<BrunoError> for PluginError {
     fn from(error: BrunoError) -> Self {
         let category = match &error {
-            BrunoError::BadArg(_) => "bad-params",
-            BrunoError::Http(_) => "http",
-            BrunoError::Io(_) => "io",
+            BrunoError::BadArg(_) => Category::BadParams,
+            BrunoError::Http(_) => Category::Http,
+            BrunoError::Io(_) => Category::own("io"),
         };
         PluginError::new(category, error.to_string())
     }

@@ -13,7 +13,7 @@ use crate::protocol::{
 };
 use crate::server::board::Pull;
 use crate::server::names::project_of;
-use crate::server::plugins::{self, Failure};
+use crate::server::plugins::{self, Category, Failure};
 use crate::server::Core;
 
 /// A code host the core reaches through its plugin, `sikemux.<id>`.
@@ -293,7 +293,7 @@ pub(crate) async fn of_project(core: &Arc<Core>, project: &str) -> Result<Repo, 
         })
         .await
     };
-    let unsupported = |message: &str| Failure::new("codehost", "unsupported", message);
+    let unsupported = |message: &str| Failure::new("codehost", Category::Unsupported, message);
     let (Some(origin), picks) = found.map_err(|error| unsupported(&error.to_string()))? else {
         return Err(unsupported("this project has no origin remote"));
     };
@@ -304,7 +304,7 @@ pub(crate) async fn of_project(core: &Arc<Core>, project: &str) -> Result<Repo, 
     };
     find(&origin, &picks)
         .await
-        .map_err(|message| Failure::new(&host.plugin(), "unconfigured", message))
+        .map_err(|message| Failure::new(&host.plugin(), Category::Unconfigured, message))
 }
 
 impl Repo {
@@ -317,7 +317,8 @@ impl Repo {
         account: Option<String>,
     ) -> Result<Self, Failure> {
         let id = plugin.strip_prefix("sikemux.").unwrap_or(plugin);
-        let host = host(id).map_err(|message| Failure::new(plugin, "unsupported", message))?;
+        let host =
+            host(id).map_err(|message| Failure::new(plugin, Category::Unsupported, message))?;
         Ok(Self {
             host,
             owner: owner.to_owned(),
@@ -745,7 +746,7 @@ pub(crate) async fn merge(pull: &Pull, sha: &str) -> Result<(), String> {
         let asked = json!({ "number": pull.number, "method": method, "sha": sha });
         match repo.call("mergePull", asked).await {
             Ok(_) => return Ok(()),
-            Err(failure) if failure.category == "merge-method" => refused = Some(failure),
+            Err(failure) if failure.category == Category::MergeMethod => refused = Some(failure),
             Err(failure) => return Err(failure.into()),
         }
     }

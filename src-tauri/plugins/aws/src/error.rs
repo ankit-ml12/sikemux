@@ -1,7 +1,7 @@
 use std::fmt;
 use std::io;
 
-use sikemux_plugin_api::PluginError;
+use sikemux_plugin_api::{Category, PluginError};
 
 #[derive(Debug)]
 pub enum AwsError {
@@ -85,14 +85,14 @@ impl From<serde_json::Error> for AwsError {
 impl From<AwsError> for PluginError {
     fn from(error: AwsError) -> Self {
         let category = match &error {
-            AwsError::Aws(_) | AwsError::Io(_) | AwsError::Json(_) => "aws",
-            AwsError::CliMissing(_) => "aws-cli-missing",
-            AwsError::TokenExpired(_) => "aws-token-expired",
-            AwsError::NoCredentials(_) => "aws-no-credentials",
-            AwsError::NoProfiles => "aws-no-profiles",
-            AwsError::NotFound(_) => "not-found",
+            AwsError::Aws(_) | AwsError::Io(_) | AwsError::Json(_) => Category::own("aws"),
+            AwsError::CliMissing(_) => Category::own("aws-cli-missing"),
+            AwsError::TokenExpired(_) => Category::own("aws-token-expired"),
+            AwsError::NoCredentials(_) => Category::own("aws-no-credentials"),
+            AwsError::NoProfiles => Category::own("aws-no-profiles"),
+            AwsError::NotFound(_) => Category::NotFound,
             AwsError::ChooseProfile(_) | AwsError::UnknownProfile(..) | AwsError::BadArg(_) => {
-                "bad-params"
+                Category::BadParams
             }
         };
         PluginError::new(category, error.to_string())
@@ -107,7 +107,9 @@ mod tests {
 
     #[test]
     fn categories_are_the_ones_the_frontend_reads() {
-        let category = |error: AwsError| PluginError::from(error).category;
+        let category = |error: AwsError| {
+            serde_json::to_value(PluginError::from(error).category).unwrap_or_default()
+        };
         assert_eq!(category(AwsError::Aws("x".into())), "aws");
         assert_eq!(
             category(AwsError::CliMissing("aws".into())),

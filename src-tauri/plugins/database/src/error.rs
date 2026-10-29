@@ -1,6 +1,6 @@
 use std::fmt;
 
-use sikemux_plugin_api::PluginError;
+use sikemux_plugin_api::{Category, PluginError};
 
 #[derive(Debug)]
 pub enum DatabaseError {
@@ -42,12 +42,12 @@ impl From<std::io::Error> for DatabaseError {
 impl From<DatabaseError> for PluginError {
     fn from(error: DatabaseError) -> Self {
         let category = match &error {
-            DatabaseError::BadArg(_) => "bad-params",
-            DatabaseError::NotFound(_) => "not-found",
-            DatabaseError::Keychain(_) => "keychain",
-            DatabaseError::Connect(_) => "connect",
-            DatabaseError::Query(_) => "query",
-            DatabaseError::Storage(_) => "storage",
+            DatabaseError::BadArg(_) => Category::BadParams,
+            DatabaseError::NotFound(_) => Category::NotFound,
+            DatabaseError::Keychain(_) => Category::Keychain,
+            DatabaseError::Connect(_) => Category::own("connect"),
+            DatabaseError::Query(_) => Category::own("query"),
+            DatabaseError::Storage(_) => Category::own("storage"),
         };
         PluginError::new(category, error.to_string())
     }

@@ -5322,6 +5322,7 @@ dependencies = [
  "sikemux-keychain",
  "sikemux-loopback",
  "sikemux-markdown",
+ "sikemux-plugin-api",
  "sikemux-process",
  "sikemux-pty",
  "sikemux-wire",

@@ -4,7 +4,7 @@ use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::PluginError;
+use crate::{Category, PluginError};
 
 const MAX_ID_LENGTH: usize = 128;
 const MAX_TOOL_NAME_LENGTH: usize = 64;
@@ -77,17 +77,17 @@ pub struct Approve {
 impl Manifest {
     pub fn from_json(source: &str) -> Result<Self, PluginError> {
         let manifest: Manifest = serde_json::from_str(source)
-            .map_err(|error| PluginError::new("manifest", error.to_string()))?;
+            .map_err(|error| PluginError::new(Category::Manifest, error.to_string()))?;
         if !is_valid_id(&manifest.id) {
             return Err(PluginError::new(
-                "manifest",
+                Category::Manifest,
                 format!("`{}` is not a reverse-DNS plugin id", manifest.id),
             ));
         }
         if let Some(secs) = manifest.call_timeout_secs {
             if !(1..=MAX_CALL_TIMEOUT_SECS).contains(&secs) {
                 return Err(PluginError::new(
-                    "manifest",
+                    Category::Manifest,
                     format!("callTimeoutSecs must be 1 to {MAX_CALL_TIMEOUT_SECS}, not {secs}"),
                 ));
             }
@@ -98,14 +98,14 @@ impl Manifest {
             .find(|name| !is_valid_variable(name))
         {
             return Err(PluginError::new(
-                "manifest",
+                Category::Manifest,
                 format!("`{name}` is not an environment variable name"),
             ));
         }
         for (index, tool) in manifest.tools.iter().enumerate() {
             if !is_valid_tool_name(&tool.name) {
                 return Err(PluginError::new(
-                    "manifest",
+                    Category::Manifest,
                     format!("`{}` is not a usable agent tool name", tool.name),
                 ));
             }
@@ -116,7 +116,7 @@ impl Manifest {
                 .any(|earlier| earlier.name == tool.name)
             {
                 return Err(PluginError::new(
-                    "manifest",
+                    Category::Manifest,
                     format!("agent tool `{}` is declared twice", tool.name),
                 ));
             }
@@ -126,7 +126,7 @@ impl Manifest {
                 .find(|name| !tool.properties.contains_key(*name))
             {
                 return Err(PluginError::new(
-                    "manifest",
+                    Category::Manifest,
                     format!(
                         "agent tool `{}` requires `{missing}`, which it never declares",
                         tool.name
@@ -190,8 +190,9 @@ mod tests {
     fn a_nightly_satisfies_its_release_line() -> Result<(), PluginError> {
         let manifest = manifest(">=0.4")?;
         let nightly = Version::parse("0.4.0-nightly.10")
-            .map_err(|e| PluginError::new("test", e.to_string()))?;
-        let older = Version::parse("0.3.9").map_err(|e| PluginError::new("test", e.to_string()))?;
+            .map_err(|e| PluginError::new(Category::own("test"), e.to_string()))?;
+        let older = Version::parse("0.3.9")
+            .map_err(|e| PluginError::new(Category::own("test"), e.to_string()))?;
         assert!(manifest.supports(&nightly));
         assert!(!manifest.supports(&older));
         Ok(())

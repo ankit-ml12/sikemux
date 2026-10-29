@@ -249,7 +249,7 @@ mod tests {
         let missing = database.call(&ctx, "test", draft).await;
         assert_eq!(
             missing.err().map(|error| error.category),
-            Some("connect".to_string())
+            Some(sikemux_plugin_api::Category::own("connect"))
         );
     }
 
@@ -303,7 +303,7 @@ mod tests {
             .await;
         assert_eq!(
             missing.err().map(|error| error.category),
-            Some("not-found".to_string())
+            Some(sikemux_plugin_api::Category::NotFound)
         );
     }
 
@@ -328,7 +328,7 @@ mod tests {
             .await;
         assert_eq!(
             empty.err().map(|error| error.category),
-            Some("bad-params".to_string())
+            Some(sikemux_plugin_api::Category::BadParams)
         );
         let cancelled = database
             .call(&ctx, "cancel", json!({ "id": "not-open", "run": "r1" }))
@@ -410,7 +410,7 @@ mod tests {
             .await;
         assert_eq!(
             write.err().map(|error| error.category),
-            Some("query".to_string())
+            Some(sikemux_plugin_api::Category::own("query"))
         );
         let entries = history(&database, &ctx, json!({ "id": id })).await;
         assert_eq!(entries[0]["byAgent"], true);
@@ -420,7 +420,7 @@ mod tests {
             .await;
         assert_eq!(
             unknown.err().map(|error| error.category),
-            Some("not-found".to_string())
+            Some(sikemux_plugin_api::Category::NotFound)
         );
     }
 

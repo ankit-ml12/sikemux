@@ -10,7 +10,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
-use sikemux_core::server::plugins::{Answer, Failure, Gated, Listing, Plugins, Sink};
+use sikemux_core::server::plugins::{Answer, Category, Failure, Gated, Listing, Plugins, Sink};
 
 pub(super) struct Fake(pub(super) Box<dyn Plugins>);
 
@@ -24,7 +24,7 @@ const TICK: std::time::Duration = std::time::Duration::from_millis(400);
 fn signed_out(plugin: &str) -> Failure {
     Failure::new(
         plugin,
-        "unconfigured",
+        Category::Unconfigured,
         "this test kit has no answer for that",
     )
 }
@@ -48,7 +48,7 @@ fn answer(plugin: &str, method: &str, params: &Value) -> Result<Value, Failure> 
     match case.get("failed") {
         Some(failed) => Err(Failure {
             plugin: plugin.to_owned(),
-            category: failed["category"].as_str().unwrap_or("http").to_owned(),
+            category: serde_json::from_value(failed["category"].clone()).unwrap_or(Category::Http),
             message: failed["message"].as_str().unwrap_or_default().to_owned(),
             status: failed["status"]
                 .as_u64()
