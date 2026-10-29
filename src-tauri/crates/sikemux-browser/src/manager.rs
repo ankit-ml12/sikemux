@@ -14,7 +14,7 @@ use url::Url;
 
 use crate::host::{BrowserResult, Error, Host, HostRef};
 #[cfg(target_os = "linux")]
-use crate::linux_page as page;
+use crate::linux::page;
 #[cfg(target_os = "macos")]
 use crate::macos;
 #[cfg(target_os = "macos")]

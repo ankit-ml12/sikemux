@@ -16,12 +16,6 @@ mod keys;
 mod layout;
 #[cfg(target_os = "linux")]
 mod linux;
-#[cfg(target_os = "linux")]
-mod linux_dialogs;
-#[cfg(target_os = "linux")]
-mod linux_input;
-#[cfg(target_os = "linux")]
-mod linux_page;
 pub mod local_files;
 #[cfg(target_os = "macos")]
 pub mod macos;
@@ -45,7 +39,7 @@ pub use host::{BrowserResult, Error, Host};
 #[cfg(target_os = "linux")]
 pub use linux::choose_page_rendering;
 #[cfg(target_os = "linux")]
-pub use linux_page::give_keyboard_back;
+pub use linux::page::give_keyboard_back;
 pub use manager::{BrowserManager, TabPage};
 pub use tab::{Opener, ParentView, Tab, TabSpec};
 

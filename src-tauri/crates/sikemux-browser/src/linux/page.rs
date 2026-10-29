@@ -40,13 +40,13 @@ pub enum World {
 pub(crate) fn attach(webview: &WebView, agent_id: &str, tab_id: &str, events: Arc<dyn TabEvents>) {
     let crashed = events.clone();
     webview.connect_web_process_terminated(move |_, _| crashed.health(Some(TabStall::Crashed)));
-    crate::linux_dialogs::attach(webview, tab_id, events.clone());
+    crate::linux::dialogs::attach(webview, tab_id, events.clone());
     let hung = events;
     webview.connect_is_web_process_responsive_notify(move |view| {
         hung.health((!view.is_web_process_responsive()).then_some(TabStall::Unresponsive));
     });
     webview.connect_button_press_event(|view, _| {
-        if !crate::linux_input::sending() {
+        if !crate::linux::input::sending() {
             take_keyboard(view);
         }
         glib::Propagation::Proceed

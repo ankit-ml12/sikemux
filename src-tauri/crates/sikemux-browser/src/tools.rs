@@ -1349,8 +1349,8 @@ mod native {
     mod platform {
         use super::super::on_tab;
         use super::Mouse;
-        use crate::linux_input as input;
-        use crate::linux_page::{self as page, World};
+        use crate::linux::input;
+        use crate::linux::page::{self as page, World};
         use crate::Tab;
 
         pub async fn mouse(
@@ -1469,7 +1469,7 @@ mod native {
         ) -> Result<(), String> {
             let tab_id = tab_id.to_owned();
             on_tab(view, move |_| {
-                crate::linux_dialogs::answer(&tab_id, accept, text.as_deref())
+                crate::linux::dialogs::answer(&tab_id, accept, text.as_deref())
             })
             .await
         }
@@ -1785,7 +1785,7 @@ async fn screenshot(
     area: Option<(f64, f64, f64, f64)>,
 ) -> Result<Vec<u8>, String> {
     #[cfg(target_os = "linux")]
-    use crate::linux_page as page;
+    use crate::linux::page;
     #[cfg(target_os = "macos")]
     use crate::macos as page;
 

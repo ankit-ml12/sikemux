@@ -5,6 +5,10 @@
 //! page reaching past the stage's edge is cut there. The app's own drawing cuts the clip
 //! window where its menus show over the page.
 
+pub(crate) mod dialogs;
+pub(crate) mod input;
+pub(crate) mod page;
+
 use std::num::NonZeroU32;
 use std::os::raw::c_ulong;
 use std::path::PathBuf;
@@ -107,7 +111,7 @@ pub(crate) struct Clip {
 impl Clip {
     /// Adds a clip window to `parent`, out of sight. It draws nothing of its own.
     pub(crate) fn new(parent: c_ulong, ground: Option<[u8; 3]>) -> Result<Self, String> {
-        let display = crate::linux_page::xdisplay().ok_or("GTK has no X11 display")?;
+        let display = crate::linux::page::xdisplay().ok_or("GTK has no X11 display")?;
         // SAFETY: GTK's live X11 display on the GTK thread, and `parent` is the app's live window.
         let window = unsafe {
             let window = xlib::XCreateSimpleWindow(
@@ -377,7 +381,7 @@ impl Tab {
                 position: wry::dpi::LogicalPosition::new(0., 0.).into(),
                 size: wry::dpi::LogicalSize::new(size.0, size.1).into(),
             });
-            crate::linux_page::attach(&view.webview(), &agent_id, &tab_id, attached);
+            crate::linux::page::attach(&view.webview(), &agent_id, &tab_id, attached);
             Ok(Held::new(Page::new(view, clip, parent.ground)))
         };
         let (sender, receiver) = std::sync::mpsc::channel();
