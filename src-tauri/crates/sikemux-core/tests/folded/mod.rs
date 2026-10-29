@@ -121,7 +121,7 @@ impl Folded {
     fn turned(&mut self, was: bool) {
         match (was, self.view.head.running) {
             (false, true) => self.turns_started += 1,
-            (true, false) => self.ends.push(self.view.head.stop_reason.clone()),
+            (true, false) => self.ends.push(self.view.head.stop_reason),
             _ => {}
         }
     }
@@ -332,7 +332,7 @@ impl Chat {
         let next = self.ended + 1;
         self.until(|chat| chat.turns_ended() >= next).await;
         self.ended = next;
-        self.folded.ends[next - 1].clone()
+        self.folded.ends[next - 1]
     }
 
     pub async fn until_turns_ended(&mut self, turns: usize) {
