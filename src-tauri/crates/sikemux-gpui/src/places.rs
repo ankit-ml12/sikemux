@@ -4,7 +4,7 @@
 
 use gpui_kit::{App, Context, Window};
 use serde_json::json;
-use sikemux_wire::protocol::{AgentStatus, Pane, PaneKind, ProjectInfo};
+use sikemux_wire::protocol::{Pane, PaneKind, ProjectInfo};
 
 use crate::tabs;
 use crate::workbench::{RailPage, Strip, Workbench};
@@ -97,7 +97,7 @@ impl Workbench {
         let working = self
             .agents_of(&project.id)
             .iter()
-            .filter(|agent| matches!(agent.status, AgentStatus::Working | AgentStatus::Blocked))
+            .filter(|agent| agent.busy)
             .count();
         let unsaved = self
             .editors

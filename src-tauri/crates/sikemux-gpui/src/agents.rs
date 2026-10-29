@@ -19,7 +19,7 @@ use crate::motion;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Field, Group, IconButton, Row, Segmented};
 use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, TeamLink, Workbench};
-use sikemux_wire::inbox::{InboxTier, RemoteAgent};
+use sikemux_wire::inbox::RemoteAgent;
 
 pub const TAB_RAIL: RailWidth = RailWidth {
     min: 240.,
@@ -1980,22 +1980,8 @@ fn waiting_elsewhere(bench: &Workbench) -> usize {
         return 0;
     };
     let path = here.path.to_string_lossy();
-    view.inbox
-        .items
-        .iter()
-        .filter(|item| item.tier == InboxTier::Needs)
-        .filter(|item| {
-            let agent = item
-                .agent_id
-                .as_deref()
-                .and_then(|id| view.workspace.agents.iter().find(|agent| agent.id == id));
-            match agent {
-                Some(agent) => agent.project != here.id,
-                None => item
-                    .project
-                    .as_deref()
-                    .is_some_and(|project| project != here.id && project != path),
-            }
-        })
-        .count()
+    (view.inbox.needs.iter())
+        .filter(|(project, _)| **project != here.id && **project != path)
+        .map(|(_, count)| count)
+        .sum()
 }

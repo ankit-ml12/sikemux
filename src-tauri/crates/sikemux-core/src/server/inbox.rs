@@ -628,9 +628,9 @@ pub(crate) fn view(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) ->
         agent.face = faces.remove(&agent.agent_id);
     }
     let mut by_project: BTreeMap<String, Vec<&AgentShown>> = BTreeMap::new();
-    let mut project_of = core.workspaces.agent_projects();
+    let project_of = core.workspaces.agent_projects();
     for agent in &mut listed {
-        agent.project = project_of.remove(&agent.agent_id);
+        agent.project = project_of.get(&agent.agent_id).cloned();
     }
     for agent in &listed {
         if let Some(project) = &agent.project {
@@ -643,9 +643,23 @@ pub(crate) fn view(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) ->
         .collect();
     let mut view = view_of(core, &agents(core, chats, sessions), sessions);
     with_remote_workers(&mut listed, &mut view.remote_agents);
+    let mut needs: BTreeMap<String, usize> = BTreeMap::new();
+    for item in view
+        .items
+        .iter()
+        .filter(|item| item.tier == InboxTier::Needs)
+    {
+        let project = (item.agent_id.as_ref())
+            .and_then(|agent_id| project_of.get(agent_id))
+            .or(item.project.as_ref());
+        if let Some(project) = project {
+            *needs.entry(project.clone()).or_default() += 1;
+        }
+    }
     Inbox {
         rollup: rollup(&listed),
         projects,
+        needs,
         agents: listed,
         ..view
     }
@@ -849,6 +863,7 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> Inbox {
         remote_agents: remote_agents(core),
         agents: Vec::new(),
         projects: BTreeMap::new(),
+        needs: BTreeMap::new(),
         rollup: None,
     }
 }

@@ -91,6 +91,7 @@ function keepInbox(previous: Inbox, next: Inbox): Inbox {
     remoteAgents: keepItems(previous.remoteAgents, next.remoteAgents, (agent) => agent.agentId),
     agents: keepItems(previous.agents, next.agents, (agent) => agent.agentId),
     projects: same(previous.projects, next.projects) ? previous.projects : next.projects,
+    needs: same(previous.needs, next.needs) ? previous.needs : next.needs,
     rollup: same(previous.rollup, next.rollup) ? previous.rollup : next.rollup,
     agentMessages: same(previous.agentMessages, next.agentMessages) ? previous.agentMessages : next.agentMessages,
   };

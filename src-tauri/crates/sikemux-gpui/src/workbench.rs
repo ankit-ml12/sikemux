@@ -443,6 +443,10 @@ pub struct AgentRow {
     /// The face it wears, else none and its agent's mark is drawn.
     pub face: Option<AgentFace>,
     pub group: AgentGroup,
+    /// Mid-turn or waiting on an answer, so stopping it now loses work.
+    pub busy: bool,
+    /// It still has subagents or shells running.
+    pub background: bool,
     /// When it last worked, in Unix milliseconds; 0 when the core does not know.
     pub active_at: u64,
     /// When the soonest trigger set on it sends it a prompt, in Unix milliseconds.
@@ -4487,16 +4491,19 @@ impl Workbench {
         view: &DeviceView,
         agent: &sikemux_wire::protocol::WorkspaceAgent,
     ) -> AgentRow {
-        let chat = view.chats.iter().find(|chat| chat.agent_id == agent.id);
-        let session = view
-            .sessions
-            .iter()
-            .find(|session| session.agent_id.as_deref() == Some(agent.id.as_str()));
         let shown = view
             .inbox
             .agents
             .iter()
             .find(|row| row.agent_id == agent.id);
+        let status = shown.map_or(
+            if agent.asleep {
+                AgentStatus::Asleep
+            } else {
+                AgentStatus::Idle
+            },
+            |row| row.status,
+        );
         AgentRow {
             active_at: shown.and_then(|row| row.active_at).unwrap_or(0),
             next_trigger: shown.and_then(|row| row.next_trigger),
@@ -4506,22 +4513,14 @@ impl Workbench {
             provider: agent.provider.clone(),
             title: self.title_of(agent),
             name: agent.name.clone().filter(|_| self.titled(agent)),
-            status: chat
-                .map(|chat| chat.status)
-                .or_else(|| session.and_then(|session| session.status))
-                .unwrap_or(if agent.asleep {
-                    AgentStatus::Asleep
-                } else {
-                    AgentStatus::Idle
-                }),
-            subagents: chat.map_or(0, |chat| chat.subagents),
-            tasks: chat.map_or(0, |chat| chat.tasks),
+            status,
+            group: status.group(),
+            busy: shown.is_some_and(|row| row.busy),
+            background: shown.is_some_and(|row| row.background),
+            subagents: shown.map_or(0, |row| row.subagents),
+            tasks: shown.map_or(0, |row| row.tasks),
             project: agent.project.clone(),
             face: agent.face.clone(),
-            group: chat
-                .map(|chat| chat.group)
-                .or_else(|| session.and_then(|session| session.group))
-                .unwrap_or_default(),
         }
     }
 

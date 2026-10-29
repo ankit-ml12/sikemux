@@ -7,7 +7,6 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled,
 };
 use serde_json::{json, Value};
-use sikemux_wire::protocol::AgentStatus;
 
 use crate::core::Watch;
 use crate::icons::Icon;
@@ -120,10 +119,9 @@ pub fn badges(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
     let t = Tokens::get(cx).clone();
     let pull = pull(bench, &branch);
     let pull_merged = pull.is_some_and(merged);
-    let at_rest = bench.agent_by_id(agent).is_none_or(|row| {
-        !matches!(row.status, AgentStatus::Working | AgentStatus::Blocked)
-            && row.tasks + row.subagents == 0
-    });
+    let at_rest = bench
+        .agent_by_id(agent)
+        .is_none_or(|row| !row.busy && !row.background);
     let can_remove = at_rest
         && (pull_merged
             || bench

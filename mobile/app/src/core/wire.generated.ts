@@ -579,6 +579,11 @@ export interface Inbox {
   agents: AgentShown[];
   /** How each project's open agents show together, by project id. */
   projects: Record<string, AgentRollup>;
+  /**
+   * How many items wait on the person in each project, by the id of the project their
+   * agent is in, else by the project the item names.
+   */
+  needs: Record<string, number>;
   /** How every open agent here shows together; none while none is open. */
   rollup?: AgentRollup;
 }

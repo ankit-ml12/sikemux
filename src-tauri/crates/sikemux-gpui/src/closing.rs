@@ -3,7 +3,7 @@
 
 use gpui_kit::Context;
 use serde_json::json;
-use sikemux_wire::protocol::{AgentStatus, PaneKind};
+use sikemux_wire::protocol::PaneKind;
 
 use crate::workbench::{Choice, Strip, Workbench};
 
@@ -65,11 +65,7 @@ impl Workbench {
     ) {
         let busy: Vec<&String> = agents
             .iter()
-            .filter(|id| {
-                self.agent_by_id(id).is_some_and(|row| {
-                    matches!(row.status, AgentStatus::Working | AgentStatus::Blocked)
-                })
-            })
+            .filter(|id| self.agent_by_id(id).is_some_and(|row| row.busy))
             .collect();
         let workers = self.workers_of(&agents);
         if workers.is_empty() {

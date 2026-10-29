@@ -14,7 +14,6 @@ use gpui_kit::{
     Subscription, WeakEntity, Window,
 };
 use serde_json::Value;
-use sikemux_wire::protocol::AgentStatus;
 
 use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
@@ -361,7 +360,7 @@ fn pane_header(
         (Icon::Terminal, SharedString::from("TUI")),
     ];
     let in_terminal = bench.in_terminal(&agent.id);
-    let working = matches!(agent.status, AgentStatus::Working | AgentStatus::Blocked);
+    let working = agent.busy;
     let has_chat = bench.has_chat(&agent.provider);
     let switched = agent.id.clone();
     let shared = agent.id.clone();

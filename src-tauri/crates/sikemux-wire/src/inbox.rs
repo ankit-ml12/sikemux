@@ -127,6 +127,9 @@ pub struct Inbox {
     pub agents: Vec<AgentShown>,
     /// How each project's open agents show together, by project id.
     pub projects: BTreeMap<String, AgentRollup>,
+    /// How many items wait on the person in each project, by the id of the project their
+    /// agent is in, else by the project the item names.
+    pub needs: BTreeMap<String, usize>,
     /// How every open agent here shows together; none while none is open.
     pub rollup: Option<AgentRollup>,
 }
