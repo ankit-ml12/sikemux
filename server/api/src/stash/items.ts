@@ -66,6 +66,15 @@ export async function withAttachments(
   );
 }
 
+/** The item as clients see it, a prompt with its attachments. */
+export async function shownAs(
+  db: Kysely<Tables>,
+  row: ItemRow,
+): Promise<StashItem> {
+  const [item = toItem(row)] = await withAttachments(db, [row]);
+  return item;
+}
+
 /** Refuses a target that is not a chat, or a new chat in a project, on one of the account's hosts. */
 export async function checkTarget(
   db: Kysely<Tables>,

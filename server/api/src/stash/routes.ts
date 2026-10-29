@@ -1,23 +1,12 @@
-import { randomBytes } from "node:crypto";
 import {
   validator,
   stashTakenValues,
-  type StashItem,
-  type StashList,
-  type StashSeen,
   type StashTarget,
 } from "@sikemux/protocol";
-import { MAX_STASH_FILE_BYTES } from "@sikemux/protocol/stash";
 import { Hono, type Context } from "hono";
-import { sql, type Kysely } from "kysely";
 
-import {
-  requireIdentity,
-  type AuthEnv,
-  type Identity,
-  type Verifier,
-} from "../auth.ts";
-import type { Database, Tables } from "../db.ts";
+import { requireIdentity, type AuthEnv, type Verifier } from "../auth.ts";
+import type { Database } from "../db.ts";
 import {
   ApiFailure,
   badRequest,
@@ -27,29 +16,18 @@ import {
   readBody,
 } from "../http.ts";
 import { limit, type RateLimiter } from "../limits.ts";
-import { appendEvent } from "../events/log.ts";
 import type { Logger } from "../log.ts";
+import { addFile, addItem, type Upload } from "./add.ts";
+import { ownedItem, removeItem, shownItem, updateItem } from "./change.ts";
 import type { StashFiles } from "./files.ts";
 import { removeStashFiles } from "./files.ts";
-import {
-  announce,
-  checkSpace,
-  checkTarget,
-  holdAccount,
-  ITEM_ID,
-  toItem,
-  withAttachments,
-  type ItemRow,
-} from "./items.ts";
-import { isFetchable, linksIn, readLinks, readPages } from "./preview.ts";
+import { ITEM_ID, toItem } from "./items.ts";
+import { listStash, seeStash } from "./list.ts";
 
-const PAGE = 50;
 const NAME_MAX = 255;
 const NOTE_MAX = 2000;
 const MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
 const CONTROL = /\p{Cc}/u;
-const CURSOR_TIME =
-  /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?[+-]\d{2}(:\d{2})?$/;
 
 const protocol = validator();
 
@@ -58,10 +36,6 @@ function isUpload(c: Context): boolean {
     c.req.method === "POST" &&
     !/^application\/json\b/i.test(c.req.header("content-type") ?? "")
   );
-}
-
-function newId(): string {
-  return randomBytes(16).toString("base64url");
 }
 
 function itemId(c: Context): string {
@@ -98,7 +72,7 @@ function readTarget(c: Context): StashTarget | undefined {
 }
 
 /** The kind, name, type and note of an upload, from its headers. */
-function readUpload(c: Context) {
+function readUpload(c: Context): Upload {
   const mime = (c.req.header("content-type") ?? "")
     .split(";")[0]
     ?.trim()
@@ -126,45 +100,8 @@ function readUpload(c: Context) {
     throw badRequest(
       "An attachment goes where its prompt goes; send no target.",
     );
-  return { kind, mime, name, note: note || null, target, prompt };
-}
-
-/** Refuses an item that is not shown on its own: an attachment, or a prompt still receiving them. */
-function listed(row: ItemRow): ItemRow {
-  if (row.prompt_id !== null)
-    throw badRequest("An attachment is changed with its prompt.");
-  if (row.attachments_missing > 0)
-    throw notFound("That prompt is still receiving its attachments.");
-  return row;
-}
-
-/** The device the request came from: the one that signed it, or the phone a session belongs to. */
-async function fromDevice(
-  db: Kysely<Tables>,
-  { userId, deviceKey, sessionId }: Identity,
-): Promise<string | null> {
-  if (deviceKey) return deviceKey;
-  if (!sessionId) return null;
-  const phone = await db
-    .selectFrom("devices")
-    .select("key")
-    .where("user_id", "=", userId)
-    .where("clerk_session_id", "=", sessionId)
-    .executeTakeFirst();
-  return phone?.key ?? null;
-}
-
-function cursorOf(createdAt: string, id: string): string {
-  return Buffer.from(`${createdAt}|${id}`).toString("base64url");
-}
-
-function readCursor(cursor: string): { createdAt: string; id: string } {
-  const [createdAt = "", id = ""] = Buffer.from(cursor, "base64url")
-    .toString("utf8")
-    .split("|");
-  if (!CURSOR_TIME.test(createdAt) || !ITEM_ID.test(id))
-    throw badRequest("The cursor is not one this server gave.");
-  return { createdAt, id };
+  const declared = Number(c.req.header("content-length") ?? 0);
+  return { kind, mime, name, note: note || null, target, prompt, declared };
 }
 
 function contentDisposition(name: string): string {
@@ -194,200 +131,17 @@ export function stashRoutes(
     return files;
   };
 
-  const owned = async (
-    userId: string,
-    id: string,
-    from: Kysely<Tables> = db,
-  ) => {
-    const row = await from
-      .selectFrom("stash_items")
-      .selectAll()
-      .where("id", "=", id)
-      .where("user_id", "=", userId)
-      .forUpdate()
-      .executeTakeFirst();
-    if (!row) throw notFound("No stashed item has that id.");
-    return row;
-  };
-
-  /** The account's prompt that is still waiting for attachments, locked while one is added. */
-  const openPrompt = async (
-    from: Kysely<Tables>,
-    userId: string,
-    id: string,
-  ) => {
-    const row = await from
-      .selectFrom("stash_items")
-      .select("id")
-      .where("id", "=", id)
-      .where("user_id", "=", userId)
-      .where("kind", "=", "prompt")
-      .where("attachments_missing", ">", 0)
-      .forUpdate()
-      .executeTakeFirst();
-    if (!row)
-      throw badRequest("That prompt is not waiting for any more attachments.");
-  };
-
-  /** Saves what was read of an item's pages, once they are read, and tells its account. */
-  const save = (
-    userId: string,
-    id: string,
-    reading: Promise<{ preview: string } | { links: string } | undefined>,
-  ) => {
-    reading
-      .then(async (found) => {
-        if (!found) return;
-        await db.transaction().execute(async (trx) => {
-          const updated = await trx
-            .updateTable("stash_items")
-            .set(found)
-            .where("id", "=", id)
-            .executeTakeFirst();
-          if (updated.numUpdatedRows > 0n)
-            await announce(trx, userId, "stash.changed", id);
-        });
-      })
-      .catch((error: unknown) =>
-        log.warn({ err: error, id }, "could not save a link's preview"),
-      );
-  };
-
-  const add = async (c: Context<AuthEnv>): Promise<StashItem> => {
-    const identity = c.get("identity");
-    const { userId } = identity;
-    const request = await readBody(c, "StashAdd");
-    const url = request.kind === "link" ? request.url : null;
-    if (url !== null) {
-      const parsed = URL.parse(url);
-      if (!parsed || !["http:", "https:"].includes(parsed.protocol))
-        throw badRequest("A link is an http or https url.");
-    }
-    const text = request.kind === "link" ? null : request.text;
-    const missing =
-      request.kind === "prompt" ? (request.attachmentCount ?? 0) : 0;
-    const links = linksIn(text ?? "");
-    if (request.target) await checkTarget(db, userId, request.target);
-    const id = newId();
-    const row = await db.transaction().execute(async (trx) => {
-      await holdAccount(trx, userId);
-      const row = await trx
-        .insertInto("stash_items")
-        .values({
-          id,
-          user_id: userId,
-          kind: request.kind,
-          url,
-          text,
-          note: request.note || null,
-          name: null,
-          mime: null,
-          size: null,
-          preview: null,
-          links: links.length
-            ? JSON.stringify(links.map((url) => ({ url, preview: null })))
-            : null,
-          target: request.target ? JSON.stringify(request.target) : null,
-          from_device: await fromDevice(trx, identity),
-          attachments_missing: missing,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
-      if (missing === 0) await announce(trx, userId, "stash.added", id);
-      return row;
-    });
-    if (row.url) {
-      const url = URL.parse(row.url);
-      if (url && isFetchable(url))
-        save(
-          userId,
-          id,
-          readPages([row.url]).then((found) =>
-            found?.[0] ? { preview: JSON.stringify(found[0]) } : undefined,
-          ),
-        );
-    }
-    if (links.length)
-      save(
-        userId,
-        id,
-        readLinks(links).then((read) =>
-          read?.some((link) => link.preview)
-            ? { links: JSON.stringify(read) }
-            : undefined,
-        ),
-      );
-    return toItem(row);
-  };
-
-  const upload = async (c: Context<AuthEnv>): Promise<StashItem> => {
-    const store = stored();
-    const identity = c.get("identity");
-    const { userId } = identity;
-    const { kind, mime, name, note, target, prompt } = readUpload(c);
-    const declared = Number(c.req.header("content-length") ?? 0);
-    if (declared > MAX_STASH_FILE_BYTES)
-      throw new ApiFailure(
-        413,
-        "payload_too_large",
-        `A stashed file is limited to ${MAX_STASH_FILE_BYTES} bytes.`,
-      );
-    await checkSpace(db, userId, declared);
-    if (target) await checkTarget(db, userId, target);
-    if (prompt) await openPrompt(db, userId, prompt);
-    const id = newId();
-    const written = await store.write(
-      id,
-      c.req.raw.body ?? (async function* () {})(),
-      MAX_STASH_FILE_BYTES,
-    );
-    try {
-      c.get("checkBody")(written.sha256);
-      const device = await fromDevice(db, identity);
-      const row = await db.transaction().execute(async (trx) => {
-        await holdAccount(trx, userId);
-        await checkSpace(trx, userId, written.size);
-        if (prompt) await openPrompt(trx, userId, prompt);
-        const row = await trx
-          .insertInto("stash_items")
-          .values({
-            id,
-            user_id: userId,
-            kind,
-            url: null,
-            text: null,
-            note,
-            name,
-            mime,
-            size: written.size,
-            preview: null,
-            target: target ? JSON.stringify(target) : null,
-            from_device: device,
-            prompt_id: prompt ?? null,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow();
-        if (prompt) {
-          const { attachments_missing } = await trx
-            .updateTable("stash_items")
-            .set((eb) => ({
-              attachments_missing: eb("attachments_missing", "-", 1),
-            }))
-            .where("id", "=", prompt)
-            .returning("attachments_missing")
-            .executeTakeFirstOrThrow();
-          if (attachments_missing === 0)
-            await announce(trx, userId, "stash.added", prompt);
-        } else await announce(trx, userId, "stash.added", id);
-        await store.commit(id);
-        return row;
-      });
-      return toItem(row);
-    } catch (error) {
-      await store.discard(id);
-      throw error;
-    }
-  };
+  const add = async (c: Context<AuthEnv>) =>
+    isUpload(c)
+      ? addFile(
+          db,
+          stored(),
+          c.get("identity"),
+          readUpload(c),
+          c.req.raw.body ?? (async function* () {})(),
+          c.get("checkBody"),
+        )
+      : addItem(db, log, c.get("identity"), await readBody(c, "StashAdd"));
 
   return new Hono<AuthEnv>()
     .use((c, next) => (isUpload(c) ? next() : jsonBodies(c, next)))
@@ -398,99 +152,34 @@ export function stashRoutes(
       }),
     )
     .post("/", perUser("stash-add", 60), async (c) => {
-      const item = await (isUpload(c) ? upload(c) : add(c));
+      const item = toItem(await add(c));
       c.get("log").info({ id: item.id, kind: item.kind }, "stashed an item");
       return c.json(item, 201);
     })
     .get("/", perUser("stash-list", 120), async (c) => {
-      const { userId } = c.get("identity");
       const taken = oneOf(
         "taken",
         c.req.query("taken") ?? "false",
         stashTakenValues,
       );
-      const cursor = c.req.query("cursor");
-      let query = db
-        .selectFrom("stash_items")
-        .selectAll()
-        .select(sql<string>`created_at::text`.as("created_text"))
-        .where("user_id", "=", userId)
-        .where("prompt_id", "is", null)
-        .where("attachments_missing", "=", 0);
-      if (taken === "false") query = query.where("taken_at", "is", null);
-      if (taken === "true") query = query.where("taken_at", "is not", null);
-      if (cursor) {
-        const after = readCursor(cursor);
-        query = query.where(
-          sql<boolean>`(created_at, id) < (${after.createdAt}::timestamptz, ${after.id})`,
-        );
-      }
-      const [rows, user] = await Promise.all([
-        query
-          .orderBy("created_at", "desc")
-          .orderBy("id", "desc")
-          .limit(PAGE + 1)
-          .execute(),
-        db
-          .selectFrom("users")
-          .select("stash_seen_at")
-          .where("id", "=", userId)
-          .executeTakeFirst(),
-      ]);
-      const page = rows.slice(0, PAGE);
-      const last = page.at(-1);
-      const body: StashList = {
-        items: await withAttachments(db, page),
-        seenAt: user?.stash_seen_at?.toISOString() ?? null,
-      };
-      if (rows.length > PAGE && last)
-        body.cursor = cursorOf(last.created_text, last.id);
-      return c.json(body);
+      return c.json(
+        await listStash(
+          db,
+          c.get("identity").userId,
+          taken,
+          c.req.query("cursor"),
+        ),
+      );
     })
     .put("/seen", perUser("stash-seen", 120), async (c) => {
-      const { userId } = c.get("identity");
       const { at } = await readBody(c, "StashSeen");
-      const seenAt = await db.transaction().execute(async (trx) => {
-        await holdAccount(trx, userId);
-        const moved = await trx
-          .updateTable("users")
-          .set({ stash_seen_at: sql<Date>`least(${at}::timestamptz, now())` })
-          .where("id", "=", userId)
-          .where((eb) =>
-            eb.or([
-              eb("stash_seen_at", "is", null),
-              eb(
-                "stash_seen_at",
-                "<",
-                sql<Date>`least(${at}::timestamptz, now())`,
-              ),
-            ]),
-          )
-          .returning("stash_seen_at")
-          .executeTakeFirst();
-        if (moved) {
-          await appendEvent(trx, { userId, type: "stash.seen" });
-          return moved.stash_seen_at;
-        }
-        const user = await trx
-          .selectFrom("users")
-          .select("stash_seen_at")
-          .where("id", "=", userId)
-          .executeTakeFirstOrThrow();
-        return user.stash_seen_at;
-      });
-      const body: StashSeen = { at: (seenAt ?? new Date(at)).toISOString() };
-      return c.json(body);
+      return c.json(await seeStash(db, c.get("identity").userId, at));
     })
-    .get("/:id", perUser("stash-get", 240), async (c) => {
-      const row = await owned(c.get("identity").userId, itemId(c));
-      if (row.attachments_missing > 0)
-        throw notFound("That prompt is still receiving its attachments.");
-      const [item] = await withAttachments(db, [row]);
-      return c.json(item);
-    })
+    .get("/:id", perUser("stash-get", 240), async (c) =>
+      c.json(await shownItem(db, c.get("identity").userId, itemId(c))),
+    )
     .get("/:id/file", perUser("stash-file", 120), async (c) => {
-      const row = await owned(c.get("identity").userId, itemId(c));
+      const row = await ownedItem(db, c.get("identity").userId, itemId(c));
       if (row.size === null || row.name === null || row.mime === null)
         throw notFound("That item has no file.");
       const stream = await stored().read(row.id, c.get("log"));
@@ -507,67 +196,14 @@ export function stashRoutes(
       });
     })
     .patch("/:id", perUser("stash-update", 120), async (c) => {
-      const { userId } = c.get("identity");
-      const id = itemId(c);
       const update = await readBody(c, "StashUpdate");
-      if (update.taken === false)
-        throw badRequest("A taken item cannot be untaken.");
-      const row = await db.transaction().execute(async (trx) => {
-        const before = listed(await owned(userId, id, trx));
-        if (update.note === undefined && (!update.taken || before.taken_at))
-          return before;
-        if (update.taken)
-          await trx
-            .updateTable("stash_items")
-            .set({ taken_at: sql<Date>`coalesce(taken_at, now())` })
-            .where("prompt_id", "=", id)
-            .execute();
-        const row = await trx
-          .updateTable("stash_items")
-          .set({
-            ...(update.note !== undefined ? { note: update.note || null } : {}),
-            ...(update.taken
-              ? { taken_at: sql<Date>`coalesce(taken_at, now())` }
-              : {}),
-          })
-          .where("id", "=", id)
-          .where("user_id", "=", userId)
-          .returningAll()
-          .executeTakeFirst();
-        if (!row) throw notFound("No stashed item has that id.");
-        await announce(trx, userId, "stash.changed", id);
-        return row;
-      });
-      const [item] = await withAttachments(db, [row]);
-      return c.json(item);
+      return c.json(
+        await updateItem(db, c.get("identity").userId, itemId(c), update),
+      );
     })
     .delete("/:id", perUser("stash-delete", 120), async (c) => {
-      const { userId } = c.get("identity");
       const id = itemId(c);
-      const removed = await db.transaction().execute(async (trx) => {
-        const row = await trx
-          .selectFrom("stash_items")
-          .select(["prompt_id", "attachments_missing"])
-          .where("id", "=", id)
-          .where("user_id", "=", userId)
-          .forUpdate()
-          .executeTakeFirst();
-        if (!row) return [];
-        if (row.prompt_id !== null)
-          throw badRequest("An attachment is deleted with its prompt.");
-        const gone = await trx
-          .deleteFrom("stash_items")
-          .where("user_id", "=", userId)
-          .where((eb) => eb.or([eb("id", "=", id), eb("prompt_id", "=", id)]))
-          .returning(["id", "size"])
-          .execute();
-        if (row.attachments_missing === 0)
-          await announce(trx, userId, "stash.removed", id);
-        return gone;
-      });
-      const withFiles = removed
-        .filter((row) => row.size !== null)
-        .map((row) => row.id);
+      const withFiles = await removeItem(db, c.get("identity").userId, id);
       if (withFiles.length && files)
         await removeStashFiles(files.dir, withFiles).catch((error: unknown) =>
           c
