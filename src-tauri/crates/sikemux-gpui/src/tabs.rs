@@ -576,18 +576,11 @@ impl Render for RunClock {
             crate::ui::clock::second(window, cx);
         }
         let t = Tokens::get(cx);
-        let since = seconds_since(self.started_at.flatten());
+        let since = crate::ui::time::seconds_since(self.started_at.flatten());
         div()
             .text_color(t.text_tertiary)
             .child(format!("· {since}s"))
     }
-}
-
-/// Whole seconds since `started_at`, in milliseconds; none counts as just started.
-fn seconds_since(started_at: Option<i64>) -> i64 {
-    started_at.map_or(0, |at| {
-        (chrono::Utc::now().timestamp_millis() - at).max(0) / 1000
-    })
 }
 
 /// What the Run chip's menu lists, as it was when the chip was drawn.
@@ -636,7 +629,10 @@ impl RunMenu {
         if let Some(running) = &self.running {
             let meta = match running.port {
                 Some(port) => format!("up · :{port}"),
-                None => format!("running · {}s", seconds_since(running.started_at)),
+                None => format!(
+                    "running · {}s",
+                    crate::ui::time::seconds_since(running.started_at)
+                ),
             };
             popup = popup.label(format!("{} · {meta}", running.label));
             let execution = running.execution.clone();

@@ -334,7 +334,7 @@ impl Render for CiCard {
             self.rerunning = false;
         }
         let ago = millis(&head.created_at)
-            .map(|at| match crate::agents::age(at.max(0) as u64) {
+            .map(|at| match crate::ui::time::age(at.max(0) as u64) {
                 now if now == "now" => now,
                 age => format!("{age} ago"),
             })

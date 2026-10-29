@@ -497,7 +497,7 @@ pub(crate) fn overview(totals: &Value, cx: &App) -> impl IntoElement {
         (
             "Agent time",
             None,
-            duration(number(&totals["agentMs"])),
+            crate::ui::time::total(number(&totals["agentMs"])),
             plural(number(&totals["turns"]), "turn"),
         ),
         (
@@ -845,7 +845,7 @@ fn readout(streaks: &Value) -> String {
 /// A day's measure as the calendar reads it out.
 fn metric_text(key: &str, value: f64) -> String {
     match (key, value > 0.) {
-        ("agentMs", true) => format!("{} of agent time", duration(value)),
+        ("agentMs", true) => format!("{} of agent time", crate::ui::time::total(value)),
         ("agentMs", false) => "No agent time".into(),
         ("tokens", true) => format!("{} tokens", compact(value)),
         ("tokens", false) => "No tokens".into(),
@@ -898,21 +898,6 @@ pub fn money(usd: f64) -> String {
         format!("${}", whole(usd))
     } else {
         format!("${usd:.2}")
-    }
-}
-
-pub(crate) fn duration(ms: f64) -> String {
-    let minutes = (ms / 60_000.).round() as i64;
-    if minutes < 60 {
-        return format!("{minutes}m");
-    }
-    let hours = minutes / 60;
-    if hours >= 100 {
-        return format!("{}h", whole(hours as f64));
-    }
-    match minutes % 60 {
-        0 => format!("{hours}h"),
-        rest => format!("{hours}h {rest}m"),
     }
 }
 

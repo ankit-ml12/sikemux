@@ -933,7 +933,7 @@ fn messages_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
                                 FontWeight::SEMIBOLD,
                             ))
                             .child(div().flex_1())
-                            .child(ui::meta(crate::agents::age(row.sent_at), cx)),
+                            .child(ui::meta(crate::ui::time::age(row.sent_at), cx)),
                     )
                     .child(
                         div()

@@ -578,7 +578,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
         .timing
         .as_ref()
         .and_then(|timing| timing.run_duration_ms)
-        .map(|ms| super::duration(ms / 1000))
+        .map(|ms| crate::ui::time::span(ms / 1000))
         .unwrap_or_else(|| {
             elapsed(
                 run.started_at.as_deref().unwrap_or(&run.created_at),

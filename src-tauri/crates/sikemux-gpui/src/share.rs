@@ -2,7 +2,6 @@
 //! happens. The core opens and keeps the share; the window lists them and asks.
 
 use std::rc::Rc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
@@ -229,7 +228,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                         format!(
                             "{} · ends in {}",
                             share.watching(),
-                            time_left(share.expires_at)
+                            crate::ui::time::left(share.expires_at)
                         ),
                         12.,
                         FontWeight::NORMAL,
@@ -360,21 +359,4 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         dialog::marked_sheet(Icon::Share, title.into(), body, foot, yes, close, cx)
             .into_any_element(),
     )
-}
-
-/// How long until `until`, in Unix milliseconds, as the dialog says it.
-fn time_left(until: u64) -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| since.as_millis() as u64);
-    let minutes = (until.saturating_sub(now) as f64 / 60_000.).round().max(1.) as u64;
-    if minutes < 60 {
-        return format!("{minutes} min");
-    }
-    let hours = (minutes as f64 / 60.).round() as u64;
-    match hours {
-        1 => "1 hour".to_owned(),
-        hours if hours < 48 => format!("{hours} hours"),
-        hours => format!("{} days", (hours as f64 / 24.).round() as u64),
-    }
 }

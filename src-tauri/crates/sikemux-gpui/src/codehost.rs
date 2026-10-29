@@ -1078,18 +1078,7 @@ fn elapsed(started: &str, finished: Option<&str>) -> String {
     let to = finished
         .and_then(parse)
         .map_or_else(chrono::Utc::now, |to| to.with_timezone(&chrono::Utc));
-    duration((to.timestamp() - from.timestamp()).max(0) as u64)
-}
-
-/// A length of time in words, from its seconds.
-fn duration(seconds: u64) -> String {
-    match seconds {
-        0..60 => format!("{seconds}s"),
-        60..3600 if seconds.is_multiple_of(60) => format!("{}m", seconds / 60),
-        60..3600 => format!("{}m {}s", seconds / 60, seconds % 60),
-        _ if (seconds / 60).is_multiple_of(60) => format!("{}h", seconds / 3600),
-        _ => format!("{}h {}m", seconds / 3600, seconds / 60 % 60),
-    }
+    crate::ui::time::span((to.timestamp() - from.timestamp()).max(0) as u64)
 }
 
 /// A label as the host colours it.
@@ -1113,7 +1102,7 @@ pub(crate) fn ago(at: &str) -> String {
     let Ok(at) = chrono::DateTime::parse_from_rfc3339(at) else {
         return String::new();
     };
-    match crate::agents::age(at.timestamp_millis().max(0) as u64) {
+    match crate::ui::time::age(at.timestamp_millis().max(0) as u64) {
         now if now == "now" => now,
         age => format!("{age} ago"),
     }

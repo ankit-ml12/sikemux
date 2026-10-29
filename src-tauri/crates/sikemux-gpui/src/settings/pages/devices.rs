@@ -96,7 +96,7 @@ fn platform_name(platform: &str) -> &str {
 }
 
 fn seen(at: Option<u64>) -> String {
-    match at.map(crate::agents::age).as_deref() {
+    match at.map(crate::ui::time::age).as_deref() {
         None => "never connected".into(),
         Some("now") => "seen now".into(),
         Some(age) => format!("seen {age} ago"),

@@ -120,7 +120,10 @@ impl Render for Activity {
                 })
                 .child(words)
                 .when(seconds > 0, |line| {
-                    line.child(ui::mono(elapsed(seconds), 10.5, cx).text_color(t.text_disabled))
+                    line.child(
+                        ui::mono(crate::ui::time::elapsed(seconds), 10.5, cx)
+                            .text_color(t.text_disabled),
+                    )
                 }),
         )
         .pt(px(12.))
@@ -131,14 +134,6 @@ impl Render for Activity {
 /// The room after the chat's last row, kept here rather than on the row so a row arriving
 /// does not take it from the one before.
 const END_SPACE: f32 = 27.;
-
-fn elapsed(seconds: u64) -> String {
-    match seconds {
-        s if s < 60 => format!("{s}s"),
-        s if s < 3600 => format!("{}m {:02}s", s / 60, s % 60),
-        s => format!("{}h {:02}m", s / 3600, s / 60 % 60),
-    }
-}
 
 impl Chat {
     /// What the line under the last row says: nothing while a permission card already says

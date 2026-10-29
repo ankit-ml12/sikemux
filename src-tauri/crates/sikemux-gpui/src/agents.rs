@@ -425,7 +425,7 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
             ui::icon(Icon::Pin, 11.).text_color(t.text_tertiary),
         )
         .into_any_element(),
-        false => ui::mono(age(recent.active_at), 11., cx).into_any_element(),
+        false => ui::mono(ui::time::age(recent.active_at), 11., cx).into_any_element(),
     };
     let row = Row::new(
         SharedString::from(format!("recent-{}", recent.id)),
@@ -1104,37 +1104,11 @@ pub fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
                     .gap(px(3.))
                     .child(ui::icon(Icon::Timer, 11.).text_color(t.cmd))
                     .child(
-                        ui::text(until(at), 11., FontWeight::MEDIUM)
+                        ui::text(ui::time::until(at), 11., FontWeight::MEDIUM)
                             .font_features(crate::theme::tabular()),
                     )
             }))
     })
-}
-
-/// How long until, in the same tight column as [`age`], rounded up: `now`, `1m`, `3h`, `4d`.
-pub fn until(at: u64) -> String {
-    let now = chrono::Utc::now().timestamp_millis().max(0) as u64;
-    let seconds = at.saturating_sub(now) / 1000;
-    match seconds {
-        0 => "now".into(),
-        1..3600 => format!("{}m", seconds.div_ceil(60)),
-        3600..86_400 => format!("{}h", seconds / 3600),
-        _ => format!("{}d", seconds / 86_400),
-    }
-}
-
-/// How long ago, in a tight column: `now`, `5m`, `3h`, `4d`, `2mo`, `1y`.
-pub fn age(at: u64) -> String {
-    let now = chrono::Utc::now().timestamp_millis().max(0) as u64;
-    let seconds = now.saturating_sub(at) / 1000;
-    match seconds {
-        0..60 => "now".into(),
-        60..3600 => format!("{}m", seconds / 60),
-        3600..86_400 => format!("{}h", seconds / 3600),
-        86_400..2_592_000 => format!("{}d", seconds / 86_400),
-        2_592_000..31_536_000 => format!("{}mo", seconds / 2_592_000),
-        _ => format!("{}y", seconds / 31_536_000),
-    }
 }
 
 /// The account new chats here start with, and the person's other accounts with the agent, which
@@ -1556,7 +1530,7 @@ fn limit_row(window: &Value, key: &str, cx: &App) -> impl IntoElement {
                 }),
         )
         .child(
-            ui::text(countdown(reset), 10., FontWeight::NORMAL)
+            ui::text(ui::time::countdown(reset), 10., FontWeight::NORMAL)
                 .w(px(42.))
                 .flex_none()
                 .text_right()
@@ -1707,28 +1681,6 @@ fn reset_at(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {
         None => chrono::DateTime::parse_from_rfc3339(value.as_str()?)
             .ok()
             .map(|at| at.to_utc()),
-    }
-}
-
-fn countdown(reset: Option<chrono::DateTime<chrono::Utc>>) -> String {
-    let Some(reset) = reset else {
-        return "unknown".into();
-    };
-    let minutes = ((reset - chrono::Utc::now()).num_seconds().max(0) as f64 / 60.).ceil() as i64;
-    let (hours, days) = (minutes / 60, minutes / 1440);
-    let with = |big: i64, unit: &str, small: i64, small_unit: &str| match small {
-        0 => format!("{big}{unit}"),
-        small => format!("{big}{unit} {small}{small_unit}"),
-    };
-    match minutes {
-        0 => "resetting now".into(),
-        1..=59 => format!("{minutes}m"),
-        _ if hours < 24 => with(hours, "h", minutes % 60, "m"),
-        _ if days < 7 => with(days, "d", hours % 24, "h"),
-        _ => reset
-            .with_timezone(&chrono::Local)
-            .format("%b %-d")
-            .to_string(),
     }
 }
 

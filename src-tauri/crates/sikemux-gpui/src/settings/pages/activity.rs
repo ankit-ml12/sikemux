@@ -11,11 +11,12 @@ use gpui_kit::{
 use serde_json::{json, Map, Value};
 
 use crate::core::{utc_offset_minutes, Ask, Watch};
-use crate::home::{self, compact, duration, money, number, plural, whole};
+use crate::home::{self, compact, money, number, plural, whole};
 use crate::icons::Icon;
 use crate::settings::{rows, ACTIVITY};
 use crate::theme::{self, Tokens};
 use crate::ui;
+use crate::ui::time::total;
 use crate::workbench::Workbench;
 
 /// The price being entered for a model, in USD per million tokens.
@@ -191,7 +192,7 @@ fn share_value(share: &Value, key: &str) -> String {
     match key {
         "costUsd" => money(value),
         "tokens" => compact(value),
-        "agentMs" => duration(value),
+        "agentMs" => total(value),
         _ => whole(value),
     }
 }
@@ -297,7 +298,7 @@ fn shares(bench: &Workbench, shares: &[Value], agents: bool, key: &str, cx: &App
                 "sessions" => plural(value, "session"),
                 "tokens" => format!("{} tokens", compact(value)),
                 "commits" => plural(value, "commit"),
-                _ => duration(value),
+                _ => total(value),
             })
             .collect();
             let (mark, title, under) = match agents {

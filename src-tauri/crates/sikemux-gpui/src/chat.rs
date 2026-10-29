@@ -4645,7 +4645,7 @@ fn work(fold: &WorkFold, open: bool, looks: &Drawn, cx: &App) -> AnyElement {
     let verb = if fold.thought { "Thought" } else { "Worked" };
     let worked = fold.took.map_or_else(
         || verb.to_owned(),
-        |took| format!("{verb} for {}", duration(took)),
+        |took| format!("{verb} for {}", crate::ui::time::took(took)),
     );
     let calls = (fold.calls > 0).then(|| {
         format!(
@@ -4930,17 +4930,6 @@ fn subagent(
         .child(summary)
         .children(body)
         .into_any_element()
-}
-
-/// How long something took, as the app says it: milliseconds under a second, then seconds, minutes and hours.
-fn duration(ms: u64) -> String {
-    let seconds = (ms + 500) / 1000;
-    match ms {
-        0..1000 => format!("{ms}ms"),
-        _ if seconds < 60 => format!("{seconds}s"),
-        _ if seconds < 3600 => format!("{}m {:02}s", seconds / 60, seconds % 60),
-        _ => format!("{}h {:02}m", seconds / 3600, seconds / 60 % 60),
-    }
 }
 
 fn part(

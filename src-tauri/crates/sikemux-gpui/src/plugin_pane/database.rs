@@ -1373,7 +1373,7 @@ fn history_row(entry: &HistoryEntry, cx: &mut Context<PluginPane>) -> AnyElement
         (None, Some(rows)) => Some(ui::meta(format!("{rows} rows"), cx)),
         (None, None) => None,
     };
-    let ago = match crate::agents::age(entry.at) {
+    let ago = match crate::ui::time::age(entry.at) {
         now if now == "now" => now,
         age => format!("{age} ago"),
     };

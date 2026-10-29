@@ -1066,7 +1066,7 @@ pub fn dock(
                 let row = match name {
                     Some(name) => DockRow::new(format!("@{name}"), choose).detail(title.clone()),
                     None => DockRow::new(title.clone(), choose)
-                        .aside(active_at.map(|at| crate::agents::age(at).into())),
+                        .aside(active_at.map(|at| crate::ui::time::age(at).into())),
                 };
                 row.mark(ui::mark(cli, 13.)).group(group)
             }

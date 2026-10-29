@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use gpui::{Context, Render};
 use gpui_kit::prelude::FluentBuilder;
@@ -18,7 +18,7 @@ use sikemux_wire::chat::{
     ChatPart, DiffLine, DiffSummary, OutputSummary, ToolAction, ToolCall, ToolDetail, ToolRow,
 };
 
-use super::{duration, Drawn};
+use super::Drawn;
 use crate::core::ChatAsk;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
@@ -28,6 +28,7 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::ui::clock::{self, Slot};
 use crate::ui::shimmer::shimmer;
+use crate::ui::time;
 
 /// An output longer than this opens on its first lines, and the reader asks for the rest.
 const OUTPUT_FOLD_LINES: usize = 12;
@@ -179,14 +180,6 @@ impl<'a> Call<'a> {
     }
 }
 
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| {
-            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
-        })
-}
-
 /// Whole seconds, as a running call counts them.
 /// The seconds since `started`, after `before` already spent, which the clock counts on in
 /// place without drawing the transcript again.
@@ -202,7 +195,7 @@ struct RunningFor {
 impl Render for RunningFor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         clock::second(window, cx);
-        seconds(now().saturating_sub(self.started) + self.before)
+        time::elapsed((time::now_ms().saturating_sub(self.started) + self.before) / 1000)
     }
 }
 
@@ -220,13 +213,6 @@ fn settled(id: String, running: bool, time: AnyElement) -> AnyElement {
         },
     )
     .into_any_element()
-}
-
-fn seconds(ms: u64) -> String {
-    if ms < 1000 {
-        return "0s".into();
-    }
-    duration(ms - ms % 1000)
 }
 
 /// The word a row names its call by: the call's own, its server's, or the app's for what it did.
@@ -394,10 +380,10 @@ pub fn run(
     let time = match current {
         Some(call) => Some(running_for(
             format!("run-seconds:{key}"),
-            call.started.unwrap_or_else(now),
+            call.started.unwrap_or_else(time::now_ms),
             spent,
         )),
-        None => (spent > 0).then(|| duration(spent).into_any_element()),
+        None => (spent > 0).then(|| time::took(spent).into_any_element()),
     };
     let time = time.map(|time| settled(format!("run-time:{key}"), current.is_some(), time));
     let (reader, hover, ink) = (looks.reader.clone(), looks.hover, looks.ink);
@@ -519,7 +505,7 @@ fn row(
     } else {
         call.ended
             .zip(call.started)
-            .map(|(ended, started)| duration(ended.saturating_sub(started)).into_any_element())
+            .map(|(ended, started)| time::took(ended.saturating_sub(started)).into_any_element())
     };
     let elapsed = elapsed.map(|elapsed| settled(format!("call-time:{id}"), running, elapsed));
     let quiet = call.diff.is_none() && call.status() != "failed";

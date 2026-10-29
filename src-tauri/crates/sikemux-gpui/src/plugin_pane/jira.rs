@@ -2301,7 +2301,7 @@ fn ago(at: &str) -> String {
     let Ok(at) = at else {
         return String::new();
     };
-    match crate::agents::age(at.timestamp_millis().max(0) as u64) {
+    match crate::ui::time::age(at.timestamp_millis().max(0) as u64) {
         now if now == "now" => now,
         age => format!("{age} ago"),
     }

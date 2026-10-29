@@ -9,7 +9,7 @@ use gpui_kit::{
 };
 use sikemux_wire::chat::{ChatMessage, ChatPart, ChatRole};
 
-use super::{duration, ChatRow, Drawn};
+use super::{ChatRow, Drawn};
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui::{self, IconButton};
@@ -129,7 +129,7 @@ pub fn line(
         .and_then(sent);
     let took = meta.and_then(|meta| meta.took).filter(|_| !user);
     let when = at.map(|at| match took {
-        Some(took) => format!("{at} · took {}", duration(took)),
+        Some(took) => format!("{at} · took {}", crate::ui::time::took(took)),
         None => at,
     });
     let speed = meta.and_then(|meta| meta.rate).filter(|_| !user).map(rate);

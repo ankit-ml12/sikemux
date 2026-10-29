@@ -185,7 +185,7 @@ impl Workbench {
                 .meta(if chat.active_at == 0 {
                     String::new()
                 } else {
-                    crate::agents::age(chat.active_at)
+                    crate::ui::time::age(chat.active_at)
                 })
                 .unarmed(unarmed(&chat.provider))
                 .mark(Mark::Agent(chat.provider.clone()))

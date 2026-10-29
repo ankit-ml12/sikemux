@@ -253,7 +253,7 @@ fn dot(state: &str, t: &Tokens) -> AnyElement {
 }
 
 fn ago(at: u64) -> String {
-    match crate::agents::age(at) {
+    match crate::ui::time::age(at) {
         now if now == "now" => now,
         age => format!("{age} ago"),
     }

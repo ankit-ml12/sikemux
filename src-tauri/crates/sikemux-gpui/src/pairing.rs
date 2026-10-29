@@ -295,7 +295,7 @@ fn waiting_moved(bench: &mut Workbench, cx: &mut Context<Workbench>) {
 
 /// What is left of the two minutes, as m:ss.
 fn waits(expires_at: u64) -> String {
-    let now = chrono::Utc::now().timestamp_millis().max(0) as u64;
+    let now = crate::ui::time::now_ms();
     let left = expires_at.saturating_sub(now).div_ceil(1000);
     format!("{}:{:02}", left / 60, left % 60)
 }
