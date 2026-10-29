@@ -6,7 +6,7 @@ use serde_json::Value;
 use sikemux_wire::chat::{ChatChange, ChatHead, ChatMessage, ChatPart, ChatView};
 
 /// Some fields of a `T`, each read already, put in place in turn.
-pub type Fields<T> = Vec<Box<dyn FnOnce(&mut T) + Send>>;
+pub type Fields<T> = Vec<Field<T>>;
 
 pub enum Changed {
     Head {
@@ -98,13 +98,12 @@ pub fn read(changes: Value) -> Result<Vec<Changed>, String> {
         .collect()
 }
 
-type Field<T> = Box<dyn FnOnce(&mut T) + Send>;
+pub type Field<T> = Box<dyn FnOnce(&mut T) + Send>;
+/// Reads one field of a `T` from its name on the wire, or none for a field this app does not know.
+type ReadField<T> = fn(&str, Value) -> Result<Option<Field<T>>, serde_json::Error>;
 
 /// Reads each field `set` names by `field`, leaving out those this app does not know.
-fn fields<T>(
-    set: Value,
-    field: fn(&str, Value) -> Result<Option<Field<T>>, serde_json::Error>,
-) -> Result<Fields<T>, String> {
+fn fields<T>(set: Value, field: ReadField<T>) -> Result<Fields<T>, String> {
     let Value::Object(set) = set else {
         return Err("a set of fields is not an object".into());
     };

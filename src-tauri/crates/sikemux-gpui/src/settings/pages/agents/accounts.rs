@@ -22,8 +22,8 @@ use crate::workbench::Workbench;
 /// What the account is called: a built-in one still under its agent's name goes by
 /// the name on the account instead.
 fn name(bench: &Workbench, profile: &Profile, status: Option<&Status>) -> String {
-    let unnamed = profile.id.starts_with("builtin-")
-        && profile.name == bench.agent_name(&profile.provider).to_owned();
+    let unnamed =
+        profile.id.starts_with("builtin-") && profile.name == bench.agent_name(&profile.provider);
     status
         .and_then(|status| status.name.clone())
         .filter(|_| unnamed)

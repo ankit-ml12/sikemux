@@ -1000,7 +1000,7 @@ pub fn render(
             cx,
         ))
         .when(preferences.pane_shader && has_pane_image, |rows_of| {
-            rows_of.child(picture_rows(&preferences, fields, this, &knob, cx))
+            rows_of.child(picture_rows(preferences, fields, this, &knob, cx))
         });
 
     let style = bench
