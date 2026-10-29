@@ -4,7 +4,7 @@ import type { ConnectionLike } from '@sikemux/native';
 import type { QuestionAnswer } from '@shared/agents/questions';
 import type { AgentQuestion } from '@/core/protocol';
 
-import { useHostCall } from '@/core/hostCalls';
+import { callHost, useHostCall } from '@/core/hostCalls';
 import { problem } from '@/core/problem';
 
 const NONE: AgentQuestion[] = [];
@@ -91,12 +91,11 @@ export function useQuestions(
   const composing = writing ?? (current && !current.secret && !folded && !dismissed.has(current.id) ? current : null);
 
   const call = useCallback(
-    (method: string, params: object, ids: string[], undo?: () => void) => {
+    (send: (connection: ConnectionLike) => Promise<null>, ids: string[], undo?: () => void) => {
       if (!connection) return false;
       setSent((current) => new Set([...current, ...ids]));
       setWritingId((current) => (current && ids.includes(current) ? null : current));
-      connection
-        .call(method, JSON.stringify(params))
+      send(connection)
         .then(() => {
           setPicks((current) => new Map([...current].filter(([id]) => !ids.includes(id))));
           setShownId((current) => (current && ids.includes(current) ? null : current));
@@ -114,7 +113,7 @@ export function useQuestions(
 
   const answer = useCallback(
     async (question: AgentQuestion, given: QuestionAnswer, undo?: () => void) =>
-      call('answerQuestion', { id: question.id, ...given }, [question.id], undo),
+      call((connection) => callHost(connection, 'answerQuestion', { id: question.id, ...given }), [question.id], undo),
     [call],
   );
 
@@ -123,8 +122,7 @@ export function useQuestions(
       if (!open.length || !open.every((question) => held.has(question.id))) return;
       const answers = open.map((question) => ({ id: question.id, ...held.get(question.id)!.given }));
       call(
-        'answerQuestions',
-        { answers },
+        (connection) => callHost(connection, 'answerQuestions', { answers }),
         open.map((question) => question.id),
       );
     },

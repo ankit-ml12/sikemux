@@ -2884,6 +2884,20 @@ export interface ApprovalSetting {
     requireApproval: boolean;
 }
 
+export interface AnswerParams {
+    id: string;
+    answer?: string | null;
+    choice?: number | null;
+    /** The choices picked on a question that takes several. */
+    choices?: number[];
+    /** The assumption the agent went on is right. */
+    fine?: boolean;
+}
+
+export interface AnswersParams {
+    answers: AnswerParams[];
+}
+
 export interface AgentMessagesParams {
     project: string;
     limit?: number | null;
@@ -2963,6 +2977,8 @@ export interface CoreCalls {
     requireApproval: { params: NoParams; answer: ApprovalSetting };
     setRequireApproval: { params: ApprovalSetting; answer: RemoteStatus };
     questions: { params: NoParams; answer: AgentQuestion[] };
+    answerQuestion: { params: AnswerParams; answer: null };
+    answerQuestions: { params: AnswersParams; answer: null };
     agentMessageRows: { params: AgentMessagesParams; answer: AgentMessageRows };
     boards: { params: NoParams; answer: ProjectBoard[] };
     board: { params: BoardParams; answer: ProjectBoard };

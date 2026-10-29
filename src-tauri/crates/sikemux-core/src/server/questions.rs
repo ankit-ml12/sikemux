@@ -1010,7 +1010,9 @@ fn views_of(core: &Core, open: Vec<Question>, answered: Vec<Answered>) -> Vec<Ag
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AnswerParams {
     id: String,
+    #[serde(default)]
     answer: Option<String>,
+    #[serde(default)]
     choice: Option<usize>,
     /// The choices picked on a question that takes several.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1022,7 +1024,7 @@ pub(crate) struct AnswerParams {
 
 /// The person's answer: the first one wins, and reaches the asker as a
 /// message.
-pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Value, String> {
+pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<(), String> {
     answer_all(
         core,
         AnswersParams {
@@ -1040,7 +1042,7 @@ pub(crate) struct AnswersParams {
 /// The person's answers to questions asked together. Each asker gets all of
 /// its answers in one message, so the first does not start a turn before the
 /// rest arrive.
-pub(crate) async fn answer_all(core: &Arc<Core>, params: AnswersParams) -> Result<Value, String> {
+pub(crate) async fn answer_all(core: &Arc<Core>, params: AnswersParams) -> Result<(), String> {
     let taken = {
         let mut state = core.harness.questions.state.locked();
         let mut taken = Vec::with_capacity(params.answers.len());
@@ -1157,7 +1159,7 @@ pub(crate) async fn answer_all(core: &Arc<Core>, params: AnswersParams) -> Resul
     }
     match failed {
         Some(error) => Err(error),
-        None => Ok(json!({ "answered": true })),
+        None => Ok(()),
     }
 }
 
@@ -1481,7 +1483,8 @@ pub(crate) async fn answer_relayed(
     if !relayed_there {
         return Ok(json!({ "answered": false }));
     }
-    answer(core, params).await
+    answer(core, params).await?;
+    Ok(json!({ "answered": true }))
 }
 
 /// A question an agent on a linked host asked no longer waits on the person.

@@ -41,6 +41,7 @@ const SOURCES = [
   `${CORE}/server/saved.rs`,
   `${CORE}/server/chat/find.rs`,
   `${CORE}/sessions/search.rs`,
+  `${CORE}/server/questions.rs`,
   `${WIRE}/changed.rs`,
   `${CORE}/server/board.rs`,
   `${CORE}/server/board/auto.rs`,

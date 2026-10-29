@@ -536,8 +536,8 @@ calls! { core, client, params;
         remote::set_require_approval(&core, params)?
     },
     "questions" (NoParams) -> Vec<AgentQuestion>: Watch, any_program => questions::views(&core),
-    "answerQuestion": Full => answer(questions::answer(&core, parse(params)?).await?),
-    "answerQuestions": Full => answer(questions::answer_all(&core, parse(params)?).await?),
+    "answerQuestion" (questions::AnswerParams) -> (): Full => questions::answer(&core, params).await?,
+    "answerQuestions" (questions::AnswersParams) -> (): Full => questions::answer_all(&core, params).await?,
     "agentMessages": Watch, any_program => answer(agent_messages(&core, parse(params)?).await?),
     "agentMessageRows" (AgentMessagesParams) -> AgentMessageRows: Watch, any_program => {
         agent_message_rows(&core, params).await?
