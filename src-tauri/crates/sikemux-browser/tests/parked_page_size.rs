@@ -1,9 +1,27 @@
 //! A parked tab sits far above the window. Under an opaque title bar WebKit
 //! once took that distance off the page, which then laid out with a negative
-//! height. WebKit and AppKit want the main thread, so this runs as its own program.
+//! height. WebKit and AppKit want the main thread, so this runs as its own program,
+//! answering nextest's `--list` itself.
+
+const TEST: &str = "a_parked_page_lays_out_at_its_own_size";
+
+fn listing() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    if !args.iter().any(|arg| arg == "--list") {
+        return false;
+    }
+    if cfg!(target_os = "macos") && !args.iter().any(|arg| arg == "--ignored") {
+        println!("{TEST}: test");
+    }
+    true
+}
 
 #[cfg(target_os = "macos")]
 fn main() {
+    if listing() {
+        return;
+    }
+
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -90,8 +108,10 @@ fn main() {
         laid_out, "1200x800",
         "a parked page lays out at its own size"
     );
-    println!("test a_parked_page_lays_out_at_its_own_size ... ok");
+    println!("test {TEST} ... ok");
 }
 
 #[cfg(not(target_os = "macos"))]
-fn main() {}
+fn main() {
+    listing();
+}
