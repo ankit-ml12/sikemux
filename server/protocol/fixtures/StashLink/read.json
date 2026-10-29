@@ -4,6 +4,7 @@
     "title": "nodelike/sikemux: agents, terminals and a browser",
     "site": "GitHub",
     "description": "Every agent in one window.",
-    "imageUrl": "https://opengraph.githubassets.com/1/nodelike/sikemux"
+    "imageUrl": "https://opengraph.githubassets.com/1/nodelike/sikemux",
+    "iconUrl": "https://github.githubassets.com/favicons/favicon.svg"
   }
 }

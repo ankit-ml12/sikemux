@@ -1816,6 +1816,12 @@ export const schema = {
         },
         description: { type: "string", maxLength: 1000 },
         imageUrl: { type: "string", format: "uri", maxLength: 2048 },
+        iconUrl: {
+          description: "The site's icon, as the page names it.",
+          type: "string",
+          format: "uri",
+          maxLength: 2048,
+        },
       },
       required: ["title", "site", "description"],
       additionalProperties: false,

@@ -1003,6 +1003,8 @@ export interface StashPreview {
   site: string;
   description: string;
   imageUrl?: string;
+  /** The site's icon, as the page names it. */
+  iconUrl?: string;
 }
 
 /** When the person last looked at the stash. Setting it only ever moves it forward, and never past the server's clock. */

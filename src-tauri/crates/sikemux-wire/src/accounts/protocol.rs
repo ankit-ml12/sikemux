@@ -829,6 +829,9 @@ pub struct StashPreview {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
+    /// The site's icon, as the page names it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
 }
 
 /// When the person last looked at the stash. Setting it only ever moves it forward, and never past the server's clock.

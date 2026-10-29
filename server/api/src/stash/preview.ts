@@ -3,9 +3,11 @@ import { BlockList, isIPv4, isIPv6 } from "node:net";
 import { lookup } from "node:dns/promises";
 import http from "node:http";
 import https from "node:https";
-import type { StashPreview } from "@sikemux/protocol";
+import type { StashLink, StashPreview } from "@sikemux/protocol";
 
 const TIMEOUT_MS = 5_000;
+/** Pages read at once, across every request and the backfill; past this a page is not read. */
+const READS_AT_ONCE = 8;
 const MAX_BYTES = 1024 * 1024;
 const MAX_REDIRECTS = 3;
 
@@ -145,14 +147,17 @@ function trimmed(written: string): string {
   return unopened ? trimmed(link.slice(0, -1)) : link;
 }
 
-/** The http and https links written in `text`, in the order they first appear, without repeats. */
+/** How many links in a text's or prompt's words are kept. */
+const LINKS_KEPT = 6;
+
+/** The first http and https links written in `text`, in the order they appear, without repeats. */
 export function linksIn(text: string): string[] {
   const found: string[] = [];
   for (const [written] of text.matchAll(/https?:\/\/[^\s<>"'`]+/gi)) {
     const link = trimmed(written);
     if (URL.parse(link)?.hostname && !found.includes(link)) found.push(link);
   }
-  return found;
+  return found.slice(0, LINKS_KEPT);
 }
 
 const ENTITIES: Record<string, string> = {
@@ -215,22 +220,78 @@ export function readPreview(html: string, url: URL): StashPreview {
       1000,
     ),
   };
-  const image = meta.get("og:image") ?? meta.get("twitter:image");
-  const imageUrl = image ? URL.parse(image, url.href) : null;
-  if (
-    imageUrl &&
-    (imageUrl.protocol === "https:" || imageUrl.protocol === "http:") &&
-    imageUrl.href.length <= 2048
-  )
-    preview.imageUrl = imageUrl.href;
+  const imageUrl = linked(
+    meta.get("og:image") ?? meta.get("twitter:image"),
+    url,
+  );
+  if (imageUrl) preview.imageUrl = imageUrl;
+  const iconUrl = linked(icon(head), url);
+  if (iconUrl) preview.iconUrl = iconUrl;
   return preview;
+}
+
+/** `href` read against the page at `url`, when it is an http or https address short enough to keep. */
+function linked(href: string | undefined, url: URL): string | undefined {
+  const found = href ? URL.parse(href, url.href) : null;
+  return found &&
+    (found.protocol === "https:" || found.protocol === "http:") &&
+    found.href.length <= 2048
+    ? found.href
+    : undefined;
+}
+
+/** The site's icon the page's head names: its plain icon first, else the one for home screens. */
+function icon(head: string): string | undefined {
+  let homeScreen: string | undefined;
+  for (const [tag] of head.matchAll(/<link\b[^>]*>/gi)) {
+    const attrs = attributes(tag);
+    const rel = (attrs.get("rel") ?? "").toLowerCase().split(/\s+/);
+    const href = attrs.get("href");
+    if (!href) continue;
+    if (rel.includes("icon")) return decode(href);
+    if (rel.includes("apple-touch-icon")) homeScreen ??= decode(href);
+  }
+  return homeScreen;
+}
+
+let reading = 0;
+
+/**
+ * Reads the previews of the first `urls` there is room for now, and null for the rest; null
+ * altogether when there is room for none.
+ */
+export async function readPages(
+  urls: readonly string[],
+): Promise<(StashPreview | null)[] | null> {
+  if (urls.length === 0) return [];
+  const room = Math.min(urls.length, READS_AT_ONCE - reading);
+  if (room <= 0) return null;
+  reading += room;
+  try {
+    return await Promise.all(
+      urls.map((url, at) => (at < room ? fetchPreview(url) : null)),
+    );
+  } finally {
+    reading -= room;
+  }
+}
+
+/** How many of the links in an item's words have their pages read. */
+const LINKS_READ = 3;
+
+/** The links in an item's words with the previews of the first few; null when there is no room to read them now. */
+export async function readLinks(
+  urls: readonly string[],
+): Promise<StashLink[] | null> {
+  const found = await readPages(urls.slice(0, LINKS_READ));
+  return found && urls.map((url, at) => ({ url, preview: found[at] ?? null }));
 }
 
 /**
  * Reads a link's preview from its page, reaching only public addresses (after resolving them, and
  * again after each redirect), within 5 seconds and the page's first megabyte. Null when it cannot.
  */
-export async function fetchPreview(link: string): Promise<StashPreview | null> {
+async function fetchPreview(link: string): Promise<StashPreview | null> {
   let url = URL.parse(link);
   const signal = AbortSignal.timeout(TIMEOUT_MS);
   for (let hop = 0; url && hop <= MAX_REDIRECTS; hop += 1) {
