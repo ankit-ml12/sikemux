@@ -1,6 +1,6 @@
 [package]
 name = "sikemux-simulator"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 publish = false
 description = "The iOS Simulator for agents and the desk: the device helper, who holds which device, and the agents' tools, with no UI toolkit"

@@ -5716,7 +5716,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux-simulator"
-version = "0.1.0"
+version = "0.6.0-nightly.10"
 dependencies = [
  "hex",
  "libc",
