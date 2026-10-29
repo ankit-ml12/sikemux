@@ -138,10 +138,7 @@ pub struct Workbench {
     pub picked_tasks: HashMap<String, String>,
     /// Where the stage was last drawn, for what rises over the stage alone.
     pub stage_frame: Rc<Cell<Bounds<Pixels>>>,
-    /// The run whose failed tests the person closed the card of, by execution.
-    pub tests_closed: Option<String>,
-    /// The run whose "Why?" card is open, by execution.
-    pub failure_shown: Option<String>,
+    pub run_cards: crate::test_card::RunCards,
     /// The space whose projects the rail shows, else every project.
     pub space: Option<String>,
     pub git: crate::git::GitTab,
@@ -619,8 +616,7 @@ impl Workbench {
             agent_card: crate::agents::card::Card::default(),
             picked_tasks: HashMap::new(),
             stage_frame: Rc::default(),
-            tests_closed: None,
-            failure_shown: None,
+            run_cards: Default::default(),
             space: None,
             hosts: crate::hosts::Hosts::default(),
             track: crate::track::Slide::default(),

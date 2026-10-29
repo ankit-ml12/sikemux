@@ -64,13 +64,31 @@ pub fn status(finished: &Finished) -> Option<(String, bool)> {
     }
 }
 
+/// Which card the Run chip shows, by the run's execution: the failed tests until the person
+/// closes them, and why a run stopped once they ask.
+#[derive(Default)]
+pub struct RunCards {
+    tests_closed: Option<String>,
+    why_open: Option<String>,
+}
+
+impl RunCards {
+    fn open(&self, finished: &Finished) -> bool {
+        let execution = finished.execution();
+        match finished.tests() {
+            Some(_) => self.tests_closed.as_deref() != Some(&execution),
+            None => self.why_open.as_deref() == Some(&execution),
+        }
+    }
+}
+
 /// Whether the chip offers "Why?": failed tests whose card was closed, or a run that stopped
 /// without tests whose card is not open.
 pub fn offers_why(bench: &Workbench, finished: &Finished) -> bool {
-    let execution = finished.execution();
+    let shown = bench.run_cards.open(finished);
     match finished.tests() {
-        Some(_) => finished.failed() > 0 && bench.tests_closed.as_deref() == Some(&execution),
-        None => finished.stopped().is_some() && bench.failure_shown.as_deref() != Some(&execution),
+        Some(_) => finished.failed() > 0 && !shown,
+        None => finished.stopped().is_some() && !shown,
     }
 }
 
@@ -81,8 +99,8 @@ pub fn why(bench: &mut Workbench) {
         return;
     };
     match run["tests"].is_object() {
-        true => bench.tests_closed = None,
-        false => bench.failure_shown = run["executionId"].as_str().map(str::to_owned),
+        true => bench.run_cards.tests_closed = None,
+        false => bench.run_cards.why_open = run["executionId"].as_str().map(str::to_owned),
     }
 }
 
@@ -94,17 +112,17 @@ pub fn card(
     output: Option<(u64, String)>,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
-    let execution = finished.execution();
+    let shown = bench.run_cards.open(finished);
     let body = match finished.tests() {
         Some(tests) if finished.failed() > 0 => {
-            if bench.tests_closed.as_deref() == Some(&execution) {
+            if !shown {
                 return None;
             }
             tests_card(bench, finished, tests, output, cx)
         }
         Some(_) => return None,
         None => {
-            if bench.failure_shown.as_deref() != Some(&execution) {
+            if !shown {
                 return None;
             }
             failure_card(bench, finished, output, cx)
@@ -494,9 +512,9 @@ impl Workbench {
         let (running, last) = self.person_runs();
         if running.is_none() {
             if let Some(execution) = last.and_then(|run| run["executionId"].as_str()) {
-                self.tests_closed = Some(execution.to_owned());
+                self.run_cards.tests_closed = Some(execution.to_owned());
             }
         }
-        self.failure_shown = None;
+        self.run_cards.why_open = None;
     }
 }
