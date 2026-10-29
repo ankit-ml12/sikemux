@@ -477,7 +477,8 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
     };
     let updates = this
         .read(cx)
-        .host_views
+        .hosts
+        .views
         .get(&id)
         .and_then(crate::hosts::host_updates)
         .cloned();

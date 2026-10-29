@@ -780,7 +780,7 @@ fn draw(
 fn session_info(bench: &Workbench, id: TermKey) -> Option<&SessionInfo> {
     let view = match bench.terminals.place(id) {
         Place::This => bench.view.as_ref()?,
-        Place::Account(host) => bench.host_views.get(&host)?,
+        Place::Account(host) => bench.hosts.views.get(&host)?,
     };
     view.sessions
         .iter()

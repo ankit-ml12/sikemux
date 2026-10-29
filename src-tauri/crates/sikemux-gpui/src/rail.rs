@@ -186,7 +186,7 @@ fn this_host(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement
             ))
         })
         .status(Some(ui::dot(Tone::Ok, cx)));
-    let (bench_entity, approval) = (cx.weak_entity(), bench.approvals.get(&None).copied());
+    let (bench_entity, approval) = (cx.weak_entity(), bench.hosts.approvals.get(&None).copied());
     with_menu(
         "this-host-menu".into(),
         move |popup, _, _| {
@@ -279,24 +279,24 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
             };
             let agents = host["id"]
                 .as_str()
-                .and_then(|id| bench.host_views.get(id))
+                .and_then(|id| bench.hosts.views.get(id))
                 .map_or(0, |view| view.workspace.agents.len());
             let load = host["id"]
                 .as_str()
-                .and_then(|id| bench.host_views.get(id))
+                .and_then(|id| bench.hosts.views.get(id))
                 .and_then(|view| view.load.as_ref())
                 .filter(|_| reach == "connected")
                 .map(crate::hosts::load_label);
             let updates = host["id"]
                 .as_str()
-                .and_then(|id| bench.host_views.get(id))
+                .and_then(|id| bench.hosts.views.get(id))
                 .and_then(crate::hosts::host_updates)
                 .filter(|_| reach == "connected")
                 .cloned();
             let detail = match reach {
                 "away" if linked => Some("out of reach".to_owned()),
                 "connecting" if linked => Some("connecting".to_owned()),
-                _ if linked && bench.hosts_unavailable.is_some() => {
+                _ if linked && bench.hosts.unavailable.is_some() => {
                     Some("needs the signed app".to_owned())
                 }
                 _ if agents > 0 => Some(match agents {
@@ -422,10 +422,11 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 );
             };
             let has_project = bench
-                .host_views
+                .hosts
+                .views
                 .get(&key)
                 .is_some_and(|view| !view.workspace.projects.is_empty());
-            let approval = bench.approvals.get(&Some(key.clone())).copied();
+            let approval = bench.hosts.approvals.get(&Some(key.clone())).copied();
             with_menu(
                 menu_id,
                 move |popup, _, cx| {

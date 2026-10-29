@@ -1381,7 +1381,8 @@ fn shown(bench: &Workbench) -> Vec<FileKey> {
     let mut shown = Vec::new();
     let views = bench.view.iter().map(|view| (Host::This, view)).chain(
         bench
-            .host_views
+            .hosts
+            .views
             .iter()
             .map(|(host, view)| (Host::Account(host.clone()), view)),
     );

@@ -43,6 +43,39 @@ pub enum Place {
     Account(String),
 }
 
+/// The account's other hosts as this app knows them.
+#[derive(Default)]
+pub struct Hosts {
+    /// The account's other hosts this app reaches, by key: each one's view, as its core sends it.
+    pub(crate) views: std::collections::HashMap<String, sikemux_wire::protocol::DeviceView>,
+    /// The account's other hosts this app is connected to now, by key.
+    pub(crate) reached: std::collections::HashSet<String>,
+    /// The home folders of the account's other hosts, by the host's key.
+    pub(crate) homes: std::collections::HashMap<String, String>,
+    /// Whether each host asks the person before a new device joins, by key, none for this one.
+    pub(crate) approvals: std::collections::HashMap<Option<String>, bool>,
+    /// Why this app reaches none of the account's other hosts, when it cannot.
+    pub(crate) unavailable: Option<String>,
+}
+
+impl Hosts {
+    /// Forgets what it knew of the hosts no longer linked to the account, as `listed` says.
+    pub fn keep_linked(&mut self, listed: &Value) {
+        let linked = |id: &String| {
+            listed
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|host| host["id"] == id.as_str())
+        };
+        self.views.retain(|id, _| linked(id));
+        self.reached.retain(linked);
+        self.homes.retain(|id, _| linked(id));
+        self.approvals
+            .retain(|id, _| id.as_ref().is_none_or(linked));
+    }
+}
+
 pub struct HostOption {
     pub choice: HostChoice,
     pub label: SharedString,
@@ -106,7 +139,7 @@ impl Workbench {
     pub fn home_at(&self, place: &Place) -> Option<String> {
         match place {
             Place::This => crate::ui::path::this_home(),
-            Place::Account(host) => self.host_homes.get(host).cloned(),
+            Place::Account(host) => self.hosts.homes.get(host).cloned(),
         }
     }
 
@@ -265,7 +298,7 @@ impl Workbench {
             };
             let _ = bench.update(cx, |bench, cx| {
                 if let Some(on) = read["requireApproval"].as_bool() {
-                    bench.approvals.insert(host, on);
+                    bench.hosts.approvals.insert(host, on);
                     cx.notify();
                 }
             });
@@ -275,7 +308,7 @@ impl Workbench {
 
     /// Asks the person before a new device joins `host`, this one when none, or stops asking.
     pub fn flip_approval(&self, host: Option<String>, cx: &mut Context<Self>) {
-        let Some(on) = self.approvals.get(&host).copied() else {
+        let Some(on) = self.hosts.approvals.get(&host).copied() else {
             return;
         };
         let place = host.clone().map_or(Place::This, Place::Account);
@@ -311,7 +344,7 @@ impl Workbench {
     /// A new chat on the account host `host`, in the project in front there, with the agent the
     /// rail is set to, and the person moved there to see it.
     pub fn new_chat_on(&mut self, host: &str, cx: &mut Context<Self>) {
-        let Some(view) = self.host_views.get(host) else {
+        let Some(view) = self.hosts.views.get(host) else {
             return;
         };
         let projects = &view.workspace.projects;
@@ -471,7 +504,7 @@ impl Workbench {
                 HostChoice::Account(key) => Some((
                     key.clone(),
                     option.label,
-                    self.hosts_reached.contains(&key),
+                    self.hosts.reached.contains(&key),
                     HostChoice::Account(key),
                 )),
                 HostChoice::Ssh(_) => None,

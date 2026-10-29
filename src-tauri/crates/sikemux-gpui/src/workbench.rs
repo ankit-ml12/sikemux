@@ -242,16 +242,7 @@ pub struct Workbench {
     pub top_bar_hovered: bool,
     /// Settings, while they take the stage's place.
     pub settings: Option<crate::settings::Settings>,
-    /// The account's other hosts this app reaches, by key: each one's view, as its core sends it.
-    pub host_views: HashMap<String, DeviceView>,
-    /// The account's other hosts this app is connected to now, by key.
-    pub hosts_reached: HashSet<String>,
-    /// The home folders of the account's other hosts, by the host's key.
-    pub(crate) host_homes: HashMap<String, String>,
-    /// Whether each host asks the person before a new device joins, by key, none for this one.
-    pub approvals: HashMap<Option<String>, bool>,
-    /// Why this app reaches none of the account's other hosts, when it cannot.
-    pub hosts_unavailable: Option<String>,
+    pub hosts: crate::hosts::Hosts,
     /// The stage's tabs while they move between one another.
     pub(crate) track: crate::track::Slide<String>,
     /// The runs the person started here, whose terminal opens once the run has one.
@@ -699,11 +690,7 @@ impl Workbench {
             tests_closed: None,
             failure_shown: None,
             space: None,
-            host_views: HashMap::new(),
-            hosts_reached: HashSet::new(),
-            host_homes: HashMap::new(),
-            approvals: HashMap::new(),
-            hosts_unavailable: None,
+            hosts: crate::hosts::Hosts::default(),
             track: crate::track::Slide::default(),
             runs_to_show: HashSet::new(),
             watched_worktree: None,
@@ -814,7 +801,7 @@ impl Workbench {
             }
             Update::HostView(host, view) => {
                 let in_front = self.place() == crate::hosts::Place::Account(host.clone());
-                self.host_views.insert(host, *view);
+                self.hosts.views.insert(host, *view);
                 self.settle_closing();
                 if in_front {
                     self.watch_project();
@@ -831,32 +818,21 @@ impl Workbench {
             }
             Update::HostReach(host, reached) => {
                 if reached {
-                    self.hosts_reached.insert(host.clone());
+                    self.hosts.reached.insert(host.clone());
                     crate::editor::host_reached(self, &Place::Account(host.clone()));
                     self.read_approval(Some(host.clone()), cx);
                 } else {
-                    self.hosts_reached.remove(&host);
+                    self.hosts.reached.remove(&host);
                 }
                 self.parts.redraw(&self.parts.stage, cx);
             }
-            Update::HostsUnavailable(reason) => self.hosts_unavailable = Some(reason),
+            Update::HostsUnavailable(reason) => self.hosts.unavailable = Some(reason),
             Update::HostHome(host, home) => {
-                self.host_homes.insert(host, home);
+                self.hosts.homes.insert(host, home);
             }
             Update::Read("hosts", value) => {
-                let linked = |id: &String| {
-                    value
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .any(|host| host["id"] == id.as_str())
-                };
-                self.host_views.retain(|id, _| linked(id));
-                self.hosts_reached.retain(linked);
-                self.host_homes.retain(|id, _| linked(id));
-                self.approvals
-                    .retain(|id, _| id.as_ref().is_none_or(linked));
-                if !self.approvals.contains_key(&None) {
+                self.hosts.keep_linked(&value);
+                if !self.hosts.approvals.contains_key(&None) {
                     self.read_approval(None, cx);
                 }
                 self.keep_read("hosts", value);
@@ -876,7 +852,7 @@ impl Workbench {
                     .view
                     .as_ref()
                     .map_or(&[][..], |view| view.sessions.as_slice());
-                let hosts = &self.host_views;
+                let hosts = &self.hosts.views;
                 self.terminals.keep(
                     |place, id| match place {
                         Place::This => sessions.iter().any(|session| session.id == id),
@@ -1964,7 +1940,7 @@ impl Workbench {
         let crate::hosts::Place::Account(key) = self.place() else {
             return None;
         };
-        if self.hosts_reached.contains(&key) {
+        if self.hosts.reached.contains(&key) {
             return None;
         }
         let named = crate::hosts::HostChoice::Account(key.clone());
@@ -2345,7 +2321,7 @@ impl Workbench {
                 | "update" | "runs" | "ports" | "trust" | "drafts"),
                 value,
             ) => self.reads.holds(key, value),
-            Update::HostView(host, view) => self.host_views.get(host) == Some(&**view),
+            Update::HostView(host, view) => self.hosts.views.get(host) == Some(&**view),
             _ => false,
         }
     }
@@ -2526,7 +2502,7 @@ impl Workbench {
     /// else this host's.
     pub fn shown(&self) -> Option<&DeviceView> {
         match self.view.as_ref()?.layout.chosen_host.as_ref() {
-            Some(key) => self.host_views.get(key),
+            Some(key) => self.hosts.views.get(key),
             None => self.view.as_ref(),
         }
     }
@@ -2535,7 +2511,7 @@ impl Workbench {
     pub fn view_at(&self, place: &Place) -> Option<&DeviceView> {
         match place {
             Place::This => self.view.as_ref(),
-            Place::Account(host) => self.host_views.get(host),
+            Place::Account(host) => self.hosts.views.get(host),
         }
     }
 
@@ -4367,7 +4343,8 @@ impl Workbench {
                 return self.call("openTab", tab(project));
             }
             if let Some((host, project)) = self
-                .host_views
+                .hosts
+                .views
                 .iter()
                 .find_map(|(host, view)| Some((host.clone(), project_on(view)?)))
             {
