@@ -421,8 +421,8 @@ pub(crate) fn thaw(core: &Arc<Core>, session: Arc<Session>) {
 /// Opens the terminal and starts its process. Runs on a blocking thread.
 pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreResult<PendingStart> {
     validate_pty_dimensions(launch.cols, launch.rows)?;
-    let _launching = core.launching.enter();
-    if core.is_frozen() {
+    let _launching = core.updating.launching.enter();
+    if core.updating.is_frozen() {
         return Err(super::upgrade::UPDATING.into());
     }
     core.reclaim_exited_sessions(core.uptime_ms());
@@ -502,7 +502,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     );
     let mut screen = Screen::new(rows, cols, shell_metadata_enabled);
     if let Some(carried) = carried.as_ref() {
-        screen.process(&carried.prelude, &core.terminal_colors());
+        screen.process(&carried.prelude, &core.look.terminal_colors());
     }
     let (session, input_jobs) = Session::assemble(
         SessionParts {
@@ -557,8 +557,8 @@ fn carried_screen(core: &Core, continuation: &Continuation) -> Option<CarriedScr
         return None;
     }
     let mut screen = from.screen.locked();
-    screen.process(RESET_MODES, &core.terminal_colors());
-    screen.process(b"\x1b[r", &core.terminal_colors());
+    screen.process(RESET_MODES, &core.look.terminal_colors());
+    screen.process(b"\x1b[r", &core.look.terminal_colors());
     let (rows, cols) = screen.terminal.size();
     let cursor_row = screen.terminal.cursor().0;
     let last_written = screen.terminal.last_written_row();
@@ -679,8 +679,8 @@ enum PumpEnd {
 /// Reads until EOF. The first byte is read into the screen at once; after
 /// that, small writes are gathered for up to 2 ms into one pass.
 async fn pump_output(core: &Arc<Core>, session: &Session) -> PumpEnd {
-    let mut frozen = core.frozen.subscribe();
-    let _pumping = core.pumping.enter();
+    let mut frozen = core.updating.watch();
+    let _pumping = core.updating.pumping.enter();
     let mut buf = vec![0u8; OUTPUT_BATCH_BYTES];
     let mut batch = Vec::with_capacity(OUTPUT_BATCH_BYTES);
     loop {
@@ -905,7 +905,7 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
         .as_mut()
         .map(|shell| shell.process_for_events(bytes, output_now_ms))
         .unwrap_or_default();
-    let replies = screen.process(bytes, &core.terminal_colors());
+    let replies = screen.process(bytes, &core.look.terminal_colors());
     if let Some(agent) = session.agent.as_ref() {
         agent.note_parsed();
     }
@@ -961,7 +961,7 @@ pub(crate) fn reset_modes(core: &Core, session: &Session) -> CoreResult<()> {
     session
         .screen
         .locked()
-        .process(RESET_MODES, &core.terminal_colors());
+        .process(RESET_MODES, &core.look.terminal_colors());
     session.frames.notify.notify_one();
     Ok(())
 }
@@ -971,7 +971,7 @@ pub(crate) fn clear(core: &Core, session: &Session) {
         .screen
         .locked()
         .terminal
-        .clear(&core.terminal_colors());
+        .clear(&core.look.terminal_colors());
     session.frames.notify.notify_one();
 }
 
@@ -1153,7 +1153,7 @@ fn send_frames(core: &Core, session: &Session) -> Option<Instant> {
     let mut screen = session.screen.locked();
     if let Some(deadline) = screen.terminal.sync_deadline() {
         if deadline <= now {
-            let replies = screen.end_sync(&core.terminal_colors());
+            let replies = screen.end_sync(&core.look.terminal_colors());
             reply_to_program(session, replies);
         } else {
             next = Some(deadline);

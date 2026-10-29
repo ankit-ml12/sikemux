@@ -5,12 +5,13 @@ use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sikemux_process::sync::Locked;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::{watch, Notify};
 
 use crate::frozen::{
     FrozenReply, FrozenRequest, UpdateBlocker, UpgradeInfo, RESUME_FORMAT, UPGRADE_INFO_ARG,
@@ -21,6 +22,91 @@ use super::access::{Peer, APP_ONLY};
 use super::chat::{self, HandOver};
 use super::connection::{blocking, FrameWriter};
 use super::{handover, session, Core};
+
+/// Whether this core hands itself over to a newer binary, and the work in
+/// progress a hand-over waits for.
+pub(crate) struct Updating {
+    /// True while the core hands itself over: it takes no new work and its
+    /// readers stop at the next whole chunk.
+    frozen: watch::Sender<bool>,
+    started: AtomicBool,
+    /// Readers that hold output not yet fed to their screen.
+    pub(crate) pumping: Gauge,
+    /// Sessions being spawned that are not in the table yet.
+    pub(crate) launching: Gauge,
+}
+
+impl Default for Updating {
+    fn default() -> Self {
+        Self {
+            frozen: watch::channel(false).0,
+            started: AtomicBool::new(false),
+            pumping: Gauge::default(),
+            launching: Gauge::default(),
+        }
+    }
+}
+
+impl Updating {
+    pub(crate) fn is_frozen(&self) -> bool {
+        *self.frozen.borrow()
+    }
+
+    /// Resolves once the core starts handing itself over.
+    pub(crate) async fn until_frozen(&self) {
+        let mut frozen = self.frozen.subscribe();
+        let _ = frozen.wait_for(|frozen| *frozen).await;
+    }
+
+    /// Hears each time the core freezes or thaws.
+    pub(crate) fn watch(&self) -> watch::Receiver<bool> {
+        self.frozen.subscribe()
+    }
+}
+
+/// Counts work in progress that a hand-over waits for, and wakes it when the
+/// count drops.
+#[derive(Default)]
+pub(crate) struct Gauge {
+    count: AtomicUsize,
+    idle: Notify,
+}
+
+pub(crate) struct GaugeGuard<'a>(&'a Gauge);
+
+impl Gauge {
+    pub(crate) fn enter(&self) -> GaugeGuard<'_> {
+        self.count.fetch_add(1, Ordering::AcqRel);
+        GaugeGuard(self)
+    }
+
+    pub(crate) fn is_idle(&self) -> bool {
+        self.count.load(Ordering::Acquire) == 0
+    }
+
+    /// False when the work did not finish in time.
+    pub(crate) async fn settle(&self, limit: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + limit;
+        loop {
+            let idle = self.idle.notified();
+            tokio::pin!(idle);
+            idle.as_mut().enable();
+            if self.is_idle() {
+                return true;
+            }
+            if tokio::time::timeout_at(deadline, idle).await.is_err() {
+                return self.is_idle();
+            }
+        }
+    }
+}
+
+impl Drop for GaugeGuard<'_> {
+    fn drop(&mut self) {
+        self.0.count.fetch_sub(1, Ordering::AcqRel);
+        self.0.idle.notify_waiters();
+    }
+}
 
 /// What anything that asks the core for work hears while it hands itself over.
 pub(crate) const UPDATING: &str =
@@ -102,11 +188,11 @@ async fn upgrade(core: &Arc<Core>, binary: PathBuf, force: bool, writer: &mut Fr
         .await;
         drop_writer(writer).await;
         settle_chats(core, force).await;
-        core.frozen.send_replace(true);
+        core.updating.frozen.send_replace(true);
     } else {
         // Frozen before the answer goes out, so a client that hears it never
         // reaches this core again, only its replacement.
-        core.frozen.send_replace(true);
+        core.updating.frozen.send_replace(true);
         reply(writer, &FrozenReply::Accepted).await;
     }
     finish(core, binary).await;
@@ -119,13 +205,14 @@ pub(crate) async fn replace_with(core: &Arc<Core>, binary: PathBuf) -> String {
         return error;
     }
     settle_chats(core, false).await;
-    core.frozen.send_replace(true);
+    core.updating.frozen.send_replace(true);
     finish(core, binary).await
 }
 
 async fn begin(core: &Arc<Core>, binary: &Path) -> Result<(), String> {
     if core
-        .upgrading
+        .updating
+        .started
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_err()
     {
@@ -135,7 +222,7 @@ async fn begin(core: &Arc<Core>, binary: &Path) -> Result<(), String> {
     let checked = binary.to_owned();
     let preflight = blocking(move || check_binary(&checked, &own).map_err(Into::into)).await;
     if let Err(error) = preflight {
-        core.upgrading.store(false, Ordering::Release);
+        core.updating.started.store(false, Ordering::Release);
         return Err(error.to_string());
     }
     Ok(())
@@ -234,10 +321,10 @@ fn upgrade_info(binary: &Path) -> Result<UpgradeInfo, String> {
 /// Returns only if that failed.
 async fn hand_over(core: &Arc<Core>, binary: PathBuf) -> String {
     super::spare::discard(core);
-    if !core.launching.settle(LAUNCH_SETTLE).await {
+    if !core.updating.launching.settle(LAUNCH_SETTLE).await {
         return "a session was still starting".into();
     }
-    if !core.pumping.settle(READER_SETTLE).await {
+    if !core.updating.pumping.settle(READER_SETTLE).await {
         return "a terminal reader did not stop".into();
     }
     let flushing: Vec<_> = core
@@ -305,9 +392,9 @@ fn restart_chats(core: &Arc<Core>, chats: Vec<HandOver>) {
 }
 
 fn thaw(core: &Arc<Core>) {
-    core.frozen.send_replace(false);
+    core.updating.frozen.send_replace(false);
     for target in core.all_sessions() {
         session::thaw(core, target);
     }
-    core.upgrading.store(false, Ordering::Release);
+    core.updating.started.store(false, Ordering::Release);
 }

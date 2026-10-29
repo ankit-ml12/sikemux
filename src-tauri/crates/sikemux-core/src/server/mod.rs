@@ -267,50 +267,6 @@ impl Drop for CapacityPermit {
     }
 }
 
-/// Counts work in progress that a hand-over waits for, and wakes it when the
-/// count drops.
-#[derive(Default)]
-pub(crate) struct Gauge {
-    count: AtomicUsize,
-    idle: Notify,
-}
-
-pub(crate) struct GaugeGuard<'a>(&'a Gauge);
-
-impl Gauge {
-    pub(crate) fn enter(&self) -> GaugeGuard<'_> {
-        self.count.fetch_add(1, Ordering::AcqRel);
-        GaugeGuard(self)
-    }
-
-    pub(crate) fn is_idle(&self) -> bool {
-        self.count.load(Ordering::Acquire) == 0
-    }
-
-    /// False when the work did not finish in time.
-    pub(crate) async fn settle(&self, limit: Duration) -> bool {
-        let deadline = tokio::time::Instant::now() + limit;
-        loop {
-            let idle = self.idle.notified();
-            tokio::pin!(idle);
-            idle.as_mut().enable();
-            if self.is_idle() {
-                return true;
-            }
-            if tokio::time::timeout_at(deadline, idle).await.is_err() {
-                return self.is_idle();
-            }
-        }
-    }
-}
-
-impl Drop for GaugeGuard<'_> {
-    fn drop(&mut self) {
-        self.0.count.fetch_sub(1, Ordering::AcqRel);
-        self.0.idle.notify_waiters();
-    }
-}
-
 /// What this core listens on and was started with, which a hand-over passes
 /// to its replacement.
 pub(crate) struct Listening {
@@ -334,14 +290,7 @@ pub(crate) struct Core {
     manifest_dir: Mutex<Option<PathBuf>>,
     pub(crate) harness: harness::Harness,
     pub(crate) window: window::Window,
-    /// True while the core hands itself over to a newer binary: it takes no
-    /// new work and its readers stop at the next whole chunk.
-    pub(crate) frozen: watch::Sender<bool>,
-    pub(crate) upgrading: std::sync::atomic::AtomicBool,
-    /// Readers that hold output not yet fed to their screen.
-    pub(crate) pumping: Gauge,
-    /// Sessions being spawned that are not in the table yet.
-    pub(crate) launching: Gauge,
+    pub(crate) updating: upgrade::Updating,
     pub(crate) listening: OnceLock<Listening>,
     pub(crate) tools: Mutex<Option<tools::ToolEndpoint>>,
     pub(crate) chats: chat::Chats,
@@ -396,10 +345,7 @@ pub(crate) struct Core {
     pub(crate) diagrams: diagrams::Diagrams,
     /// Answers in parts on the connections that asked for them.
     pub(crate) streams: streams::Streams,
-    /// The app's terminal theme, which programs asking for colours are told.
-    terminal_colors: Mutex<sikemux_wire::grid::TerminalColors>,
-    /// The person's theme resolved, kept until their preferences change.
-    palette: Mutex<sikemux_wire::theme::Palette>,
+    pub(crate) look: themes::Look,
 }
 
 /// Session and window call ids start from the clock, so an id a client still
@@ -462,10 +408,7 @@ impl Core {
             manifest_dir: Mutex::new(None),
             harness,
             window: window::Window::new(first_session_id()),
-            frozen: watch::channel(false).0,
-            upgrading: std::sync::atomic::AtomicBool::new(false),
-            pumping: Gauge::default(),
-            launching: Gauge::default(),
+            updating: upgrade::Updating::default(),
             listening: OnceLock::new(),
             tools: Mutex::new(None),
             chats: chat::Chats::new(data_dir),
@@ -507,8 +450,7 @@ impl Core {
             drafts: drafts::Drafts::new(data_dir),
             diagrams: diagrams::Diagrams::new(data_dir),
             streams: streams::Streams::default(),
-            terminal_colors: Mutex::default(),
-            palette: Mutex::new(themes::default_palette()),
+            look: themes::Look::default(),
         });
         from_app::carry(&core, data_dir);
         core.theme_changed();
@@ -525,30 +467,10 @@ impl Core {
         self.started.elapsed().as_millis() as u64
     }
 
-    pub(crate) fn is_frozen(&self) -> bool {
-        *self.frozen.borrow()
-    }
-
-    pub(crate) fn terminal_colors(&self) -> sikemux_wire::grid::TerminalColors {
-        self.terminal_colors.locked().clone()
-    }
-
     /// Resolves the person's theme again, for apps, devices and programs' colour queries.
     pub(crate) fn theme_changed(&self) {
-        let palette = themes::palette(&self.preferences.get());
-        *self.terminal_colors.locked() = themes::terminal_colors(&palette.theme);
-        *self.palette.locked() = palette;
+        self.look.set(themes::palette(&self.preferences.get()));
         self.view_changed();
-    }
-
-    pub(crate) fn palette(&self) -> sikemux_wire::theme::Palette {
-        self.palette.locked().clone()
-    }
-
-    /// Resolves once the core starts handing itself over.
-    pub(crate) async fn until_frozen(&self) {
-        let mut frozen = self.frozen.subscribe();
-        let _ = frozen.wait_for(|frozen| *frozen).await;
     }
 
     pub(crate) fn manifest_dir(&self) -> Option<PathBuf> {
@@ -1179,7 +1101,7 @@ pub(crate) async fn run_core(
         tokio::spawn(network_watch::run(core.clone())),
     ];
     let mut shutdown = core.shutdown.subscribe();
-    let mut frozen = core.frozen.subscribe();
+    let mut frozen = core.updating.watch();
     crate::waiting::wake(&config.socket);
     let mut ticker = tokio::time::interval(
         (config.idle_exit / 10).clamp(Duration::from_millis(10), Duration::from_secs(1)),
@@ -1211,7 +1133,7 @@ pub(crate) async fn run_core(
                 break;
             }
             _ = ticker.tick() => {
-                if core.is_idle() && !core.is_frozen() {
+                if core.is_idle() && !core.updating.is_frozen() {
                     let since = *idle_since.get_or_insert_with(Instant::now);
                     if since.elapsed() >= config.idle_exit {
                         eprintln!(

@@ -449,7 +449,7 @@ calls! { core, client, params;
         let params: ThemeParams = serde_json::from_value(params).unwrap_or_default();
         match params.id {
             Some(theme_id) => answer(super::themes::palette(&crate::protocol::Preferences { theme_id, ..core.preferences.get() })),
-            None => answer(core.palette()),
+            None => answer(core.look.palette()),
         }
     },
     "typeWhenReady": Full => {

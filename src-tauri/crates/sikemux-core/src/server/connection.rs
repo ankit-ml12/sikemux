@@ -243,7 +243,7 @@ async fn handshake(
     };
     // A client that connected while the core hands itself over talks to the
     // replacement instead.
-    if core.is_frozen() {
+    if core.updating.is_frozen() {
         return false;
     }
     let pid = std::process::id();
@@ -398,7 +398,7 @@ async fn read_requests(
                 let Some((request_id, id, bytes)) = decode_input(&frame.payload) else {
                     return;
                 };
-                if core.is_frozen() {
+                if core.updating.is_frozen() {
                     client.respond(request_id, Err(upgrade::UPDATING.into()));
                     continue;
                 }
@@ -493,7 +493,7 @@ async fn run_requests(
     while let Some((request_id, request)) = queue.recv().await {
         let core = core.clone();
         let client = client.clone();
-        if core.is_frozen() {
+        if core.updating.is_frozen() {
             client.respond(request_id, Err(upgrade::UPDATING.into()));
             continue;
         }

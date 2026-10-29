@@ -2,7 +2,9 @@
 //! Sikemux themes, Ghostty's catalogue with the app's colours worked out from
 //! each terminal palette, and the person's own, kept in preferences.
 
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
+
+use sikemux_process::sync::Locked;
 
 use base64::Engine;
 use sikemux_wire::grid::TerminalColors;
@@ -62,6 +64,42 @@ pub fn default_palette() -> Palette {
 }
 
 /// The picked theme with the colours worked out from it for drawing.
+/// The person's theme as the core resolved it, kept until their preferences change.
+pub(crate) struct Look {
+    palette: Mutex<Palette>,
+    /// The app's terminal theme, which programs asking for colours are told.
+    terminal_colors: Mutex<TerminalColors>,
+}
+
+impl Default for Look {
+    fn default() -> Self {
+        Self {
+            palette: Mutex::new(default_palette()),
+            terminal_colors: Mutex::default(),
+        }
+    }
+}
+
+impl Look {
+    pub(crate) fn set(&self, palette: Palette) {
+        *self.terminal_colors.locked() = terminal_colors(&palette.theme);
+        *self.palette.locked() = palette;
+    }
+
+    pub(crate) fn palette(&self) -> Palette {
+        self.palette.locked().clone()
+    }
+
+    pub(crate) fn terminal_colors(&self) -> TerminalColors {
+        self.terminal_colors.locked().clone()
+    }
+
+    /// The tokens of the theme in use, by name.
+    pub(crate) fn tokens_by_name(&self) -> std::collections::BTreeMap<String, String> {
+        by_name(&self.palette.locked().tokens)
+    }
+}
+
 pub(crate) fn palette(preferences: &Preferences) -> Palette {
     let theme = resolve(preferences);
     Palette {

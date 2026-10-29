@@ -237,7 +237,7 @@ async fn serve(core: Arc<Core>, stream: TcpStream, secret: &str, port: u16) {
         return;
     };
     let (read_half, mut writer) = stream.into_split();
-    if core.is_frozen() {
+    if core.updating.is_frozen() {
         write(
             &mut writer,
             &CliServerResponse::Error {
@@ -295,7 +295,7 @@ async fn serve(core: Arc<Core>, stream: TcpStream, secret: &str, port: u16) {
             Ok(()) => {
                 let answer = tokio::select! {
                     answer = harness::call(&core, request, peer, port) => answer,
-                    () = core.until_frozen() => Err(CUT_SHORT.into()),
+                    () = core.updating.until_frozen() => Err(CUT_SHORT.into()),
                 };
                 Ok(match answer {
                     Ok(value) => CliServerResponse::Result { value },
@@ -317,7 +317,7 @@ async fn serve(core: Arc<Core>, stream: TcpStream, secret: &str, port: u16) {
             }
             let closed = tokio::select! {
                 () = open(&core, &mut writer, request) => false,
-                () = core.until_frozen() => true,
+                () = core.updating.until_frozen() => true,
             };
             if closed {
                 write(

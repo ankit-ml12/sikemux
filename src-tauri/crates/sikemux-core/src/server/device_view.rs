@@ -9,7 +9,7 @@ use sikemux_process::sync::Locked;
 use tokio::sync::Notify;
 
 use super::connection::ClientConn;
-use super::{access, display, inbox, layout, load, themes, updates, workspace, Core};
+use super::{access, display, inbox, layout, load, updates, workspace, Core};
 use crate::protocol::{encode_control, AgentGroup, DeviceView, Event, ServerMessage};
 
 /// How often what a paired device shows of this host is looked at again
@@ -165,7 +165,7 @@ impl Core {
     pub(crate) fn workspace_view(&self) -> crate::protocol::Workspace {
         let preferences = self.preferences.get();
         let mut workspace = self.workspaces.view();
-        workspace.palette = themes::by_name(&self.palette.locked().tokens);
+        workspace.palette = self.look.tokens_by_name();
         self.names.fill(&mut workspace.agents);
         self.faces.fill(&mut workspace.agents);
         let accounts = self.workspaces.accounts();
