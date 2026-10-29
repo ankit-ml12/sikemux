@@ -64,68 +64,6 @@ pub struct Budget {
     near: bool,
 }
 
-/// One box of a host's sign-in form.
-struct Field {
-    name: &'static str,
-    label: &'static str,
-    placeholder: &'static str,
-    secret: bool,
-}
-
-/// How a host is signed in to with a token.
-struct Form {
-    lede: &'static str,
-    method: &'static str,
-    fields: &'static [Field],
-}
-
-const GITHUB: Form = Form {
-    lede: "Pull requests, Actions runs and issues for this repository, right beside your changes.",
-    method: "signIn",
-    fields: &[
-        Field {
-            name: "host",
-            label: "Host",
-            placeholder: "github.com",
-            secret: false,
-        },
-        Field {
-            name: "token",
-            label: "Personal access token",
-            placeholder: "ghp_… or github_pat_…",
-            secret: true,
-        },
-    ],
-};
-
-const GITLAB: Form = Form {
-    lede: "Merge requests, pipelines, issues and your To-Do list for this project, right beside your changes.",
-    method: "signInWithToken",
-    fields: &[
-        Field { name: "host", label: "Server", placeholder: "gitlab.com", secret: false },
-        Field { name: "token", label: "Personal access token", placeholder: "glpat-…", secret: true },
-    ],
-};
-
-const BITBUCKET: Form = Form {
-    lede: "Pull requests, pipelines and reviews for this repository, right beside your changes.",
-    method: "signInWithToken",
-    fields: &[
-        Field {
-            name: "token",
-            label: "Token",
-            placeholder: "ATATT… or ATCTT…",
-            secret: true,
-        },
-        Field {
-            name: "email",
-            label: "Atlassian account email",
-            placeholder: "you@example.com",
-            secret: false,
-        },
-    ],
-};
-
 /// Whether `typed` names a repository as `owner/name`.
 fn is_slug(typed: &str) -> bool {
     let allowed = |part: &str| {
@@ -137,37 +75,6 @@ fn is_slug(typed: &str) -> bool {
     typed
         .split_once('/')
         .is_some_and(|(owner, name)| allowed(owner) && allowed(name))
-}
-
-fn form_of(host: &str) -> &'static Form {
-    match host {
-        "gitlab" => &GITLAB,
-        "bitbucket" => &BITBUCKET,
-        _ => &GITHUB,
-    }
-}
-
-/// Where a token for `host` is made, on the server typed in, if any.
-fn tokens_page(host: &str, server: &str) -> String {
-    let server = server.trim().trim_start_matches("https://");
-    let server = server.split('/').next().unwrap_or_default();
-    match host {
-        "gitlab" => {
-            format!(
-            "https://{}/-/user_settings/personal_access_tokens?name=Sikemux&scopes=api,read_user",
-            if server.is_empty() { "gitlab.com" } else { server }
-        )
-        }
-        "bitbucket" => "https://id.atlassian.com/manage-profile/security/api-tokens".to_owned(),
-        _ => format!(
-            "https://{}/settings/tokens/new?scopes=repo,workflow&description=Sikemux",
-            if server.is_empty() {
-                "github.com"
-            } else {
-                server
-            }
-        ),
-    }
 }
 
 /// The sign-in form while it shows.
@@ -343,13 +250,16 @@ impl HostArea {
             .and_then(|status| status.host.clone())
             .filter(|host| !matches!(host.as_str(), "github.com" | "gitlab.com"))
             .unwrap_or_default();
-        let fields = form_of(&self.host.host)
+        let Some(form) = self.token_form(cx) else {
+            return;
+        };
+        let fields = form
             .fields
             .iter()
             .map(|field| {
                 cx.new(|cx| {
                     let mut input = InputState::new(window, cx)
-                        .placeholder(field.placeholder)
+                        .placeholder(field.placeholder.clone())
                         .masked(field.secret);
                     if field.name == "host" && !server.is_empty() {
                         input.set_value(server.clone(), window, cx);
@@ -369,7 +279,9 @@ impl HostArea {
     }
 
     fn sign_in_with_token(&mut self, cx: &mut Context<Self>) {
-        let form = form_of(&self.host.host);
+        let Some(form) = self.token_form(cx) else {
+            return;
+        };
         let Some(signing) = &mut self.signing else {
             return;
         };
@@ -377,7 +289,7 @@ impl HostArea {
         for (field, input) in form.fields.iter().zip(&signing.fields) {
             let value = input.read(cx).value().trim().to_owned();
             params.insert(
-                field.name.to_owned(),
+                field.name.clone(),
                 if value.is_empty() {
                     serde_json::Value::Null
                 } else {
@@ -390,7 +302,7 @@ impl HostArea {
         }
         signing.busy = true;
         signing.refused = None;
-        let signed = self.plugin(form.method, params.into());
+        let signed = self.plugin(&form.method, params.into());
         self.signed(signed, cx);
     }
 
@@ -1016,8 +928,7 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
         area.start_sign_in(false, window, cx);
     }
     let status: Status = area.status.clone().and_then(Result::ok).unwrap_or_default();
-    let form = form_of(&area.host.host);
-    let Some(signing) = &area.signing else {
+    let (Some(form), Some(signing)) = (area.token_form(cx), &area.signing) else {
         return div().into_any_element();
     };
     let busy = signing.busy;
@@ -1028,7 +939,7 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
         .find(|(field, _)| field.name == "host")
         .map(|(_, input)| input.read(cx).value().to_string())
         .unwrap_or_default();
-    let page = tokens_page(&area.host.host, &server);
+    let page = form.token_page(&server);
     let borrowed = match status.token_source.as_deref() {
         Some("ghCli") => Some((
             "Continue with the gh CLI".to_owned(),
@@ -1058,7 +969,7 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
             format!("Sign in to {host}")
         },
     )
-    .lede(form.lede)
+    .lede(form.lede.clone())
     .foot(sign_in::KEPT);
     if let Some((label, note)) = borrowed {
         screen = screen
@@ -1095,7 +1006,7 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
         screen = screen.child(sign_in::or("or paste a token", cx));
     }
     for (field, input) in form.fields.iter().zip(&signing.fields) {
-        let typed = sign_in::Field::new(field.label, input);
+        let typed = sign_in::Field::new(field.label.clone(), input);
         screen = screen.child(if field.secret { typed.mono() } else { typed });
     }
     screen = screen.child(
@@ -1129,10 +1040,12 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
     screen
         .child(
             sign_in::links()
-                .child(
-                    sign_in::link("host-token-page", "Create a token", cx)
-                        .on_click(move |_, _, cx| cx.open_url(&page)),
-                )
+                .when_some(page, |links, page| {
+                    links.child(
+                        sign_in::link("host-token-page", "Create a token", cx)
+                            .on_click(move |_, _, cx| cx.open_url(&page)),
+                    )
+                })
                 .when(signing.adding, |links| {
                     links.child(sign_in::link("host-sign-in-cancel", "Cancel", cx).on_click(
                         cx.listener(|area, _, _, cx| {

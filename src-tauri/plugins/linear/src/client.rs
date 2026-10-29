@@ -71,8 +71,8 @@ async fn key_of(workspace: &Workspace) -> LinearResult<String> {
     if let Some(key) = KEYS.get(&workspace.id) {
         return Ok(key);
     }
-    let reading = workspace.clone();
-    let key = store::blocking(move || config::keychain_read(&reading))
+    let reading = workspace.id.clone();
+    let key = store::blocking(move || Ok(config::KEYCHAIN.read(&reading)?))
         .await?
         .ok_or(LinearError::Unconfigured)?;
     KEYS.put(&workspace.id, key.clone());

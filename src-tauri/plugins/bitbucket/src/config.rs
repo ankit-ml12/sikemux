@@ -6,12 +6,13 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::keychain_service;
-use sikemux_plugin_api::store::{self, Accounts};
+use sikemux_plugin_api::store::{self, Secrets};
+use sikemux_plugin_api::{accounts, keychain_service};
 
 use crate::error::BitbucketResult;
 
-pub const TOKEN_SERVICE: &str = keychain_service!("sikemux-bitbucket-token");
+/// Each account's refresh token or API token, under `Account::keychain_account`.
+pub const KEYCHAIN: Secrets = Secrets::new(keychain_service!("sikemux-bitbucket-token"));
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -65,45 +66,8 @@ impl store::Account for Account {
     }
 }
 
-impl Accounts for BitbucketConfig {
-    type Account = Account;
-
-    fn accounts(&self) -> &[Account] {
-        &self.accounts
-    }
-    fn accounts_mut(&mut self) -> &mut Vec<Account> {
-        &mut self.accounts
-    }
-    fn default_id(&self) -> Option<&str> {
-        self.default.as_deref()
-    }
-    fn default_id_mut(&mut self) -> &mut Option<String> {
-        &mut self.default
-    }
-}
+accounts!(BitbucketConfig, Account, accounts, default);
 
 pub fn load(data_dir: &Path) -> BitbucketResult<BitbucketConfig> {
     Ok(store::load(data_dir)?)
-}
-
-pub fn keychain_read(account: &Account) -> BitbucketResult<Option<String>> {
-    Ok(sikemux_keychain::read(
-        TOKEN_SERVICE,
-        &account.keychain_account(),
-    )?)
-}
-
-pub fn keychain_write(account: &Account, secret: &str) -> BitbucketResult<()> {
-    Ok(sikemux_keychain::write(
-        TOKEN_SERVICE,
-        &account.keychain_account(),
-        secret,
-    )?)
-}
-
-pub fn keychain_delete(account: &Account) -> BitbucketResult<()> {
-    Ok(sikemux_keychain::delete(
-        TOKEN_SERVICE,
-        &account.keychain_account(),
-    )?)
 }

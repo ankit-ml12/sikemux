@@ -17,8 +17,8 @@ pub async fn credentials(data_dir: &Path, host: Option<&str>) -> JiraResult<(Sit
     let site = config::load(data_dir)?.site(host)?.clone();
     let credentials = match &site.sign_in {
         SiteSignIn::Token { email } => {
-            let kept = site.clone();
-            let token = store::blocking(move || config::keychain_read(&kept))
+            let kept = site.keychain_account();
+            let token = store::blocking(move || Ok(config::KEYCHAIN.read(&kept)?))
                 .await?
                 .ok_or(JiraError::Unconfigured)?;
             Credentials {
@@ -97,7 +97,7 @@ pub async fn sign_in(data_dir: &Path, request: SignIn) -> JiraResult<()> {
         sign_in: SiteSignIn::Token { email },
     };
     store::update(data_dir, move |config: &mut JiraConfig| {
-        config::keychain_write(&site, &token)?;
+        config::KEYCHAIN.write(&site.keychain_account(), &token)?;
         config.upsert(site);
         Ok(())
     })
@@ -133,7 +133,7 @@ pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> JiraRes
     let refresh_token = tokens.refresh_token.clone();
     store::update(data_dir, move |config: &mut JiraConfig| {
         if let Some(site) = sites.first() {
-            config::keychain_write(site, &refresh_token)?;
+            config::KEYCHAIN.write(&site.keychain_account(), &refresh_token)?;
         }
         for site in sites {
             config.upsert(site);
@@ -164,7 +164,7 @@ pub async fn sign_out(data_dir: &Path, request: SignOut) -> JiraResult<()> {
         if still_used {
             return Ok(None);
         }
-        config::keychain_delete(&site)?;
+        config::KEYCHAIN.delete(&site.keychain_account())?;
         Ok(Some(site.account_id))
     })
     .await?;

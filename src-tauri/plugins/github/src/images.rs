@@ -3,6 +3,7 @@
 // holds itself, so each is fetched here and handed over as a `data:` address.
 
 use std::path::Path;
+use std::sync::OnceLock;
 
 use reqwest::Url;
 use sikemux_plugin_api::account::chosen;
@@ -44,33 +45,29 @@ fn access(url: &Url, signed_in: &str) -> Option<bool> {
 
 pub async fn image(data_dir: &Path, input: ImageRef) -> GithubResult<String> {
     let refused = || GithubError::BadArg("that is not an image GitHub serves".into());
-    let signed_in = config::load(data_dir)?.host_of(chosen().as_deref());
-    let mut url = Url::parse(&input.url).map_err(|_| refused())?;
-    let mut account = String::new();
-    for _ in 0..images::MAX_HOPS {
-        let mut request = client::HTTP.client()?.get(url.clone());
-        if access(&url, &signed_in).ok_or_else(refused)? {
-            // With nobody signed in, a public image is still fetched, only without a token.
-            match Session::current(data_dir).await {
-                Ok(session) => {
-                    request = request.bearer_auth(session.token);
-                    account = session.account.id;
-                }
-                Err(GithubError::Unconfigured) => {}
-                Err(error) => return Err(error),
+    let signed_in = &config::load(data_dir)?.host_of(chosen().as_deref());
+    let url = Url::parse(&input.url).map_err(|_| refused())?;
+    let token_owner = &OnceLock::new();
+    let response = images::follow(&client::HTTP, url, move |url, request| async move {
+        if !access(&url, signed_in).ok_or_else(refused)? {
+            return Ok(request);
+        }
+        // With nobody signed in, a public image is still fetched, only without a token.
+        match Session::current(data_dir).await {
+            Ok(session) => {
+                token_owner.get_or_init(|| session.account.id);
+                Ok(request.bearer_auth(session.token))
             }
+            Err(GithubError::Unconfigured) => Ok(request),
+            Err(error) => Err(error),
         }
-        let response = client::HTTP.send(request).await?;
-        if response.status().is_redirection() {
-            url = images::moved_to(&response, &url)?;
-            continue;
-        }
-        if !response.status().is_success() {
-            return Err(client::failure(&account, response).await);
-        }
-        return images::read_image(response).await;
+    })
+    .await?;
+    if !response.status().is_success() {
+        let account = token_owner.get().map_or("", String::as_str);
+        return Err(client::failure(account, response).await);
     }
-    Err(images::moved_too_often())
+    images::read_image(response).await
 }
 
 #[cfg(test)]

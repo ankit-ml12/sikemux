@@ -6,6 +6,16 @@
   "callTimeoutSecs": 120,
   "writes": ["addComment", "cancel", "createIssue", "createPull", "deleteRun", "dispatch", "mergePull", "rerun", "rerunJob", "reviewPull", "setIssueState", "setPullState"],
   "accountMethods": ["setDefaultAccount", "signInWithToken", "signOut"],
+  "tokenForm": {
+    "method": "signInWithToken",
+    "lede": "Merge requests, pipelines, issues and your To-Do list for this project, right beside your changes.",
+    "fields": [
+      { "name": "host", "label": "Server", "placeholder": "gitlab.com" },
+      { "name": "token", "label": "Personal access token", "placeholder": "glpat-…", "secret": true }
+    ],
+    "tokenPage": "https://{server}/-/user_settings/personal_access_tokens?name=Sikemux&scopes=api,read_user",
+    "defaultServer": "gitlab.com"
+  },
   "codeHost": {
     "label": "GitLab",
     "ciName": "Pipelines",

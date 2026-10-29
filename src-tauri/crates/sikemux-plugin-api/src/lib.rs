@@ -10,6 +10,7 @@ pub mod images;
 mod manifest;
 pub mod network;
 pub mod oauth;
+pub mod process;
 pub mod ratelimit;
 pub mod service;
 pub mod signin;
@@ -24,7 +25,9 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 pub use error::{Category, PluginError, PluginResult};
-pub use manifest::{is_valid_id, AgentTool, CodeHostSpec, Compare, Listed, Manifest};
+pub use manifest::{
+    is_valid_id, AgentTool, CodeHostSpec, Compare, FormField, Listed, Manifest, TokenForm,
+};
 pub use network::{unreachable, Unreachable};
 pub use service::{Service, ServiceError, ServiceResult};
 pub use signin::SignInStatus;

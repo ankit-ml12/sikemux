@@ -102,8 +102,8 @@ async fn api_token(account: &Account) -> BitbucketResult<String> {
     if let Some(token) = API_TOKENS.get(&account.id) {
         return Ok(token);
     }
-    let reading = account.clone();
-    let token = store::blocking(move || config::keychain_read(&reading))
+    let reading = account.keychain_account();
+    let token = store::blocking(move || Ok(config::KEYCHAIN.read(&reading)?))
         .await?
         .ok_or(BitbucketError::Unconfigured)?;
     API_TOKENS.put(&account.id, token.clone());

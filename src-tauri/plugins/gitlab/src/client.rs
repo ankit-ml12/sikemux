@@ -69,8 +69,8 @@ async fn token_of(account: &Account) -> GitlabResult<String> {
     if let Some(token) = TOKENS.get(&account.id) {
         return Ok(token);
     }
-    let reading = account.clone();
-    let token = store::blocking(move || config::keychain_read(&reading))
+    let reading = account.keychain_account();
+    let token = store::blocking(move || Ok(config::KEYCHAIN.read(&reading)?))
         .await?
         .ok_or(GitlabError::Unconfigured)?;
     TOKENS.put(&account.id, token.clone());

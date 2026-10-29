@@ -47,8 +47,8 @@ async fn token_of(workspace: &Workspace) -> SlackResult<String> {
     if let Some(token) = TOKENS.get(&workspace.id) {
         return Ok(token);
     }
-    let reading = workspace.clone();
-    let token = store::blocking(move || config::keychain_read(&reading))
+    let reading = workspace.id.clone();
+    let token = store::blocking(move || Ok(config::KEYCHAIN.read(&reading)?))
         .await?
         .ok_or(SlackError::Unconfigured)?;
     TOKENS.put(&workspace.id, token.clone());

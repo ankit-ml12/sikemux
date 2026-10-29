@@ -13,6 +13,8 @@ use sikemux_process::sync::Locked;
 
 use crate::service::ServiceError;
 
+pub use sikemux_keychain::KeychainError;
+
 /// The Keychain service a plugin's secrets live under. A development build
 /// keeps entries of its own, so it never spends or replaces the installed
 /// app's sign-in, and tests keep to theirs, so they never touch a real one.
@@ -27,6 +29,29 @@ macro_rules! keychain_service {
             $name
         }
     };
+}
+
+/// One of a plugin's Keychain services, made with `keychain_service!`, which
+/// keeps a secret under each account name.
+#[derive(Clone, Copy, Debug)]
+pub struct Secrets(&'static str);
+
+impl Secrets {
+    pub const fn new(service: &'static str) -> Self {
+        Self(service)
+    }
+
+    pub fn read(self, account: &str) -> Result<Option<String>, KeychainError> {
+        sikemux_keychain::read(self.0, account)
+    }
+
+    pub fn write(self, account: &str, secret: &str) -> Result<(), KeychainError> {
+        sikemux_keychain::write(self.0, account, secret)
+    }
+
+    pub fn delete(self, account: &str) -> Result<(), KeychainError> {
+        sikemux_keychain::delete(self.0, account)
+    }
 }
 
 /// Runs work that starts a process or touches the Keychain or the disk on a
@@ -174,6 +199,30 @@ pub trait Account: Clone {
     }
 }
 
+/// Writes `Accounts` for settings that keep their accounts in the field
+/// `$list` and the default account's id in the field `$default`.
+#[macro_export]
+macro_rules! accounts {
+    ($config:ty, $account:ty, $list:ident, $default:ident) => {
+        impl $crate::store::Accounts for $config {
+            type Account = $account;
+
+            fn accounts(&self) -> &[$account] {
+                &self.$list
+            }
+            fn accounts_mut(&mut self) -> &mut Vec<$account> {
+                &mut self.$list
+            }
+            fn default_id(&self) -> Option<&str> {
+                self.$default.as_deref()
+            }
+            fn default_id_mut(&mut self) -> &mut Option<String> {
+                &mut self.$default
+            }
+        }
+    };
+}
+
 /// Settings that list the accounts signed in and which one a call uses when
 /// it names none.
 pub trait Accounts {
@@ -263,22 +312,7 @@ mod tests {
         }
     }
 
-    impl Accounts for Book {
-        type Account = String;
-
-        fn accounts(&self) -> &[String] {
-            &self.accounts
-        }
-        fn accounts_mut(&mut self) -> &mut Vec<String> {
-            &mut self.accounts
-        }
-        fn default_id(&self) -> Option<&str> {
-            self.default.as_deref()
-        }
-        fn default_id_mut(&mut self) -> &mut Option<String> {
-            &mut self.default
-        }
-    }
+    crate::accounts!(Book, String, accounts, default);
 
     #[test]
     fn the_first_account_is_the_default_until_it_leaves() {

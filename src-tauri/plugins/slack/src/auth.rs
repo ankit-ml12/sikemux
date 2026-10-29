@@ -100,7 +100,7 @@ pub async fn sign_in(data_dir: &Path, input: TokenSignIn) -> SlackResult<String>
     let workspace = workspace_of(&client::get_with(&token, "auth.test", &[]).await?)?;
     let id = workspace.id.clone();
     store::update(data_dir, move |config: &mut SlackConfig| {
-        config::keychain_write(&workspace, &token)?;
+        config::KEYCHAIN.write(&workspace.id, &token)?;
         config.upsert(workspace);
         Ok(())
     })
@@ -126,7 +126,7 @@ pub async fn sign_out(data_dir: &Path, input: WorkspaceRef) -> SlackResult<()> {
         };
         let removed = config.remove(&id);
         if let Some(workspace) = &removed {
-            config::keychain_delete(workspace)?;
+            config::KEYCHAIN.delete(&workspace.id)?;
         }
         Ok(removed)
     })

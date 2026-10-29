@@ -6,11 +6,12 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sikemux_plugin_api::keychain_service;
-use sikemux_plugin_api::store;
+use sikemux_plugin_api::store::{self, Secrets};
 
 use crate::error::VercelResult;
 
-const KEY_SERVICE: &str = keychain_service!("sikemux-vercel-token");
+/// The account's token and each team install's, under `entry`.
+pub const KEYCHAIN: Secrets = Secrets::new(keychain_service!("sikemux-vercel-token"));
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -91,23 +92,4 @@ pub fn entry(account: &Account, team: Option<&str>) -> String {
         Some(team) => format!("{}:{team}", account.id),
         None => account.id.clone(),
     }
-}
-
-pub fn keychain_read(account: &Account, team: Option<&str>) -> VercelResult<Option<String>> {
-    Ok(sikemux_keychain::read(KEY_SERVICE, &entry(account, team))?)
-}
-
-pub fn keychain_write(account: &Account, team: Option<&str>, token: &str) -> VercelResult<()> {
-    Ok(sikemux_keychain::write(
-        KEY_SERVICE,
-        &entry(account, team),
-        token,
-    )?)
-}
-
-pub fn keychain_delete(account: &Account, team: Option<&str>) -> VercelResult<()> {
-    Ok(sikemux_keychain::delete(
-        KEY_SERVICE,
-        &entry(account, team),
-    )?)
 }

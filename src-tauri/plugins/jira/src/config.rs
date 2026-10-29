@@ -5,12 +5,13 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::keychain_service;
-use sikemux_plugin_api::store::{self, Accounts};
+use sikemux_plugin_api::store::{self, Accounts, Secrets};
+use sikemux_plugin_api::{accounts, keychain_service};
 
 use crate::error::{JiraError, JiraResult};
 
-pub const TOKEN_SERVICE: &str = keychain_service!("sikemux-jira-token");
+/// Each site's API token or refresh token, under `Site::keychain_account`.
+pub const KEYCHAIN: Secrets = Secrets::new(keychain_service!("sikemux-jira-token"));
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -69,22 +70,7 @@ impl store::Account for Site {
     }
 }
 
-impl Accounts for JiraConfig {
-    type Account = Site;
-
-    fn accounts(&self) -> &[Site] {
-        &self.sites
-    }
-    fn accounts_mut(&mut self) -> &mut Vec<Site> {
-        &mut self.sites
-    }
-    fn default_id(&self) -> Option<&str> {
-        self.default.as_deref()
-    }
-    fn default_id_mut(&mut self) -> &mut Option<String> {
-        &mut self.default
-    }
-}
+accounts!(JiraConfig, Site, sites, default);
 
 impl JiraConfig {
     /// The site named by host, or with none named, the default one.
@@ -175,28 +161,6 @@ fn is_issue_key(key: &str) -> bool {
 
 pub fn load(data_dir: &Path) -> JiraResult<JiraConfig> {
     Ok(store::load(data_dir)?)
-}
-
-pub fn keychain_read(site: &Site) -> JiraResult<Option<String>> {
-    Ok(sikemux_keychain::read(
-        TOKEN_SERVICE,
-        &site.keychain_account(),
-    )?)
-}
-
-pub fn keychain_write(site: &Site, token: &str) -> JiraResult<()> {
-    Ok(sikemux_keychain::write(
-        TOKEN_SERVICE,
-        &site.keychain_account(),
-        token,
-    )?)
-}
-
-pub fn keychain_delete(site: &Site) -> JiraResult<()> {
-    Ok(sikemux_keychain::delete(
-        TOKEN_SERVICE,
-        &site.keychain_account(),
-    )?)
 }
 
 #[cfg(test)]

@@ -146,7 +146,8 @@ fn new_account(
         Some(uuid) => uuid.trim_matches(['{', '}']).to_string(),
         None => format!(
             "token-{}",
-            sikemux_loopback::new_state().map_err(|error| BitbucketError::Auth(error.0))?
+            sikemux_plugin_api::oauth::new_state()
+                .map_err(|error| BitbucketError::Auth(error.0))?
         ),
     };
     Ok(Account {
@@ -209,9 +210,9 @@ async fn save_sign_in(
             .iter()
             .find(|kept| kept.id == account.id && kept.method != account.method)
             .cloned();
-        config::keychain_write(&account, &secret)?;
+        config::KEYCHAIN.write(&account.keychain_account(), &secret)?;
         if let Some(replaced) = replaced {
-            config::keychain_delete(&replaced)?;
+            config::KEYCHAIN.delete(&replaced.keychain_account())?;
         }
         config.upsert(account);
         Ok(())
@@ -245,7 +246,7 @@ pub async fn sign_out(data_dir: &Path) -> BitbucketResult<()> {
         };
         let removed = config.remove(&id);
         if let Some(account) = &removed {
-            config::keychain_delete(account)?;
+            config::KEYCHAIN.delete(&account.keychain_account())?;
         }
         Ok(removed)
     })

@@ -42,6 +42,48 @@ pub struct Manifest {
     /// What the core and clients know of the code host the plugin speaks for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_host: Option<CodeHostSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_form: Option<TokenForm>,
+}
+
+/// The form a person signs in to the plugin's service with by pasting a token.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TokenForm {
+    /// What the form calls with what was typed, under each field's name.
+    pub method: String,
+    /// What signing in brings, said above the form.
+    pub lede: String,
+    pub fields: Vec<FormField>,
+    /// Where a token is made, `{server}` standing for the server typed in the
+    /// `host` field, or `default_server` while it is empty.
+    #[serde(default)]
+    pub token_page: Option<String>,
+    #[serde(default)]
+    pub default_server: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FormField {
+    pub name: String,
+    pub label: String,
+    pub placeholder: String,
+    #[serde(default)]
+    pub secret: bool,
+}
+
+impl TokenForm {
+    /// Where a token is made for the server typed in, if the service says.
+    pub fn token_page(&self, server: &str) -> Option<String> {
+        let server = server.trim().trim_start_matches("https://");
+        let server = server.split('/').next().unwrap_or_default();
+        let server = match server {
+            "" => self.default_server.as_deref().unwrap_or_default(),
+            typed => typed,
+        };
+        Some(self.token_page.as_ref()?.replace("{server}", server))
+    }
 }
 
 /// A plugin as clients list it.
@@ -54,6 +96,8 @@ pub struct Listed {
     /// Whether its sign-in works; none for a plugin with no sign-in, or one
     /// switched off.
     pub signed_in: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_form: Option<TokenForm>,
 }
 
 /// A code host as its plugin describes it, so the core and clients reach and

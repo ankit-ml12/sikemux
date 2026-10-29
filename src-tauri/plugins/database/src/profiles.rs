@@ -5,21 +5,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use sikemux_process::sync::Locked;
+use sikemux_plugin_api::keychain_service;
+use sikemux_plugin_api::process::sync::Locked;
+use sikemux_plugin_api::store::Secrets;
 
 use crate::error::{DatabaseError, DatabaseResult};
 
-/// A development build keeps entries of its own, so it never spends or replaces the
-/// installed app's sign-in.
-#[cfg(not(test))]
-const PASSWORD_SERVICE: &str = if cfg!(debug_assertions) {
-    "sikemux-database-password-dev"
-} else {
-    "sikemux-database-password"
-};
-/// Tests keep to an entry of their own, so they never replace or delete a real password.
-#[cfg(test)]
-const PASSWORD_SERVICE: &str = "sikemux-database-password-test";
+const PASSWORDS: Secrets = Secrets::new(keychain_service!("sikemux-database-password"));
 
 pub const POSTGRES_PORT: u16 = 5432;
 
@@ -371,13 +363,6 @@ pub fn remove(data_dir: &Path, id: &str) -> DatabaseResult<()> {
     Ok(())
 }
 
-fn keychain_error(error: sikemux_keychain::KeychainError) -> DatabaseError {
-    match error {
-        sikemux_keychain::KeychainError::Invalid(message) => DatabaseError::BadArg(message),
-        sikemux_keychain::KeychainError::Failed(message) => DatabaseError::Keychain(message),
-    }
-}
-
 /// The Keychain helper takes only token-like text, and passwords can hold any character.
 fn to_hex(text: &str) -> String {
     hex::encode(text)
@@ -388,7 +373,7 @@ fn from_hex(text: &str) -> Option<String> {
 }
 
 pub fn password_read(id: &str) -> DatabaseResult<Option<String>> {
-    let stored = sikemux_keychain::read(PASSWORD_SERVICE, id).map_err(keychain_error)?;
+    let stored = PASSWORDS.read(id)?;
     Ok(stored.as_deref().and_then(from_hex))
 }
 
@@ -423,11 +408,11 @@ pub fn password_for(
 }
 
 fn password_write(id: &str, password: &str) -> DatabaseResult<()> {
-    sikemux_keychain::write(PASSWORD_SERVICE, id, &to_hex(password)).map_err(keychain_error)
+    Ok(PASSWORDS.write(id, &to_hex(password))?)
 }
 
 fn password_delete(id: &str) -> DatabaseResult<()> {
-    sikemux_keychain::delete(PASSWORD_SERVICE, id).map_err(keychain_error)
+    Ok(PASSWORDS.delete(id)?)
 }
 
 /// Runs Keychain and disk work on a thread meant for blocking, away from the few threads every plugin shares.

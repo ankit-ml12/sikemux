@@ -27,7 +27,7 @@ pub static ACCESS: Refreshing<Linear> = Refreshing::new(&APP, &HTTP);
 
 pub fn entry(workspace: &Workspace) -> KeychainEntry {
     KeychainEntry {
-        service: config::KEY_SERVICE,
+        secrets: config::KEYCHAIN,
         account: workspace.id.clone(),
     }
 }

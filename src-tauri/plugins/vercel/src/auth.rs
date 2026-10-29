@@ -175,7 +175,7 @@ pub async fn sign_in(data_dir: &Path, input: TokenSignIn) -> VercelResult<()> {
     let account = account_of(&client::request(&token, Method::GET, "/v2/user", &[], None).await?)?;
     let removed = store::update(data_dir, move |config: &mut VercelConfig| {
         let removed = replace_account(config, &account)?;
-        config::keychain_write(&account, None, &token)?;
+        config::KEYCHAIN.write(&config::entry(&account, None), &token)?;
         config.account = Some(account);
         Ok(removed)
     })
@@ -231,7 +231,7 @@ pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> VercelR
     };
     let removed = store::update(data_dir, move |config: &mut VercelConfig| {
         let removed = replace_account(config, &account)?;
-        config::keychain_write(&account, install.team.as_deref(), &token)?;
+        config::KEYCHAIN.write(&config::entry(&account, install.team.as_deref()), &token)?;
         config.team = install.team.clone();
         config.upsert(install);
         config.account = Some(account);
@@ -272,10 +272,11 @@ fn replace_account(config: &mut VercelConfig, account: &Account) -> VercelResult
 fn clear_account(config: &mut VercelConfig) -> VercelResult<Vec<Removed>> {
     let mut removed = Vec::new();
     if let Some(previous) = config.account.take() {
-        config::keychain_delete(&previous, None)?;
+        config::KEYCHAIN.delete(&config::entry(&previous, None))?;
         for install in config.installs.drain(..) {
-            let token = config::keychain_read(&previous, install.team.as_deref())?;
-            config::keychain_delete(&previous, install.team.as_deref())?;
+            let entry = config::entry(&previous, install.team.as_deref());
+            let token = config::KEYCHAIN.read(&entry)?;
+            config::KEYCHAIN.delete(&entry)?;
             removed.push(Removed {
                 token,
                 team: install.team,

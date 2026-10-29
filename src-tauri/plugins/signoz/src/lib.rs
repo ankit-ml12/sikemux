@@ -427,9 +427,7 @@ mod live {
             .await
             .expect("sign out");
         assert!(
-            config::keychain_read(config::API_KEY_SERVICE, &account)
-                .expect("keychain")
-                .is_some(),
+            config::API_KEYS.read(&account).expect("keychain").is_some(),
             "signing out must leave a key it did not save"
         );
         std::fs::remove_dir_all(dir).ok();
@@ -474,9 +472,7 @@ mod live {
             .await
             .expect("sign out");
         let account = config::account_for(&url);
-        assert!(config::keychain_read(config::SESSION_SERVICE, &account)
-            .expect("keychain")
-            .is_none());
+        assert!(config::SESSIONS.read(&account).expect("keychain").is_none());
         std::fs::remove_dir_all(dir).ok();
     }
 }

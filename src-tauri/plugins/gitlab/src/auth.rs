@@ -212,7 +212,7 @@ pub async fn sign_in_with_token(data_dir: &Path, input: TokenSignIn) -> GitlabRe
     let account = new_account(&host, &user)?;
     let id = account.id.clone();
     store::update(data_dir, move |config: &mut GitlabConfig| {
-        config::keychain_write(&account, &token)?;
+        config::KEYCHAIN.write(&account.keychain_account(), &token)?;
         config.upsert(account);
         Ok(())
     })
@@ -233,7 +233,7 @@ pub async fn sign_out(data_dir: &Path) -> GitlabResult<()> {
         };
         let removed = config.remove(&id);
         if let Some(account) = &removed {
-            config::keychain_delete(account)?;
+            config::KEYCHAIN.delete(&account.keychain_account())?;
         }
         Ok(removed)
     })

@@ -31,12 +31,14 @@ fn access(url: &Url) -> Option<bool> {
 pub async fn image(data_dir: &Path, input: ImageRef) -> BitbucketResult<String> {
     let refused = || BitbucketError::BadArg("that is not an image Bitbucket serves".into());
     let url = Url::parse(&input.url).map_err(|_| refused())?;
-    let mut request = client::HTTP.client()?.get(url.clone());
-    if access(&url).ok_or_else(refused)? {
+    let response = images::follow(&client::HTTP, url, move |url, request| async move {
+        if !access(&url).ok_or_else(refused)? {
+            return Ok(request);
+        }
         let session = Session::current(data_dir).await?;
-        request = session.credential.apply(request);
-    }
-    let response = client::HTTP.send(request).await?;
+        Ok(session.credential.apply(request))
+    })
+    .await?;
     let status = response.status();
     if !status.is_success() {
         return Err(client::classify(status, &[]));

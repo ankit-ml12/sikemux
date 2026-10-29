@@ -222,10 +222,10 @@ pub async fn sign_in(data_dir: &Path, input: SignIn) -> GithubResult<String> {
             .iter()
             .any(|kept| kept.id == account.id && kept.owns_token && !account.owns_token);
         if account.owns_token {
-            config::keychain_write(&account.id, &token)?;
+            config::KEYCHAIN.write(&account.id, &token)?;
         }
         if leaves_a_token_behind {
-            config::keychain_delete(&account.id)?;
+            config::KEYCHAIN.delete(&account.id)?;
         }
         config.sign_in(account);
         Ok(())
@@ -249,7 +249,7 @@ pub async fn sign_out(data_dir: &Path) -> GithubResult<()> {
         };
         let removed = config.sign_out(&id);
         if let Some(account) = removed.as_ref().filter(|account| account.owns_token) {
-            config::keychain_delete(&account.id)?;
+            config::KEYCHAIN.delete(&account.id)?;
         }
         Ok(removed)
     })

@@ -5,12 +5,12 @@ use std::time::{Duration, Instant};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_plugin_api::process::sync::Locked;
 use sikemux_plugin_api::store;
-use sikemux_process::sync::Locked;
 use tokio::sync::Mutex;
 
 use crate::client;
-use crate::config::{self, AuthMode, SignozConfig, API_KEY_SERVICE, SESSION_SERVICE};
+use crate::config::{self, AuthMode, SignozConfig, API_KEYS, SESSIONS};
 use crate::error::{SignozError, SignozResult};
 
 /// Renew a little before SigNoz would refuse the token, not after.
@@ -86,7 +86,7 @@ async fn api_key(config: SignozConfig) -> SignozResult<Credentials> {
         }
     }
     let account = config.account.clone();
-    let key = store::blocking(move || config::keychain_read(API_KEY_SERVICE, &account))
+    let key = store::blocking(move || Ok(API_KEYS.read(&account)?))
         .await?
         .ok_or(SignozError::Unconfigured)?;
     *API_KEY.locked() = Some((config.account.clone(), key.clone()));
@@ -118,7 +118,7 @@ fn unpack(saved: &str) -> Option<(String, String)> {
 
 async fn saved_session(config: &SignozConfig) -> SignozResult<(String, String)> {
     let account = config.account.clone();
-    let saved = store::blocking(move || config::keychain_read(SESSION_SERVICE, &account))
+    let saved = store::blocking(move || Ok(SESSIONS.read(&account)?))
         .await?
         .ok_or(SignozError::Unconfigured)?;
     unpack(&saved).ok_or(SignozError::Unconfigured)
@@ -209,7 +209,7 @@ async fn remember(
         config.account.clone(),
         pack(&tokens.access_token, &tokens.refresh_token),
     );
-    store::blocking(move || config::keychain_write(SESSION_SERVICE, &account, &saved)).await?;
+    store::blocking(move || config::keychain_write(SESSIONS, &account, &saved)).await?;
     let lifetime = if tokens.expires_in == 0 {
         ASSUMED_LIFETIME
     } else {
@@ -438,7 +438,7 @@ pub async fn use_api_key(data_dir: &Path, request: UseApiKey) -> SignozResult<()
         Some(key) => key,
         None => {
             let account = account.clone();
-            store::blocking(move || config::keychain_read(API_KEY_SERVICE, &account))
+            store::blocking(move || Ok(API_KEYS.read(&account)?))
                 .await?
                 .ok_or_else(|| {
                     SignozError::Auth(format!(
@@ -455,7 +455,7 @@ pub async fn use_api_key(data_dir: &Path, request: UseApiKey) -> SignozResult<()
     .await?;
     if given.is_some() {
         let (account, key) = (account.clone(), key.clone());
-        store::blocking(move || config::keychain_write(API_KEY_SERVICE, &account, &key)).await?;
+        store::blocking(move || config::keychain_write(API_KEYS, &account, &key)).await?;
     }
     forget_api_key();
     let config = SignozConfig {
@@ -496,12 +496,8 @@ pub async fn sign_out(data_dir: &Path) -> SignozResult<()> {
     let data_dir = data_dir.to_path_buf();
     store::blocking(move || {
         match config.auth {
-            AuthMode::Session if !config.account.is_empty() => {
-                config::keychain_delete(SESSION_SERVICE, &config.account)?
-            }
-            AuthMode::ApiKey if config.owns_key => {
-                config::keychain_delete(API_KEY_SERVICE, &config.account)?
-            }
+            AuthMode::Session if !config.account.is_empty() => SESSIONS.delete(&config.account)?,
+            AuthMode::ApiKey if config.owns_key => API_KEYS.delete(&config.account)?,
             _ => {}
         }
         Ok(store::save(&data_dir, &signed_out(config))?)

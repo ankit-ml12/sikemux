@@ -7,12 +7,14 @@ use std::process::Command;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::keychain_service;
-use sikemux_plugin_api::store::{self, Accounts, Held};
+use sikemux_plugin_api::process;
+use sikemux_plugin_api::store::{self, Accounts, Held, Secrets};
+use sikemux_plugin_api::{accounts, keychain_service};
 
 use crate::error::{GithubError, GithubResult};
 
-const TOKEN_SERVICE: &str = keychain_service!("sikemux-github-token");
+/// Each token typed in, under its account's id.
+pub const KEYCHAIN: Secrets = Secrets::new(keychain_service!("sikemux-github-token"));
 pub const DEFAULT_HOST: &str = "github.com";
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
 const OUTPUT_LIMIT: usize = 64 * 1024;
@@ -64,22 +66,7 @@ impl store::Account for Account {
     }
 }
 
-impl Accounts for GithubConfig {
-    type Account = Account;
-
-    fn accounts(&self) -> &[Account] {
-        &self.accounts
-    }
-    fn accounts_mut(&mut self) -> &mut Vec<Account> {
-        &mut self.accounts
-    }
-    fn default_id(&self) -> Option<&str> {
-        self.default.as_deref()
-    }
-    fn default_id_mut(&mut self) -> &mut Option<String> {
-        &mut self.default
-    }
-}
+accounts!(GithubConfig, Account, accounts, default);
 
 impl GithubConfig {
     /// Adds the account, or replaces the one with the same id, and undoes
@@ -102,7 +89,7 @@ impl GithubConfig {
     pub fn host_hint(&self) -> String {
         host_for(
             self.account(None).map(|account| account.host.as_str()),
-            sikemux_process::user_environment::var("GH_HOST").as_deref(),
+            process::user_environment::var("GH_HOST").as_deref(),
         )
     }
 
@@ -183,20 +170,8 @@ fn run(
     input: Option<&[u8]>,
     timeout: Duration,
 ) -> GithubResult<std::process::Output> {
-    sikemux_process::run(command, input, timeout, OUTPUT_LIMIT, None)
+    process::run(command, input, timeout, OUTPUT_LIMIT, None)
         .map_err(|error| GithubError::Transport(error.to_string()))
-}
-
-pub fn keychain_read(id: &str) -> GithubResult<Option<String>> {
-    Ok(sikemux_keychain::read(TOKEN_SERVICE, id)?)
-}
-
-pub fn keychain_write(id: &str, secret: &str) -> GithubResult<()> {
-    Ok(sikemux_keychain::write(TOKEN_SERVICE, id, secret)?)
-}
-
-pub fn keychain_delete(id: &str) -> GithubResult<()> {
-    Ok(sikemux_keychain::delete(TOKEN_SERVICE, id)?)
 }
 
 /// The variables the `gh` CLI reads a token from. A github.com token is never
@@ -211,9 +186,7 @@ fn token_vars(host: &str) -> [&'static str; 2] {
 
 fn env_entry(host: &str) -> Option<(&'static str, String)> {
     token_vars(host).into_iter().find_map(|name| {
-        let token = sikemux_process::user_environment::var(name)?
-            .trim()
-            .to_string();
+        let token = process::user_environment::var(name)?.trim().to_string();
         (!token.is_empty()).then_some((name, token))
     })
 }
@@ -230,7 +203,7 @@ pub fn env_variable(host: &str) -> Option<&'static str> {
 /// The token the `gh` CLI is already signed in with, so somebody who has run
 /// `gh auth login` never types one here.
 pub fn gh_cli_token(host: &str, login: Option<&str>) -> Option<String> {
-    let mut command = sikemux_process::user_environment::command("gh");
+    let mut command = process::user_environment::command("gh");
     command.args(["auth", "token", "--hostname", host]);
     if let Some(login) = login.filter(|login| !login.is_empty()) {
         command.args(["--user", login]);
@@ -265,7 +238,7 @@ pub fn forget_token(id: Option<&str>) {
 
 fn read_token(account: &Account) -> GithubResult<Option<String>> {
     Ok(match account.source {
-        TokenSource::Keychain => keychain_read(&account.id)?,
+        TokenSource::Keychain => KEYCHAIN.read(&account.id)?,
         TokenSource::Environment => env_token(&account.host),
         TokenSource::GhCli => gh_cli_token(&account.host, Some(&account.login)),
     })

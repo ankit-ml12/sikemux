@@ -7,12 +7,13 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::{keychain_service, store};
-use sikemux_process::sync::Locked;
+use sikemux_plugin_api::keychain_service;
+use sikemux_plugin_api::process::sync::Locked;
+use sikemux_plugin_api::store::{self, Secrets};
 
 use crate::error::{RundeckError, RundeckResult};
 
-const TOKEN_SERVICE: &str = keychain_service!("sikemux-rundeck-token");
+const KEYCHAIN: Secrets = Secrets::new(keychain_service!("sikemux-rundeck-token"));
 const TOKEN_ACCOUNT: &str = "api-token";
 
 const DEFAULT_BRANCH_OPTIONS: [&str; 4] = ["BRANCH", "GIT_BRANCH", "GIT_REF", "REF"];
@@ -78,7 +79,7 @@ pub async fn load(data_dir: &Path) -> RundeckResult<Saved> {
     let saved = store::blocking(move || {
         Ok(Saved {
             settings: store::load(&dir)?,
-            token: sikemux_keychain::read(TOKEN_SERVICE, TOKEN_ACCOUNT)?,
+            token: KEYCHAIN.read(TOKEN_ACCOUNT)?,
         })
     })
     .await?;
@@ -92,8 +93,8 @@ pub async fn save(data_dir: &Path, saved: Saved) -> RundeckResult<()> {
     let kept = saved.clone();
     store::blocking(move || {
         match &kept.token {
-            Some(token) => sikemux_keychain::write(TOKEN_SERVICE, TOKEN_ACCOUNT, token),
-            None => sikemux_keychain::delete(TOKEN_SERVICE, TOKEN_ACCOUNT),
+            Some(token) => KEYCHAIN.write(TOKEN_ACCOUNT, token),
+            None => KEYCHAIN.delete(TOKEN_ACCOUNT),
         }?;
         Ok(store::save(&dir, &kept.settings)?)
     })

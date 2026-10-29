@@ -61,28 +61,19 @@ pub async fn site_image(data_dir: &Path, input: SiteImageRef) -> JiraResult<Stri
 
 pub async fn image(input: ImageRef) -> JiraResult<String> {
     let refused = || JiraError::BadArg("that is not an avatar Jira serves".into());
-    let mut url = Url::parse(&input.url).map_err(|_| refused())?;
+    let url = Url::parse(&input.url).map_err(|_| refused())?;
     // Gravatar sends a person without a picture of their own on to Atlassian's drawn
     // initials, through its image proxy.
-    for _ in 0..=images::MAX_HOPS {
-        if !allowed(&url) {
-            return Err(refused());
-        }
-        let response = client::HTTP
-            .send(client::HTTP.client()?.get(url.clone()))
-            .await?;
-        let status = response.status();
-        if status.is_redirection() {
-            url = images::moved_to(&response, &url)?;
-            continue;
-        }
-        if status != StatusCode::OK {
-            return Err(JiraError::Http {
-                status: status.as_u16(),
-                message: "the avatar did not load".into(),
-            });
-        }
-        return images::read_image(response).await;
+    let response = images::follow(&client::HTTP, url, move |url, request| async move {
+        allowed(&url).then_some(request).ok_or_else(refused)
+    })
+    .await?;
+    let status = response.status();
+    if status != StatusCode::OK {
+        return Err(JiraError::Http {
+            status: status.as_u16(),
+            message: "the avatar did not load".into(),
+        });
     }
-    Err(images::moved_too_often())
+    images::read_image(response).await
 }

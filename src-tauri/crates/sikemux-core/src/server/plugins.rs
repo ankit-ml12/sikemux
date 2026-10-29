@@ -308,6 +308,7 @@ pub(crate) async fn listed(core: &Core) -> Vec<Listed> {
                 name,
                 enabled,
                 signed_in,
+                token_form: manifest.token_form.clone(),
             }
         }
     });

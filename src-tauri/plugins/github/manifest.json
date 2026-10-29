@@ -7,6 +7,16 @@
   "environment": ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST"],
   "writes": ["addComment", "cancel", "createIssue", "createPull", "deleteRun", "deleteRunLogs", "dispatch", "mergePull", "rerun", "rerunJob", "reviewDeployment", "reviewPull", "setIssueState", "setPullState"],
   "accountMethods": ["setDefaultAccount", "signIn", "signOut"],
+  "tokenForm": {
+    "method": "signIn",
+    "lede": "Pull requests, Actions runs and issues for this repository, right beside your changes.",
+    "fields": [
+      { "name": "host", "label": "Host", "placeholder": "github.com" },
+      { "name": "token", "label": "Personal access token", "placeholder": "ghp_… or github_pat_…", "secret": true }
+    ],
+    "tokenPage": "https://{server}/settings/tokens/new?scopes=repo,workflow&description=Sikemux",
+    "defaultServer": "github.com"
+  },
   "codeHost": {
     "label": "GitHub",
     "ciName": "Actions",

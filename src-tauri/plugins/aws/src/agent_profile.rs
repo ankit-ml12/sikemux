@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use sikemux_plugin_api::process;
+use sikemux_plugin_api::process::sync::Locked;
+use sikemux_plugin_api::process::user_environment::shell_var;
 use sikemux_plugin_api::PluginContext;
-use sikemux_process::sync::Locked;
-use sikemux_process::user_environment::shell_var;
 
 use crate::auth;
 use crate::error::AwsResult;
@@ -136,7 +137,7 @@ pub(crate) fn pick_pane(ctx: &PluginContext, profile: Option<String>) -> AwsResu
 
 fn save(ctx: &PluginContext, picks: &Picks) -> AwsResult<()> {
     let bytes = serde_json::to_vec_pretty(picks)?;
-    sikemux_process::files::write_atomic(&ctx.data_dir().join(PICKS_FILE), &bytes, false)?;
+    process::files::write_atomic(&ctx.data_dir().join(PICKS_FILE), &bytes, false)?;
     Ok(())
 }
 

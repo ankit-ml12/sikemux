@@ -11,7 +11,8 @@ use std::time::Duration;
 use futures::future::try_join_all;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use sikemux_process::{ProcessCancellation, ProcessRunError};
+use sikemux_plugin_api::process;
+use sikemux_plugin_api::process::{ProcessCancellation, ProcessRunError};
 use tokio::task;
 
 use crate::error::{AwsError, AwsResult};
@@ -36,7 +37,7 @@ pub(crate) fn last_segment(arn: &str) -> String {
 }
 
 pub(crate) fn aws_bin() -> String {
-    sikemux_process::user_environment::var("AWS_CLI").unwrap_or_else(|| "aws".to_string())
+    process::user_environment::var("AWS_CLI").unwrap_or_else(|| "aws".to_string())
 }
 
 /// Which credentials and region a call runs with. No profile leaves the choice
@@ -61,7 +62,7 @@ impl Target {
 }
 
 pub(crate) fn aws_command(target: &Target) -> std::process::Command {
-    let mut cmd = sikemux_process::user_environment::command(aws_bin());
+    let mut cmd = process::user_environment::command(aws_bin());
     if let Some(profile) = &target.profile {
         cmd.env("AWS_PROFILE", profile);
     }
@@ -88,7 +89,7 @@ fn run_aws_cli(
     } else {
         AWS_COMMAND_TIMEOUT
     };
-    let out = sikemux_process::run(
+    let out = process::run(
         &mut cmd,
         None,
         timeout,

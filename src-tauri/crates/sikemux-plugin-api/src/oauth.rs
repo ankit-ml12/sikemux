@@ -11,9 +11,11 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_loopback::{challenge, redirect_uri, Callback, LoopbackError};
 
+pub use sikemux_loopback::new_state;
+
 use crate::http::{read_body, Http};
 use crate::service::{Service, ServiceError};
-use crate::store::blocking;
+use crate::store::{blocking, Secrets};
 use crate::StreamSink;
 
 /// Long enough to sign up or find a password, short enough that a forgotten
@@ -145,7 +147,7 @@ impl OAuthApp {
         let callback = Callback::bind(self.callback, S::NAME)
             .await
             .map_err(refused)?;
-        let state = sikemux_loopback::new_state().map_err(refused)?;
+        let state = new_state().map_err(refused)?;
         let verifier = match self.pkce {
             true => Some(sikemux_loopback::new_verifier().map_err(refused)?),
             false => None,
@@ -234,7 +236,7 @@ impl OAuthApp {
 
 /// Where a sign-in's refresh token is kept.
 pub struct KeychainEntry {
-    pub service: &'static str,
+    pub secrets: Secrets,
     pub account: String,
 }
 
@@ -308,24 +310,17 @@ impl<S: Service> Refreshing<S> {
             return Ok(access.clone());
         }
         let KeychainEntry {
-            service,
+            secrets,
             account: entry_account,
         } = entry;
         let reading = entry_account.clone();
-        let refresh_token = blocking(move || Ok(sikemux_keychain::read(service, &reading)?))
+        let refresh_token = blocking(move || Ok(secrets.read(&reading)?))
             .await?
             .ok_or(ServiceError::Unconfigured)?;
         let tokens = self.app.refresh(self.http, &refresh_token).await?;
         if tokens.refresh_token != refresh_token {
             let replacement = tokens.refresh_token.clone();
-            blocking(move || {
-                Ok(sikemux_keychain::write(
-                    service,
-                    &entry_account,
-                    &replacement,
-                )?)
-            })
-            .await?;
+            blocking(move || Ok(secrets.write(&entry_account, &replacement)?)).await?;
         }
         let access = Access::of(&tokens);
         held.insert(account.to_owned(), access.clone());

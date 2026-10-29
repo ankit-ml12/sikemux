@@ -29,6 +29,7 @@ use gpui_kit::{
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use sikemux_plugin_api::codehost::{CheckTally, Label, Outcome, PullState};
+use sikemux_plugin_api::TokenForm;
 use sikemux_wire::protocol::ProjectCodeHost;
 
 use crate::core::{Target, Watch};
@@ -603,7 +604,14 @@ impl HostArea {
         }
     }
 
-    fn plugin_call(&self, method: &'static str, more: Value) -> Value {
+    /// The form the host is signed in to with a token, as its plugin gives it.
+    fn token_form(&self, cx: &App) -> Option<TokenForm> {
+        let bench = self.bench.upgrade()?;
+        let plugin = format!("sikemux.{}", self.host.host);
+        bench.read(cx).reads.plugins.token_form(&plugin).cloned()
+    }
+
+    fn plugin_call(&self, method: &str, more: Value) -> Value {
         call_of(&self.host.host, self.repo(), &self.account, method, more)
     }
 
@@ -626,7 +634,7 @@ impl HostArea {
     /// Calls `method` of the host's plugin about the project's repository, with `more`.
     fn plugin(
         &self,
-        method: &'static str,
+        method: &str,
         more: Value,
     ) -> impl Future<Output = Result<Value, SharedString>> + 'static {
         let away = self
@@ -845,7 +853,7 @@ pub(crate) fn call_of(
     host: &str,
     repo: &str,
     account: &Option<String>,
-    method: &'static str,
+    method: &str,
     more: Value,
 ) -> Value {
     let (owner, name) = repo.split_once('/').unwrap_or_default();

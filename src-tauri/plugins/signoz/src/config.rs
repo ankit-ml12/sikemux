@@ -6,13 +6,15 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::{keychain_service, store};
+use sikemux_plugin_api::keychain_service;
+use sikemux_plugin_api::process;
+use sikemux_plugin_api::store::{self, Secrets};
 
 use crate::error::{SignozError, SignozResult};
 
 /// The signoz CLI's own entry, which every build shares with it.
-pub const API_KEY_SERVICE: &str = "signoz-api";
-pub const SESSION_SERVICE: &str = keychain_service!("sikemux-signoz-session");
+pub const API_KEYS: Secrets = Secrets::new("signoz-api");
+pub const SESSIONS: Secrets = Secrets::new(keychain_service!("sikemux-signoz-session"));
 
 #[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +42,7 @@ pub struct SignozConfig {
 
 pub fn load(data_dir: &Path) -> SignozResult<SignozConfig> {
     let config: SignozConfig = store::load(data_dir)?;
-    Ok(match sikemux_process::user_environment::var("SIGNOZ_URL") {
+    Ok(match process::user_environment::var("SIGNOZ_URL") {
         Some(url) if !url.trim().is_empty() => with_url_override(config, &url),
         _ => config,
     })
@@ -103,21 +105,13 @@ pub fn validate_account(raw: &str) -> SignozResult<String> {
     Ok(account.to_string())
 }
 
-pub fn keychain_read(service: &str, account: &str) -> SignozResult<Option<String>> {
-    Ok(sikemux_keychain::read(service, account)?)
-}
-
-pub fn keychain_write(service: &str, account: &str, secret: &str) -> SignozResult<()> {
+pub fn keychain_write(secrets: Secrets, account: &str, secret: &str) -> SignozResult<()> {
     let account = validate_account(account)?;
-    Ok(sikemux_keychain::write(service, &account, secret)?)
-}
-
-pub fn keychain_delete(service: &str, account: &str) -> SignozResult<()> {
-    Ok(sikemux_keychain::delete(service, account)?)
+    Ok(secrets.write(&account, secret)?)
 }
 
 pub fn env_api_key() -> Option<String> {
-    sikemux_process::user_environment::var("SIGNOZ_API_KEY")
+    process::user_environment::var("SIGNOZ_API_KEY")
         .map(|key| key.trim().to_string())
         .filter(|key| !key.is_empty())
 }

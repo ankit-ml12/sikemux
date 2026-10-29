@@ -5,12 +5,13 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::keychain_service;
-use sikemux_plugin_api::store::{self, Accounts};
+use sikemux_plugin_api::store::{self, Secrets};
+use sikemux_plugin_api::{accounts, keychain_service};
 
 use crate::error::LinearResult;
 
-pub const KEY_SERVICE: &str = keychain_service!("sikemux-linear-key");
+/// Each workspace's API key or refresh token, under the workspace's id.
+pub const KEYCHAIN: Secrets = Secrets::new(keychain_service!("sikemux-linear-key"));
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -53,42 +54,16 @@ impl store::Account for Workspace {
     }
 }
 
-impl Accounts for LinearConfig {
-    type Account = Workspace;
-
-    fn accounts(&self) -> &[Workspace] {
-        &self.workspaces
-    }
-    fn accounts_mut(&mut self) -> &mut Vec<Workspace> {
-        &mut self.workspaces
-    }
-    fn default_id(&self) -> Option<&str> {
-        self.default.as_deref()
-    }
-    fn default_id_mut(&mut self) -> &mut Option<String> {
-        &mut self.default
-    }
-}
+accounts!(LinearConfig, Workspace, workspaces, default);
 
 pub fn load(data_dir: &Path) -> LinearResult<LinearConfig> {
     Ok(store::load(data_dir)?)
 }
 
-pub fn keychain_read(workspace: &Workspace) -> LinearResult<Option<String>> {
-    Ok(sikemux_keychain::read(KEY_SERVICE, &workspace.id)?)
-}
-
-pub fn keychain_write(workspace: &Workspace, key: &str) -> LinearResult<()> {
-    Ok(sikemux_keychain::write(KEY_SERVICE, &workspace.id, key)?)
-}
-
-pub fn keychain_delete(workspace: &Workspace) -> LinearResult<()> {
-    Ok(sikemux_keychain::delete(KEY_SERVICE, &workspace.id)?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sikemux_plugin_api::store::Accounts;
 
     fn workspace(id: &str, url_key: &str) -> Workspace {
         Workspace {

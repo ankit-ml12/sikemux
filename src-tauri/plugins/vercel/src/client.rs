@@ -48,9 +48,8 @@ async fn token_of(account: &Account, team: Option<&str>) -> VercelResult<String>
     if let Some(token) = TOKENS.get(&entry) {
         return Ok(token);
     }
-    let reading = account.clone();
-    let scope = team.map(str::to_string);
-    let token = store::blocking(move || config::keychain_read(&reading, scope.as_deref()))
+    let reading = entry.clone();
+    let token = store::blocking(move || Ok(config::KEYCHAIN.read(&reading)?))
         .await?
         .ok_or(VercelError::Unconfigured)?;
     TOKENS.put(&entry, token.clone());

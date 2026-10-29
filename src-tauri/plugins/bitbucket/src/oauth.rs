@@ -28,7 +28,7 @@ pub static ACCESS: Refreshing<Bitbucket> = Refreshing::new(&APP, &HTTP);
 
 pub fn entry(account: &Account) -> KeychainEntry {
     KeychainEntry {
-        service: config::TOKEN_SERVICE,
+        secrets: config::KEYCHAIN,
         account: account.keychain_account(),
     }
 }

@@ -6,12 +6,13 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::keychain_service;
-use sikemux_plugin_api::store::{self, Accounts};
+use sikemux_plugin_api::store::{self, Accounts, Secrets};
+use sikemux_plugin_api::{accounts, keychain_service};
 
 use crate::error::GitlabResult;
 
-const TOKEN_SERVICE: &str = keychain_service!("sikemux-gitlab-token");
+/// Each account's access token, under `Account::keychain_account`.
+pub const KEYCHAIN: Secrets = Secrets::new(keychain_service!("sikemux-gitlab-token"));
 
 pub const GITLAB_COM: &str = "gitlab.com";
 
@@ -45,6 +46,11 @@ impl Account {
     pub fn id_for(host: &str, user_id: u64) -> String {
         format!("{host}#{user_id}")
     }
+
+    /// The Keychain only takes token-like names, so the `#` between server and id is left out.
+    pub fn keychain_account(&self) -> String {
+        self.id.replace('#', ".")
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, Debug)]
@@ -63,22 +69,7 @@ impl store::Account for Account {
     }
 }
 
-impl Accounts for GitlabConfig {
-    type Account = Account;
-
-    fn accounts(&self) -> &[Account] {
-        &self.accounts
-    }
-    fn accounts_mut(&mut self) -> &mut Vec<Account> {
-        &mut self.accounts
-    }
-    fn default_id(&self) -> Option<&str> {
-        self.default.as_deref()
-    }
-    fn default_id_mut(&mut self) -> &mut Option<String> {
-        &mut self.default
-    }
-}
+accounts!(GitlabConfig, Account, accounts, default);
 
 impl GitlabConfig {
     /// The first account on the server, the default first.
@@ -102,33 +93,6 @@ impl GitlabConfig {
 
 pub fn load(data_dir: &Path) -> GitlabResult<GitlabConfig> {
     Ok(store::load(data_dir)?)
-}
-
-/// The Keychain only takes token-like names, so the `#` between server and id is left out.
-fn keychain_account(account: &Account) -> String {
-    account.id.replace('#', ".")
-}
-
-pub fn keychain_read(account: &Account) -> GitlabResult<Option<String>> {
-    Ok(sikemux_keychain::read(
-        TOKEN_SERVICE,
-        &keychain_account(account),
-    )?)
-}
-
-pub fn keychain_write(account: &Account, secret: &str) -> GitlabResult<()> {
-    Ok(sikemux_keychain::write(
-        TOKEN_SERVICE,
-        &keychain_account(account),
-        secret,
-    )?)
-}
-
-pub fn keychain_delete(account: &Account) -> GitlabResult<()> {
-    Ok(sikemux_keychain::delete(
-        TOKEN_SERVICE,
-        &keychain_account(account),
-    )?)
 }
 
 #[cfg(test)]
@@ -172,7 +136,7 @@ mod tests {
     #[test]
     fn the_keychain_name_holds_no_hash() {
         assert_eq!(
-            keychain_account(&account("gitlab.acme.dev", 9)),
+            account("gitlab.acme.dev", 9).keychain_account(),
             "gitlab.acme.dev.9"
         );
     }

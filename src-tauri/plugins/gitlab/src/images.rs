@@ -38,28 +38,24 @@ fn access<'a>(url: &Url, accounts: &'a [Account]) -> Option<Option<&'a Account>>
 
 pub async fn image(data_dir: &Path, input: ImageRef) -> GitlabResult<String> {
     let refused = || GitlabError::BadArg("that is not an image GitLab serves".into());
-    let mut url = Url::parse(&input.url).map_err(|_| refused())?;
+    let url = Url::parse(&input.url).map_err(|_| refused())?;
     let chosen = chosen();
     let mut accounts = config::load(data_dir)?.in_order();
     accounts.sort_by_key(|account| Some(&account.id) != chosen.as_ref());
-    for _ in 0..images::MAX_HOPS {
-        let mut request = client::HTTP.client()?.get(url.clone());
-        if let Some(owner) = access(&url, &accounts).ok_or_else(refused)? {
-            let session = as_account(Some(owner.id.clone()), Session::current(data_dir)).await?;
-            request = client::authorize(request, &session.token);
-        }
-        let response = client::HTTP.send(request).await?;
-        if response.status().is_redirection() {
-            url = images::moved_to(&response, &url)?;
-            continue;
-        }
-        let status = response.status();
-        if !status.is_success() {
-            return Err(client::classify(status, &[]));
-        }
-        return images::read_image(response).await;
+    let accounts = &accounts;
+    let response = images::follow(&client::HTTP, url, move |url, request| async move {
+        let Some(owner) = access(&url, accounts).ok_or_else(refused)? else {
+            return Ok(request);
+        };
+        let session = as_account(Some(owner.id.clone()), Session::current(data_dir)).await?;
+        Ok(client::authorize(request, &session.token))
+    })
+    .await?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(client::classify(status, &[]));
     }
-    Err(images::moved_too_often())
+    images::read_image(response).await
 }
 
 #[cfg(test)]

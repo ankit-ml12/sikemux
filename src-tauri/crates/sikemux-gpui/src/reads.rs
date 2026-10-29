@@ -2,7 +2,7 @@
 //! where it arrives, so a screen reads a field rather than looking an answer up by its key.
 
 use serde_json::Value;
-use sikemux_plugin_api::Listed;
+use sikemux_plugin_api::{Listed, TokenForm};
 use sikemux_wire::catalog::CatalogAgent;
 
 /// The agents the core can run, as its catalog lists them.
@@ -46,6 +46,15 @@ impl Plugins {
     /// Whether the person is signed in to `id`; none for a plugin with no sign-in.
     pub fn signed_in(&self, id: &str) -> Option<bool> {
         self.0.iter().find(|plugin| plugin.id == id)?.signed_in
+    }
+
+    /// The form `id` is signed in to with a token, when it has one.
+    pub fn token_form(&self, id: &str) -> Option<&TokenForm> {
+        self.0
+            .iter()
+            .find(|plugin| plugin.id == id)?
+            .token_form
+            .as_ref()
     }
 
     pub fn is_empty(&self) -> bool {

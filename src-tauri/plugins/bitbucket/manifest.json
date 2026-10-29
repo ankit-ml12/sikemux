@@ -6,6 +6,15 @@
   "callTimeoutSecs": 120,
   "writes": ["addComment", "cancel", "createIssue", "createPull", "dispatch", "editPull", "mergePull", "rerun", "reviewPull", "setIssueState", "setPullState"],
   "accountMethods": ["setDefaultAccount", "signInWithBrowser", "signInWithToken", "signOut"],
+  "tokenForm": {
+    "method": "signInWithToken",
+    "lede": "Pull requests, pipelines and reviews for this repository, right beside your changes.",
+    "fields": [
+      { "name": "token", "label": "Token", "placeholder": "ATATT… or ATCTT…", "secret": true },
+      { "name": "email", "label": "Atlassian account email", "placeholder": "you@example.com" }
+    ],
+    "tokenPage": "https://id.atlassian.com/manage-profile/security/api-tokens"
+  },
   "codeHost": {
     "label": "Bitbucket",
     "ciName": "Pipelines",

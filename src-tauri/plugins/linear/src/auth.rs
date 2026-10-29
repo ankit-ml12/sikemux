@@ -97,7 +97,7 @@ pub async fn sign_in(data_dir: &Path, input: KeySignIn) -> LinearResult<String> 
     let workspace = workspace_of(&client::query_with(&key, VIEWER, json!({})).await?)?;
     let id = workspace.id.clone();
     store::update(data_dir, move |config: &mut LinearConfig| {
-        config::keychain_write(&workspace, &key)?;
+        config::KEYCHAIN.write(&workspace.id, &key)?;
         config.upsert(workspace);
         Ok(())
     })
@@ -119,7 +119,7 @@ pub async fn sign_in_with_browser(data_dir: &Path, sink: &StreamSink) -> LinearR
     let id = workspace.id.clone();
     let refresh_token = tokens.refresh_token.clone();
     store::update(data_dir, move |config: &mut LinearConfig| {
-        config::keychain_write(&workspace, &refresh_token)?;
+        config::KEYCHAIN.write(&workspace.id, &refresh_token)?;
         config.upsert(workspace);
         Ok(())
     })
@@ -148,10 +148,10 @@ pub async fn sign_out(data_dir: &Path, input: WorkspaceRef) -> LinearResult<()> 
             return Ok(None);
         };
         let refresh_token = match workspace.sign_in {
-            SignIn::Browser => config::keychain_read(&workspace)?,
+            SignIn::Browser => config::KEYCHAIN.read(&workspace.id)?,
             SignIn::Key => None,
         };
-        config::keychain_delete(&workspace)?;
+        config::KEYCHAIN.delete(&workspace.id)?;
         Ok(Some((workspace, refresh_token)))
     })
     .await?;

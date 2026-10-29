@@ -5,12 +5,13 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::keychain_service;
-use sikemux_plugin_api::store::{self, Accounts};
+use sikemux_plugin_api::store::{self, Secrets};
+use sikemux_plugin_api::{accounts, keychain_service};
 
 use crate::error::SlackResult;
 
-const TOKEN_SERVICE: &str = keychain_service!("sikemux-slack-token");
+/// Each workspace's token, under the workspace's id.
+pub const KEYCHAIN: Secrets = Secrets::new(keychain_service!("sikemux-slack-token"));
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -39,22 +40,7 @@ impl store::Account for Workspace {
     }
 }
 
-impl Accounts for SlackConfig {
-    type Account = Workspace;
-
-    fn accounts(&self) -> &[Workspace] {
-        &self.workspaces
-    }
-    fn accounts_mut(&mut self) -> &mut Vec<Workspace> {
-        &mut self.workspaces
-    }
-    fn default_id(&self) -> Option<&str> {
-        self.default.as_deref()
-    }
-    fn default_id_mut(&mut self) -> &mut Option<String> {
-        &mut self.default
-    }
-}
+accounts!(SlackConfig, Workspace, workspaces, default);
 
 impl SlackConfig {
     /// The workspace a message link points into, by its address.
@@ -67,22 +53,6 @@ impl SlackConfig {
 
 pub fn load(data_dir: &Path) -> SlackResult<SlackConfig> {
     Ok(store::load(data_dir)?)
-}
-
-pub fn keychain_read(workspace: &Workspace) -> SlackResult<Option<String>> {
-    Ok(sikemux_keychain::read(TOKEN_SERVICE, &workspace.id)?)
-}
-
-pub fn keychain_write(workspace: &Workspace, token: &str) -> SlackResult<()> {
-    Ok(sikemux_keychain::write(
-        TOKEN_SERVICE,
-        &workspace.id,
-        token,
-    )?)
-}
-
-pub fn keychain_delete(workspace: &Workspace) -> SlackResult<()> {
-    Ok(sikemux_keychain::delete(TOKEN_SERVICE, &workspace.id)?)
 }
 
 #[cfg(test)]

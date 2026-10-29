@@ -18,7 +18,7 @@ use sikemux_plugin_api::codehost::{
     Job, JobLog, LogExcerpt, LogLine, Outcome, Run, RunDetail, RunPage, RunTiming, Workflow,
     WorkflowFile,
 };
-use sikemux_process::sync::Locked;
+use sikemux_plugin_api::process::sync::Locked;
 
 use crate::client;
 use crate::error::{GitlabError, GitlabResult};

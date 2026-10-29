@@ -44,7 +44,7 @@ pub static ACCESS: Refreshing<Jira> = Refreshing::new(&APP, &client::HTTP);
 
 pub fn entry(site: &Site) -> KeychainEntry {
     KeychainEntry {
-        service: config::TOKEN_SERVICE,
+        secrets: config::KEYCHAIN,
         account: site.keychain_account(),
     }
 }
