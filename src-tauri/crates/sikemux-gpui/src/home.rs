@@ -183,10 +183,7 @@ fn empty_stage(cx: &mut Context<Workbench>) -> impl IntoElement {
 /// A terminal agent put to sleep: its CLI starts again on its saved session when woken.
 fn asleep_in_terminal(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -> Div {
     let t = Tokens::get(cx).clone();
-    let label = bench
-        .agent_label(&agent.provider)
-        .unwrap_or(&agent.provider)
-        .to_owned();
+    let label = bench.agent_name(&agent.provider).to_owned();
     let id = agent.id.clone();
     div()
         .size_full()
@@ -305,7 +302,7 @@ impl Render for Activity {
 }
 
 fn welcome_calendar(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    let Some(summary) = bench.read("activity") else {
+    let Some(summary) = bench.reads.activity.as_ref() else {
         return div().into_any_element();
     };
     let t = Tokens::get(cx).clone();

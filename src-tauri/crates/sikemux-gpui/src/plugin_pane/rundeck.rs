@@ -500,7 +500,7 @@ impl Panel for DeployChip {
 /// has, and a read without a branch while HEAD is detached.
 fn repo_read(host: &Host, cx: &App) -> Option<Option<String>> {
     let bench = host.bench().upgrade()?;
-    let overview = bench.read(cx).read("git-overview")?;
+    let overview = bench.read(cx).reads.git_overview.as_ref()?;
     Some(
         overview["status"]["branch"]
             .as_str()

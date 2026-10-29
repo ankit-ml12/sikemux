@@ -545,24 +545,16 @@ impl GitPane {
     }
 
     /// Takes the agents the core's catalog says write commit messages.
-    pub fn catalog(&mut self, value: &Value, cx: &mut Context<Self>) {
-        self.writers = value
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|agent| {
-                let models: Vec<String> = agent["commitModels"]
-                    .as_array()?
-                    .iter()
-                    .filter_map(|model| model.as_str().map(str::to_owned))
-                    .collect();
-                (!models.is_empty()).then(|| {
-                    (
-                        agent["type"].as_str().unwrap_or_default().to_owned(),
-                        agent["label"].as_str().unwrap_or_default().to_owned(),
-                        models,
-                    )
-                })
+    pub fn catalog(&mut self, catalog: &crate::reads::Catalog, cx: &mut Context<Self>) {
+        self.writers = catalog
+            .agents()
+            .filter(|agent| !agent.commit_models.is_empty())
+            .map(|agent| {
+                (
+                    agent.kind.clone(),
+                    agent.label.clone(),
+                    agent.commit_models.clone(),
+                )
             })
             .collect();
         cx.notify();

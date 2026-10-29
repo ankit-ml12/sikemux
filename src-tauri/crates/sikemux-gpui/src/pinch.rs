@@ -3,8 +3,7 @@
 
 use gpui::{PinchEvent, TouchPhase};
 use sikemux_wire::protocol::{
-    DEFAULT_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE, MAX_TEXT_SCALE, MIN_TERMINAL_FONT_SIZE,
-    MIN_TEXT_SCALE,
+    MAX_TERMINAL_FONT_SIZE, MAX_TEXT_SCALE, MIN_TERMINAL_FONT_SIZE, MIN_TEXT_SCALE,
 };
 
 use crate::workbench::Workbench;
@@ -32,15 +31,12 @@ impl Surface {
     }
 
     fn size(self, bench: &Workbench) -> f64 {
-        let (key, ..) = self.preference();
-        let fallback = match self {
-            Surface::Terminal => DEFAULT_TERMINAL_FONT_SIZE.into(),
-            _ => 1.,
-        };
-        bench
-            .read("preferences")
-            .and_then(|preferences| preferences[key].as_f64())
-            .unwrap_or(fallback)
+        let preferences = bench.preferences();
+        match self {
+            Surface::Chat => preferences.chat_text_scale,
+            Surface::Editor => preferences.editor_text_scale,
+            Surface::Terminal => preferences.terminal_font_size.into(),
+        }
     }
 }
 

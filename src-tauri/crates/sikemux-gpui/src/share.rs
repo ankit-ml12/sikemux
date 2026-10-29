@@ -55,7 +55,9 @@ impl Share {
 
 impl Workbench {
     fn shares(&self) -> Vec<Share> {
-        self.read("shares")
+        self.reads
+            .shares
+            .as_ref()
             .and_then(|shares| serde_json::from_value(shares.clone()).ok())
             .unwrap_or_default()
     }

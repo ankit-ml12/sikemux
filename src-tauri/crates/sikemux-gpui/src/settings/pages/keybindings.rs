@@ -70,7 +70,7 @@ fn fields_of(bench: &mut Workbench) -> Option<&mut Fields> {
 
 /// Changes the keys the person chose, in the core.
 fn change(bench: &Workbench, edit: impl FnOnce(&mut BTreeMap<String, Option<String>>)) {
-    let mut overrides = bench.preferences().keybinding_overrides;
+    let mut overrides = bench.preferences().keybinding_overrides.clone();
     edit(&mut overrides);
     crate::settings::set(
         bench,
@@ -158,7 +158,7 @@ fn capture(bench: &mut Workbench, keystroke: &Keystroke, cx: &mut Context<Workbe
             cx,
         );
     }
-    let overrides = bench.preferences().keybinding_overrides;
+    let overrides = bench.preferences().keybinding_overrides.clone();
     let taken = keymap::shortcuts()
         .iter()
         .find(|other| other.id != id && other.keys(&overrides).as_deref() == Some(keys.as_str()))
@@ -251,7 +251,7 @@ pub fn render(
         return Vec::new();
     };
     let t = Tokens::get(cx).clone();
-    let overrides = bench.preferences().keybinding_overrides;
+    let overrides = bench.preferences().keybinding_overrides.clone();
     let shortcuts = keymap::shortcuts();
     let query = fields.filter.read(cx).value().trim().to_lowercase();
     let recording = fields.recording.as_ref().map(|recording| recording.id);

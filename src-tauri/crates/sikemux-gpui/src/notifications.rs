@@ -270,10 +270,10 @@ pub fn kept_running(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     if bench.kept_running_told {
         return;
     }
-    let (Some(view), Some(preferences)) = (&bench.view, bench.read("preferences")) else {
+    let (Some(view), Some(preferences)) = (&bench.view, bench.preferences_read()) else {
         return;
     };
-    let unshown = preferences["keptRunningNoticeShown"] == false;
+    let unshown = !preferences.kept_running_notice_shown;
     let mut shown = HashSet::new();
     let layout = &view.layout;
     let strips = layout

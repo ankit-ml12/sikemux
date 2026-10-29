@@ -1766,13 +1766,9 @@ fn page(bench: &mut Workbench, id: TermKey, up: bool) {
     scroll(terminal, if up { -rows } else { rows });
 }
 
-/// The terminals' font size the person chose, read off the preferences as
-/// they came, since every frame asks.
+/// The terminals' font size the person chose.
 fn font_size(bench: &Workbench) -> u32 {
-    bench
-        .read("preferences")
-        .and_then(|preferences| preferences["terminalFontSize"].as_u64())
-        .map_or(DEFAULT_TERMINAL_FONT_SIZE, |size| size as u32)
+    bench.preferences().terminal_font_size
 }
 
 /// Makes the terminals' text bigger or smaller a step, or back to the default size without

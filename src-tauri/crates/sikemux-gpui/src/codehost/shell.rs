@@ -625,7 +625,7 @@ impl HostArea {
         let Some(bench) = self.bench.upgrade() else {
             return Vec::new();
         };
-        let settings = bench.read(cx).preferences().plugin_settings;
+        let settings = bench.read(cx).preferences().plugin_settings.clone();
         settings
             .get(&self.host.host)
             .and_then(|kept| kept["pinned"].as_array())
@@ -644,7 +644,7 @@ impl HostArea {
         let Some(bench) = self.bench.upgrade() else {
             return;
         };
-        let mut all = bench.read(cx).preferences().plugin_settings;
+        let mut all = bench.read(cx).preferences().plugin_settings.clone();
         let mut pinned = self.pinned(cx);
         match pinned.iter().position(|slug| *slug == self.host.repo) {
             Some(at) => {

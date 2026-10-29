@@ -250,22 +250,18 @@ fn adopt(bench: &mut Workbench, book: Value, cx: &mut Context<Workbench>) {
 /// Puts first the account each agent starts with, where the core has none for it yet:
 /// it keeps only what the person changed.
 fn with_built_ins(bench: &Workbench, book: &mut Book) {
-    let kinds = bench
-        .read("catalog")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let built_ins: Vec<Profile> = kinds
-        .iter()
-        .filter(|kind| kind["accounts"] == true)
+    let built_ins: Vec<Profile> = bench
+        .reads
+        .catalog
+        .agents()
+        .filter(|kind| kind.accounts)
         .filter_map(|kind| {
-            let provider = kind["type"].as_str()?;
-            let id = format!("builtin-{provider}");
+            let id = format!("builtin-{}", kind.kind);
             (!book.profiles.iter().any(|profile| profile.id == id)).then(|| Profile {
                 id,
-                name: kind["label"].as_str().unwrap_or(provider).to_owned(),
-                provider: provider.to_owned(),
-                accent: kind["brand"].as_str().unwrap_or_default().to_owned(),
+                name: kind.label.clone(),
+                provider: kind.kind.clone(),
+                accent: kind.brand.clone(),
                 executable_path: None,
                 config_path: None,
                 environment_keys: Vec::new(),
@@ -310,7 +306,11 @@ pub fn set_auto_switch(bench: &Workbench, provider: &str, on: bool, cx: &mut Con
 /// name, else the name the person gave it.
 pub fn name(bench: &Workbench, profile: &Profile, status: Option<&Status>) -> String {
     let unnamed = profile.id.starts_with("builtin-")
-        && bench.agent_label(&profile.provider) == Some(profile.name.as_str());
+        && bench
+            .reads
+            .catalog
+            .kind(&profile.provider)
+            .is_some_and(|kind| kind.label == profile.name);
     status
         .and_then(|status| status.name.clone())
         .filter(|_| unnamed)

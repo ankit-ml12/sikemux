@@ -122,7 +122,7 @@ pub fn follow(bench: &mut Workbench, link: &str, cx: &mut Context<Workbench>) {
     }
     let body = format!(
         "A link asks to resume a {} chat in {}, which is not one of your projects.\nThe agent starts there at once and follows the folder's own settings and hooks. Go ahead only if you trust it.",
-        agent_name(bench, &resume.provider),
+        bench.agent_name(&resume.provider),
         resume.project.display(),
     );
     let resume = std::rc::Rc::new(resume);
@@ -143,14 +143,6 @@ pub fn follow(bench: &mut Workbench, link: &str, cx: &mut Context<Workbench>) {
         },
         cx,
     );
-}
-
-fn agent_name(bench: &Workbench, provider: &str) -> String {
-    bench
-        .launchers()
-        .iter()
-        .find(|launcher| launcher.provider == provider)
-        .map_or_else(|| provider.to_owned(), |launcher| launcher.label.clone())
 }
 
 /// Takes the chat up again on this host's core, opening its folder as a project first when

@@ -62,14 +62,14 @@ fn xcode(path: Option<&str>) -> String {
 
 /// Changes one of the island's settings, keeping the rest.
 fn set_notch(bench: &Workbench, key: &str, value: impl Into<Value>) {
-    let mut notch = serde_json::to_value(bench.preferences().notch).unwrap_or_default();
+    let mut notch = serde_json::to_value(&bench.preferences().notch).unwrap_or_default();
     notch[key] = value.into();
     crate::settings::set(bench, "notch", notch);
 }
 
 impl Fields {
     pub fn new(bench: &Workbench, window: &mut Window, cx: &mut Context<Workbench>) -> Self {
-        let notch = bench.preferences().notch;
+        let notch = bench.preferences().notch.clone();
         let choice = |labels: Vec<&'static str>,
                       words: &'static [&'static str],
                       chosen: usize,

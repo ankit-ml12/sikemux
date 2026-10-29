@@ -472,7 +472,7 @@ fn general(
     let servers = crate::editor::language_servers_allowed(bench, folder);
     let (on_worktree, on_servers) = (this.clone(), this.clone());
     let (worktree_folder, servers_folder) = (folder.to_owned(), folder.to_owned());
-    let defaults = preferences.agent_worktree_defaults;
+    let defaults = preferences.agent_worktree_defaults.clone();
     let body = div()
         .child(rows::row(
             "New chats start in a worktree",
@@ -558,7 +558,9 @@ fn tasks(
 ) -> Vec<AnyElement> {
     let t = Tokens::get(cx).clone();
     let listed = bench
-        .read("tasks")
+        .reads
+        .tasks
+        .as_ref()
         .filter(|read| read["project"].as_str() == Some(folder))
         .and_then(|read| read["tasks"].as_array().cloned());
     let all = listed.clone().unwrap_or_default();

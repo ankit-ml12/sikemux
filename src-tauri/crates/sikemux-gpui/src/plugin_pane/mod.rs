@@ -507,7 +507,7 @@ impl Host {
         let Some(bench) = self.bench.upgrade() else {
             return;
         };
-        let mut all = bench.read(cx).preferences().plugin_settings;
+        let mut all = bench.read(cx).preferences().plugin_settings.clone();
         let mut kept = all.remove(&self.plugin).unwrap_or_else(|| json!({}));
         if !kept.is_object() {
             kept = json!({});
@@ -577,7 +577,7 @@ impl Host {
     /// Whether the person is signed in to the plugin, as the core last listed it.
     pub fn signed_in(&self, cx: &App) -> Option<bool> {
         let bench = self.bench.upgrade()?;
-        let plugins = bench.read(cx).read("plugins")?.as_array()?;
+        let plugins = bench.read(cx).reads.plugins.as_ref()?.as_array()?;
         plugins
             .iter()
             .find(|plugin| plugin["id"] == self.plugin.as_str())
@@ -595,7 +595,7 @@ impl Host {
         let browser = self.bench.upgrade().and_then(|bench| {
             let preferences = bench.read(cx).preferences();
             let app = preferences.cloud_browser.trim().to_owned();
-            (!app.is_empty()).then_some((app, preferences.cloud_browser_shortcut))
+            (!app.is_empty()).then_some((app, preferences.cloud_browser_shortcut.clone()))
         });
         self.stream_sign_in(method, params, browser, cx);
     }

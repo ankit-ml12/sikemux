@@ -15,7 +15,7 @@ use gpui_kit::{
     ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::protocol::{Pane, PaneKind};
+use sikemux_wire::protocol::{Pane, PaneKind, DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE, MIN_TEXT_SCALE};
 
 use crate::core::{Ask, Target};
 use crate::hosts::Place as Host;
@@ -66,9 +66,6 @@ const READ_TRIES: usize = 3;
 /// A save goes in pieces of this many characters, as the core takes them.
 const SAVE_PIECE: usize = 512 * 1024;
 const FONT_SIZE: f32 = 13.;
-const DEFAULT_TEXT_SCALE: f64 = 1.;
-const MIN_TEXT_SCALE: f64 = 0.7;
-const MAX_TEXT_SCALE: f64 = 2.;
 const TEXT_SCALE_STEP: f64 = 0.1;
 /// How many places back ⌘[ remembers.
 const MAX_HISTORY: usize = 128;
@@ -1720,10 +1717,7 @@ fn show_rendered(
 
 /// The editors' text scale the person chose.
 fn text_scale(bench: &Workbench) -> f64 {
-    bench
-        .read("preferences")
-        .and_then(|preferences| preferences["editorTextScale"].as_f64())
-        .unwrap_or(DEFAULT_TEXT_SCALE)
+    bench.preferences().editor_text_scale
 }
 
 /// Makes the editors' text bigger or smaller by `step`, or back to its size without one.

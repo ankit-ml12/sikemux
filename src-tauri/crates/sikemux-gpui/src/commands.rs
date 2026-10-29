@@ -157,7 +157,9 @@ fn worktree_rows(worktrees: &Value) -> Vec<Row> {
 impl Workbench {
     /// What is wrong with the project's `sikemux.json`, each as where in the file and why.
     fn config_errors(&self) -> Vec<String> {
-        self.read("tasks")
+        self.reads
+            .tasks
+            .as_ref()
             .filter(|read| read["configStatus"] == "invalid")
             .and_then(|read| read["configErrors"].as_array())
             .into_iter()
@@ -174,7 +176,7 @@ impl Workbench {
 
     /// The project's tasks to run, and the one running to restart or stop.
     fn task_rows(&self) -> Vec<Row> {
-        let Some(read) = self.read("tasks") else {
+        let Some(read) = self.reads.tasks.as_ref() else {
             return Vec::new();
         };
         let mut rows = Vec::new();
@@ -259,6 +261,7 @@ impl Workbench {
             let custom = self
                 .preferences()
                 .custom_commands
+                .clone()
                 .into_iter()
                 .filter(|command| {
                     command.contexts.is_empty() || command.contexts.iter().any(|at| at == kind)
@@ -572,6 +575,7 @@ impl Workbench {
         let title = self
             .preferences()
             .custom_commands
+            .clone()
             .into_iter()
             .find(|command| command.id == id)
             .map_or_else(|| id.to_owned(), |command| command.title);
@@ -631,7 +635,9 @@ impl Workbench {
 impl Workbench {
     /// A command for each palette an enabled plugin offers.
     fn plugin_palette_rows(&self) -> Vec<Row> {
-        self.read("plugins")
+        self.reads
+            .plugins
+            .as_ref()
             .and_then(Value::as_array)
             .into_iter()
             .flatten()

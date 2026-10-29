@@ -174,7 +174,7 @@ fn chats_on(bench: &Workbench, provider: &Value) -> String {
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
-        .map(|agent| super::label(bench, agent))
+        .map(|agent| bench.agent_name(agent).to_owned())
         .collect();
     match agents.split_last() {
         None => String::new(),
@@ -598,17 +598,11 @@ fn save_model(bench: &mut Workbench, model: String, cx: &mut Context<Workbench>)
 /// The agents a chat can run as, by id and name.
 fn chat_agents(bench: &Workbench) -> Vec<(String, String)> {
     bench
-        .read("catalog")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|kind| !kind["chat"].is_null())
-        .filter_map(|kind| {
-            Some((
-                kind["type"].as_str()?.to_owned(),
-                kind["label"].as_str()?.to_owned(),
-            ))
-        })
+        .reads
+        .catalog
+        .agents()
+        .filter(|kind| kind.chat.is_some())
+        .map(|kind| (kind.kind.clone(), kind.label.clone()))
         .collect()
 }
 
@@ -671,7 +665,7 @@ fn rebuild_choices(bench: &mut Workbench, window: &mut Window, cx: &mut Context<
             .and_then(|current| routes.iter().position(|(id, _)| id == current))
             .map_or(0, |at| at + 1);
         let labels: Vec<String> =
-            std::iter::once(format!("{} account", super::label(bench, &agent)))
+            std::iter::once(format!("{} account", bench.agent_name(&agent).to_owned()))
                 .chain(routes.iter().map(|(_, label)| label.clone()))
                 .collect();
         let ids: Vec<String> = routes.iter().map(|(id, _)| id.clone()).collect();

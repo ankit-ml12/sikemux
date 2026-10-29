@@ -2573,7 +2573,7 @@ fn send_to_board(bench: &WeakEntity<Workbench>, view: &IssueView, cx: &mut App) 
 /// The front project's recent commits that name the issue.
 fn commits(host: &Host, key: &str, cx: &App) -> Option<AnyElement> {
     let bench = host.bench().upgrade()?;
-    let log = bench.read(cx).read("git-overview")?["log"]
+    let log = bench.read(cx).reads.git_overview.as_ref()?["log"]
         .as_array()?
         .clone();
     let named: Vec<&Value> = log

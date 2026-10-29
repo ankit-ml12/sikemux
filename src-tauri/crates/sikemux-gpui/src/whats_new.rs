@@ -154,7 +154,7 @@ pub fn opened(bench: &mut Workbench, cx: &mut Context<Workbench>) {
 
 /// The update the core found for this app, while one is there to install.
 fn pending(bench: &Workbench) -> Option<&Value> {
-    bench.read("update").filter(|update| {
+    bench.reads.update.as_ref().filter(|update| {
         (update["updates"] == true || update["installCommand"].is_string())
             && !update["available"].is_null()
     })
@@ -283,7 +283,7 @@ pub const RELEASES: &str = "https://github.com/nodelike/sikemux/releases";
 pub fn required(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let required = bench.remote.as_ref()?.update_required.as_ref()?;
     let t = Tokens::get(cx).clone();
-    let update = bench.read("update");
+    let update = bench.reads.update.as_ref();
     let found = pending(bench);
     let in_app = update.is_some_and(|update| update["updates"] == true);
     let problem = match found {

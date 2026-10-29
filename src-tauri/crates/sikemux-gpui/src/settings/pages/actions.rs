@@ -114,7 +114,7 @@ fn load(
 
 /// Changes the person's actions in the core.
 fn change(bench: &Workbench, edit: impl FnOnce(&mut Vec<CustomCommand>)) {
-    let mut commands = bench.preferences().custom_commands;
+    let mut commands = bench.preferences().custom_commands.clone();
     edit(&mut commands);
     crate::settings::set(
         bench,
@@ -169,7 +169,7 @@ pub fn render(
         return Vec::new();
     };
     let t = Tokens::get(cx).clone();
-    let commands = bench.preferences().custom_commands;
+    let commands = bench.preferences().custom_commands.clone();
     let editing = commands.iter().any(|command| command.id == fields.id);
 
     let saved: AnyElement = match commands.is_empty() {

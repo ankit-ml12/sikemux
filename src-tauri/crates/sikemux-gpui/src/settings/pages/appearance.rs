@@ -199,7 +199,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
                     let ColorPickerEvent::Change(Some(color)) = event else {
                         return;
                     };
-                    let mut inks = bench.preferences().pane_inks;
+                    let mut inks = bench.preferences().pane_inks.clone();
                     if let Some(ink) = inks.get_mut(at) {
                         *ink = super::theme_editor::hex(*color);
                     }
@@ -395,7 +395,9 @@ fn step(bench: &Workbench, by: isize) {
         return;
     };
     let themes: Vec<ThemeSummary> = bench
-        .read("themes")
+        .reads
+        .themes
+        .as_ref()
         .and_then(|themes| serde_json::from_value(themes.clone()).ok())
         .unwrap_or_default();
     let listed: Vec<String> = shown(&themes, fields)
@@ -405,7 +407,7 @@ fn step(bench: &Workbench, by: isize) {
     let Some(last) = listed.len().checked_sub(1) else {
         return;
     };
-    let worn = bench.preferences().theme_id;
+    let worn = bench.preferences().theme_id.clone();
     let next = match listed.iter().position(|id| *id == worn) {
         Some(at) => at.saturating_add_signed(by).min(last),
         None if by > 0 => 0,
@@ -539,7 +541,9 @@ pub fn render(
     let t = Tokens::get(cx).clone();
     let preferences = bench.preferences();
     let themes: Vec<ThemeSummary> = bench
-        .read("themes")
+        .reads
+        .themes
+        .as_ref()
         .and_then(|themes| serde_json::from_value(themes.clone()).ok())
         .unwrap_or_default();
     let custom = themes

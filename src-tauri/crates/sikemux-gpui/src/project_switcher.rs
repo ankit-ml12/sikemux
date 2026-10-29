@@ -96,7 +96,10 @@ impl Switcher {
         });
         let (asks, roots) = {
             let bench = bench.read(cx);
-            (bench.asks.clone(), bench.preferences().project_roots)
+            (
+                bench.asks.clone(),
+                bench.preferences().project_roots.clone(),
+            )
         };
         if !roots.is_empty() {
             cx.spawn(async move |switcher, cx| {

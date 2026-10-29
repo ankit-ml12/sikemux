@@ -40,14 +40,14 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
     let preferences = bench.preferences();
     let (browser, typed_browser) = field(
         "cloudBrowser",
-        preferences.cloud_browser,
+        preferences.cloud_browser.clone(),
         "Zen, Arc, Safari · empty = system default",
         window,
         cx,
     );
     let (shortcut, typed_shortcut) = field(
         "cloudBrowserShortcut",
-        preferences.cloud_browser_shortcut,
+        preferences.cloud_browser_shortcut.clone(),
         "ctrl+3 · empty = no switch",
         window,
         cx,

@@ -2,7 +2,6 @@
 //! start on, the models they may use, their skills, and how sessions behave.
 
 use gpui_kit::{AnyElement, Context, Entity, Window};
-use serde_json::Value;
 
 use crate::settings::Page;
 use crate::workbench::Workbench;
@@ -52,22 +51,6 @@ fn fields_of(bench: &mut Workbench) -> Option<&mut Fields> {
     bench.settings.as_mut()?.pages.agents.as_mut()
 }
 
-/// The catalog's entry for the agent `kind`.
-fn kind<'a>(bench: &'a Workbench, kind: &str) -> Option<&'a Value> {
-    bench
-        .read("catalog")
-        .and_then(Value::as_array)
-        .and_then(|kinds| kinds.iter().find(|entry| entry["type"] == kind))
-}
-
-/// What the agent is called, as the catalog names it.
-fn label(bench: &Workbench, agent: &str) -> String {
-    kind(bench, agent)
-        .and_then(|kind| kind["label"].as_str())
-        .unwrap_or(agent)
-        .to_owned()
-}
-
 pub fn render(
     bench: &Workbench,
     pages: &super::State,
@@ -108,12 +91,11 @@ pub fn render(
 /// The agents the catalog says keep each sign-in apart, so the person can hold several accounts.
 fn signs_in(bench: &Workbench) -> Vec<String> {
     bench
-        .read("catalog")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|kind| kind["accounts"] == true)
-        .filter_map(|kind| kind["type"].as_str().map(str::to_owned))
+        .reads
+        .catalog
+        .agents()
+        .filter(|kind| kind.accounts)
+        .map(|kind| kind.kind.clone())
         .collect()
 }
 

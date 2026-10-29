@@ -5,7 +5,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui_kit::{Context, SharedString, Window};
-use serde_json::{json, Value};
+use serde_json::json;
 use sikemux_wire::protocol::{AgentStatus, LauncherInfo, PermissionMode};
 
 use crate::icons::Icon;
@@ -53,8 +53,11 @@ impl Workbench {
                     let provider = launcher_of(bench, launcher)
                         .map(|known| known.provider.clone())
                         .unwrap_or_default();
-                    let can_skip =
-                        kind_of(bench, &provider).is_some_and(|kind| kind["bypass"] == true);
+                    let can_skip = bench
+                        .reads
+                        .catalog
+                        .kind(&provider)
+                        .is_some_and(|kind| kind.bypass);
                     let launch_mode = if mode.get() == 1 && can_skip {
                         PermissionMode::Bypass
                     } else {
@@ -109,19 +112,14 @@ impl Workbench {
     }
 
     fn agent_palette_rows(&self, project: &str) -> Vec<Row> {
-        let kind_of = |provider: &str| kind_of(self, provider);
+        let kind_of = |provider: &str| self.reads.catalog.kind(provider);
         let mut rows = Vec::new();
         let mut sign_ins = Vec::new();
         for launcher in self.launchers().iter().chain(self.terminal_launchers()) {
             let kind = kind_of(&launcher.provider);
-            let field = |name: &str| {
-                kind.as_ref()
-                    .and_then(|kind| kind[name].as_str())
-                    .map(str::to_owned)
-            };
             let signs_in = SIGNS_IN.contains(&launcher.provider.as_str())
-                || kind.as_ref().is_some_and(|kind| kind["login"].is_array());
-            let bypasses = kind.as_ref().is_some_and(|kind| kind["bypass"] == true);
+                || kind.is_some_and(|kind| kind.login.is_some());
+            let bypasses = kind.is_some_and(|kind| kind.bypass);
             let new = || {
                 Row::new(
                     format!("{NEW}{}", launcher.id),
@@ -130,11 +128,11 @@ impl Workbench {
                 .unarmed(!bypasses)
             };
             let row = match launcher.status.as_deref() {
-                Some("missing") if field("install").is_some() => Row::new(
+                Some("missing") if kind.is_some_and(|kind| kind.install.is_some()) => Row::new(
                     format!("{INSTALL}{}", launcher.id),
                     format!("Install {}", launcher.label),
                 )
-                .meta(field("about").unwrap_or_default()),
+                .meta(kind.map(|kind| kind.about.clone()).unwrap_or_default()),
                 Some("missing" | "broken") => {
                     new().meta("Agent executable is unavailable").disabled(true)
                 }
@@ -160,7 +158,7 @@ impl Workbench {
             );
         }
         rows.extend(sign_ins);
-        let unarmed = |provider: &str| kind_of(provider).is_none_or(|kind| kind["bypass"] != true);
+        let unarmed = |provider: &str| kind_of(provider).is_none_or(|kind| !kind.bypass);
         let mut taken_up = Vec::new();
         for agent in self.agents_of(project) {
             let handle = agent.name.as_ref().map(|name| format!("@{name}"));
@@ -209,15 +207,6 @@ fn launcher_of<'a>(bench: &'a Workbench, id: &str) -> Option<&'a LauncherInfo> {
         .find(|known| known.id == id)
 }
 
-/// What the core's catalog says of the agent `provider`.
-fn kind_of(bench: &Workbench, provider: &str) -> Option<Value> {
-    bench
-        .read("catalog")
-        .and_then(Value::as_array)
-        .and_then(|kinds| kinds.iter().find(|kind| kind["type"] == provider))
-        .cloned()
-}
-
 /// Signs the launcher's agent in: the core does it for the agents whose accounts it keeps,
 /// and the agent's own command runs in Settings › Installed for the rest.
 fn sign_in(
@@ -261,11 +250,10 @@ fn install(
         return;
     };
     let command = bench
-        .read("catalog")
-        .and_then(Value::as_array)
-        .and_then(|kinds| kinds.iter().find(|kind| kind["type"] == launcher.provider))
-        .and_then(|kind| kind["install"].as_str())
-        .map(str::to_owned);
+        .reads
+        .catalog
+        .kind(&launcher.provider)
+        .and_then(|kind| kind.install.clone());
     let Some(command) = command else {
         return;
     };

@@ -15,8 +15,8 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
-const PULLS: &str = "worktree-pulls";
-const MERGED: &str = "worktree-merged";
+pub(crate) const PULLS: &str = "worktree-pulls";
+pub(crate) const MERGED: &str = "worktree-merged";
 
 impl Workbench {
     /// Points what the header of the agent in front reads at that agent's worktree, while it
@@ -37,7 +37,7 @@ impl Workbench {
         }
         let target = self.target();
         for key in [PULLS, MERGED] {
-            self.forget_read(key);
+            self.reads.forget(key);
         }
         match &watched {
             Some((agent, folder, _)) => {
@@ -72,7 +72,7 @@ impl Workbench {
 
 /// The branch's pull request: the open one when there is one, else the newest it had.
 fn pull<'a>(bench: &'a Workbench, branch: &str) -> Option<&'a Value> {
-    let own: Vec<&Value> = bench.read(PULLS)?["pulls"]
+    let own: Vec<&Value> = bench.reads.worktree_pulls.as_ref()?["pulls"]
         .as_array()?
         .iter()
         .filter(|listed| listed["ownBranch"] == true && listed["pull"]["head"] == branch)
@@ -124,8 +124,14 @@ pub fn badges(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
         !matches!(row.status, AgentStatus::Working | AgentStatus::Blocked)
             && row.tasks + row.subagents == 0
     });
-    let can_remove =
-        at_rest && (pull_merged || bench.read(MERGED).and_then(Value::as_bool) == Some(true));
+    let can_remove = at_rest
+        && (pull_merged
+            || bench
+                .reads
+                .worktree_merged
+                .as_ref()
+                .and_then(Value::as_bool)
+                == Some(true));
     let chip = |id: &'static str| {
         div()
             .id(id)

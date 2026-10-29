@@ -55,7 +55,7 @@ pub struct Stash<'a> {
 
 impl<'a> Stash<'a> {
     pub fn of(bench: &'a Workbench) -> Self {
-        let read = bench.read("stash");
+        let read = bench.reads.stash.as_ref();
         Self {
             signed_in: read.is_some_and(|read| read["signedIn"].as_bool() == Some(true)),
             items: read

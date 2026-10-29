@@ -267,20 +267,6 @@ impl Menu {
         };
         let bench = bench.read(cx);
         let own = self.picked.provider.as_str();
-        let kind = |provider: &str| {
-            bench
-                .read("catalog")
-                .and_then(Value::as_array)
-                .and_then(|kinds| kinds.iter().find(|kind| kind["type"] == provider))
-                .cloned()
-                .unwrap_or_default()
-        };
-        let label = |provider: &str| {
-            kind(provider)["label"]
-                .as_str()
-                .unwrap_or(provider)
-                .to_owned()
-        };
         let current = self
             .picked
             .model
@@ -300,10 +286,12 @@ impl Menu {
             .find(|route| self.picked.model_provider.as_deref() == Some(route.id.as_str()))
             .filter(|_| self.picked.locked)
             .map(|route| route.label.clone());
-        let maker = kind(own)["maker"]
-            .as_str()
-            .map(str::to_owned)
-            .unwrap_or_else(|| label(own));
+        let maker = bench
+            .reads
+            .catalog
+            .kind(own)
+            .and_then(|kind| kind.maker.clone())
+            .unwrap_or_else(|| bench.agent_name(own).to_owned());
         let mut groups = vec![paying.unwrap_or(maker)];
         let mut options: Vec<Row> = Vec::new();
         if self.picked.locked || !on_route {
@@ -461,15 +449,14 @@ impl Menu {
         };
         let bench = bench.read(cx);
         bench
-            .read("catalog")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter(|kind| !kind["chat"].is_null())
+            .reads
+            .catalog
+            .agents()
+            .filter(|kind| kind.chat.is_some())
             .filter_map(|kind| {
-                let provider = kind["type"].as_str()?.to_owned();
+                let provider = kind.kind.clone();
                 let installed = provider == self.picked.provider || bench.has_agent(&provider);
-                if !installed && kind["install"].is_null() {
+                if !installed && kind.install.is_none() {
                     return None;
                 }
                 Some(Agent {
@@ -477,7 +464,7 @@ impl Menu {
                         .accounts
                         .current(&provider)
                         .map(|profile| profile.id.clone()),
-                    label: kind["label"].as_str().unwrap_or_default().to_owned(),
+                    label: kind.label.clone(),
                     installing: bench.agent_setup.installing(&provider),
                     installed,
                     provider,

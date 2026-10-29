@@ -16,7 +16,9 @@ use crate::workbench::Workbench;
 /// Switches `id` on or off by sending the core every plugin that is off.
 fn switch(bench: &Workbench, id: &str, on: bool) {
     let mut off: Vec<String> = bench
-        .read("plugins")
+        .reads
+        .plugins
+        .as_ref()
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
@@ -41,7 +43,9 @@ pub fn render(
 ) -> Vec<AnyElement> {
     let ink = Tokens::get(cx).text_secondary;
     let plugins: Vec<Value> = bench
-        .read("plugins")
+        .reads
+        .plugins
+        .as_ref()
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();

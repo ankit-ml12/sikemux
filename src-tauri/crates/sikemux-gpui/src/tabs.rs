@@ -386,10 +386,12 @@ fn host_label(host: &str) -> &str {
 /// Runs the project's task, or stops the run going, and says how the last one went.
 fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let t = Tokens::get(cx).clone();
-    let tasks = bench.read("tasks")?["tasks"].as_array()?;
+    let tasks = bench.reads.tasks.as_ref()?["tasks"].as_array()?;
     let project = bench.watched_project()?;
     let ports = bench
-        .read("ports")
+        .reads
+        .ports
+        .as_ref()
         .and_then(Value::as_array)
         .map_or(&[][..], Vec::as_slice);
     let (running, last) = bench.person_runs();
@@ -1300,7 +1302,9 @@ pub fn view_label(bench: &Workbench, pane: &Pane) -> SharedString {
         Some((PaneKind::Plugin, target)) => {
             let id = crate::plugin_pane::parts(target).0;
             bench
-                .read("plugins")
+                .reads
+                .plugins
+                .as_ref()
                 .and_then(Value::as_array)
                 .and_then(|plugins| plugins.iter().find(|plugin| plugin["id"] == id))
                 .and_then(|plugin| plugin["name"].as_str())

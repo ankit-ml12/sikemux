@@ -258,16 +258,6 @@ fn share_row(
         )
 }
 
-fn agent_label(bench: &Workbench, agent: &str) -> String {
-    bench
-        .read("catalog")
-        .and_then(Value::as_array)
-        .and_then(|kinds| kinds.iter().find(|kind| kind["type"] == agent))
-        .and_then(|kind| kind["label"].as_str())
-        .unwrap_or(agent)
-        .to_owned()
-}
-
 fn shares(bench: &Workbench, shares: &[Value], agents: bool, key: &str, cx: &App) -> AnyElement {
     let t = Tokens::get(cx).clone();
     if shares.is_empty() {
@@ -292,7 +282,7 @@ fn shares(bench: &Workbench, shares: &[Value], agents: bool, key: &str, cx: &App
             })
             .collect();
             let (mark, title, under) = match agents {
-                true => (ui::mark(name, 20.), agent_label(bench, name), None),
+                true => (ui::mark(name, 20.), bench.agent_name(name).to_owned(), None),
                 false => (
                     ui::icon(Icon::Folder, 16.)
                         .text_color(t.text_tertiary)
@@ -528,7 +518,7 @@ pub fn render(
         cx.defer_in(window, make);
         return Vec::new();
     };
-    let read = bench.read(ACTIVITY);
+    let read = bench.reads.activity_everywhere.as_ref();
     let failed = read.is_some_and(Value::is_null);
     let summary = read.filter(|summary| !summary.is_null());
     let key = home::METRICS[bench.metric].0;

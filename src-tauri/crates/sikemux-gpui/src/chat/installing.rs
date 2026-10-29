@@ -5,7 +5,6 @@
 use std::rc::Rc;
 
 use gpui_kit::{Context, WeakEntity};
-use serde_json::Value;
 
 use super::Composing;
 use crate::agent_setup::{self, Installing};
@@ -84,12 +83,7 @@ pub(super) fn notice(
     this: &WeakEntity<Workbench>,
 ) -> Option<Notice> {
     let (kind, state) = composing.install.as_ref()?;
-    let label = bench
-        .read("catalog")
-        .and_then(Value::as_array)
-        .and_then(|kinds| kinds.iter().find(|entry| entry["type"] == kind.as_str()))
-        .and_then(|entry| entry["label"].as_str())
-        .unwrap_or(kind);
+    let label = bench.agent_name(kind);
     Some(match state {
         Installing::Running => {
             Notice::Waiting(format!("Waiting for {label} to finish installing…").into())

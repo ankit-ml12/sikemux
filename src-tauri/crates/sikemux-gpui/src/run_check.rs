@@ -110,7 +110,7 @@ impl Workbench {
         if self.runs_to_show.is_empty() {
             return;
         }
-        let runs: Vec<(String, Option<u64>, bool, String, String)> = (self.read("runs"))
+        let runs: Vec<(String, Option<u64>, bool, String, String)> = (self.reads.runs.as_ref())
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
@@ -160,7 +160,9 @@ impl Workbench {
     }
 
     fn task_label(&self, task: &str) -> String {
-        self.read("tasks")
+        self.reads
+            .tasks
+            .as_ref()
             .and_then(|read| read["tasks"].as_array())
             .and_then(|tasks| tasks.iter().find(|listed| listed["id"] == task))
             .and_then(|listed| listed["label"].as_str())

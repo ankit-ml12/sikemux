@@ -136,14 +136,6 @@ pub fn is_elsewhere(chat: &super::Chat) -> bool {
 }
 
 /// The read the drafts of chats here, or of chats on the host in front, arrive under.
-pub fn read_key(elsewhere: bool) -> &'static str {
-    if elsewhere {
-        "host-drafts"
-    } else {
-        "drafts"
-    }
-}
-
 impl Workbench {
     /// Keeps `agent`'s draft once the person pauses.
     /// The person began writing, so a new chat's agent starts while they write. A host whose

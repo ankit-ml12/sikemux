@@ -214,12 +214,7 @@ pub fn view(
         .name
         .iter()
         .map(|name| format!("@{name}"))
-        .chain(Some(
-            bench
-                .agent_label(&agent.provider)
-                .unwrap_or(&agent.provider)
-                .to_owned(),
-        ))
+        .chain(Some(bench.agent_name(&agent.provider).to_owned()))
         .collect();
     let fact = |icon: Option<Icon>, body: AnyElement| {
         div()

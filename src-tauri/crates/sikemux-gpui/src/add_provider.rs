@@ -397,13 +397,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         .filter(|_| ready || adding.adding)
         .and_then(|read| Some((read["runsWith"].as_str()?.to_owned(), read)))
         .map(|(agent, read)| {
-            let label = bench
-                .read("catalog")
-                .and_then(Value::as_array)
-                .and_then(|kinds| kinds.iter().find(|kind| kind["type"] == agent.as_str()))
-                .and_then(|kind| kind["label"].as_str())
-                .unwrap_or(&agent)
-                .to_owned();
+            let label = bench.agent_name(&agent).to_owned();
             let state = match (
                 bench.has_agent(&agent),
                 bench.agent_setup.installing(&agent),

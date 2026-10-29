@@ -23,6 +23,7 @@ use gpui_transcript::{
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use sikemux_wire::catalog::Driver;
 use sikemux_wire::chat::{
     ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView,
     FiredRequest, LetterKind, MoveReason, NoticeSeverity, NoticeState, PartTree, PermissionAsk,
@@ -3126,16 +3127,12 @@ fn composer(
     let tray_open = tray.is_some();
     let offering = dock.is_some() || tray_open;
     let head = chat.state.as_ref();
-    let kinds = bench.read("catalog").and_then(Value::as_array);
-    let kind = kinds.and_then(|kinds| {
-        kinds
-            .iter()
-            .find(|kind| kind["type"] == agent.provider.as_str())
-    });
-    let label = kind
-        .and_then(|kind| kind["label"].as_str())
-        .unwrap_or(&agent.provider)
-        .to_owned();
+    let kind = bench.reads.catalog.kind(&agent.provider);
+    let label = bench.agent_name(&agent.provider).to_owned();
+    let reads_models = matches!(
+        kind.and_then(|kind| kind.chat),
+        Some(Driver::Claude | Driver::Codex)
+    );
     let this = cx.weak_entity();
     let on_send = {
         let (this, agent) = (this.clone(), agent.id.clone());
@@ -3263,17 +3260,13 @@ fn composer(
             })
         };
         let started = head.is_some_and(|head| head.connection == ChatConnection::Ready);
-        let read = matches!(
-            kind.and_then(|kind| kind["chat"].as_str()),
-            Some("claude" | "codex")
-        );
         let picked = crate::model_picker::Picked {
             provider: agent.provider.clone(),
             profile: saved.profile_id.clone(),
             model: model.clone(),
             model_provider: saved.model_provider.clone(),
             locked: !fresh,
-            pending: match (started, read) {
+            pending: match (started, reads_models) {
                 (true, _) => None,
                 (false, true) => Some("Reading the models…"),
                 (false, false) => Some("Models show once the agent starts"),
@@ -3285,8 +3278,7 @@ fn composer(
         composer = composer.model_menu(picked, cx.entity());
     }
     let effort = head.and_then(|head| head.effort.clone()).or_else(|| {
-        let driver = kind.and_then(|kind| kind["chat"].as_str());
-        matches!(driver, Some("claude" | "codex")).then(|| ConfigPicker {
+        reads_models.then(|| ConfigPicker {
             id: "effort".into(),
             current: saved
                 .and_then(|saved| saved.effort.clone())
@@ -3297,7 +3289,7 @@ fn composer(
     if model.is_some() || effort.is_some() {
         composer = composer.pickers(model, effort, pick);
     }
-    if kind.is_some_and(|kind| kind["bypass"] == true) {
+    if kind.is_some_and(|kind| kind.bypass) {
         let on = head.is_some_and(|head| head.permission_mode == PermissionMode::Bypass);
         let held = head.is_some_and(|head| head.changing_mode || !head.permissions.is_empty());
         let agent = agent.id.clone();
@@ -3632,14 +3624,10 @@ impl Workbench {
             return;
         };
         let can = self
-            .read("catalog")
-            .and_then(Value::as_array)
-            .and_then(|kinds| {
-                kinds
-                    .iter()
-                    .find(|kind| kind["type"] == saved.provider.as_str())
-            })
-            .is_some_and(|kind| kind["bypass"] == true);
+            .reads
+            .catalog
+            .kind(&saved.provider)
+            .is_some_and(|kind| kind.bypass);
         if can {
             let on = saved.permission_mode == "bypass";
             let mode = if on {

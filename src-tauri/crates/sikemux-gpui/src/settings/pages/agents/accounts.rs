@@ -23,7 +23,7 @@ use crate::workbench::Workbench;
 /// the name on the account instead.
 fn name(bench: &Workbench, profile: &Profile, status: Option<&Status>) -> String {
     let unnamed = profile.id.starts_with("builtin-")
-        && profile.name == super::label(bench, &profile.provider);
+        && profile.name == bench.agent_name(&profile.provider).to_owned();
     status
         .and_then(|status| status.name.clone())
         .filter(|_| unnamed)
@@ -296,7 +296,7 @@ pub fn render(
     this: &Entity<Workbench>,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let title = super::label(bench, provider);
+    let title = bench.agent_name(provider).to_owned();
     let list = bench.accounts.of(provider);
     let current = bench
         .accounts
@@ -372,7 +372,7 @@ pub fn dialog(
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
     let open = bench.accounts.dialog.as_ref()?;
-    let label = super::label(bench, &open.provider);
+    let label = bench.agent_name(&open.provider).to_owned();
     let account = open
         .account
         .as_deref()
@@ -381,9 +381,11 @@ pub fn dialog(
         .account
         .as_deref()
         .and_then(|id| bench.accounts.signing.get(id));
-    let brand = super::kind(bench, &open.provider)
-        .and_then(|kind| kind["brand"].as_str())
-        .unwrap_or("#8b8898")
+    let brand = bench
+        .reads
+        .catalog
+        .kind(&open.provider)
+        .map_or("#8b8898", |kind| kind.brand.as_str())
         .to_owned();
     let close: dialog::Answer = {
         let this = this.clone();

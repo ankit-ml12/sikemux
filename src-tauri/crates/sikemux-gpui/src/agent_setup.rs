@@ -7,7 +7,7 @@ use gpui_kit::{
     anchored, deferred, div, point, px, AnchoredPositionMode, AnyElement, Context, Entity, Hsla,
     InteractiveElement, IntoElement, ParentElement, Styled, Window,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 use sikemux_core::agent_accounts::status::AgentStatus;
 use sikemux_wire::protocol::{SessionId, TerminalSpawn};
 use tokio::sync::oneshot;
@@ -117,30 +117,18 @@ pub fn read(bench: &Workbench, cx: &mut Context<Workbench>) {
             .await
             .unwrap_or_default();
         let _ = bench.update(cx, |bench, cx| {
-            let catalog = bench.read("catalog").and_then(Value::as_array).cloned();
             let found = listed
                 .as_array()
                 .map_or(&[][..], Vec::as_slice)
                 .iter()
                 .map(|agent| {
                     let kind = agent["type"].as_str().unwrap_or_default().to_owned();
-                    let entry = catalog
-                        .iter()
-                        .flatten()
-                        .find(|entry| entry["type"] == kind.as_str());
-                    let field = |name: &str| entry.and_then(|entry| entry[name].as_str());
+                    let entry = bench.reads.catalog.kind(&kind);
                     Found {
                         label: agent["label"].as_str().unwrap_or_default().to_owned(),
-                        about: field("about").unwrap_or_default().to_owned(),
-                        install: field("install").map(str::to_owned),
-                        login: entry
-                            .and_then(|entry| entry["login"].as_array())
-                            .map(|args| {
-                                args.iter()
-                                    .filter_map(Value::as_str)
-                                    .map(str::to_owned)
-                                    .collect()
-                            }),
+                        about: entry.map(|entry| entry.about.clone()).unwrap_or_default(),
+                        install: entry.and_then(|entry| entry.install.clone()),
+                        login: entry.and_then(|entry| entry.login.clone()),
                         program: (agent["available"] == true)
                             .then(|| agent["command"].as_str().map(str::to_owned))
                             .flatten(),
@@ -299,16 +287,8 @@ pub fn show_install(
 
 /// The catalog's installer of the agent `kind`.
 fn catalog_installer(bench: &Workbench, kind: &str) -> Option<Sheet> {
-    let entry = bench
-        .read("catalog")
-        .and_then(Value::as_array)?
-        .iter()
-        .find(|entry| entry["type"] == kind)?;
-    Some(installer(
-        kind,
-        entry["label"].as_str().unwrap_or(kind),
-        entry["install"].as_str()?.to_owned(),
-    ))
+    let entry = bench.reads.catalog.kind(kind)?;
+    Some(installer(kind, &entry.label, entry.install.clone()?))
 }
 
 fn start(bench: &mut Workbench, sheet: Sheet, cx: &mut Context<Workbench>) {

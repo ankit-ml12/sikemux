@@ -16,7 +16,7 @@ use crate::workbench::Workbench;
 
 /// Opens `repo` by default in the project at `folder`, or with none goes back to asking.
 fn set_default(bench: &Workbench, folder: &str, repo: Option<&str>) {
-    let mut chosen = bench.preferences().default_git_repos;
+    let mut chosen = bench.preferences().default_git_repos.clone();
     match repo {
         Some(repo) => {
             chosen.insert(folder.to_owned(), repo.to_owned());

@@ -51,14 +51,7 @@ impl AgentMenu {
             .iter()
             .find(|agent| agent.id == agent_id)?
             .clone();
-        let catalog = bench
-            .read("catalog")
-            .and_then(Value::as_array)
-            .and_then(|kinds| {
-                kinds
-                    .iter()
-                    .find(|kind| kind["type"] == agent.provider.as_str())
-            });
+        let catalog = bench.reads.catalog.kind(&agent.provider);
         let project = workspace
             .projects
             .iter()
@@ -85,7 +78,7 @@ impl AgentMenu {
                 .collect(),
             can_move: agent.worktree.is_none()
                 && (agent.resume_id.is_none()
-                    || catalog.is_some_and(|kind| kind["relocatableSessions"] == true)
+                    || catalog.is_some_and(|kind| kind.relocatable_sessions)
                         && (agent.asleep
                             || bench.agent_by_id(&agent.id).is_none_or(|row| {
                                 !matches!(
@@ -95,8 +88,8 @@ impl AgentMenu {
                                 ) && row.tasks + row.subagents == 0
                             }))),
             pinned: workspace.pinned.clone(),
-            can_skip_permissions: catalog.is_some_and(|kind| kind["bypass"] == true),
-            can_share: catalog.is_some_and(|kind| !kind["chat"].is_null()),
+            can_skip_permissions: catalog.is_some_and(|kind| kind.bypass),
+            can_share: catalog.is_some_and(|kind| kind.chat.is_some()),
             link,
             in_front: bench.agent().is_some_and(|front| front.id == agent.id),
             faces_on: bench.shown().is_some_and(|view| view.face_style.on),

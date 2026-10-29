@@ -340,6 +340,7 @@ pub fn edit(bench: &mut Workbench, id: &str, window: &mut Window, cx: &mut Conte
     let Some(theme) = bench
         .preferences()
         .custom_themes
+        .clone()
         .into_iter()
         .find(|theme| theme.id == id)
     else {
@@ -368,7 +369,11 @@ pub fn from_picture(
 ) {
     let path = match picture {
         Picture::Wallpaper => wallpaper::path(),
-        Picture::PaneImage => bench.preferences().pane_image.map(std::path::PathBuf::from),
+        Picture::PaneImage => bench
+            .preferences()
+            .pane_image
+            .clone()
+            .map(std::path::PathBuf::from),
     };
     let Some(path) = path else {
         return;
@@ -430,6 +435,7 @@ pub fn delete(bench: &Workbench, id: &str) {
     let preferences = bench.preferences();
     let kept: Vec<_> = preferences
         .custom_themes
+        .clone()
         .into_iter()
         .filter(|theme| theme.id != id)
         .collect();
@@ -471,6 +477,7 @@ fn save(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     let mut themes: Vec<Value> = bench
         .preferences()
         .custom_themes
+        .clone()
         .into_iter()
         .filter_map(|theme| serde_json::to_value(theme).ok())
         .collect();

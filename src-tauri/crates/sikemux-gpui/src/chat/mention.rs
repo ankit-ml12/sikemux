@@ -561,12 +561,10 @@ impl Workbench {
             .filter_map(|saved| Some((saved.provider.clone(), saved.resume_id.clone()?)))
             .collect();
         let offered: Vec<String> = self
-            .read("catalog")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter(|kind| kind["available"] != false)
-            .filter_map(|kind| Some(kind["type"].as_str()?.to_owned()))
+            .reads
+            .catalog
+            .agents()
+            .map(|kind| kind.kind.clone())
             .collect();
         let target = self.chat_target(agent);
         let ask = move |method, params| {

@@ -6,7 +6,6 @@ use gpui_kit::{
     div, px, AnyElement, AppContext, Context, Entity, InteractiveElement, IntoElement,
     ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
-use serde_json::Value;
 use sikemux_core::agent_accounts::Profile;
 
 use crate::icons::{self, Icon};
@@ -57,17 +56,11 @@ fn fields_of(bench: &mut Workbench) -> Option<&mut Fields> {
 /// The agents that keep each sign-in in a folder of their own.
 fn providers(bench: &Workbench) -> Vec<(String, String)> {
     bench
-        .read("catalog")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|kind| kind["accounts"] == true)
-        .filter_map(|kind| {
-            Some((
-                kind["type"].as_str()?.to_owned(),
-                kind["label"].as_str()?.to_owned(),
-            ))
-        })
+        .reads
+        .catalog
+        .agents()
+        .filter(|kind| kind.accounts)
+        .map(|kind| (kind.kind.clone(), kind.label.clone()))
         .collect()
 }
 
@@ -138,9 +131,11 @@ fn save(bench: &mut Workbench, cx: &mut Context<Workbench>) {
             .map(|saved| saved.accent.clone())
             .filter(|_| saved.is_some_and(|saved| saved.provider == fields.provider))
             .or_else(|| {
-                super::kind(bench, &fields.provider)
-                    .and_then(|kind| kind["brand"].as_str())
-                    .map(str::to_owned)
+                bench
+                    .reads
+                    .catalog
+                    .kind(&fields.provider)
+                    .map(|kind| kind.brand.clone())
             })
             .unwrap_or_default(),
         executable_path: text(&fields.program),

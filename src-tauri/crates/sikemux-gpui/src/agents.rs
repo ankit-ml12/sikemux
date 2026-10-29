@@ -409,10 +409,7 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
 
 /// The agent's own name, such as "Claude", whichever account it starts on.
 fn harness_label(bench: &Workbench, launcher: &LauncherInfo) -> String {
-    bench
-        .agent_label(&launcher.provider)
-        .unwrap_or(&launcher.label)
-        .to_owned()
+    bench.agent_name(&launcher.provider).to_owned()
 }
 
 /// A saved chat no agent holds, to take up again: how long ago it ran, or a pin when it is
@@ -456,14 +453,10 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
             )
     });
     let deletable = bench
-        .read("catalog")
-        .and_then(Value::as_array)
-        .and_then(|kinds| {
-            kinds
-                .iter()
-                .find(|kind| kind["type"] == recent.provider.as_str())
-        })
-        .is_some_and(|kind| kind["deletableChats"] == true);
+        .reads
+        .catalog
+        .kind(&recent.provider)
+        .is_some_and(|kind| kind.deletable_chats);
     let (this, chat) = (cx.weak_entity(), recent.clone());
     div()
         .id(SharedString::from(format!("recent-menu-{}", recent.id)))
@@ -1121,10 +1114,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
     let launcher = bench.launcher()?;
     let compact = bench.rail_compact();
     let provider = launcher.provider.clone();
-    let agent = bench
-        .agent_label(&provider)
-        .unwrap_or(&launcher.label)
-        .to_owned();
+    let agent = bench.agent_name(&provider).to_owned();
     let current = bench.accounts.current(&provider);
     let seen = |profile: &Profile| {
         let status =

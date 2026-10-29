@@ -40,7 +40,7 @@ fn rows(themes: Vec<ThemeSummary>) -> Vec<Row> {
 
 impl Workbench {
     pub fn toggle_theme_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let current: SharedString = self.preferences().theme_id.into();
+        let current: SharedString = self.preferences().theme_id.clone().into();
         let spec = Spec::new(ID, "pick a theme…", Vec::new(), |row, bench, _, _| {
             bench.call(
                 "setPreference",

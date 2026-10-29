@@ -211,7 +211,7 @@ fn approval_item(
 /// The account's other hosts, then the SSH hosts a terminal is open to.
 fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
     let t = Tokens::get(cx).clone();
-    rows(bench.read("hosts"))
+    rows(bench.reads.hosts.as_ref())
         .map(|host| {
             let name = host["name"].as_str().unwrap_or_default().to_owned();
             let linked = !host["id"].is_null();
@@ -454,7 +454,7 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
 fn plugins(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
     let ink = Tokens::get(cx).text_secondary;
     let strip = bench.strip();
-    rows(bench.read("plugins"))
+    rows(bench.reads.plugins.as_ref())
         .filter(|plugin| plugin["enabled"].as_bool() == Some(true))
         .filter_map(|plugin| {
             let mark = plugin_mark(plugin["id"].as_str()?)?;

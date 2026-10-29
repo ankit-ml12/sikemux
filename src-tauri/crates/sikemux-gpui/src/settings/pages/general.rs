@@ -71,7 +71,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
 
 /// Changes the list of project folders in the core.
 fn change(bench: &Workbench, edit: impl FnOnce(&mut Vec<ProjectRoot>)) {
-    let mut roots = bench.preferences().project_roots;
+    let mut roots = bench.preferences().project_roots.clone();
     edit(&mut roots);
     crate::settings::set(
         bench,
@@ -190,7 +190,7 @@ pub fn render(
         return Vec::new();
     };
     let t = Tokens::get(cx).clone();
-    let roots = bench.preferences().project_roots;
+    let roots = bench.preferences().project_roots.clone();
     let listed = roots.iter().map(|root| {
         let key: SharedString = root.path.clone().into();
         let (itself, deeper, remove) = (this.clone(), this.clone(), this.clone());

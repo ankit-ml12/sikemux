@@ -92,8 +92,10 @@ pub(super) fn attach(
 ) {
     let trust = project_of(bench, &path).and_then(|project| {
         bench
-            .read("preferences")
-            .and_then(|preferences| preferences["languageServerTrust"][&project].as_bool())
+            .preferences()
+            .language_server_trust
+            .get(&project)
+            .copied()
     });
     attach_trusted(bench, path, trust, window, cx);
 }
@@ -439,11 +441,8 @@ pub(super) fn trust(
 }
 
 fn remember_trust(bench: &Workbench, project: String, allowed: bool) {
-    let mut trusted = bench
-        .read("preferences")
-        .and_then(|preferences| preferences["languageServerTrust"].as_object().cloned())
-        .unwrap_or_default();
-    trusted.insert(project, allowed.into());
+    let mut trusted = bench.preferences().language_server_trust.clone();
+    trusted.insert(project, allowed);
     let _ = bench.asks.send(Ask::Call {
         method: "setPreference",
         params: json!({ "key": "languageServerTrust", "value": trusted }),
@@ -453,9 +452,10 @@ fn remember_trust(bench: &Workbench, project: String, allowed: bool) {
 /// Whether the person let `project`'s language servers run.
 pub(crate) fn allowed(bench: &Workbench, project: &str) -> bool {
     bench
-        .read("preferences")
-        .and_then(|preferences| preferences["languageServerTrust"][project].as_bool())
-        == Some(true)
+        .preferences()
+        .language_server_trust
+        .get(project)
+        .is_some_and(|allowed| *allowed)
 }
 
 /// Lets `project`'s language servers start when a file there opens, or stops them now and

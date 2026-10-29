@@ -71,6 +71,7 @@ mod ports;
 mod project_settings;
 pub mod project_switcher;
 mod rail;
+mod reads;
 mod recent;
 mod retry;
 mod run_check;

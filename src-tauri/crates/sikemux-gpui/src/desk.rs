@@ -786,7 +786,9 @@ impl Workbench {
     /// Runs going when the window first reads them join their desks behind.
     pub(crate) fn place_agent_runs(&mut self) {
         let runs: Vec<(String, String, u64, String)> = self
-            .read("runs")
+            .reads
+            .runs
+            .as_ref()
             .and_then(Value::as_array)
             .into_iter()
             .flatten()

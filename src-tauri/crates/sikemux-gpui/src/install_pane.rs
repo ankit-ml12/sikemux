@@ -98,7 +98,9 @@ impl SetUp {
 impl Workbench {
     /// The SSH host `alias`'s row, as the core lists it.
     fn ssh_row(&self, alias: &str) -> Option<&serde_json::Value> {
-        self.read("hosts")?
+        self.reads
+            .hosts
+            .as_ref()?
             .as_array()?
             .iter()
             .find(|host| host["ssh"] == alias)

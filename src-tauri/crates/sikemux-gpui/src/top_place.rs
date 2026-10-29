@@ -93,7 +93,9 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let set_up_alias = match &chosen {
         HostChoice::Ssh(alias) => Some(alias.clone()),
         HostChoice::Account(key) => bench
-            .read("hosts")
+            .reads
+            .hosts
+            .as_ref()
             .and_then(|hosts| hosts.as_array())
             .and_then(|hosts| hosts.iter().find(|host| host["id"] == key.as_str()))
             .and_then(|host| host["ssh"].as_str())

@@ -122,7 +122,7 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         if picking.projects() {
-            let roots = self.preferences().project_roots;
+            let roots = self.preferences().project_roots.clone();
             if !roots.is_empty() {
                 let _ = self.asks.send(Ask::Answer {
                     key: "pickerFolders",
@@ -246,7 +246,7 @@ impl Workbench {
                     .iter()
                     .any(|project| project.path == Path::new(path))
             };
-            for folder in listed(self.read("pickerFolders")) {
+            for folder in listed(self.reads.picker_folders.as_ref()) {
                 let (Some(name), Some(path)) = (folder["name"].as_str(), folder["path"].as_str())
                 else {
                     continue;
@@ -270,7 +270,7 @@ impl Workbench {
             }
         }
         if picking.hosts() {
-            for host in listed(self.read("sshHosts")) {
+            for host in listed(self.reads.ssh_hosts.as_ref()) {
                 let Some(alias) = host["alias"].as_str() else {
                     continue;
                 };

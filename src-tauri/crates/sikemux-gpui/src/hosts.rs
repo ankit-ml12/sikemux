@@ -61,7 +61,9 @@ impl Workbench {
     /// no account host was installed on, as the core lists them.
     pub fn host_choices(&self) -> Vec<HostOption> {
         let listed = self
-            .read("hosts")
+            .reads
+            .hosts
+            .as_ref()
             .and_then(Value::as_array)
             .into_iter()
             .flatten()

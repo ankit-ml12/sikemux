@@ -42,7 +42,7 @@ pub fn render(
             })
         })
     };
-    let status = bench.read("update");
+    let status = bench.reads.update.as_ref();
     let checks = status
         .is_some_and(|status| status["updates"] == true || status["installCommand"].is_string());
     let updates: AnyElement = match checks {
