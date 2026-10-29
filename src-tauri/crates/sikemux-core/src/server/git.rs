@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use git2::Repository;
 
-use super::board::codehost;
+use super::codehost::repo as codehost;
 use super::connection::blocking;
 use crate::protocol::{ProjectCodeHost, ProjectPull, PullChecks};
 use serde::Deserialize;
@@ -255,7 +255,7 @@ pub(crate) struct Hosted {
     /// The branch has no open pull request and is not a usual base.
     pub needs_pull: bool,
     /// The repository as the CI watch names it, once an account reaches it.
-    pub watched: Option<super::ci::Shown>,
+    pub watched: Option<super::codehost::ci::Shown>,
 }
 
 /// Reads again where the projects at `folders` are on their code hosts and
@@ -272,7 +272,7 @@ pub(crate) fn read_hosts(core: &Arc<Core>, folders: Vec<String>) {
                 let core = core.clone();
                 blocking(move || {
                     let origin = super::board::git::origin(&folder);
-                    Ok((origin, super::board::codehost::picks(&core, &folder)))
+                    Ok((origin, super::codehost::repo::picks(&core, &folder)))
                 })
                 .await
             };
@@ -335,7 +335,7 @@ pub(crate) fn read_hosts(core: &Arc<Core>, folders: Vec<String>) {
 
 /// The repositories whose pull request checks are still running, which the
 /// CI watch keeps checking until they settle.
-pub(crate) fn pending_pulls(core: &Core) -> Vec<super::ci::Shown> {
+pub(crate) fn pending_pulls(core: &Core) -> Vec<super::codehost::ci::Shown> {
     core.code_hosts
         .locked()
         .values()
@@ -351,7 +351,7 @@ pub(crate) fn pending_pulls(core: &Core) -> Vec<super::ci::Shown> {
 
 /// The CI of `repo` moved, so the pull requests of the projects on it are
 /// read again.
-pub(crate) fn ci_moved(core: &Arc<Core>, repo: &super::ci::Shown) {
+pub(crate) fn ci_moved(core: &Arc<Core>, repo: &super::codehost::ci::Shown) {
     let folders: Vec<String> = core
         .code_hosts
         .locked()

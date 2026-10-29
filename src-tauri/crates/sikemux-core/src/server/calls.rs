@@ -581,7 +581,7 @@ calls! { core, client, params;
     },
     "trustAsks": Person => answer(super::tasks::asks(&core)),
     "showCi": Watch, any_program => {
-        super::ci::show(&core, client.id, parse(params)?);
+        super::codehost::ci::show(&core, client.id, parse(params)?);
         answer(())
     },
     "answerTrust": Person => {

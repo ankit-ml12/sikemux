@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
-use super::codehost::Feedback;
+use crate::server::codehost::repo::Feedback;
 
 /// How many times Auto hands a pull request's new comments to its agent
 /// before the card goes back to the person.

@@ -23,13 +23,16 @@ use sikemux_wire::codehost::{
 use tokio::sync::Notify;
 use tokio::task::JoinSet;
 
-use super::board::codehost::{of_project, Repo};
+pub(crate) mod ci;
+pub(crate) mod repo;
+
 use super::changed::Topic;
 use super::connection::ClientId;
 use super::job_graph::{self, WorkflowFiles};
 use super::names::project_of;
 use super::plugins::{Failure, Outcome as Answer};
 use super::Core;
+use repo::{of_project, Repo, RepoId};
 
 /// A list read this recently is answered as it is.
 const FRESH: Duration = Duration::from_secs(60);
@@ -123,9 +126,8 @@ impl List {
 /// A repository a client names outright, rather than through a project.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub(crate) struct Named {
-    provider: String,
-    owner: String,
-    name: String,
+    #[serde(flatten)]
+    id: RepoId,
     #[serde(default)]
     account: Option<String>,
 }
@@ -141,8 +143,7 @@ enum Place {
 /// and connection that shows it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Key {
-    /// As a `ci` change names it.
-    repo: String,
+    repo: RepoId,
     account: Option<String>,
     list: List,
 }
@@ -150,7 +151,7 @@ struct Key {
 impl Key {
     fn of(repo: &Repo, list: List) -> Self {
         Self {
-            repo: repo.key(),
+            repo: repo.id(),
             account: repo.account().map(str::to_owned),
             list,
         }
@@ -202,9 +203,9 @@ struct State {
     /// By project.
     found: HashMap<String, Found>,
     /// By repository and commit.
-    commits: HashMap<(String, String), CommitRuns>,
+    commits: HashMap<(RepoId, String), CommitRuns>,
     /// By repository, commit and the run's own workflow file.
-    workflows: HashMap<(String, String, String), (Arc<WorkflowFiles>, Instant)>,
+    workflows: HashMap<(RepoId, String, String), (Arc<WorkflowFiles>, Instant)>,
 }
 
 #[derive(Default)]
@@ -330,7 +331,7 @@ pub(crate) async fn link(params: LinkParams) -> Value {
     let Some((repo_url, item)) = linked(&params.url) else {
         return Value::Null;
     };
-    match super::board::codehost::shown(&repo_url, &Default::default()).await {
+    match repo::shown(&repo_url, &Default::default()).await {
         Some(host) => json!({ "codeHost": host, "item": item }),
         None => Value::Null,
     }
@@ -504,9 +505,9 @@ async fn repo_of(core: &Arc<Core>, place: &Place) -> Result<Repo, Failure> {
         Place::Project(project) => project,
         Place::Repo(named) => {
             return Repo::named(
-                &named.provider,
-                &named.owner,
-                &named.name,
+                &named.id.provider,
+                &named.id.owner,
+                &named.id.name,
                 named.account.clone(),
             )
         }
@@ -777,7 +778,11 @@ pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str, params: &Value
     let (Some(owner), Some(name)) = (params["owner"].as_str(), params["name"].as_str()) else {
         return;
     };
-    let repo = format!("{plugin}:{owner}/{name}");
+    let repo = RepoId {
+        provider: plugin.to_owned(),
+        owner: owner.to_owned(),
+        name: name.to_owned(),
+    };
     let keys: Vec<Key> = core
         .code_host_lists
         .state
@@ -803,10 +808,10 @@ pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str, params: &Value
 pub(crate) fn refs_moved(core: &Arc<Core>, projects: &[String]) {
     let keys: Vec<Key> = {
         let state = core.code_host_lists.state.locked();
-        let repos: HashSet<String> = projects
+        let repos: HashSet<RepoId> = projects
             .iter()
             .filter_map(|project| state.found.get(project))
-            .map(|found| found.repo.key())
+            .map(|found| found.repo.id())
             .collect();
         state
             .kept
@@ -834,7 +839,7 @@ pub(crate) fn refs_moved(core: &Arc<Core>, projects: &[String]) {
 
 /// The runs of the repository `repo` moved, so its runs and the checks on its
 /// pull requests are read again now.
-pub(crate) fn ci_moved(core: &Arc<Core>, repo: &str) {
+pub(crate) fn ci_moved(core: &Arc<Core>, repo: &RepoId) {
     let keys: Vec<Key> = core
         .code_host_lists
         .state
@@ -842,7 +847,7 @@ pub(crate) fn ci_moved(core: &Arc<Core>, repo: &str) {
         .kept
         .keys()
         .filter(|key| {
-            key.repo == repo
+            &key.repo == repo
                 && matches!(
                     key.list,
                     List::Pulls { .. } | List::Runs(_) | List::Pull { .. } | List::Run { .. }
@@ -879,13 +884,13 @@ async fn read(core: &Arc<Core>, repo: &Repo, list: &List) -> Result<Read, Failur
 
 fn shaped(repo: &Repo, list: impl Serialize) -> Result<Value, Failure> {
     serde_json::to_value(list)
-        .map_err(|error| Failure::new(&repo.key(), "invalid", error.to_string()))
+        .map_err(|error| Failure::new(&repo.id().to_string(), "invalid", error.to_string()))
 }
 
 fn typed<T: DeserializeOwned>(repo: &Repo, found: Value) -> Result<T, Failure> {
     serde_json::from_value(found).map_err(|error| {
         Failure::new(
-            &repo.key(),
+            &repo.id().to_string(),
             "invalid",
             format!("the code host answered in an unknown shape: {error}"),
         )
@@ -971,7 +976,7 @@ async fn own_runs(core: &Core, repo: &Repo, shas: HashSet<String>) -> HashMap<St
     {
         let state = core.code_host_lists.state.locked();
         for sha in shas {
-            match state.commits.get(&(repo.key(), sha.clone())) {
+            match state.commits.get(&(repo.id(), sha.clone())) {
                 Some(settled) => {
                     runs.insert(sha, settled.runs.clone());
                 }
@@ -1005,7 +1010,7 @@ async fn own_runs(core: &Core, repo: &Repo, shas: HashSet<String>) -> HashMap<St
         let read = Instant::now();
         state
             .commits
-            .insert((repo.key(), sha), CommitRuns { runs: found, read });
+            .insert((repo.id(), sha), CommitRuns { runs: found, read });
     }
     while state.commits.len() > COMMITS_AT_MOST {
         let Some(oldest) = state
@@ -1045,7 +1050,8 @@ pub(crate) async fn checkout(core: &Arc<Core>, params: CheckoutParams) -> Answer
         Ok(repo) => repo,
         Err(failure) => return Answer::Failed(failure),
     };
-    let failed = |message: String| Answer::Failed(Failure::new(&repo.key(), "checkout", message));
+    let failed =
+        |message: String| Answer::Failed(Failure::new(&repo.id().to_string(), "checkout", message));
     let pull: Pull = match repo.call("pull", json!({ "number": params.number })).await {
         Ok(found) => match typed(&repo, found) {
             Ok(pull) => pull,
@@ -1107,7 +1113,7 @@ pub(crate) struct NewPullParams {
 /// its base the branch it goes into by default; `branches` are the host's, and
 /// `pushed` says the head is on the host already.
 pub(crate) async fn new_pull(core: &Arc<Core>, params: NewPullParams) -> Answer {
-    use super::board::codehost::{default_base, is_usual_base};
+    use repo::{default_base, is_usual_base};
     let project = project_of(Path::new(&params.project), &core.workspaces.project_paths());
     let repo = match repo_of(core, &Place::Project(project.clone())).await {
         Ok(repo) => repo,
@@ -1703,7 +1709,7 @@ async fn workflow_files(core: &Core, repo: &Repo, run: &Run) -> Arc<WorkflowFile
     else {
         return Arc::default();
     };
-    let key = (repo.key(), run.sha.clone(), path.to_owned());
+    let key = (repo.id(), run.sha.clone(), path.to_owned());
     if let Some((files, _)) = core.code_host_lists.state.locked().workflows.get(&key) {
         return files.clone();
     }
@@ -1761,7 +1767,7 @@ async fn workflow_files(core: &Core, repo: &Repo, run: &Run) -> Arc<WorkflowFile
 /// A job's log split into its steps. A job still going is read again soon;
 /// one that was over before this read began has written all it will.
 async fn job_log_of(core: &Core, repo: &Repo, run: &str, job: &str) -> Result<Read, Failure> {
-    let known = shown_job(core, &repo.key(), run, job);
+    let known = shown_job(core, &repo.id(), run, job);
     let found = match known {
         Some(found) => Some(found),
         None => repo
@@ -1782,13 +1788,13 @@ async fn job_log_of(core: &Core, repo: &Repo, run: &str, job: &str) -> Result<Re
 }
 
 /// The job `job` of the run `run` as the core last read the run.
-fn shown_job(core: &Core, repo: &str, run: &str, job: &str) -> Option<Job> {
+fn shown_job(core: &Core, repo: &RepoId, run: &str, job: &str) -> Option<Job> {
     let state = core.code_host_lists.state.locked();
     state
         .kept
         .iter()
         .filter(|(key, _)| {
-            key.repo == repo && matches!(&key.list, List::Run { id, .. } if id == run)
+            &key.repo == repo && matches!(&key.list, List::Run { id, .. } if id == run)
         })
         .find_map(|(_, kept)| {
             kept.answer["jobs"]

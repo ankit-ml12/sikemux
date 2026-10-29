@@ -11,12 +11,13 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use super::auto::{Finish, Pull, Run, Settings, Stage};
-use super::codehost::{self, Checks, Feedback};
 use super::review::{self, MAX_ROUNDS};
 use super::{blind, change_card, git, send_notices, By, Card, Changes, Status};
+use crate::server::codehost::ci;
+use crate::server::codehost::repo::{self as codehost, Checks, Feedback};
 use crate::server::connection::blocking;
 use crate::server::wake::sooner;
-use crate::server::{ci, messages, Core};
+use crate::server::{messages, Core};
 
 /// How long a pushed commit may go without a CI run before Auto takes it
 /// that the project has none.
@@ -484,9 +485,7 @@ pub(crate) fn waiting_on_ci(core: &Core) -> Vec<ci::Shown> {
                 .filter(|run| run.stage == Stage::Checking)?;
             let pull = run.pull.as_ref()?;
             Some(ci::Shown {
-                provider: format!("sikemux.{}", pull.host),
-                owner: pull.owner.clone(),
-                name: pull.name.clone(),
+                id: pull.repo_id(),
                 account: pull.account.clone(),
                 host: None,
             })
@@ -505,11 +504,10 @@ pub(crate) fn ci_moved(core: &Core, repo: &ci::Shown) {
         .filter(|(_, card)| {
             card.auto.as_ref().is_some_and(|run| {
                 run.stage == Stage::Checking
-                    && run.pull.as_ref().is_some_and(|pull| {
-                        format!("sikemux.{}", pull.host) == repo.provider
-                            && pull.owner == repo.owner
-                            && pull.name == repo.name
-                    })
+                    && run
+                        .pull
+                        .as_ref()
+                        .is_some_and(|pull| pull.repo_id() == repo.id)
             })
         })
         .map(|(project, card)| (project.clone(), card.id))

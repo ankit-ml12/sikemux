@@ -18,7 +18,6 @@ mod calls;
 mod catalog;
 mod changed;
 mod chat;
-mod ci;
 mod cli_install;
 mod codehost;
 mod collisions;
@@ -418,7 +417,7 @@ pub(crate) struct Core {
     rail_numbers: Mutex<BTreeSet<u32>>,
     /// Watches the SSH config once a client has listed its hosts.
     pub(crate) ssh_watch: OnceLock<Option<::notify::RecommendedWatcher>>,
-    pub(crate) ci: ci::Ci,
+    pub(crate) ci: codehost::ci::Ci,
     pub(crate) edits: edits::Edits,
     pub(crate) collisions: collisions::Collisions,
     pub(crate) notify: notify::Notifier,

@@ -8,10 +8,10 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::auto::Pull;
 use crate::protocol::{
     CiAbilities, CodeHostChoice, ProjectCodeHost, ProjectPull, PullAbilities, PullChecks,
 };
+use crate::server::board::Pull;
 use crate::server::names::project_of;
 use crate::server::plugins::{self, Failure};
 use crate::server::Core;
@@ -127,6 +127,11 @@ const HOSTS: [Host; 3] = [
     },
 ];
 
+/// The plugin that speaks for the code host `id`.
+fn plugin_of(id: &str) -> String {
+    format!("sikemux.{id}")
+}
+
 fn host(id: &str) -> Result<&'static Host, String> {
     HOSTS
         .iter()
@@ -166,7 +171,7 @@ impl Pull {
 
 impl Host {
     fn plugin(&self) -> String {
-        format!("sikemux.{}", self.id)
+        plugin_of(self.id)
     }
 }
 
@@ -281,7 +286,10 @@ pub(crate) async fn of_project(core: &Arc<Core>, project: &str) -> Result<Repo, 
         let folder = PathBuf::from(project);
         let core = core.clone();
         crate::server::connection::blocking(move || {
-            Ok((super::git::origin(&folder), picks(&core, &folder)))
+            Ok((
+                crate::server::board::git::origin(&folder),
+                picks(&core, &folder),
+            ))
         })
         .await
     };
@@ -338,9 +346,38 @@ impl Repo {
         self.account.as_deref()
     }
 
-    /// What a `ci` change names the repository by.
-    pub(crate) fn key(&self) -> String {
-        format!("{}:{}/{}", self.host.plugin(), self.owner, self.name)
+    pub(crate) fn id(&self) -> RepoId {
+        RepoId {
+            provider: self.host.plugin(),
+            owner: self.owner.clone(),
+            name: self.name.clone(),
+        }
+    }
+}
+
+/// A repository on a code host, by the plugin that speaks for the host, such as
+/// `sikemux.github`, and its `owner/name` there.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub(crate) struct RepoId {
+    pub provider: String,
+    pub owner: String,
+    pub name: String,
+}
+
+impl std::fmt::Display for RepoId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}:{}/{}", self.provider, self.owner, self.name)
+    }
+}
+
+impl Pull {
+    /// The repository the pull request is on.
+    pub(crate) fn repo_id(&self) -> RepoId {
+        RepoId {
+            provider: plugin_of(&self.host),
+            owner: self.owner.clone(),
+            name: self.name.clone(),
+        }
     }
 }
 
@@ -427,11 +464,9 @@ pub(crate) async fn branch_pull(repo: &Repo, branch: &str) -> Result<Option<Proj
 
 impl Repo {
     /// The repository as the CI watch names it.
-    pub(crate) fn watched(&self) -> super::super::ci::Shown {
-        super::super::ci::Shown {
-            provider: self.host.plugin(),
-            owner: self.owner.clone(),
-            name: self.name.clone(),
+    pub(crate) fn watched(&self) -> super::ci::Shown {
+        super::ci::Shown {
+            id: self.id(),
             account: self.account.clone(),
             host: None,
         }
@@ -465,7 +500,7 @@ fn pull_of(repo: &Repo, found: &Value) -> Result<Pull, String> {
 }
 
 /// Opens a pull request for `head` onto `base`, or finds the one already open.
-pub(super) async fn open(
+pub(crate) async fn open(
     repo: &Repo,
     title: &str,
     head: &str,
@@ -489,7 +524,7 @@ pub(super) async fn open(
         .unwrap_or_else(|| Err(error.into()))
 }
 
-pub(super) enum Checks {
+pub(crate) enum Checks {
     /// Nothing has run on the commit yet.
     None,
     Running,
@@ -499,7 +534,7 @@ pub(super) enum Checks {
 }
 
 /// How the CI runs on `sha` went.
-pub(super) async fn checks(pull: &Pull, branch: &str, sha: &str) -> Result<Checks, String> {
+pub(crate) async fn checks(pull: &Pull, branch: &str, sha: &str) -> Result<Checks, String> {
     let repo = pull.repo()?;
     let page = repo
         .call(
@@ -633,14 +668,14 @@ fn digits(rest: &str) -> Option<Value> {
 }
 
 /// Where a pull request stands.
-pub(super) struct Looked {
+pub(crate) struct Looked {
     /// `open`, `merged` or `closed`.
     pub state: String,
     /// Moves whenever anything on the pull request does, such as a comment.
     pub mark: String,
 }
 
-pub(super) async fn look(pull: &Pull) -> Result<Looked, String> {
+pub(crate) async fn look(pull: &Pull) -> Result<Looked, String> {
     let repo = pull.repo()?;
     let found = repo.call("pull", json!({ "number": pull.number })).await?;
     Ok(Looked {
@@ -667,7 +702,7 @@ pub(crate) struct Feedback {
 }
 
 /// The comments and reviews on the pull request that changed at or after `since`.
-pub(super) async fn feedback(pull: &Pull, since: Option<&str>) -> Result<Vec<Feedback>, String> {
+pub(crate) async fn feedback(pull: &Pull, since: Option<&str>) -> Result<Vec<Feedback>, String> {
     let repo = pull.repo()?;
     let found = repo
         .call(
@@ -680,7 +715,7 @@ pub(super) async fn feedback(pull: &Pull, since: Option<&str>) -> Result<Vec<Fee
 
 /// Answers each comment in its own thread with `(comment id, text, what it
 /// said)`, then asks `reviewers` to look again where the host can.
-pub(super) async fn answer(
+pub(crate) async fn answer(
     pull: &Pull,
     replies: &[(String, String, String)],
     reviewers: &[String],
@@ -695,7 +730,7 @@ pub(super) async fn answer(
 }
 
 /// Closes the pull request without merging it.
-pub(super) async fn close(pull: &Pull) -> Result<(), String> {
+pub(crate) async fn close(pull: &Pull) -> Result<(), String> {
     let repo = pull.repo()?;
     let closed = json!({ "number": pull.number, "state": "closed" });
     Ok(repo.call("setPullState", closed).await.map(drop)?)
@@ -703,7 +738,7 @@ pub(super) async fn close(pull: &Pull) -> Result<(), String> {
 
 /// Merges the pull request at `sha`, the commit whose checks passed, the
 /// first way the repository allows.
-pub(super) async fn merge(pull: &Pull, sha: &str) -> Result<(), String> {
+pub(crate) async fn merge(pull: &Pull, sha: &str) -> Result<(), String> {
     let repo = pull.repo()?;
     let mut refused = None;
     for method in repo.host.merges {

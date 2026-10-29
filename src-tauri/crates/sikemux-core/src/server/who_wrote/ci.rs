@@ -13,7 +13,7 @@ use sikemux_process::sync::Locked;
 
 use super::{git, remember, Found};
 use crate::protocol::CodeHostChoice;
-use crate::server::board::codehost::{self, Conclusion, Repo};
+use crate::server::codehost::repo::{self as codehost, Conclusion, Repo};
 
 const ASK_BUDGET: Duration = Duration::from_secs(10);
 const LOG_BUDGET: Duration = Duration::from_secs(20);

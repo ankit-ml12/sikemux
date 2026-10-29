@@ -29,12 +29,12 @@ use super::Core;
 
 mod auto;
 mod blind;
-pub(crate) mod codehost;
 mod finish;
 pub(crate) mod git;
 mod review;
 mod tickets;
 
+pub(crate) use auto::Pull;
 use auto::RunView;
 pub(crate) use auto::Settings;
 use auto::{Run, Stage};

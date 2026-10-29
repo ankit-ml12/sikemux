@@ -14,7 +14,7 @@ use sikemux_process::sync::Locked;
 use crate::cli::protocol::HarnessRequest;
 use crate::trailers::{self, Agent};
 
-use super::board::codehost;
+use super::codehost::repo as codehost;
 use super::connection::blocking;
 use super::edits::note::{self, Note, Wrote};
 use super::edits::{commit_lines, owners_at, CommitLines};

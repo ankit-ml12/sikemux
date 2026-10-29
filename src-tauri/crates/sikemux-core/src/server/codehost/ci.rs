@@ -13,9 +13,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 
-use super::changed::Topic;
-use super::connection::ClientId;
-use super::{plugins, Core};
+use super::repo::RepoId;
+use crate::server::changed::Topic;
+use crate::server::connection::ClientId;
+use crate::server::{plugins, Core};
 
 const TICK: Duration = Duration::from_secs(5);
 /// How often a repository is checked while one of its runs is going.
@@ -27,19 +28,10 @@ const RUNS_CHECKED: u32 = 20;
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Shown {
-    /// The plugin that speaks for the host, such as `sikemux.github`.
-    pub provider: String,
-    pub owner: String,
-    pub name: String,
+    #[serde(flatten)]
+    pub id: RepoId,
     pub account: Option<String>,
     pub host: Option<String>,
-}
-
-impl Shown {
-    /// What a `ci` change names it by.
-    pub(crate) fn key(&self) -> String {
-        format!("{}:{}/{}", self.provider, self.owner, self.name)
-    }
 }
 
 struct Seen {
@@ -94,9 +86,9 @@ async fn serve(core: Arc<Core>) {
         let due = {
             let connected: HashSet<ClientId> =
                 core.clients().iter().map(|client| client.id).collect();
-            let waiting = super::board::waiting_on_ci(&core)
+            let waiting = crate::server::board::waiting_on_ci(&core)
                 .into_iter()
-                .chain(super::git::pending_pulls(&core));
+                .chain(crate::server::git::pending_pulls(&core));
             let mut state = core.ci.0.locked();
             state.shown.retain(|client, _| connected.contains(client));
             let shown: HashSet<Shown> = state
@@ -130,13 +122,13 @@ async fn serve(core: Arc<Core>) {
 
 async fn check(core: &Arc<Core>, repo: Shown) {
     let params = json!({
-        "owner": repo.owner,
-        "name": repo.name,
+        "owner": repo.id.owner,
+        "name": repo.id.name,
         "account": repo.account,
         "host": repo.host,
         "perPage": RUNS_CHECKED,
     });
-    let Ok(page) = plugins::call(&repo.provider, "runs", params).await else {
+    let Ok(page) = plugins::call(&repo.id.provider, "runs", params).await else {
         return;
     };
     let runs = page.get("runs").cloned().unwrap_or(Value::Null);
@@ -164,12 +156,12 @@ async fn check(core: &Arc<Core>, repo: Shown) {
         (moved, moved_before)
     };
     if moved {
-        super::board::ci_moved(core, &repo);
-        super::git::ci_moved(core, &repo);
+        crate::server::board::ci_moved(core, &repo);
+        crate::server::git::ci_moved(core, &repo);
     }
     if moved || moved_before {
         core.changes
-            .changed(Topic::Ci, None, Some(vec![repo.key()]));
-        super::codehost::ci_moved(core, &repo.key());
+            .changed(Topic::Ci, None, Some(vec![repo.id.to_string()]));
+        super::ci_moved(core, &repo.id);
     }
 }
