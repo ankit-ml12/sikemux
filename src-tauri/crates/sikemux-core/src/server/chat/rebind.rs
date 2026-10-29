@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_fold::UpdateKind;
 
 use crate::acp::account::{self, SignIn};
 use crate::acp::SessionEnd;
@@ -133,7 +134,7 @@ pub(super) fn next_account<'a>(
 
 pub(super) fn switch_notice(launch: &ChatLaunch, to: &ChatAccount, reason: &str) -> Value {
     json!({
-        "sessionUpdate": "account_switched",
+        "sessionUpdate": UpdateKind::AccountSwitched,
         "account": to.id,
         "label": to.label,
         "from": launch.account.as_ref().map(|account| account.label.clone()),

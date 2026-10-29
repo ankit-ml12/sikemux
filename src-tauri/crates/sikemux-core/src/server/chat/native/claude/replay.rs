@@ -1,3 +1,5 @@
+use sikemux_fold::update::compaction;
+use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -951,13 +953,7 @@ pub fn replay(records: &[Value], session_id: &str, cwd: &Path) -> Vec<(String, V
                 Some(parent) => replay.announce(parent, &mut Vec::new()),
                 None => replay.root.clone(),
             };
-            let mut update = json!({
-                "sessionUpdate": "tool_call",
-                "toolCallId": uuid_of(record),
-                "title": "Compact conversation",
-                "kind": "think",
-                "status": "completed",
-            });
+            let mut update = compaction(&uuid_of(record), true, "completed", None);
             let at = str_field(record, "timestamp").and_then(crate::accounts::live::parse_rfc3339);
             super::super::stamp_replayed(&mut update, at, false);
             replay.updates.push((target, update));
@@ -1022,7 +1018,7 @@ pub fn replay(records: &[Value], session_id: &str, cwd: &Path) -> Vec<(String, V
             // Claude's note to itself that background work ended wakes it; the turn
             // that follows is still one it began by itself.
             if main_thread
-                && str_field(&update, "sessionUpdate") == Some("user_message_chunk")
+                && UpdateKind::of(&update) == Some(UpdateKind::UserMessageChunk)
                 && !wakes
             {
                 turn_over = false;
@@ -1360,7 +1356,7 @@ impl Replay<'_> {
         let revision = self.failure_revisions.entry(id.clone()).or_insert(0);
         *revision += 1;
         let update = json!({
-            "sessionUpdate": "session_info_update",
+            "sessionUpdate": UpdateKind::SessionInfoUpdate,
             "_meta": { "jetbrains": { "air": { "version": 1, "sessionFailure": {
                 "id": id,
                 "revision": *revision,
@@ -1461,7 +1457,7 @@ impl Replay<'_> {
                 self.updates
                     .iter()
                     .find(|(_, update)| {
-                        str_field(update, "sessionUpdate") == Some("tool_call")
+                        UpdateKind::of(update) == Some(UpdateKind::ToolCall)
                             && str_field(update, "toolCallId") == Some(id.as_str())
                     })
                     .map(|(session, _)| (session.clone(), id.clone()))
@@ -1469,7 +1465,7 @@ impl Replay<'_> {
             .collect();
         open.sort();
         for (session, id) in open {
-            let update = json!({ "sessionUpdate": "tool_call_update", "toolCallId": id, "status": "cancelled" });
+            let update = json!({ "sessionUpdate": UpdateKind::ToolCallUpdate, "toolCallId": id, "status": "cancelled" });
             self.updates.push((session, update));
         }
         for index in (0..self.children.len()).rev() {

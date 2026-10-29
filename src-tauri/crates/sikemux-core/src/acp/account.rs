@@ -5,6 +5,7 @@
 //! environment variable. The account is read from the files their own CLIs
 //! write, so a sign-in made in a terminal is noticed before the next turn.
 
+use sikemux_fold::UpdateKind;
 use std::collections::BTreeMap;
 
 use serde::Serialize;
@@ -171,7 +172,7 @@ impl Failure {
 /// holds until the agent streams again or the turn ends.
 pub fn retrying(id: &str, category: &str, attempt: u64, detail: &str) -> Value {
     json!({
-        "sessionUpdate": "session_info_update",
+        "sessionUpdate": UpdateKind::SessionInfoUpdate,
         "_meta": { "jetbrains": { "air": { "version": 1, "sessionFailure": {
             "id": id,
             "revision": attempt,

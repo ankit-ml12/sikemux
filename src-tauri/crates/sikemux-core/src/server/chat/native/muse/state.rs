@@ -2,6 +2,7 @@
 //! the prompt, which items are on screen, and its subagents. Each
 //! notification comes back as the effects it has on the chat.
 
+use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
@@ -88,7 +89,7 @@ fn turn_usage(usage: &Value) -> Option<Value> {
 }
 
 fn notice(title: &str) -> Value {
-    json!({ "sessionUpdate": "notice", "severity": "warning", "title": title })
+    json!({ "sessionUpdate": UpdateKind::Notice, "severity": "warning", "title": title })
 }
 
 /// Muse's to-do list as the chat's plan.
@@ -106,7 +107,7 @@ fn plan(params: &Value) -> Value {
             json!({ "content": todo["text"], "status": status, "priority": "medium" })
         })
         .collect();
-    json!({ "sessionUpdate": "plan", "entries": entries })
+    json!({ "sessionUpdate": UpdateKind::Plan, "entries": entries })
 }
 
 impl Session {
@@ -311,7 +312,7 @@ impl Session {
                 self.titled = true;
                 effects.push(Effect::Update(
                     self.session_id.clone(),
-                    json!({ "sessionUpdate": "session_info_update", "title": title }),
+                    json!({ "sessionUpdate": UpdateKind::SessionInfoUpdate, "title": title }),
                 ));
             }
         }
@@ -425,7 +426,7 @@ impl Session {
                 ) {
                     effects.push(Effect::Update(
                         session.clone(),
-                        json!({ "sessionUpdate": "usage_update", "used": used, "size": size }),
+                        json!({ "sessionUpdate": UpdateKind::UsageUpdate, "used": used, "size": size }),
                     ));
                 }
             }
@@ -434,7 +435,7 @@ impl Session {
                     self.titled = true;
                     effects.push(Effect::Update(
                         session.clone(),
-                        json!({ "sessionUpdate": "session_info_update", "title": name }),
+                        json!({ "sessionUpdate": UpdateKind::SessionInfoUpdate, "title": name }),
                     ));
                 }
             }

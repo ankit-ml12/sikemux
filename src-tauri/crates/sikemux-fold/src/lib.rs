@@ -15,6 +15,7 @@ mod tool_rows;
 mod tools;
 pub mod trigger;
 mod turns;
+pub mod update;
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -38,6 +39,8 @@ use tools::WithRow;
 pub use event::{ChatEvent, ChatEventKind};
 pub use find::{found_in, matches, searchable, Found, Query};
 pub use send::{with_trees, PageOf, PAGE_BYTES, TAIL_TURNS};
+use update::stamped_at;
+pub use update::UpdateKind;
 
 /// Whether a call is one of our gestures, such as a reaction, which a chat shows
 /// only by what it did.
@@ -322,21 +325,10 @@ fn text_of(value: Option<&Value>) -> Option<&str> {
     value.and_then(Value::as_str)
 }
 
-fn sikemux_meta(update: &Value) -> Option<&Map<String, Value>> {
-    update.get("_meta")?.get("sikemux")?.as_object()
-}
-
-fn stamped_at(update: &Value) -> Option<u64> {
-    sikemux_meta(update)?.get("at").and_then(Value::as_u64)
-}
-
 /// History replayed from the agent's own files marks the first update of a
 /// turn the agent began by itself, since no prompt shows where it starts.
 fn replayed_turn_start(update: &Value) -> Option<TurnStart> {
-    let kept = sikemux_meta(update)?;
-    (kept.get("opensTurn") == Some(&Value::Bool(true))).then(|| TurnStart {
-        at: kept.get("at").and_then(Value::as_u64),
-    })
+    update::opens_turn(update).map(|at| TurnStart { at })
 }
 
 fn units(text: &str) -> u64 {
@@ -1010,10 +1002,12 @@ impl Fold {
     }
 
     fn session_update(&mut self, index: u64, session: &str, update: &Value, at: u64, until: u64) {
-        let kind = text_of(update.get("sessionUpdate")).unwrap_or_default();
+        let Some(kind) = UpdateKind::of(update) else {
+            return;
+        };
         match kind {
-            "subagent_state_update" => return self.set_subagent_state(update, at),
-            "subagent_usage" => {
+            UpdateKind::SubagentStateUpdate => return self.set_subagent_state(update, at),
+            UpdateKind::SubagentUsage => {
                 if let (Some(id), Some(tokens)) = (
                     text_of(update.get("subagentSessionId")),
                     update.get("tokens").and_then(Value::as_u64),
@@ -1027,7 +1021,7 @@ impl Fold {
         let main = self.head.session_id.as_deref() == Some(session);
         if !main && self.subs.contains_key(session) {
             let within = Some(session.to_owned());
-            if kind == "subagent_spawned" {
+            if kind == UpdateKind::SubagentSpawned {
                 self.spawn_subagent(index, &within, update);
             } else {
                 let timed = self.head.running;
@@ -1036,10 +1030,10 @@ impl Fold {
             return;
         }
 
-        if kind == "user_message_chunk" && self.harness_notice(index, update) {
+        if kind == UpdateKind::UserMessageChunk && self.harness_notice(index, update) {
             return;
         }
-        if kind == "user_message_chunk" && self.suppress_user_echo {
+        if kind == UpdateKind::UserMessageChunk && self.suppress_user_echo {
             return;
         }
         let opening = self
@@ -1069,7 +1063,7 @@ impl Fold {
                 self.set_head("turnOpening");
             }
             self.suppress_user_echo = false;
-            if kind != "user_message_chunk" && self.head.retrying.is_some() {
+            if kind != UpdateKind::UserMessageChunk && self.head.retrying.is_some() {
                 self.head.retrying = None;
                 self.set_head("retrying");
             }
@@ -1077,14 +1071,16 @@ impl Fold {
         }
 
         match kind {
-            "subagent_spawned" => {
+            UpdateKind::SubagentSpawned => {
                 if self.spawn_subagent(index, &None, update) {
                     self.suppress_user_echo = false;
                 }
             }
-            "async_task_spawned" => self.spawn_task(update),
-            "async_task_progress" | "async_task_state_update" => self.patch_task(index, update),
-            "task_notice" => {
+            UpdateKind::AsyncTaskSpawned => self.spawn_task(update),
+            UpdateKind::AsyncTaskProgress | UpdateKind::AsyncTaskStateUpdate => {
+                self.patch_task(index, update)
+            }
+            UpdateKind::TaskNotice => {
                 let (Some(task), Some(state)) = (
                     text_of(update.get("taskId")),
                     text_of(update.get("state")).and_then(notice_state),
@@ -1103,8 +1099,8 @@ impl Fold {
                 let between = !self.head.running;
                 self.add_notice(index, task, notice, stamped_at(update), between);
             }
-            "notice" => self.agent_notice(index, update),
-            "plan" => {
+            UpdateKind::Notice => self.agent_notice(index, update),
+            UpdateKind::Plan => {
                 self.head.plan = update
                     .get("entries")
                     .and_then(Value::as_array)
@@ -1117,22 +1113,22 @@ impl Fold {
                 self.set_head("plan");
                 self.suppress_user_echo = false;
             }
-            "available_commands_update" => {
+            UpdateKind::AvailableCommandsUpdate => {
                 self.head.commands = commands_of(update);
                 self.set_head("commands");
             }
-            "config_option_update" => {
+            UpdateKind::ConfigOptionUpdate => {
                 self.set_config_options(
                     update.get("configOptions").cloned().unwrap_or(Value::Null),
                 );
             }
-            "usage_update" => {
+            UpdateKind::UsageUpdate => {
                 if let Some(usage) = context_usage(update) {
                     self.head.usage = Some(usage);
                     self.set_head("usage");
                 }
             }
-            "account_switched" => {
+            UpdateKind::AccountSwitched => {
                 let Some(label) = text_of(update.get("label")) else {
                     return;
                 };
@@ -1147,7 +1143,7 @@ impl Fold {
                 };
                 self.append_part(index, &None, |id| ChatPart::Account { id, moved }, false);
             }
-            "session_info_update" => {
+            UpdateKind::SessionInfoUpdate => {
                 if let Some(title) = text_of(update.get("title")) {
                     self.head.title = Some(title.to_owned());
                     self.set_head("title");
@@ -1159,9 +1155,9 @@ impl Fold {
                     }
                 }
             }
-            "queued_messages" => self.set_queued(queued_of(update.get("messages"))),
-            "earlier_turns_lost" => self.set_earlier_lost(),
-            "message_rewound" => {
+            UpdateKind::QueuedMessages => self.set_queued(queued_of(update.get("messages"))),
+            UpdateKind::EarlierTurnsLost => self.set_earlier_lost(),
+            UpdateKind::MessageRewound => {
                 if let Some(message) = text_of(update.get("messageId")) {
                     self.rewind(message);
                 }
@@ -1212,15 +1208,19 @@ impl Fold {
         at: u64,
         until: u64,
     ) -> bool {
-        let kind = text_of(update.get("sessionUpdate")).unwrap_or_default();
+        let Some(kind) = UpdateKind::of(update) else {
+            return false;
+        };
         match kind {
-            "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk" => {
+            UpdateKind::UserMessageChunk
+            | UpdateKind::AgentMessageChunk
+            | UpdateKind::AgentThoughtChunk => {
                 let Some(content) = update.get("content").filter(|content| {
                     content.is_object() && content.get("type").is_some_and(Value::is_string)
                 }) else {
                     return false;
                 };
-                let role = if kind == "user_message_chunk" {
+                let role = if kind == UpdateKind::UserMessageChunk {
                     ChatRole::User
                 } else {
                     ChatRole::Assistant
@@ -1232,7 +1232,7 @@ impl Fold {
                         }
                     }
                 }
-                let part = if kind == "agent_thought_chunk" {
+                let part = if kind == UpdateKind::AgentThoughtChunk {
                     THOUGHT_PART
                 } else {
                     TEXT_PART
@@ -1244,7 +1244,7 @@ impl Fold {
                 );
                 true
             }
-            "tool_call" => {
+            UpdateKind::ToolCall => {
                 let Some(raw) = update.as_object() else {
                     return false;
                 };
@@ -1253,7 +1253,7 @@ impl Fold {
                 }
                 self.upsert_tool(index, within, raw, false, fresh, at)
             }
-            "tool_call_update" => {
+            UpdateKind::ToolCallUpdate => {
                 let Some(raw) = update.as_object() else {
                     return false;
                 };

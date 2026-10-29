@@ -1,3 +1,4 @@
+use sikemux_fold::UpdateKind;
 use std::path::{Component, Path, PathBuf};
 
 use serde_json::{json, Map, Value};
@@ -214,7 +215,7 @@ fn is_task_tool(name: &str) -> bool {
 pub fn tool_call(id: &str, name: &str, input: &Value, cwd: &Path) -> Value {
     let info = tool_info(name, input, cwd);
     let mut update = Map::new();
-    update.insert("sessionUpdate".into(), "tool_call".into());
+    update.insert("sessionUpdate".into(), UpdateKind::ToolCall.as_str().into());
     update.insert("toolCallId".into(), id.into());
     update.insert("name".into(), name.into());
     update.insert("rawInput".into(), input.clone());
@@ -227,7 +228,10 @@ pub fn tool_call(id: &str, name: &str, input: &Value, cwd: &Path) -> Value {
 pub fn tool_call_refined(id: &str, name: &str, input: &Value, cwd: &Path) -> Value {
     let info = tool_info(name, input, cwd);
     let mut update = Map::new();
-    update.insert("sessionUpdate".into(), "tool_call_update".into());
+    update.insert(
+        "sessionUpdate".into(),
+        UpdateKind::ToolCallUpdate.as_str().into(),
+    );
     update.insert("toolCallId".into(), id.into());
     update.insert("rawInput".into(), input.clone());
     insert_info(&mut update, info);
@@ -257,7 +261,10 @@ pub fn tool_result(
 ) -> Value {
     let is_error = failed(name, result);
     let mut update = Map::new();
-    update.insert("sessionUpdate".into(), "tool_call_update".into());
+    update.insert(
+        "sessionUpdate".into(),
+        UpdateKind::ToolCallUpdate.as_str().into(),
+    );
     update.insert("toolCallId".into(), id.into());
     update.insert(
         "status".into(),
@@ -931,7 +938,7 @@ fn plan_entry(content: Option<&Value>, status: Option<&Value>) -> Value {
 }
 
 fn plan_update(entries: Vec<Value>) -> Value {
-    json!({ "sessionUpdate": "plan", "entries": entries })
+    json!({ "sessionUpdate": UpdateKind::Plan, "entries": entries })
 }
 
 /// §3.3 updates for one Anthropic content block (text/image/thinking) of role "assistant"|"user", with messageId; tool blocks are not handled here.
@@ -939,9 +946,9 @@ fn plan_update(entries: Vec<Value>) -> Value {
 /// A bare JSON string is treated as plain message text, as the adapter does for string content.
 pub fn content_chunk(block: &Value, role: &str, message_id: Option<&str>) -> Option<Value> {
     let message_update = if role == "assistant" {
-        "agent_message_chunk"
+        UpdateKind::AgentMessageChunk
     } else {
-        "user_message_chunk"
+        UpdateKind::UserMessageChunk
     };
     let (session_update, content) = match block {
         Value::String(text) if !text.is_empty() => {
@@ -972,7 +979,7 @@ pub fn content_chunk(block: &Value, role: &str, message_id: Option<&str>) -> Opt
                 (message_update, Value::Object(image))
             }
             "thinking" | "thinking_delta" if truthy(block.get("thinking")) => (
-                "agent_thought_chunk",
+                UpdateKind::AgentThoughtChunk,
                 json!({ "type": "text", "text": block.get("thinking") }),
             ),
             _ => return None,
@@ -980,7 +987,7 @@ pub fn content_chunk(block: &Value, role: &str, message_id: Option<&str>) -> Opt
         _ => return None,
     };
     let mut update = Map::new();
-    update.insert("sessionUpdate".into(), session_update.into());
+    update.insert("sessionUpdate".into(), session_update.as_str().into());
     update.insert("content".into(), content);
     if let Some(id) = message_id.filter(|id| !id.is_empty()) {
         update.insert("messageId".into(), id.into());

@@ -16,6 +16,7 @@ mod states;
 mod turn;
 mod usage;
 
+use sikemux_fold::UpdateKind;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -310,8 +311,13 @@ impl Chat {
             }
         }
         if kind == ChatEventKind::SessionUpdate {
-            self.note_tool_call(&payload);
-            self.note_session(&payload);
+            match UpdateKind::within(&payload) {
+                Some(UpdateKind::ToolCall) => self.note_tool_call(&payload),
+                Some(UpdateKind::SessionInfoUpdate | UpdateKind::AccountSwitched) => {
+                    self.note_session(&payload)
+                }
+                _ => {}
+            }
         }
         if kind == ChatEventKind::TurnStarted {
             self.note_resumable();
@@ -342,12 +348,6 @@ impl Chat {
     }
 
     fn note_session(&self, payload: &Value) {
-        let kind = payload
-            .pointer("/update/sessionUpdate")
-            .and_then(Value::as_str);
-        if !matches!(kind, Some("session_info_update" | "account_switched")) {
-            return;
-        }
         let Some(core) = self.core.upgrade() else {
             return;
         };
@@ -393,9 +393,6 @@ impl Chat {
 
     fn note_tool_call(&self, payload: &Value) {
         let update = &payload["update"];
-        if update["sessionUpdate"] != "tool_call" {
-            return;
-        }
         let Some(core) = self.core.upgrade() else {
             return;
         };
@@ -1174,7 +1171,7 @@ pub(crate) enum HandOver {
 /// than carrying it over.
 pub(crate) fn update_notice(why: &str) -> Value {
     serde_json::json!({
-        "sessionUpdate": "notice",
+        "sessionUpdate": UpdateKind::Notice,
         "severity": "warning",
         "title": "Sikemux restarted this agent while it updated",
         "description": format!("The agent could not be carried over because {why}. Anything it was doing stopped."),
@@ -1863,7 +1860,7 @@ pub(crate) fn carry_on_prompt(what: &str) -> rebind::Replay {
 
 pub(crate) fn restart_notice(title: &str, description: &str) -> Value {
     serde_json::json!({
-        "sessionUpdate": "notice",
+        "sessionUpdate": UpdateKind::Notice,
         "severity": "warning",
         "title": title,
         "description": description,
@@ -2624,7 +2621,7 @@ fn tell_options(chat: &Chat, options: Value) {
         ChatEventKind::SessionUpdate,
         serde_json::json!({
             "sessionId": session,
-            "update": { "sessionUpdate": "config_option_update", "configOptions": options },
+            "update": { "sessionUpdate": UpdateKind::ConfigOptionUpdate, "configOptions": options },
         }),
     );
 }

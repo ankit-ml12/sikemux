@@ -2,6 +2,7 @@
 //! prompt, which items are on screen, and its subagents. Each notification
 //! comes back as the effects it has on the chat.
 
+use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -99,7 +100,8 @@ pub(super) struct Session {
 }
 
 fn notice(title: &str, description: Option<&str>) -> Value {
-    let mut update = json!({ "sessionUpdate": "notice", "severity": "warning", "title": title });
+    let mut update =
+        json!({ "sessionUpdate": UpdateKind::Notice, "severity": "warning", "title": title });
     if let Some(description) = description.filter(|description| !description.is_empty()) {
         update["description"] = json!(description);
     }
@@ -371,7 +373,7 @@ impl Session {
                 self.titled = true;
                 effects.push(Effect::Update(
                     self.thread_id.clone(),
-                    json!({ "sessionUpdate": "session_info_update", "title": title }),
+                    json!({ "sessionUpdate": UpdateKind::SessionInfoUpdate, "title": title }),
                 ));
             }
         }
@@ -568,7 +570,7 @@ impl Session {
                 vec![Effect::Update(
                     self.thread_id.clone(),
                     json!({
-                        "sessionUpdate": "tool_call",
+                        "sessionUpdate": UpdateKind::ToolCall,
                         "toolCallId": format!("mcp_startup.{name}"),
                         "kind": "other",
                         "title": format!("mcp__{name}__startup"),
@@ -634,7 +636,7 @@ impl Session {
             "turn/plan/updated" => vec![items::plan(params)],
             "thread/tokenUsage/updated" => items::usage(params).into_iter().collect(),
             "thread/name/updated" => vec![json!({
-                "sessionUpdate": "session_info_update",
+                "sessionUpdate": UpdateKind::SessionInfoUpdate,
                 "title": params["threadName"],
             })],
             "model/rerouted" => vec![items::thought(

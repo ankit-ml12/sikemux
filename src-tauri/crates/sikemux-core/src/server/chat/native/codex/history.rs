@@ -1,6 +1,7 @@
 //! A resumed thread's history told to the chat as the updates it would have
 //! seen live, the way Codex's adapter replays it on `session/load`.
 
+use sikemux_fold::UpdateKind;
 use std::collections::HashMap;
 
 use serde_json::{json, Value};
@@ -128,7 +129,7 @@ impl<R: Fn(&str) -> Option<String>> Replaying<'_, R> {
                     for block in items::user_blocks(item) {
                         self.out.push((
                             session.clone(),
-                            json!({ "sessionUpdate": "user_message_chunk", "messageId": id, "content": block }),
+                            json!({ "sessionUpdate": UpdateKind::UserMessageChunk, "messageId": id, "content": block }),
                         ));
                     }
                 } else {
@@ -171,7 +172,7 @@ impl<R: Fn(&str) -> Option<String>> Replaying<'_, R> {
         let opened = said
             .iter()
             .filter(|(_, update)| {
-                update["sessionUpdate"] == "subagent_spawned"
+                UpdateKind::of(update) == Some(UpdateKind::SubagentSpawned)
                     || update["state"] == Subagent::Running.as_str()
             })
             .filter_map(|(_, update)| update["subagentSessionId"].as_str().map(str::to_owned))

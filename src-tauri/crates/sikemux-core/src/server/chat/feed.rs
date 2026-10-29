@@ -3,6 +3,7 @@
 //! or loaded is kept, so a client that attaches later rebuilds the chat from
 //! the same events the others watched arrive.
 
+use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -52,21 +53,11 @@ const EARLIER_ROOM: u64 = 1 << 40;
 const RESIDENT_BYTES: usize = 64 * 1024 * 1024;
 /// How often the chats are looked over for one to let go of, while past [`RESIDENT_BYTES`].
 const EVICT_EVERY_MS: u64 = 1000;
-/// Updates that set how the chat stands rather than say something in it. A
-/// phone shown only the chat's end still needs the last of each.
-const STANDING_UPDATES: [&str; 6] = [
-    "available_commands_update",
-    "current_mode_update",
-    "config_option_update",
-    "usage_update",
-    "session_info_update",
-    "plan",
-];
 
 /// What a kept event still stands for, until a later one replaces or ends it.
 #[derive(PartialEq, Eq, Serialize, Deserialize)]
 enum Holds {
-    Update(String),
+    Update(UpdateKind),
     TaskSpawned(String),
     TaskLatest(String),
     Subagent(String),
@@ -249,10 +240,10 @@ impl Said {
                 cancelled: text("/stopReason").as_deref() == Some("cancelled"),
             }),
             ChatEventKind::Error => Some(Said::Failed(text("/message").unwrap_or_default())),
-            ChatEventKind::SessionUpdate => match session_update_kind(&event.payload)? {
-                "agent_message_chunk" => text("/update/content/text").map(Said::Message),
-                "user_message_chunk" => text("/update/content/text").map(Said::Asked),
-                "tool_call" | "tool_call_update" => Some(Said::Tool {
+            ChatEventKind::SessionUpdate => match UpdateKind::within(&event.payload)? {
+                UpdateKind::AgentMessageChunk => text("/update/content/text").map(Said::Message),
+                UpdateKind::UserMessageChunk => text("/update/content/text").map(Said::Asked),
+                UpdateKind::ToolCall | UpdateKind::ToolCallUpdate => Some(Said::Tool {
                     id: text("/update/toolCallId")?,
                     title: text("/update/title"),
                     failed: text("/update/status").as_deref() == Some("failed"),
@@ -288,7 +279,7 @@ pub(crate) struct Excerpt {
 /// A streamed piece of a message that can be joined to the piece before it.
 struct Chunk<'a> {
     session_id: &'a Value,
-    kind: &'a str,
+    kind: UpdateKind,
     message_id: Option<&'a Value>,
     text: &'a str,
 }
@@ -321,7 +312,7 @@ pub(crate) fn title(text: &str) -> Option<String> {
 
 pub(crate) fn session_title(payload: &Value) -> Option<String> {
     let update = payload.get("update")?;
-    if update.get("sessionUpdate")?.as_str()? != "session_info_update" {
+    if UpdateKind::of(update)? != UpdateKind::SessionInfoUpdate {
         return None;
     }
     title(update.get("title")?.as_str()?)
@@ -368,8 +359,8 @@ impl Work {
             .unwrap_or_default();
         let nested = self.in_subagent(payload);
         let text = |key: &str| update.get(key).and_then(Value::as_str);
-        match update.get("sessionUpdate").and_then(Value::as_str) {
-            Some("subagent_spawned") => {
+        match UpdateKind::of(update) {
+            Some(UpdateKind::SubagentSpawned) => {
                 let Some(id) = text("subagentSessionId") else {
                     return;
                 };
@@ -383,7 +374,7 @@ impl Work {
                     });
                 }
             }
-            Some("subagent_state_update") => {
+            Some(UpdateKind::SubagentStateUpdate) => {
                 let Some(id) = text("subagentSessionId") else {
                     return;
                 };
@@ -398,7 +389,7 @@ impl Work {
                     });
                 }
             }
-            Some("async_task_spawned") => {
+            Some(UpdateKind::AsyncTaskSpawned) => {
                 let Some(id) = text("asyncTaskId") else {
                     return;
                 };
@@ -411,7 +402,7 @@ impl Work {
                     });
                 }
             }
-            Some("async_task_progress" | "async_task_state_update") => {
+            Some(UpdateKind::AsyncTaskProgress | UpdateKind::AsyncTaskStateUpdate) => {
                 let Some(id) = text("asyncTaskId") else {
                     return;
                 };
@@ -477,8 +468,8 @@ fn chunk(payload: &Value) -> Option<Chunk<'_>> {
     if !only_keys(update, &["sessionUpdate", "content", "messageId"]) {
         return None;
     }
-    let kind = update.get("sessionUpdate")?.as_str()?;
-    if kind != "agent_message_chunk" && kind != "agent_thought_chunk" {
+    let kind = UpdateKind::parse(update.get("sessionUpdate")?.as_str()?)?;
+    if kind != UpdateKind::AgentMessageChunk && kind != UpdateKind::AgentThoughtChunk {
         return None;
     }
     let content = update.get("content")?.as_object()?;
@@ -523,7 +514,7 @@ fn names_message(event: &ChatEvent, message_id: &str) -> bool {
     match event.kind {
         ChatEventKind::Prompt => event.payload.get("messageId"),
         ChatEventKind::SessionUpdate
-            if session_update_kind(&event.payload) == Some("user_message_chunk") =>
+            if UpdateKind::within(&event.payload) == Some(UpdateKind::UserMessageChunk) =>
         {
             event.payload.pointer("/update/messageId")
         }
@@ -531,10 +522,6 @@ fn names_message(event: &ChatEvent, message_id: &str) -> bool {
     }
     .and_then(Value::as_str)
         == Some(message_id)
-}
-
-fn session_update_kind(payload: &Value) -> Option<&str> {
-    payload.pointer("/update/sessionUpdate")?.as_str()
 }
 
 impl Replay {
@@ -614,7 +601,7 @@ impl Replay {
             _ => {}
         }
         self.last_from_user = kind == ChatEventKind::Prompt
-            || session_update_kind(&event.payload) == Some("user_message_chunk");
+            || UpdateKind::within(&event.payload) == Some(UpdateKind::UserMessageChunk);
         self.entries.push_back(Entry {
             event,
             bytes,
@@ -717,7 +704,7 @@ impl Replay {
             let index = base + offset as u64;
             let mut payload = json!({ "sessionId": session, "update": update });
             stamp(&mut payload);
-            let from_user = session_update_kind(&payload) == Some("user_message_chunk");
+            let from_user = UpdateKind::within(&payload) == Some(UpdateKind::UserMessageChunk);
             let starts_turn = from_user && !last_from_user;
             last_from_user = from_user;
             let point = starts_turn || since_point >= PIECE_BYTES;
@@ -734,13 +721,17 @@ impl Replay {
                 .pointer("/update/subagentSessionId")
                 .and_then(Value::as_str)
                 .map(str::to_owned);
-            match (session_update_kind(&event.payload), subagent) {
-                (Some("subagent_spawned"), Some(subagent)) if !known.contains(&subagent) => {
+            match (UpdateKind::within(&event.payload), subagent) {
+                (Some(UpdateKind::SubagentSpawned), Some(subagent))
+                    if !known.contains(&subagent) =>
+                {
                     self.note_subagent(ChatEventKind::SessionUpdate, index, &event);
                     known.insert(subagent.clone());
                     added.insert(subagent);
                 }
-                (Some("subagent_state_update"), Some(subagent)) if added.contains(&subagent) => {
+                (Some(UpdateKind::SubagentStateUpdate), Some(subagent))
+                    if added.contains(&subagent) =>
+                {
                     self.note_subagent(ChatEventKind::SessionUpdate, index, &event);
                 }
                 _ => {}
@@ -799,7 +790,7 @@ impl Replay {
                 }
             }
             ChatEventKind::SessionUpdate => {
-                session_update_kind(payload) == Some("user_message_chunk")
+                UpdateKind::within(payload) == Some(UpdateKind::UserMessageChunk)
                     && !self.in_turn
                     && !self.last_from_user
             }
@@ -897,7 +888,7 @@ impl Replay {
             _ => {}
         }
         self.last_from_user = kind == ChatEventKind::Prompt
-            || session_update_kind(payload) == Some("user_message_chunk");
+            || UpdateKind::within(payload) == Some(UpdateKind::UserMessageChunk);
         self.entries.push_back(Entry {
             event,
             bytes,
@@ -929,8 +920,8 @@ impl Replay {
             .spawns
             .iter_mut()
             .find(|spawn| spawn.subagent == subagent);
-        match session_update_kind(&event.payload) {
-            Some("subagent_spawned") => {
+        match UpdateKind::within(&event.payload) {
+            Some(UpdateKind::SubagentSpawned) => {
                 let (None, Some(parent)) = (known, text("/sessionId")) else {
                     return;
                 };
@@ -942,7 +933,7 @@ impl Replay {
                     state: None,
                 });
             }
-            Some("subagent_state_update") => {
+            Some(UpdateKind::SubagentStateUpdate) => {
                 if let Some(spawn) = known {
                     spawn.state = Some((index, event.clone()));
                 }
@@ -1009,7 +1000,7 @@ impl Replay {
         let Some(update) = event.payload.get("update") else {
             return;
         };
-        let Some(update_kind) = update.get("sessionUpdate").and_then(Value::as_str) else {
+        let Some(update_kind) = UpdateKind::of(update) else {
             return;
         };
         let text = |key: &str| update.get(key).and_then(Value::as_str).map(str::to_owned);
@@ -1017,26 +1008,26 @@ impl Replay {
             return;
         }
         match update_kind {
-            standing if STANDING_UPDATES.contains(&standing) => {
-                self.hold(Holds::Update(standing.to_owned()), index, event);
+            standing if standing.standing() => {
+                self.hold(Holds::Update(standing), index, event);
             }
-            "subagent_spawned" => {
+            UpdateKind::SubagentSpawned => {
                 if let Some(id) = text("subagentSessionId") {
                     self.hold(Holds::Subagent(id), index, event);
                 }
             }
-            "subagent_state_update" if subagent_ended(update) => {
+            UpdateKind::SubagentStateUpdate if subagent_ended(update) => {
                 if let Some(id) = text("subagentSessionId") {
                     self.standing
                         .retain(|(held, ..)| *held != Holds::Subagent(id.clone()));
                 }
             }
-            "async_task_spawned" => {
+            UpdateKind::AsyncTaskSpawned => {
                 if let Some(id) = text("asyncTaskId") {
                     self.hold(Holds::TaskSpawned(id), index, event);
                 }
             }
-            "async_task_progress" | "async_task_state_update" => {
+            UpdateKind::AsyncTaskProgress | UpdateKind::AsyncTaskStateUpdate => {
                 let Some(id) = text("asyncTaskId") else {
                     return;
                 };
@@ -1088,10 +1079,12 @@ impl Replay {
             if self.work.in_subagent(payload) {
                 continue;
             }
-            match session_update_kind(payload) {
-                Some("user_message_chunk") => break,
-                Some("tool_call" | "tool_call_update") if !pieces.is_empty() => break,
-                Some("agent_message_chunk") => {
+            match UpdateKind::within(payload) {
+                Some(UpdateKind::UserMessageChunk) => break,
+                Some(UpdateKind::ToolCall | UpdateKind::ToolCallUpdate) if !pieces.is_empty() => {
+                    break
+                }
+                Some(UpdateKind::AgentMessageChunk) => {
                     if let Some(text) = payload
                         .pointer("/update/content/text")
                         .and_then(Value::as_str)
@@ -1256,8 +1249,8 @@ impl Replay {
     /// An agent retrying says so as a warning; its next output means it got through.
     /// A service that answered with an error is not a lost connection.
     fn note_retry(&mut self, payload: &Value) {
-        match session_update_kind(payload) {
-            Some("session_info_update") if self.in_turn => {
+        match UpdateKind::within(payload) {
+            Some(UpdateKind::SessionInfoUpdate) if self.in_turn => {
                 let notice = payload.pointer("/update/_meta/jetbrains/air/sessionFailure");
                 if let Some(notice) = notice.filter(|notice| notice["severity"] == "warning") {
                     let attempt = notice["attempt"].as_u64().unwrap_or(0);
@@ -1266,7 +1259,10 @@ impl Replay {
                 }
             }
             Some(
-                "agent_message_chunk" | "agent_thought_chunk" | "tool_call" | "tool_call_update",
+                UpdateKind::AgentMessageChunk
+                | UpdateKind::AgentThoughtChunk
+                | UpdateKind::ToolCall
+                | UpdateKind::ToolCallUpdate,
             ) => {
                 self.reconnecting = None;
             }
@@ -3298,7 +3294,7 @@ mod tests {
             .fold_events()
             .iter()
             .map(|(_, _, event)| event)
-            .filter(|event| session_update_kind(&event.payload) == Some("subagent_spawned"))
+            .filter(|event| UpdateKind::within(&event.payload) == Some(UpdateKind::SubagentSpawned))
             .map(|event| {
                 event.payload["update"]["subagentSessionId"]
                     .as_str()

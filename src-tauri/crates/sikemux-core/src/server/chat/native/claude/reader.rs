@@ -1,6 +1,8 @@
 //! Reads what Claude Code writes on its output and tells the chat, as the
 //! ACP session updates the app reads from every agent.
 
+use sikemux_fold::update::compaction;
+use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -189,7 +191,7 @@ pub(crate) fn available_commands(commands: &Value) -> Value {
                 .collect()
         })
         .unwrap_or_default();
-    json!({ "sessionUpdate": "available_commands_update", "availableCommands": commands })
+    json!({ "sessionUpdate": UpdateKind::AvailableCommandsUpdate, "availableCommands": commands })
 }
 
 /// Why a turn failed, from an assistant message Claude Code wrote in place
@@ -626,7 +628,7 @@ impl Reader {
             if let Some(title) = title {
                 self.sink.update(
                     &self.data.session_id,
-                    json!({ "sessionUpdate": "session_info_update", "title": title }),
+                    json!({ "sessionUpdate": UpdateKind::SessionInfoUpdate, "title": title }),
                 );
             }
         }
@@ -929,7 +931,7 @@ impl Reader {
         }
         self.send(
             parent,
-            json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": output } }),
+            json!({ "sessionUpdate": UpdateKind::AgentMessageChunk, "content": { "type": "text", "text": output } }),
         );
     }
 
@@ -943,8 +945,7 @@ impl Reader {
         }
         let used = self.data.used;
         if let Some(used) = used {
-            let mut update =
-                json!({ "sessionUpdate": "usage_update", "used": used, "size": self.data.size });
+            let mut update = json!({ "sessionUpdate": UpdateKind::UsageUpdate, "used": used, "size": self.data.size });
             if let Some(cost) = result.get("total_cost_usd").and_then(Value::as_f64) {
                 update["cost"] = json!({ "amount": cost, "currency": "USD" });
             }
@@ -1140,7 +1141,7 @@ impl Reader {
                 if let Some(content) = text(message, "content") {
                     self.send(
                         None,
-                        json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": content } }),
+                        json!({ "sessionUpdate": UpdateKind::AgentMessageChunk, "content": { "type": "text", "text": content } }),
                     );
                 }
             }
@@ -1162,7 +1163,7 @@ impl Reader {
                 self.sink.update(
                     &session,
                     json!({
-                        "sessionUpdate": "tool_call_update",
+                        "sessionUpdate": UpdateKind::ToolCallUpdate,
                         "toolCallId": id,
                         "status": "failed",
                         "content": [{ "type": "content", "content": { "type": "text", "text": format!("Permission denied: {reason}") } }],
@@ -1193,7 +1194,8 @@ impl Reader {
                 Some(cleaned.to_owned()),
             ),
         };
-        let mut update = json!({ "sessionUpdate": "notice", "severity": severity, "title": title });
+        let mut update =
+            json!({ "sessionUpdate": UpdateKind::Notice, "severity": severity, "title": title });
         if let Some(description) = description.filter(|description| !description.is_empty()) {
             update["description"] = json!(description);
         }
@@ -1239,16 +1241,7 @@ impl Reader {
                 .map(str::to_owned)
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
             self.data.compaction = Some(id.clone());
-            self.send(
-                None,
-                json!({
-                    "sessionUpdate": "tool_call",
-                    "toolCallId": id,
-                    "title": "Compact conversation",
-                    "kind": "think",
-                    "status": "in_progress",
-                }),
-            );
+            self.send(None, compaction(&id, true, "in_progress", None));
         }
         match text(message, "compact_result") {
             Some("success") => self.compacted("completed", None),
@@ -1284,12 +1277,7 @@ impl Reader {
         let Some(id) = self.data.compaction.take() else {
             return;
         };
-        let mut update =
-            json!({ "sessionUpdate": "tool_call_update", "toolCallId": id, "status": status });
-        if let Some(error) = error {
-            update["content"] =
-                json!([{ "type": "content", "content": { "type": "text", "text": error } }]);
-        }
+        let update = compaction(&id, false, status, error.as_deref());
         self.sink.update(&self.data.session_id, update);
     }
 
@@ -1345,7 +1333,7 @@ impl Reader {
             },
         );
         let mut update = json!({
-            "sessionUpdate": "async_task_spawned",
+            "sessionUpdate": UpdateKind::AsyncTaskSpawned,
             "asyncTaskId": task_id,
             "name": name,
             "taskType": task_type,
@@ -1464,7 +1452,7 @@ impl Reader {
                 .and_then(|usage| usage.get("total_tokens"))
                 .and_then(Value::as_u64);
             if let Some(tokens) = tokens {
-                let update = json!({ "sessionUpdate": "subagent_usage", "subagentSessionId": id, "tokens": tokens });
+                let update = sikemux_fold::update::subagent_usage(id, tokens);
                 self.sink.update(&child.parent, update);
             }
             return;
@@ -1472,7 +1460,8 @@ impl Reader {
         let Some(task) = self.data.tasks.get_mut(id).filter(|task| !task.ended) else {
             return;
         };
-        let mut update = json!({ "sessionUpdate": "async_task_progress", "asyncTaskId": id });
+        let mut update =
+            json!({ "sessionUpdate": UpdateKind::AsyncTaskProgress, "asyncTaskId": id });
         if let Some(progress) = message.get("workflow_progress").and_then(Value::as_array) {
             task.agents = Some(workflow_agents(progress));
         }
@@ -1556,7 +1545,7 @@ impl Reader {
         let Some(state) = TaskState::from_status(status).filter(|state| state.ended()) else {
             return;
         };
-        let mut update = json!({ "sessionUpdate": "task_notice", "taskId": task_id, "name": name, "state": state.as_str() });
+        let mut update = json!({ "sessionUpdate": UpdateKind::TaskNotice, "taskId": task_id, "name": name, "state": state.as_str() });
         if self.data.subagents.contains_key(task_id) {
             update["subagentSessionId"] = json!(task_id);
         }
@@ -1575,7 +1564,7 @@ impl Reader {
             .update(&self.data.session_id, TaskState::Stopped.update(task_id));
         self.sink.update(
             &self.data.session_id,
-            json!({ "sessionUpdate": "notice", "severity": "info", "title": "Task stopped by user", "description": format!("{name}.") }),
+            json!({ "sessionUpdate": UpdateKind::Notice, "severity": "info", "title": "Task stopped by user", "description": format!("{name}.") }),
         );
     }
 

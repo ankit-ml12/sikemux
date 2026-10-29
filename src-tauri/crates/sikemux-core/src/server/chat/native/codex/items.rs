@@ -1,6 +1,8 @@
 //! What Codex's thread items look like in the chat: the ACP session updates
 //! Codex's ACP adapter sends for each, so the app reads them alike.
 
+use sikemux_fold::update::compaction;
+use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -64,7 +66,7 @@ pub(super) fn content(block: Value) -> Value {
 
 pub(super) fn agent_text(text: &str, message_id: Option<&str>, phase: Option<&Value>) -> Value {
     let mut update = json!({
-        "sessionUpdate": "agent_message_chunk",
+        "sessionUpdate": UpdateKind::AgentMessageChunk,
         "content": { "type": "text", "text": text },
     });
     if let Some(id) = message_id {
@@ -78,7 +80,7 @@ pub(super) fn agent_text(text: &str, message_id: Option<&str>, phase: Option<&Va
 
 pub(super) fn thought(text: &str, message_id: Option<&str>) -> Value {
     let mut update = json!({
-        "sessionUpdate": "agent_thought_chunk",
+        "sessionUpdate": UpdateKind::AgentThoughtChunk,
         "content": { "type": "text", "text": text },
     });
     if let Some(id) = message_id {
@@ -109,7 +111,7 @@ fn runs_in_terminal(item: &Value) -> bool {
 
 fn terminal_call(id: &str, status: &str, title: &str, command: &Value, cwd: &Value) -> Value {
     json!({
-        "sessionUpdate": "tool_call",
+        "sessionUpdate": UpdateKind::ToolCall,
         "toolCallId": id,
         "kind": "execute",
         "title": title,
@@ -128,7 +130,7 @@ fn command_call(item: &Value) -> Value {
         let path = action["path"].as_str();
         let base = |kind: &str, title: String| {
             json!({
-                "sessionUpdate": "tool_call",
+                "sessionUpdate": UpdateKind::ToolCall,
                 "toolCallId": id,
                 "status": status,
                 "kind": kind,
@@ -165,7 +167,7 @@ fn command_done(item: &Value) -> Option<Value> {
     }
     let id = text(item, "id");
     let mut update = json!({
-        "sessionUpdate": "tool_call_update",
+        "sessionUpdate": UpdateKind::ToolCallUpdate,
         "toolCallId": id,
         "status": ended(item),
         "rawOutput": {
@@ -234,7 +236,7 @@ fn edit_call(item: &Value, status: &str, read: &impl Fn(&str) -> Option<String>)
         .filter_map(|change| change_block(change, read))
         .collect();
     json!({
-        "sessionUpdate": "tool_call",
+        "sessionUpdate": UpdateKind::ToolCall,
         "toolCallId": item["id"],
         "title": "Editing files",
         "kind": "edit",
@@ -257,7 +259,7 @@ fn mcp_output(item: &Value) -> Option<Value> {
 /// getting their own rows, so it is titled that way here.
 fn mcp_call(item: &Value) -> Value {
     let mut call = json!({
-        "sessionUpdate": "tool_call",
+        "sessionUpdate": UpdateKind::ToolCall,
         "toolCallId": item["id"],
         "kind": "other",
         "title": format!("mcp__{}__{}", text(item, "server"), text(item, "tool")),
@@ -273,7 +275,7 @@ fn mcp_call(item: &Value) -> Value {
 
 fn mcp_done(item: &Value) -> Value {
     let mut update = json!({
-        "sessionUpdate": "tool_call_update",
+        "sessionUpdate": UpdateKind::ToolCallUpdate,
         "toolCallId": item["id"],
         "status": ended(item),
         "rawInput": mcp_input(item),
@@ -286,7 +288,7 @@ fn mcp_done(item: &Value) -> Value {
 
 fn dynamic_call(item: &Value) -> Value {
     json!({
-        "sessionUpdate": "tool_call",
+        "sessionUpdate": UpdateKind::ToolCall,
         "toolCallId": item["id"],
         "kind": "execute",
         "title": item["tool"],
@@ -296,7 +298,7 @@ fn dynamic_call(item: &Value) -> Value {
 }
 
 fn status_update(item: &Value) -> Value {
-    json!({ "sessionUpdate": "tool_call_update", "toolCallId": item["id"], "status": ended(item) })
+    json!({ "sessionUpdate": UpdateKind::ToolCallUpdate, "toolCallId": item["id"], "status": ended(item) })
 }
 
 fn web_search_title(item: &Value) -> String {
@@ -353,7 +355,7 @@ fn web_search_input(item: &Value) -> Value {
 fn image_view(item: &Value) -> Value {
     let path = text(item, "path");
     json!({
-        "sessionUpdate": "tool_call",
+        "sessionUpdate": UpdateKind::ToolCall,
         "toolCallId": item["id"],
         "kind": "read",
         "title": format!("View Image {path}"),
@@ -411,7 +413,7 @@ fn image_output(item: &Value) -> Value {
 
 fn image_generation(item: &Value, terminal: bool) -> Value {
     json!({
-        "sessionUpdate": "tool_call",
+        "sessionUpdate": UpdateKind::ToolCall,
         "toolCallId": item["id"],
         "kind": "other",
         "title": "Image generation",
@@ -421,21 +423,7 @@ fn image_generation(item: &Value, terminal: bool) -> Value {
     })
 }
 
-fn compaction(item: &Value, session_update: &str, status: &str) -> Value {
-    let mut update = json!({
-        "sessionUpdate": session_update,
-        "toolCallId": item["id"],
-        "title": "Compact conversation",
-        "status": status,
-        "_meta": { "contextCompaction": { "version": 1 } },
-    });
-    if session_update == "tool_call" {
-        update["kind"] = json!("think");
-    }
-    update
-}
-
-fn collaboration(item: &Value, session_update: &str) -> Value {
+fn collaboration(item: &Value, session_update: UpdateKind) -> Value {
     json!({
         "sessionUpdate": session_update,
         "toolCallId": item["id"],
@@ -524,7 +512,7 @@ pub(super) fn replayed(item: &Value, read: &impl Fn(&str) -> Option<String>) -> 
         "mcpToolCall" => vec![mcp_call(item)],
         "dynamicToolCall" => vec![dynamic_call(item)],
         "webSearch" => vec![json!({
-            "sessionUpdate": "tool_call",
+            "sessionUpdate": UpdateKind::ToolCall,
             "toolCallId": item["id"],
             "kind": "search",
             "title": web_search_title(item),
@@ -542,9 +530,9 @@ pub(super) fn replayed(item: &Value, read: &impl Fn(&str) -> Option<String>) -> 
             );
             vec![agent_text(&said, None, None)]
         }
-        "contextCompaction" => vec![compaction(item, "tool_call", "completed")],
+        "contextCompaction" => vec![compaction(text(item, "id"), true, "completed", None)],
         "plan" => plan_text(item).into_iter().collect(),
-        "collabAgentToolCall" => vec![collaboration(item, "tool_call")],
+        "collabAgentToolCall" => vec![collaboration(item, UpdateKind::ToolCall)],
         _ => Vec::new(),
     }
 }
@@ -579,7 +567,7 @@ impl Items {
             "mcpToolCall" => mcp_call(item),
             "dynamicToolCall" => dynamic_call(item),
             "webSearch" => json!({
-                "sessionUpdate": "tool_call",
+                "sessionUpdate": UpdateKind::ToolCall,
                 "toolCallId": id,
                 "kind": "search",
                 "title": web_search_title(item),
@@ -588,15 +576,15 @@ impl Items {
             }),
             "imageView" => image_view(item),
             "imageGeneration" => json!({
-                "sessionUpdate": "tool_call",
+                "sessionUpdate": UpdateKind::ToolCall,
                 "toolCallId": id,
                 "kind": "other",
                 "title": "Image generation",
                 "status": "in_progress",
                 "rawInput": { "id": id },
             }),
-            "contextCompaction" => compaction(item, "tool_call", "in_progress"),
-            "collabAgentToolCall" => collaboration(item, "tool_call"),
+            "contextCompaction" => compaction(text(item, "id"), true, "in_progress", None),
+            "collabAgentToolCall" => collaboration(item, UpdateKind::ToolCall),
             _ => return Vec::new(),
         };
         self.shown.insert(id);
@@ -642,7 +630,7 @@ impl Items {
         if !self.shown.remove(id) {
             return match kind {
                 "imageGeneration" => vec![image_generation(item, true)],
-                "contextCompaction" => vec![compaction(item, "tool_call", "completed")],
+                "contextCompaction" => vec![compaction(text(item, "id"), true, "completed", None)],
                 _ => replayed(item, &read_file),
             };
         }
@@ -655,21 +643,21 @@ impl Items {
             },
             "imageView" => return Vec::new(),
             "imageGeneration" => json!({
-                "sessionUpdate": "tool_call_update",
+                "sessionUpdate": UpdateKind::ToolCallUpdate,
                 "toolCallId": id,
                 "status": image_status(item, true),
                 "content": image_content(item),
                 "rawOutput": image_output(item),
             }),
             "webSearch" => json!({
-                "sessionUpdate": "tool_call_update",
+                "sessionUpdate": UpdateKind::ToolCallUpdate,
                 "toolCallId": id,
                 "title": web_search_title(item),
                 "status": "completed",
                 "rawInput": web_search_input(item),
             }),
-            "contextCompaction" => compaction(item, "tool_call_update", "completed"),
-            "collabAgentToolCall" => collaboration(item, "tool_call_update"),
+            "contextCompaction" => compaction(text(item, "id"), false, "completed", None),
+            "collabAgentToolCall" => collaboration(item, UpdateKind::ToolCallUpdate),
             _ => return Vec::new(),
         };
         vec![update]
@@ -690,7 +678,7 @@ pub(super) fn plan(params: &Value) -> Value {
             json!({ "content": step["step"], "status": status, "priority": "medium" })
         })
         .collect();
-    json!({ "sessionUpdate": "plan", "entries": entries })
+    json!({ "sessionUpdate": UpdateKind::Plan, "entries": entries })
 }
 
 /// The context window filling up, when Codex says how full it is.
@@ -698,7 +686,7 @@ pub(super) fn usage(params: &Value) -> Option<Value> {
     let usage = &params["tokenUsage"];
     let used = usage["last"]["totalTokens"].as_u64()?;
     let size = usage["modelContextWindow"].as_u64()?;
-    Some(json!({ "sessionUpdate": "usage_update", "used": used, "size": size }))
+    Some(json!({ "sessionUpdate": UpdateKind::UsageUpdate, "used": used, "size": size }))
 }
 
 /// The tokens a turn used, as Codex's adapter answers a prompt with them.

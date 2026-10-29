@@ -1,6 +1,8 @@
 //! What Muse's view items look like in the chat: the ACP session updates the
 //! other agents send for the same kind of work, so the app reads them alike.
 
+use sikemux_fold::update::compaction;
+use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -64,7 +66,7 @@ fn text_content(said: &str) -> Value {
 
 pub(super) fn agent_text(said: &str, message_id: Option<&str>) -> Value {
     let mut update = json!({
-        "sessionUpdate": "agent_message_chunk",
+        "sessionUpdate": UpdateKind::AgentMessageChunk,
         "content": { "type": "text", "text": said },
     });
     if let Some(id) = message_id {
@@ -75,7 +77,7 @@ pub(super) fn agent_text(said: &str, message_id: Option<&str>) -> Value {
 
 fn thought(said: &str, message_id: &str) -> Value {
     json!({
-        "sessionUpdate": "agent_thought_chunk",
+        "sessionUpdate": UpdateKind::AgentThoughtChunk,
         "content": { "type": "text", "text": said },
         "messageId": message_id,
     })
@@ -116,7 +118,7 @@ fn tool_call(item: &Value, cwd: &str) -> Value {
     let path = pick(&args, &PATH_KEYS);
     let base = |kind: &str, title: String| {
         json!({
-            "sessionUpdate": "tool_call",
+            "sessionUpdate": UpdateKind::ToolCall,
             "toolCallId": id,
             "kind": kind,
             "title": title,
@@ -133,7 +135,7 @@ fn tool_call(item: &Value, cwd: &str) -> Value {
     if let Some(rest) = tool.strip_prefix("mcp__") {
         let (server, name) = rest.split_once("__").unwrap_or((rest, ""));
         return json!({
-            "sessionUpdate": "tool_call",
+            "sessionUpdate": UpdateKind::ToolCall,
             "toolCallId": id,
             "kind": "other",
             "title": tool,
@@ -147,7 +149,7 @@ fn tool_call(item: &Value, cwd: &str) -> Value {
             let command = command_of(&args).unwrap_or_default();
             let cwd = pick(&args, &["cwd", "workdir", "directory"]).unwrap_or(cwd);
             json!({
-                "sessionUpdate": "tool_call",
+                "sessionUpdate": UpdateKind::ToolCall,
                 "toolCallId": id,
                 "kind": "execute",
                 "title": command,
@@ -259,7 +261,7 @@ fn tool_done(item: &Value) -> Value {
     let said = output(item);
     if matches!(tool, "bash" | "shell") {
         return json!({
-            "sessionUpdate": "tool_call_update",
+            "sessionUpdate": UpdateKind::ToolCallUpdate,
             "toolCallId": id,
             "status": status(item),
             "rawOutput": { "formatted_output": said, "exit_code": item["exitCode"] },
@@ -269,7 +271,7 @@ fn tool_done(item: &Value) -> Value {
         });
     }
     let mut update = json!({
-        "sessionUpdate": "tool_call_update",
+        "sessionUpdate": UpdateKind::ToolCallUpdate,
         "toolCallId": id,
         "status": status(item),
     });
@@ -430,7 +432,12 @@ pub(super) fn replayed(item: &Value, cwd: &str) -> Vec<Value> {
             vec![call, tool_done(item)]
         }
         "userShell" => user_shell(item, true),
-        "compaction" => vec![compaction(item, "tool_call")],
+        "compaction" => vec![compaction(
+            text_or_empty(item, "itemId"),
+            true,
+            status(item),
+            None,
+        )],
         "webSearch" => vec![web_search(item)],
         _ => Vec::new(),
     }
@@ -456,7 +463,7 @@ fn user_shell(item: &Value, done: bool) -> Vec<Value> {
     let id = text_or_empty(item, "itemId");
     let command = text_or_empty(item, "commandText");
     let mut updates = vec![json!({
-        "sessionUpdate": "tool_call",
+        "sessionUpdate": UpdateKind::ToolCall,
         "toolCallId": id,
         "kind": "execute",
         "title": command,
@@ -467,7 +474,7 @@ fn user_shell(item: &Value, done: bool) -> Vec<Value> {
     })];
     if done && settled(item) {
         updates.push(json!({
-            "sessionUpdate": "tool_call_update",
+            "sessionUpdate": UpdateKind::ToolCallUpdate,
             "toolCallId": id,
             "status": status(item),
             "rawOutput": { "formatted_output": output(item), "exit_code": item["exitCode"] },
@@ -477,24 +484,10 @@ fn user_shell(item: &Value, done: bool) -> Vec<Value> {
     updates
 }
 
-fn compaction(item: &Value, session_update: &str) -> Value {
-    let mut update = json!({
-        "sessionUpdate": session_update,
-        "toolCallId": item["itemId"],
-        "title": "Compact conversation",
-        "status": status(item),
-        "_meta": { "contextCompaction": { "version": 1 } },
-    });
-    if session_update == "tool_call" {
-        update["kind"] = json!("think");
-    }
-    update
-}
-
 fn web_search(item: &Value) -> Value {
     let query = pick(item, &["label", "text", "fallbackText"]);
     json!({
-        "sessionUpdate": "tool_call",
+        "sessionUpdate": UpdateKind::ToolCall,
         "toolCallId": item["itemId"],
         "kind": "search",
         "title": query.map_or_else(|| "Web search".to_owned(), |query| format!("Web search: {query}")),
@@ -647,7 +640,10 @@ impl Items {
                 );
             }
             "compaction" if self.shown.insert(id.clone()) => {
-                out.push((session.to_owned(), compaction(item, "tool_call")));
+                out.push((
+                    session.to_owned(),
+                    compaction(text_or_empty(item, "itemId"), true, status(item), None),
+                ));
             }
             "webSearch" if self.shown.insert(id) => {
                 out.push((session.to_owned(), web_search(item)));
@@ -721,15 +717,25 @@ impl Items {
             }
             "compaction" => {
                 if self.shown.remove(&id) {
-                    at(vec![compaction(item, "tool_call_update")])
+                    at(vec![compaction(
+                        text_or_empty(item, "itemId"),
+                        false,
+                        status(item),
+                        None,
+                    )])
                 } else {
-                    at(vec![compaction(item, "tool_call")])
+                    at(vec![compaction(
+                        text_or_empty(item, "itemId"),
+                        true,
+                        status(item),
+                        None,
+                    )])
                 }
             }
             "webSearch" => {
                 if self.shown.remove(&id) {
                     at(vec![
-                        json!({ "sessionUpdate": "tool_call_update", "toolCallId": id, "status": status(item) }),
+                        json!({ "sessionUpdate": UpdateKind::ToolCallUpdate, "toolCallId": id, "status": status(item) }),
                     ])
                 } else {
                     at(vec![web_search(item)])
@@ -765,7 +771,7 @@ impl Items {
             out.push((
                 session.to_owned(),
                 json!({
-                    "sessionUpdate": "async_task_spawned",
+                    "sessionUpdate": UpdateKind::AsyncTaskSpawned,
                     "asyncTaskId": id,
                     "name": name,
                     "taskType": task_type,

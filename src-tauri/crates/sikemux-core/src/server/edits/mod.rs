@@ -18,6 +18,7 @@ mod owners;
 mod prior;
 mod push;
 
+use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
@@ -92,10 +93,7 @@ impl Open {
     /// The files a tool call changed once `update` says it completed. An
     /// update's diffs stand for everything the call changes so far.
     pub(crate) fn note(&self, update: &Value) -> Option<(String, Changes)> {
-        if !matches!(
-            update.get("sessionUpdate").and_then(Value::as_str),
-            Some("tool_call" | "tool_call_update")
-        ) {
+        if !UpdateKind::of(update).is_some_and(UpdateKind::is_tool) {
             return None;
         }
         let id = update.get("toolCallId")?.as_str()?;

@@ -1,6 +1,7 @@
 //! A resumed session's history told to the chat as the updates it would have
 //! seen live.
 
+use sikemux_fold::UpdateKind;
 use std::collections::HashMap;
 
 use serde_json::{json, Value};
@@ -90,7 +91,7 @@ fn tell(
                     out.push((
                         session.to_owned(),
                         json!({
-                            "sessionUpdate": "user_message_chunk",
+                            "sessionUpdate": UpdateKind::UserMessageChunk,
                             "messageId": id,
                             "content": { "type": "text", "text": said },
                         }),

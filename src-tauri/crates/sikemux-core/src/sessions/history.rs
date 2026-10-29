@@ -1,6 +1,7 @@
 //! A saved OMP or OpenCode session as the updates its agent sends when it loads
 //! it, so a chat taken up again shows its conversation before the agent starts.
 
+use sikemux_fold::UpdateKind;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -24,7 +25,7 @@ fn tool_kind(name: &str) -> &'static str {
     }
 }
 
-fn chunk(kind: &str, message_id: &str, content: Value) -> Value {
+fn chunk(kind: UpdateKind, message_id: &str, content: Value) -> Value {
     json!({ "sessionUpdate": kind, "messageId": message_id, "content": content })
 }
 
@@ -86,18 +87,18 @@ pub(super) fn omp(path: &Path, cwd: &Path) -> Result<Vec<Value>, String> {
 
 fn omp_user(message: &Value, id: &str, updates: &mut Vec<Value>) {
     if let Some(said) = message["content"].as_str() {
-        updates.push(chunk("user_message_chunk", id, text(said)));
+        updates.push(chunk(UpdateKind::UserMessageChunk, id, text(said)));
         return;
     }
     for block in message["content"].as_array().into_iter().flatten() {
         match block["type"].as_str() {
             Some("text") => updates.push(chunk(
-                "user_message_chunk",
+                UpdateKind::UserMessageChunk,
                 id,
                 text(block["text"].as_str().unwrap_or_default()),
             )),
             Some("image") => updates.push(chunk(
-                "user_message_chunk",
+                UpdateKind::UserMessageChunk,
                 id,
                 json!({ "type": "image", "data": block["data"], "mimeType": block["mimeType"] }),
             )),
@@ -110,12 +111,12 @@ fn omp_assistant(message: &Value, id: &str, cwd: &Path, updates: &mut Vec<Value>
     for block in message["content"].as_array().into_iter().flatten() {
         match block["type"].as_str() {
             Some("thinking") => updates.push(chunk(
-                "agent_thought_chunk",
+                UpdateKind::AgentThoughtChunk,
                 id,
                 text(block["thinking"].as_str().unwrap_or_default()),
             )),
             Some("text") => updates.push(chunk(
-                "agent_message_chunk",
+                UpdateKind::AgentMessageChunk,
                 id,
                 text(block["text"].as_str().unwrap_or_default()),
             )),
@@ -154,7 +155,7 @@ fn omp_call(block: &Value, cwd: &Path) -> Value {
         _ => (name.to_owned(), tool_kind(name)),
     };
     let mut call = json!({
-        "sessionUpdate": "tool_call",
+        "sessionUpdate": UpdateKind::ToolCall,
         "toolCallId": block["id"],
         "title": title,
         "kind": kind,
@@ -170,7 +171,7 @@ fn omp_call(block: &Value, cwd: &Path) -> Value {
 fn omp_result(message: &Value) -> Value {
     let failed = message["isError"].as_bool().unwrap_or(false);
     json!({
-        "sessionUpdate": "tool_call_update",
+        "sessionUpdate": UpdateKind::ToolCallUpdate,
         "toolCallId": message["toolCallId"],
         "status": if failed { "failed" } else { "completed" },
         "rawOutput": { "content": message["content"], "details": message["details"] },
@@ -224,9 +225,9 @@ fn opencode_part(id: &str, role: &str, part: &Value) -> Vec<Value> {
     let said = part["text"].as_str().unwrap_or_default();
     match (part["type"].as_str(), role) {
         (Some("text"), _) if part["synthetic"].as_bool() == Some(true) => Vec::new(),
-        (Some("text"), "user") => vec![chunk("user_message_chunk", id, text(said))],
-        (Some("text"), _) => vec![chunk("agent_message_chunk", id, text(said))],
-        (Some("reasoning"), _) => vec![chunk("agent_thought_chunk", id, text(said))],
+        (Some("text"), "user") => vec![chunk(UpdateKind::UserMessageChunk, id, text(said))],
+        (Some("text"), _) => vec![chunk(UpdateKind::AgentMessageChunk, id, text(said))],
+        (Some("reasoning"), _) => vec![chunk(UpdateKind::AgentThoughtChunk, id, text(said))],
         (Some("tool"), _) => opencode_tool(part),
         _ => Vec::new(),
     }
@@ -245,7 +246,7 @@ fn opencode_tool(part: &Value) -> Vec<Value> {
             .unwrap_or(name),
     };
     let mut call = json!({
-        "sessionUpdate": "tool_call",
+        "sessionUpdate": UpdateKind::ToolCall,
         "toolCallId": part["callID"],
         "title": title,
         "kind": tool_kind(name),
@@ -265,7 +266,7 @@ fn opencode_tool(part: &Value) -> Vec<Value> {
         .or(state["error"].as_str())
         .unwrap_or_default();
     let result = json!({
-        "sessionUpdate": "tool_call_update",
+        "sessionUpdate": UpdateKind::ToolCallUpdate,
         "toolCallId": part["callID"],
         "status": status,
         "rawOutput": { "output": output },

@@ -2,6 +2,7 @@
 //! send its stopped prompt again. Each waits on a timer of its own, and the
 //! list is kept on disk so a core that restarts goes on waiting.
 
+use sikemux_fold::UpdateKind;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -248,7 +249,7 @@ pub(crate) fn cancel_by_person(core: &Core, agent_id: &str) {
             say(
                 &chat,
                 json!({
-                    "sessionUpdate": "notice",
+                    "sessionUpdate": UpdateKind::Notice,
                     "severity": "info",
                     "title": "This chat will not resume when the limit resets",
                     "resumesAt": null,
@@ -322,7 +323,7 @@ fn resume_notice(provider: &str, at: u64) -> Value {
         .find(|agent| agent.kind == provider)
         .map_or(provider, |agent| agent.label);
     json!({
-        "sessionUpdate": "notice",
+        "sessionUpdate": UpdateKind::Notice,
         "severity": "info",
         "title": format!("Resumes {} when your {agent} limit resets", when(at)),
         "description": "Sikemux sends your last message again then. Sending anything to this chat first cancels it.",

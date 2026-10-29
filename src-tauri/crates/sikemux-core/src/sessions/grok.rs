@@ -1,3 +1,4 @@
+use sikemux_fold::UpdateKind;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -120,8 +121,8 @@ fn grok_first_user(session_dir: &Path) -> Option<String> {
             let Some(update) = value.pointer("/params/update") else {
                 continue;
             };
-            match update.get("sessionUpdate").and_then(Value::as_str) {
-                Some("user_message_chunk") => {
+            match UpdateKind::of(update) {
+                Some(UpdateKind::UserMessageChunk) => {
                     if let Some(text) = update.get("content").and_then(grok_content_text) {
                         chunks.push_str(&text);
                     }
@@ -320,9 +321,9 @@ pub(super) fn grok_prose(session_dir: &Path, prose: &mut Prose) {
             return;
         };
         let (user, content) = match value.pointer("/params/update") {
-            Some(update) => match update.get("sessionUpdate").and_then(Value::as_str) {
-                Some("user_message_chunk") => (true, update.get("content")),
-                Some("agent_message_chunk") => (false, update.get("content")),
+            Some(update) => match UpdateKind::of(update) {
+                Some(UpdateKind::UserMessageChunk) => (true, update.get("content")),
+                Some(UpdateKind::AgentMessageChunk) => (false, update.get("content")),
                 _ => return,
             },
             None => match value.get("type").and_then(Value::as_str) {

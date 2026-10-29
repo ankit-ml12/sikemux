@@ -1,6 +1,7 @@
 //! How a subagent or a background task stands, in the words the chat uses,
 //! and how each agent's own words for it map onto them.
 
+use sikemux_fold::UpdateKind;
 use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
@@ -65,7 +66,7 @@ impl Subagent {
 
     /// The update that sets the card of the subagent in `session` to this.
     pub fn update(self, session: &str) -> Value {
-        json!({ "sessionUpdate": "subagent_state_update", "subagentSessionId": session, "state": self.as_str() })
+        sikemux_fold::update::subagent_state(session, self.as_str())
     }
 }
 
@@ -126,7 +127,7 @@ impl Task {
 
     /// The update that sets background task `task_id` to this.
     pub fn update(self, task_id: &str) -> Value {
-        json!({ "sessionUpdate": "async_task_state_update", "asyncTaskId": task_id, "state": self.as_str() })
+        json!({ "sessionUpdate": UpdateKind::AsyncTaskStateUpdate, "asyncTaskId": task_id, "state": self.as_str() })
     }
 }
 
@@ -146,7 +147,7 @@ pub(crate) const UNNAMED_TASK: &str = "Delegated task";
 /// The update that puts a subagent's card in the chat.
 pub(crate) fn spawned(session: &str, name: &str, task: &str) -> Value {
     json!({
-        "sessionUpdate": "subagent_spawned",
+        "sessionUpdate": UpdateKind::SubagentSpawned,
         "subagentSessionId": session,
         "name": name,
         "task": task,

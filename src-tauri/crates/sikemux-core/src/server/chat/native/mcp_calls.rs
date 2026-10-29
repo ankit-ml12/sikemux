@@ -5,6 +5,7 @@
 //! are, so the chat shows it, and a page it shows, alike.
 
 use serde_json::{json, Value};
+use sikemux_fold::UpdateKind;
 
 use crate::launch::tools::TOOLS_SERVER;
 
@@ -14,10 +15,7 @@ const TOOL_PATH: &str = "xd://mcp__";
 /// its agent's own name for it, into that tool's call. `servers` are the tool
 /// servers the chat handed its agent.
 pub(super) fn as_mcp_call(update: &mut Value, servers: &[String]) {
-    if !matches!(
-        update["sessionUpdate"].as_str(),
-        Some("tool_call" | "tool_call_update")
-    ) {
+    if !UpdateKind::of(update).is_some_and(UpdateKind::is_tool) {
         return;
     }
     if !omp_write(update, servers) {

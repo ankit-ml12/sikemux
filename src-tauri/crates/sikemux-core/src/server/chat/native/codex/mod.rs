@@ -10,6 +10,7 @@ mod items;
 mod state;
 mod subagents;
 
+use sikemux_fold::UpdateKind;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -116,7 +117,7 @@ impl Driver {
             let session = question.request["sessionId"].as_str().unwrap_or_default();
             self.sink.update(
                 session,
-                json!({ "sessionUpdate": "tool_call_update", "toolCallId": call, "status": "in_progress" }),
+                json!({ "sessionUpdate": UpdateKind::ToolCallUpdate, "toolCallId": call, "status": "in_progress" }),
             );
         }
         self.rpc
@@ -487,7 +488,7 @@ impl Codex {
             if let Some(title) = history::thread_title(thread, &turns) {
                 sink.update(
                     thread_id,
-                    json!({ "sessionUpdate": "session_info_update", "title": title }),
+                    json!({ "sessionUpdate": UpdateKind::SessionInfoUpdate, "title": title }),
                 );
                 self.driver.session.locked().titled = true;
             }
@@ -561,7 +562,7 @@ impl Codex {
         self.driver.sink.update(
             &self.kept.thread_id,
             json!({
-                "sessionUpdate": "available_commands_update",
+                "sessionUpdate": UpdateKind::AvailableCommandsUpdate,
                 "availableCommands": commands::available(&skills),
             }),
         );

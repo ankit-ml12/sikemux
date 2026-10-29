@@ -9,6 +9,7 @@ mod history;
 mod items;
 mod state;
 
+use sikemux_fold::UpdateKind;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -148,7 +149,7 @@ impl Driver {
         if !blocks.is_empty() {
             self.sink.update(
                         session,
-                        json!({ "sessionUpdate": "tool_call_update", "toolCallId": call, "content": blocks }),
+                        json!({ "sessionUpdate": UpdateKind::ToolCallUpdate, "toolCallId": call, "content": blocks }),
                     );
         }
     }
@@ -628,7 +629,7 @@ impl Muse {
         if let Some(title) = history::session_title(session) {
             driver.sink.update(
                 &session_id,
-                json!({ "sessionUpdate": "session_info_update", "title": title }),
+                json!({ "sessionUpdate": UpdateKind::SessionInfoUpdate, "title": title }),
             );
             driver.session.locked().titled = true;
         }
@@ -639,9 +640,10 @@ impl Muse {
             driver.sink.update(&session, update);
         }
         driver.session.locked().turns = history::turns(items);
-        driver
-            .sink
-            .update(&session_id, json!({ "sessionUpdate": "history_loaded" }));
+        driver.sink.update(
+            &session_id,
+            json!({ "sessionUpdate": UpdateKind::HistoryLoaded }),
+        );
     }
 
     async fn offer_commands(&mut self) {
@@ -653,7 +655,7 @@ impl Muse {
         self.driver().sink.update(
             &self.session_id(),
             json!({
-                "sessionUpdate": "available_commands_update",
+                "sessionUpdate": UpdateKind::AvailableCommandsUpdate,
                 "availableCommands": commands::available(&self.kept.skills),
             }),
         );

@@ -12,6 +12,7 @@ mod fragile;
 mod merge;
 mod watch;
 
+use sikemux_fold::UpdateKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
@@ -317,10 +318,7 @@ impl Collisions {
     /// change: a read keeps the copy the agent now has, and a file about to
     /// change is kept as it stands first. Whether a shell command began.
     pub(crate) fn saw(&self, agent_id: &str, cwd: &Path, update: &Value) -> bool {
-        if !matches!(
-            update.get("sessionUpdate").and_then(Value::as_str),
-            Some("tool_call" | "tool_call_update")
-        ) {
+        if !UpdateKind::of(update).is_some_and(UpdateKind::is_tool) {
             return false;
         }
         let Some(id) = update.get("toolCallId").and_then(Value::as_str) else {
