@@ -9,7 +9,6 @@ import {
 } from "react";
 import { currentTheme, subscribeTheme } from "./themes/bus";
 import { codeThemeName } from "./themes/codeTheme";
-import { swallow } from "./page/toast";
 import { grammarFor } from "./languages/index";
 import type { CodeLine, CodeToken } from "@shared/chat/types";
 import type { DiffLine } from "@shared/chat/types";
@@ -131,7 +130,9 @@ export function useCodeTokens(
         .then(() => {
           if (listening) redraw((count) => count + 1);
         })
-        .catch(swallow("colour a code fence"));
+        .catch((error: unknown) =>
+          console.warn("sikemux: could not colour a code fence", error),
+        );
     }, SETTLE_MS);
     return () => {
       listening = false;

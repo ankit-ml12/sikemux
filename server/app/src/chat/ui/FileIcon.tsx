@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from "react";
 import { languageOf } from "../languages/index";
-import { swallow } from "../page/toast";
 
 /** The Material file icon theme's lookup tables, as scripts/generate-file-icons.mjs writes them. */
 export interface FileIconIndex {
@@ -62,7 +61,9 @@ void fetch("/file-icons/index.json")
     tables = fileIconTables(index);
     for (const listener of tableListeners) listener();
   })
-  .catch(swallow("file icons"));
+  .catch((error: unknown) =>
+    console.warn("sikemux: could not read the file icons", error),
+  );
 
 function subscribeTables(listener: () => void) {
   tableListeners.add(listener);

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCheck, IconCopy } from "@shared/ui/Icons";
-import { reportError } from "../page/toast";
 import { copyText } from "../lib/clipboard";
 import { Tooltip } from "./Tooltip";
 
@@ -35,7 +34,8 @@ export function CopyButton({
           FEEDBACK_MS,
         );
       },
-      reportError(`copy ${label}`),
+      (error: unknown) =>
+        console.warn(`sikemux: could not copy ${label}`, error),
     );
   }, [value, label]);
 

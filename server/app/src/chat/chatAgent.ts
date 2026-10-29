@@ -1,10 +1,6 @@
 import { createContext } from "react";
-import { fsapi } from "./page/files";
-import { swallow } from "./page/toast";
 import type { Agent } from "./page/agent";
 import type { ChatMessage, SubagentCard, ToolDetail } from "@shared/chat/types";
-import { localPath } from "@shared/lib/imagePaths";
-import { openUrl } from "./page/links";
 
 export const ChatAgentContext = createContext<{
   id: string;
@@ -27,8 +23,11 @@ export const ReaderScrollContext = createContext<(deltaY: number) => void>(
   () => {},
 );
 
+const OPENABLE = new Set(["http:", "https:", "mailto:"]);
+
+/** Opens a web or mail link in a new tab; anything else names something on the sharer's computer. */
 export function openLink(href: string) {
-  const path = localPath(href);
-  if (path) void fsapi.revealInFinder(path).catch(swallow("reveal chat file"));
-  else void openUrl(href).catch(swallow("open chat link"));
+  const url = URL.parse(href);
+  if (url && OPENABLE.has(url.protocol))
+    window.open(url.href, "_blank", "noopener,noreferrer");
 }

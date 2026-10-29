@@ -1,4 +1,3 @@
-import { convertFileSrc } from "./page/files";
 import { useContext, useEffect, useRef, useState } from "react";
 import type { PageRef } from "./page/pages";
 import { currentTheme, subscribeTheme } from "./themes/bus";
@@ -56,7 +55,6 @@ export function ChatPage({ page }: { page: PageRef }) {
       <iframe
         ref={frame}
         className="chat-page-frame"
-        src={convertFileSrc(page.id, "page")}
         title={page.title}
         sandbox="allow-scripts allow-forms"
         style={{ colorScheme: dark ? "dark" : "light" }}

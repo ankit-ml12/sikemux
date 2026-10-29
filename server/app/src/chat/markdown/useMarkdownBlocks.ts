@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { markdownApi } from "../page/markdown";
-import { swallow } from "../page/toast";
 import type { MarkdownOptions, MdElement } from "@shared/markdown/types";
 
 /* A finished message is read once. A transcript scrolled back and forth mounts
@@ -161,7 +160,7 @@ class Reader {
       .then(
         (tail) => settleBlocks(previous?.blocks, skip, tail),
         (error: unknown): MdElement[] => {
-          swallow("read markdown")(error);
+          console.warn("sikemux: could not read markdown", error);
           return [{ t: "p", c: [wanted.text] }];
         },
       )
