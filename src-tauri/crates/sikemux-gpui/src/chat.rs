@@ -3341,7 +3341,9 @@ fn strip(
             .current(&agent.provider)
             .map(|profile| profile.id.clone())
     });
-    let host = match bench.chat_target(&agent.id).place() {
+    let place = bench.chat_target(&agent.id).place().clone();
+    let home = place.home();
+    let host = match &place {
         crate::hosts::Place::Account(host) => Some(bench.host_name(host)),
         crate::hosts::Place::This => None,
     };
@@ -3370,7 +3372,7 @@ fn strip(
             .map_or_else(|| folder.to_string_lossy(), |name| name.to_string_lossy())
             .into_owned()
             .into(),
-        path: tilde(folder).into(),
+        path: crate::ui::path::tilde(&folder.to_string_lossy(), home.as_deref()).into(),
         branch: project
             .filter(|_| !elsewhere)
             .and_then(|project| Some(project.git.as_ref()?.branch.clone().into())),
@@ -3642,17 +3644,6 @@ impl Workbench {
             let on = saved.permission_mode == "bypass";
             self.switch_mode(agent, if on { "workspace-write" } else { "bypass" });
         }
-    }
-}
-
-pub(crate) fn tilde(path: &std::path::Path) -> String {
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    match home
-        .as_deref()
-        .and_then(|home| path.strip_prefix(home).ok())
-    {
-        Some(rest) => format!("~/{}", rest.display()),
-        None => path.display().to_string(),
     }
 }
 

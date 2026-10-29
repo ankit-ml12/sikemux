@@ -210,7 +210,9 @@ pub fn view(
     let folder = worktree
         .as_ref()
         .and_then(|worktree| worktree["path"].as_str())
-        .map(|path| crate::chat::tilde(std::path::Path::new(path)));
+        .map(|path| {
+            crate::ui::path::tilde(path, bench.chat_target(&agent.id).place().home().as_deref())
+        });
     let who: Vec<String> = agent
         .name
         .iter()

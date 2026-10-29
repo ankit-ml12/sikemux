@@ -43,6 +43,14 @@ pub enum Place {
     Account(String),
 }
 
+impl Place {
+    /// The home folder of the host, when the app knows it. The core does not say another
+    /// host's, so for now an account host is taken to keep its home where this one does.
+    pub fn home(&self) -> Option<String> {
+        crate::ui::path::this_home()
+    }
+}
+
 pub struct HostOption {
     pub choice: HostChoice,
     pub label: SharedString,

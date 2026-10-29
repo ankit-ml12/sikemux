@@ -6,10 +6,10 @@ use std::path::Path;
 use gpui_kit::{Context, PathPromptOptions, Window};
 use serde_json::{json, Value};
 
-use crate::chat::tilde;
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::palette::{Mark, Row, Spec};
+use crate::ui::path::{this_home, tilde};
 use crate::workbench::{Strip, Workbench};
 
 #[derive(Clone, Default, PartialEq, gpui::Action)]
@@ -221,13 +221,18 @@ impl Workbench {
         let mut rows = Vec::new();
         if picking.projects() {
             let projects = self.projects();
+            let home = self.place().home();
             let from = self.moving_from().map(|(_, from)| from);
             for project in projects
                 .iter()
                 .filter(|project| Some(project.path.as_path()) != from)
             {
-                let path = tilde(&project.path);
-                let folder = project.path.parent().map(tilde).unwrap_or_default();
+                let path = tilde(&project.path.to_string_lossy(), home.as_deref());
+                let folder = project
+                    .path
+                    .parent()
+                    .map(|folder| tilde(&folder.to_string_lossy(), home.as_deref()))
+                    .unwrap_or_default();
                 rows.push(
                     Row::new(format!("{PROJECT}{}", project.id), project.name.clone())
                         .path(folder)
@@ -249,7 +254,7 @@ impl Workbench {
                 if added(path) {
                     continue;
                 }
-                let shown = tilde(Path::new(path));
+                let shown = tilde(path, this_home().as_deref());
                 let folder = shown
                     .strip_suffix(name)
                     .map(|folder| folder.trim_end_matches('/'))

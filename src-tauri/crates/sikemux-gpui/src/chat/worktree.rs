@@ -34,6 +34,7 @@ impl Workbench {
             started,
             preparing,
             on,
+            self.chat_target(agent).place().home().as_deref(),
         )?;
         let folder = project.path.to_string_lossy().into_owned();
         let asks = self.asks.clone();

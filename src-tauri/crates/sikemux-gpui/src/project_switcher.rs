@@ -15,6 +15,7 @@ use crate::core;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
+use crate::ui::path::tilde;
 use crate::workbench::Workbench;
 
 actions!(project_switcher, [Up, Down, Pick, Close]);
@@ -43,6 +44,8 @@ struct Choice {
     path: String,
     /// The project's id, when it is one already.
     project: Option<String>,
+    /// The home folder of the host the folder is on.
+    home: Option<String>,
 }
 
 /// The open switcher: its search, the row the keys are on, and the folders found on disk.
@@ -72,16 +75,6 @@ fn parent(path: &str) -> &str {
             path,
             |(parent, _)| if parent.is_empty() { "/" } else { parent },
         )
-}
-
-fn pretty(path: &str) -> String {
-    let home = sikemux_process::paths::home()
-        .map(|home| home.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    match path.strip_prefix(&home) {
-        Some(rest) if !home.is_empty() => format!("~{rest}"),
-        _ => path.to_owned(),
-    }
 }
 
 impl Switcher {
@@ -143,13 +136,15 @@ impl Switcher {
             .bench
             .upgrade()
             .map(|bench| {
+                let bench = bench.read(cx);
+                let home = bench.place().home();
                 bench
-                    .read(cx)
                     .projects()
                     .iter()
                     .map(|project| Choice {
                         path: project.path.to_string_lossy().into_owned(),
                         project: Some(project.id.clone()),
+                        home: home.clone(),
                     })
                     .collect()
             })
@@ -161,6 +156,7 @@ impl Switcher {
             .map(|path| Choice {
                 path: path.clone(),
                 project: None,
+                home: crate::ui::path::this_home(),
             })
             .collect();
         let all: Vec<Choice> = open.into_iter().chain(found).collect();
@@ -168,7 +164,10 @@ impl Switcher {
         if query.is_empty() {
             return all;
         }
-        let paths: Vec<String> = all.iter().map(|choice| pretty(&choice.path)).collect();
+        let paths: Vec<String> = all
+            .iter()
+            .map(|choice| tilde(&choice.path, choice.home.as_deref()))
+            .collect();
         crate::fuzzy::rank_paths(&query, &paths, all.len())
             .into_iter()
             .map(|at| all[at].clone())
@@ -285,7 +284,7 @@ impl Render for Switcher {
                             .truncate()
                             .text_size(crate::theme::ui_text(11.5))
                             .text_color(t.text_tertiary)
-                            .child(pretty(parent(&choice.path))),
+                            .child(tilde(parent(&choice.path), choice.home.as_deref())),
                     )
                     .when(here, |row| {
                         row.child(ui::icon(Icon::Check, 12.).text_color(t.text_secondary))

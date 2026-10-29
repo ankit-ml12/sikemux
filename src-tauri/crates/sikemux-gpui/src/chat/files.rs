@@ -215,7 +215,7 @@ impl Files {
             .target
             .as_ref()
             .is_some_and(|target| *target.place() == Place::This);
-        here.then(|| std::env::var("HOME").ok()).flatten()
+        here.then(crate::ui::path::this_home).flatten()
     }
 
     /// `path` as the chat would write it: within its folder from there, else from home.
@@ -225,12 +225,7 @@ impl Files {
                 .and_then(|rest| rest.strip_prefix('/'))
                 .map(str::to_owned)
         };
-        within(&self.cwd)
-            .or_else(|| {
-                let home = self.home()?;
-                within(&home).map(|rest| format!("~/{rest}"))
-            })
-            .unwrap_or_else(|| path.to_owned())
+        within(&self.cwd).unwrap_or_else(|| crate::ui::path::tilde(path, self.home().as_deref()))
     }
 
     /// Where `name` points, given the chat's folder.

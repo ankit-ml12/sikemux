@@ -10,7 +10,6 @@ use gpui_kit::{
 
 use serde_json::json;
 
-use crate::chat::tilde;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
@@ -184,7 +183,11 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                 Some(project) => (
                     Icon::Folder,
                     project.name.clone().into(),
-                    tilde(&project.path).into(),
+                    crate::ui::path::tilde(
+                        &project.path.to_string_lossy(),
+                        bench.place().home().as_deref(),
+                    )
+                    .into(),
                 ),
                 None => (Icon::Folder, id.clone().into(), SharedString::default()),
             },

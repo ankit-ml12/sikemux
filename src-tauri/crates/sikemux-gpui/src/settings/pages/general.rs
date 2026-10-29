@@ -133,17 +133,6 @@ fn add_typed(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
     .detach();
 }
 
-/// The folder as the person writes it, under ~ when it is in their home.
-fn pretty(path: &str) -> String {
-    let home = sikemux_process::paths::home()
-        .map(|home| home.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    match path.strip_prefix(&home) {
-        Some(rest) if !home.is_empty() => format!("~{rest}"),
-        _ => path.to_owned(),
-    }
-}
-
 /// − and + around a depth, from 0 to the deepest the core searches.
 fn stepper(
     id: &'static str,
@@ -222,7 +211,10 @@ pub fn render(
                     .font_family(theme::MONO)
                     .text_size(crate::theme::ui_text(12.))
                     .text_color(t.text_primary)
-                    .child(pretty(&root.path)),
+                    .child(crate::ui::path::tilde(
+                        &root.path,
+                        crate::ui::path::this_home().as_deref(),
+                    )),
             )
             .child(
                 div().w(px(INDEX_COLUMN)).flex().justify_center().child(

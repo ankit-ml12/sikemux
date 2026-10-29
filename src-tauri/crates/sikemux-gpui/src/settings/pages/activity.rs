@@ -268,16 +268,6 @@ fn agent_label(bench: &Workbench, agent: &str) -> String {
         .to_owned()
 }
 
-fn pretty(path: &str) -> String {
-    let home = sikemux_process::paths::home()
-        .map(|home| home.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    match path.strip_prefix(&home) {
-        Some(rest) if !home.is_empty() => format!("~{rest}"),
-        _ => path.to_owned(),
-    }
-}
-
 fn shares(bench: &Workbench, shares: &[Value], agents: bool, key: &str, cx: &App) -> AnyElement {
     let t = Tokens::get(cx).clone();
     if shares.is_empty() {
@@ -311,7 +301,10 @@ fn shares(bench: &Workbench, shares: &[Value], agents: bool, key: &str, cx: &App
                         .file_name()
                         .map(|base| base.to_string_lossy().into_owned())
                         .unwrap_or_else(|| name.to_owned()),
-                    Some(pretty(name)),
+                    Some(crate::ui::path::tilde(
+                        name,
+                        crate::ui::path::this_home().as_deref(),
+                    )),
                 ),
             };
             share_row(

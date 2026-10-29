@@ -22,8 +22,12 @@ pub enum Switch {
     Choosing { on: bool },
     /// The worktree is being made, at `step`.
     Preparing { step: String },
-    /// It works in the worktree on `branch` at `path`.
-    In { branch: String, path: String },
+    /// It works in the worktree on `branch` at `path`, which reads as `shown`.
+    In {
+        branch: String,
+        path: String,
+        shown: String,
+    },
 }
 
 /// The switch a chat shows, or none for one that has started outside a worktree or is not
@@ -34,6 +38,7 @@ pub fn state(
     started: bool,
     preparing: Option<&str>,
     on: bool,
+    home: Option<&str>,
 ) -> Option<Switch> {
     if let Some(step) = preparing {
         return Some(Switch::Preparing {
@@ -41,9 +46,11 @@ pub fn state(
         });
     }
     if let Some(worktree) = worktree {
+        let path = worktree["path"].as_str().unwrap_or_default();
         return Some(Switch::In {
             branch: worktree["branch"].as_str().unwrap_or_default().to_owned(),
-            path: worktree["path"].as_str().unwrap_or_default().to_owned(),
+            path: path.to_owned(),
+            shown: crate::ui::path::tilde(path, home),
         });
     }
     (is_repo && !started).then_some(Switch::Choosing { on })
@@ -54,7 +61,7 @@ fn about(switch: &Switch) -> String {
         Switch::Choosing { on: true } => "The first message starts this chat in a new git worktree on its own branch. Click to stay in the project folder.".into(),
         Switch::Choosing { on: false } => "Click to start this chat in a new git worktree on its own branch.".into(),
         Switch::Preparing { step } => format!("{step}…"),
-        Switch::In { branch, path } => format!("Working in worktree {branch} at {path}"),
+        Switch::In { branch, path, .. } => format!("Working in worktree {branch} at {path}"),
     }
 }
 
@@ -119,8 +126,7 @@ pub fn note(switch: &Switch, cx: &App) -> Option<AnyElement> {
     match switch {
         Switch::Choosing { .. } => None,
         Switch::Preparing { step } => Some(note.child(format!("{step}…")).into_any_element()),
-        Switch::In { branch, path } => {
-            let path = crate::chat::tilde(std::path::Path::new(path));
+        Switch::In { branch, shown, .. } => {
             let tile = div()
                 .flex_none()
                 .size(px(30.))
@@ -162,8 +168,8 @@ pub fn note(switch: &Switch, cx: &App) -> Option<AnyElement> {
                     div()
                         .id("worktree-note-path")
                         .min_w_0()
-                        .tooltip(ui::tooltip(path.clone()))
-                        .child(ui::mono(path, 11., cx).truncate()),
+                        .tooltip(ui::tooltip(shown.clone()))
+                        .child(ui::mono(shown.clone(), 11., cx).truncate()),
                 );
             Some(
                 note.flex()
