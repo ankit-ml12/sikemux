@@ -50,6 +50,33 @@ pub struct PinnedFile {
     pub sha256: String,
 }
 
+impl PinnedFile {
+    /// The helper program the crate's build script recorded, from the `SIKEMUX_HELPER_*`
+    /// values it set; none for a build without one.
+    pub fn recorded(asset: Option<&str>, size: Option<&str>, sha256: Option<&str>) -> Option<Self> {
+        Some(Self {
+            path: asset?.into(),
+            size: size?.parse().ok()?,
+            sha256: sha256?.into(),
+        })
+    }
+
+    /// Where release `version` publishes the file.
+    pub fn release_url(&self, version: &str) -> String {
+        format!(
+            "https://github.com/nodelike/sikemux/releases/download/v{version}/{}",
+            self.path
+        )
+    }
+
+    /// Whether the file at `path` is this one, by its size and then its hash. Blocks while
+    /// it hashes.
+    pub fn is_at(&self, path: &Path) -> bool {
+        std::fs::metadata(path).is_ok_and(|meta| meta.len() == self.size)
+            && hash_file(path).is_ok_and(|hash| hash == self.sha256)
+    }
+}
+
 pub fn hash_file(path: &Path) -> std::io::Result<String> {
     Ok(hex::encode(hasher_over(path)?.finalize()))
 }
@@ -72,9 +99,10 @@ pub async fn matches(path: &Path, file: &PinnedFile) -> bool {
     if std::fs::metadata(path).map(|meta| meta.len()).ok() != Some(file.size) {
         return false;
     }
-    let path = path.to_path_buf();
-    let hash = tokio::task::spawn_blocking(move || hash_file(&path)).await;
-    matches!(hash, Ok(Ok(hash)) if hash == file.sha256)
+    let (path, file) = (path.to_path_buf(), file.clone());
+    tokio::task::spawn_blocking(move || file.is_at(&path))
+        .await
+        .unwrap_or(false)
 }
 
 pub async fn download(

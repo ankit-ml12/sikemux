@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
-use sikemux_core::download::{self, hash_file, DownloadError, PinnedFile};
+use sikemux_core::download::{self, DownloadError, PinnedFile};
 
 const MANIFEST: &str = include_str!("../../../voice-models.json");
 /// Holds the hash of the manifest the models were last checked against.
@@ -46,11 +46,11 @@ fn published_helper() -> Option<&'static PinnedFile> {
     static HELPER: OnceLock<Option<PinnedFile>> = OnceLock::new();
     HELPER
         .get_or_init(|| {
-            Some(PinnedFile {
-                path: option_env!("SIKEMUX_VOICE_HELPER_ASSET")?.into(),
-                size: option_env!("SIKEMUX_VOICE_HELPER_SIZE")?.parse().ok()?,
-                sha256: option_env!("SIKEMUX_VOICE_HELPER_SHA256")?.into(),
-            })
+            PinnedFile::recorded(
+                option_env!("SIKEMUX_HELPER_ASSET"),
+                option_env!("SIKEMUX_HELPER_SIZE"),
+                option_env!("SIKEMUX_HELPER_SHA256"),
+            )
         })
         .as_ref()
 }
@@ -63,22 +63,8 @@ pub fn helper_path(dir: &Path) -> PathBuf {
     dir.join(HELPER_FILE)
 }
 
-fn helper_url(helper: &PinnedFile) -> String {
-    format!(
-        "https://github.com/nodelike/sikemux/releases/download/v{}/{}",
-        env!("CARGO_PKG_VERSION"),
-        helper.path
-    )
-}
-
 fn models_verified(dir: &Path) -> bool {
     std::fs::read_to_string(dir.join(VERIFIED_MARKER)).is_ok_and(|hash| hash == manifest_hash())
-}
-
-fn helper_matches(dir: &Path, helper: &PinnedFile) -> bool {
-    let path = helper_path(dir);
-    std::fs::metadata(&path).is_ok_and(|meta| meta.len() == helper.size)
-        && hash_file(&path).is_ok_and(|hash| hash == helper.sha256)
 }
 
 /// Why the models or the helper are not in place.
@@ -112,7 +98,8 @@ impl From<std::io::Error> for Missing {
 /// helper of its own beside the app.
 pub fn installed(dir: &Path, with_helper: bool) -> bool {
     models_verified(dir)
-        && (!with_helper || published_helper().is_some_and(|helper| helper_matches(dir, helper)))
+        && (!with_helper
+            || published_helper().is_some_and(|helper| helper.is_at(&helper_path(dir))))
 }
 
 /// Makes every model file under `dir` match the manifest, downloading the ones
@@ -181,9 +168,12 @@ pub async fn ensure(
     }
     if let Some(helper) = helper_to_fetch {
         let destination = helper_path(dir);
-        download::download_executable(&helper_url(helper), &destination, helper, |bytes| {
-            report(done + bytes)
-        })
+        download::download_executable(
+            &helper.release_url(env!("CARGO_PKG_VERSION")),
+            &destination,
+            helper,
+            |bytes| report(done + bytes),
+        )
         .await?;
         report(done + helper.size);
     }
@@ -253,10 +243,10 @@ mod tests {
             size: 6,
             sha256: hex::encode(Sha256::digest(b"helper")),
         };
-        assert!(!helper_matches(dir.path(), &helper));
+        assert!(!helper.is_at(&helper_path(dir.path())));
         std::fs::write(helper_path(dir.path()), b"helper").unwrap();
-        assert!(helper_matches(dir.path(), &helper));
+        assert!(helper.is_at(&helper_path(dir.path())));
         std::fs::write(helper_path(dir.path()), b"helpex").unwrap();
-        assert!(!helper_matches(dir.path(), &helper));
+        assert!(!helper.is_at(&helper_path(dir.path())));
     }
 }

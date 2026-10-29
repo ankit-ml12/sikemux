@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -322,11 +322,11 @@ pub fn local_helper() -> Option<PathBuf> {
 
 /// The helper published beside this release, which the app downloads the first time it is needed.
 pub fn published_helper() -> Option<PinnedFile> {
-    Some(PinnedFile {
-        path: option_env!("SIKEMUX_SIM_HELPER_ASSET")?.into(),
-        size: option_env!("SIKEMUX_SIM_HELPER_SIZE")?.parse().ok()?,
-        sha256: option_env!("SIKEMUX_SIM_HELPER_SHA256")?.into(),
-    })
+    PinnedFile::recorded(
+        option_env!("SIKEMUX_HELPER_ASSET"),
+        option_env!("SIKEMUX_HELPER_SIZE"),
+        option_env!("SIKEMUX_HELPER_SHA256"),
+    )
 }
 
 fn downloaded_helper(host: &dyn Host) -> SimResult<PathBuf> {
@@ -335,11 +335,6 @@ fn downloaded_helper(host: &dyn Host) -> SimResult<PathBuf> {
         .ok_or("the simulator's data directory is unavailable")?
         .join("sim")
         .join("sikemux-sim"))
-}
-
-fn matches(path: &Path, size: u64, sha256: &str) -> bool {
-    std::fs::metadata(path).is_ok_and(|meta| meta.len() == size)
-        && download::hash_file(path).is_ok_and(|hash| hash == sha256)
 }
 
 /// The downloaded helper once its hash was checked. Holding the lock also keeps
@@ -376,16 +371,8 @@ pub async fn executable(host: &dyn Host) -> SimResult<PathBuf> {
     }
     let helper = published_helper().ok_or("This build does not include the simulator helper.")?;
     let destination = downloaded_helper(host)?;
-    let (check, size, sha256) = (destination.clone(), helper.size, helper.sha256.clone());
-    let present = tokio::task::spawn_blocking(move || matches(&check, size, &sha256))
-        .await
-        .unwrap_or(false);
-    if !present {
-        let url = format!(
-            "https://github.com/nodelike/sikemux/releases/download/v{}/{}",
-            env!("CARGO_PKG_VERSION"),
-            helper.path
-        );
+    if !download::matches(&destination, &helper).await {
+        let url = helper.release_url(env!("CARGO_PKG_VERSION"));
         let mut reported = 0.0;
         download::download_executable(&url, &destination, &helper, |bytes| {
             let fraction = bytes as f64 / helper.size as f64;
