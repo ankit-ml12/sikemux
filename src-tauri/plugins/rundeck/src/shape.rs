@@ -1,7 +1,7 @@
 //! How the pane reads Rundeck's names: folders from a job's group, which
 //! folders and projects are production, and how a run's status went.
 
-use sikemux_plugin_api::rundeck::{EnvTone, RunSummary, StatusKind};
+use sikemux_plugin_rundeck_views::{EnvTone, RunSummary, StatusKind};
 
 use crate::executions::ExecSummary;
 

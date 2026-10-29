@@ -3,7 +3,7 @@
 
 use serde::Deserialize;
 use serde_json::Value;
-use sikemux_plugin_api::database::{CopyFormat, QueryOutcome, ResultColumn, ResultSet};
+use sikemux_plugin_database_views::{CopyFormat, QueryOutcome, ResultColumn, ResultSet};
 
 use crate::values;
 

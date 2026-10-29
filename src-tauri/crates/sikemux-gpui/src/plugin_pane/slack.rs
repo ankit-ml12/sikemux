@@ -14,7 +14,7 @@ use gpui_kit::{
 use gpui_transcript::{Markdown, Pen};
 use serde::Deserialize;
 use serde_json::json;
-use sikemux_wire::slack::{Channel, ChannelKind, Channels, History, Message, OpenThread};
+use sikemux_plugin_slack_views::{Channel, ChannelKind, Channels, History, Message, OpenThread};
 
 use super::{after, listen, Failure, Host, Panel, PluginPane};
 use crate::icons::Icon;

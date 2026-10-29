@@ -16,7 +16,7 @@ use gpui_kit::{
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use sikemux_wire::signoz::{
+use sikemux_plugin_signoz_views::{
     Dashboard, DashboardSummary, LogLine, LogPage, Panel as Chart, PanelData, Point, ServicePage,
     ServiceSort, Services, TailTick, Trace, TracePage, TraceSummary, VolumeBucket,
 };
@@ -3628,7 +3628,7 @@ fn series_ink(index: usize, cx: &App) -> Hsla {
 /// Every series of a panel over time, each in its own colour, the points lined up by moment.
 fn series_chart(
     index: usize,
-    series: &[sikemux_wire::signoz::Series],
+    series: &[sikemux_plugin_signoz_views::Series],
     unit: &str,
     cx: &App,
 ) -> AnyElement {

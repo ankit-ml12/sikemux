@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use sikemux_plugin_api::slack::{OpenThread, Thread};
+use sikemux_plugin_slack_views::{OpenThread, Thread};
 
 use crate::error::SlackResult;
 use crate::slack::{self, ThreadRef, THREAD_MAX};
@@ -47,7 +47,7 @@ fn for_agent(thread: &Thread, place: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use sikemux_plugin_api::slack::Message;
+    use sikemux_plugin_slack_views::Message;
 
     use super::*;
 

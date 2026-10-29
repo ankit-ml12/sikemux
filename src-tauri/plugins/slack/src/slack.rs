@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sikemux_plugin_api::slack::{Channel, ChannelKind, Channels, History, Message, Thread};
+use sikemux_plugin_slack_views::{Channel, ChannelKind, Channels, History, Message, Thread};
 use sikemux_process::sync::Locked;
 
 use crate::client::Session;

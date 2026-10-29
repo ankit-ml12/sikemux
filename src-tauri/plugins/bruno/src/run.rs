@@ -9,7 +9,7 @@ use std::path::Path;
 use base64::Engine as _;
 use serde::Deserialize;
 use serde_json::Value;
-use sikemux_plugin_api::bruno::{
+use sikemux_plugin_bruno_views::{
     Auth, AuthMode, BodyMode, Check, Env, Header, KeyPlacement, KeyVal, Request, Response,
     RunResult, Scope, ScriptLog, Sent,
 };
@@ -565,7 +565,7 @@ pub async fn run(ask: RunAsk) -> BrunoResult<RunResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sikemux_plugin_api::bruno::{BasicAuth, BearerAuth};
+    use sikemux_plugin_bruno_views::{BasicAuth, BearerAuth};
 
     fn auth(mode: AuthMode) -> Auth {
         Auth {

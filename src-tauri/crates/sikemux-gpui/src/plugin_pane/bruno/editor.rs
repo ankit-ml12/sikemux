@@ -4,7 +4,7 @@
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::{App, AppContext, Context, Entity, Subscription, Window};
-use sikemux_wire::bruno::{AuthMode, BodyMode, HttpMethod, KeyPlacement, KeyVal, Request};
+use sikemux_plugin_bruno_views::{AuthMode, BodyMode, HttpMethod, KeyPlacement, KeyVal, Request};
 
 use super::{Bruno, PluginPane};
 

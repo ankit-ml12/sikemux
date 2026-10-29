@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sikemux_plugin_api::database::ProfileDraft;
+use sikemux_plugin_database_views::ProfileDraft;
 
 use crate::connections::{Access, Pool};
 use crate::engines::Session;

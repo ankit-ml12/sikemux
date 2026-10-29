@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use serde::Deserialize;
-use sikemux_plugin_api::rundeck::{
+use sikemux_plugin_rundeck_views::{
     DeployForm, JobOption, OptionKind, Plan, PlanCheck, RunCheck, Tone,
 };
 

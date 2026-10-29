@@ -2,7 +2,7 @@
 // key/value rows or verbatim text, and `name [ … ]` holding a list. Blocks the model knows are
 // folded into it; the rest are kept as written so saving gives them back unchanged.
 
-use sikemux_plugin_api::bruno::{
+use sikemux_plugin_bruno_views::{
     Auth, AuthMode, Body, BodyMode, Env, HttpMethod, KeyPlacement, KeyVal, Meta, RawBlock, Request,
     RequestSettings, Scope,
 };

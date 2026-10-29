@@ -10,7 +10,7 @@ use crate::client;
 use crate::error::{SignozError, SignozResult};
 use crate::filter::Scope;
 use crate::query::{self, all_of, quote, View};
-pub use sikemux_plugin_api::signoz::{LogLine, LogPage, TailTick, VolumeBucket};
+pub use sikemux_plugin_signoz_views::{LogLine, LogPage, TailTick, VolumeBucket};
 
 const DEFAULT_LIMIT: u32 = 30;
 const MAX_LIMIT: u32 = 500;

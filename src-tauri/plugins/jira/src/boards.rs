@@ -9,7 +9,7 @@ use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sikemux_plugin_api::http;
-use sikemux_plugin_api::jira::{Board, BoardView, Column, Sprint};
+use sikemux_plugin_jira_views::{Board, BoardView, Column, Sprint};
 
 use crate::auth;
 use crate::client::{self, Credentials};

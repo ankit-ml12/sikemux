@@ -8,7 +8,7 @@ use crate::client;
 use crate::error::{SignozError, SignozResult};
 use crate::filter::Scope;
 use crate::query::{self, quote, round_ms, View};
-pub use sikemux_plugin_api::signoz::{Trace, TracePage, TraceSpan, TraceSummary};
+pub use sikemux_plugin_signoz_views::{Trace, TracePage, TraceSpan, TraceSummary};
 
 const MAX_SPANS: u32 = 5_000;
 const DEFAULT_LOOKBACK_MINUTES: u32 = 24 * 60;

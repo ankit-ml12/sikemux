@@ -14,7 +14,7 @@ use gpui_kit::{
 use serde::Deserialize;
 use std::rc::Rc;
 use serde_json::{json, Value};
-use sikemux_wire::vercel::{
+use sikemux_plugin_vercel_views::{
     Deployment, Deployments, Domains, LogLine, OpenLog, Production, Project, Projects, Target,
     Variables,
 };

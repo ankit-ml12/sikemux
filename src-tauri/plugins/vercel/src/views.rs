@@ -5,7 +5,9 @@
 use std::path::Path;
 
 use serde::Deserialize;
-use sikemux_plugin_api::vercel::{Deployments, Domains, Log, OpenLog, Projects, Target, Variables};
+use sikemux_plugin_vercel_views::{
+    Deployments, Domains, Log, OpenLog, Projects, Target, Variables,
+};
 
 use crate::deployments::{self, LogRef};
 use crate::error::VercelResult;
@@ -142,7 +144,7 @@ fn for_agent(log: &Log) -> String {
 
 #[cfg(test)]
 mod tests {
-    use sikemux_plugin_api::vercel::{Deployment, LogLine};
+    use sikemux_plugin_vercel_views::{Deployment, LogLine};
 
     use super::*;
 

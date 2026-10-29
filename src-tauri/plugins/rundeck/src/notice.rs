@@ -1,6 +1,6 @@
 //! What the person is told when a run they started ends.
 
-use sikemux_plugin_api::rundeck::RunNotice;
+use sikemux_plugin_rundeck_views::RunNotice;
 
 use crate::executions::{deployed_branch, Execution};
 use crate::shape::{display_status, duration_words, group_segments};

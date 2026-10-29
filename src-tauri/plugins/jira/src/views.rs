@@ -4,7 +4,7 @@
 //! the pace the manifest gives.
 
 use serde::Deserialize;
-use sikemux_plugin_api::jira::{
+use sikemux_plugin_jira_views::{
     Activity, Board, BoardPage, BoardPerson, BoardView, Change, Column, Comment, IssueList,
     IssueListKind, IssueSummary, IssueView, Space, Spaces, StatusCount, Swimlane,
 };
@@ -344,7 +344,7 @@ pub async fn issue_view(data_dir: &Path, request: IssueRequest) -> JiraResult<Is
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sikemux_plugin_api::jira::Person;
+    use sikemux_plugin_jira_views::Person;
 
     fn issue(key: &str, status: &str, category: &str, assignee: Option<&str>) -> IssueSummary {
         IssueSummary {

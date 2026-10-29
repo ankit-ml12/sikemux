@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 sikemux-plugin-api = { path = "../../crates/sikemux-plugin-api" }
+sikemux-plugin-rundeck-views = { path = "views" }
 sikemux-process = { path = "../../crates/sikemux-process" }
 sikemux-keychain = { path = "../../crates/sikemux-keychain" }
 serde = { version = "1", features = ["derive"] }

@@ -2,7 +2,7 @@
 //! with, and every job to search.
 
 use serde::Deserialize;
-use sikemux_plugin_api::rundeck::{DeployTarget, JobCatalog, JobPlace, LastRun};
+use sikemux_plugin_rundeck_views::{DeployTarget, JobCatalog, JobPlace, LastRun};
 
 use crate::client::Session;
 use crate::config::Settings;

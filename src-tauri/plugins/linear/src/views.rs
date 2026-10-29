@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::Value;
-use sikemux_plugin_api::linear::{Comment, IssueList, IssueRow, IssueView, Label, State};
+use sikemux_plugin_linear_views::{Comment, IssueList, IssueRow, IssueView, Label, State};
 
 use crate::error::LinearResult;
 use crate::issues::{self, IssueRef, Listing};

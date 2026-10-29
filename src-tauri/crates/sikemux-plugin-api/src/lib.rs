@@ -3,16 +3,7 @@
 //! same plugin can later run in its own process without changing.
 
 pub mod account;
-pub use sikemux_wire::aws;
-pub use sikemux_wire::bruno;
 pub use sikemux_wire::codehost;
-pub use sikemux_wire::database;
-pub use sikemux_wire::jira;
-pub use sikemux_wire::linear;
-pub use sikemux_wire::rundeck;
-pub use sikemux_wire::signoz;
-pub use sikemux_wire::slack;
-pub use sikemux_wire::vercel;
 mod error;
 pub mod http;
 pub mod images;

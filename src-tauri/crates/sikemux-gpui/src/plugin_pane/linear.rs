@@ -12,7 +12,7 @@ use gpui_kit::{
 };
 use gpui_transcript::{Markdown, Pen};
 use serde_json::{json, Value};
-use sikemux_wire::linear::{IssueList, IssueRow, IssueView};
+use sikemux_plugin_linear_views::{IssueList, IssueRow, IssueView};
 
 use super::{Failure, Host, Panel, PluginPane};
 use crate::codehost::ago;

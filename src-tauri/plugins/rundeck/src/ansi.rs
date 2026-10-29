@@ -2,7 +2,7 @@
 //! same parser the terminal uses. Codes that move the cursor or set a title are
 //! dropped.
 
-use sikemux_plugin_api::rundeck::{StyledText, TermColor};
+use sikemux_plugin_rundeck_views::{StyledText, TermColor};
 use vte::ansi::{Attr, Color, Handler, NamedColor, Processor};
 
 #[derive(Default)]

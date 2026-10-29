@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::Value;
-use sikemux_plugin_api::vercel::{Domain, Production, Project, Variable};
+use sikemux_plugin_vercel_views::{Domain, Production, Project, Variable};
 
 use crate::client::{at, number, some_text, text, Session};
 use crate::error::{VercelError, VercelResult};

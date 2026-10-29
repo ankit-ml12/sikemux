@@ -8996,6 +8996,15 @@ dependencies = [
  "sikemux-keychain",
  "sikemux-linked",
  "sikemux-markdown",
+ "sikemux-plugin-aws-views",
+ "sikemux-plugin-bruno-views",
+ "sikemux-plugin-database-views",
+ "sikemux-plugin-jira-views",
+ "sikemux-plugin-linear-views",
+ "sikemux-plugin-rundeck-views",
+ "sikemux-plugin-signoz-views",
+ "sikemux-plugin-slack-views",
+ "sikemux-plugin-vercel-views",
  "sikemux-process",
  "sikemux-simulator",
  "sikemux-voice",
@@ -9091,6 +9100,79 @@ dependencies = [
  "sikemux-wire",
  "tokio",
  "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-aws-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-bruno-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-database-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-jira-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-linear-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-rundeck-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-signoz-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-slack-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-vercel-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "workspace-hack",
 ]
 

@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 sikemux-plugin-api = { path = "../../crates/sikemux-plugin-api" }
+sikemux-plugin-linear-views = { path = "views" }
 sikemux-keychain = { path = "../../crates/sikemux-keychain" }
 url = "2"
 serde = { version = "1", features = ["derive"] }

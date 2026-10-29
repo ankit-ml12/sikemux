@@ -6,8 +6,8 @@ use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::aws::{LogLevel, LogLine};
 use sikemux_plugin_api::{reply, PluginResult, StreamSink};
+use sikemux_plugin_aws_views::{LogLevel, LogLine};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 

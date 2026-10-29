@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use sikemux_plugin_api::bruno::{
+use sikemux_plugin_bruno_views::{
     Collection, Env, KnownWorkspace, KnownWorkspaces, Request, RequestView, Scope, TreeNode,
 };
 

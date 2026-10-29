@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sikemux_plugin_api::bruno::{Check, ScriptLog};
+use sikemux_plugin_bruno_views::{Check, ScriptLog};
 
 use crate::send::{BruBodyWire, BruSendRequest, BruTrust};
 

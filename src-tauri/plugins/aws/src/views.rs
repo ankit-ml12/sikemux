@@ -4,12 +4,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use sikemux_plugin_api::aws::{
+use sikemux_plugin_api::PluginContext;
+use sikemux_plugin_aws_views::{
     Account, AccountProfile, AgentProfiles, Billing, BillingChange, BillingCharge, BillingMonth,
     Ec2, Ec2Instance, EcsClusterRow, EcsClusters, EcsEnv, EcsServiceRow, EcsServices, EcsTaskRow,
     EcsTasks, Health, Lambda, LambdaFunction, RuntimeFamily, S3Bucket, Sqs, SqsQueue, S3,
 };
-use sikemux_plugin_api::PluginContext;
 
 use crate::agent_profile::AgentProfileSource;
 use crate::common::Target;

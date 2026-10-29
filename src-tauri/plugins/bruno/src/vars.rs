@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use sikemux_plugin_api::bruno::{Env, KeyVal, Scope};
+use sikemux_plugin_bruno_views::{Env, KeyVal, Scope};
 
 pub type Vars = BTreeMap<String, String>;
 
@@ -93,7 +93,7 @@ fn fill(text: &str, vars: &Vars) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sikemux_plugin_api::bruno::Vars as ScopeVars;
+    use sikemux_plugin_bruno_views::Vars as ScopeVars;
 
     fn vars(pairs: &[(&str, &str)]) -> Vars {
         pairs

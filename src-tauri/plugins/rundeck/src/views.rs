@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use futures::future::try_join;
 use serde::Deserialize;
-use sikemux_plugin_api::rundeck::{
+use sikemux_plugin_rundeck_views::{
     ActivityPage, ExecutionPage, GroupNode, JobPage, JobRow, Jobs, LiveRun, LiveStep, Run, RunStep,
     Section, StatusKind, StepState, Tree, TreeProject,
 };

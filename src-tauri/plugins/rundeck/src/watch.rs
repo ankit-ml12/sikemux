@@ -5,8 +5,8 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::rundeck::RunNotice;
 use sikemux_plugin_api::{reply, PluginResult, StreamSink};
+use sikemux_plugin_rundeck_views::RunNotice;
 use tokio::time::sleep;
 
 use crate::client::{get_json, Session};

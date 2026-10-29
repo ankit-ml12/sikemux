@@ -15,7 +15,7 @@ use gpui_kit::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use sikemux_wire::database::{Engine, ProfileDraft, ProfileForm};
+use sikemux_plugin_database_views::{Engine, ProfileDraft, ProfileForm};
 
 use super::{Database, Host, PluginPane};
 use crate::hosts::Place;
@@ -199,7 +199,7 @@ impl Form {
                 .cloned()
         };
         if let (Some(was), Some(now)) = (choice(self.engine), choice(engine)) {
-            let port = |choice: &sikemux_wire::database::EngineChoice| {
+            let port = |choice: &sikemux_plugin_database_views::EngineChoice| {
                 choice.default_port.map(|port| port.to_string())
             };
             for (input, was, now) in [

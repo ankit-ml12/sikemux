@@ -5493,9 +5493,18 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-plugin-api",
+ "sikemux-plugin-aws-views",
  "sikemux-process",
  "time",
  "tokio",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-aws-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "workspace-hack",
 ]
 
@@ -5529,9 +5538,18 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-plugin-api",
+ "sikemux-plugin-bruno-views",
  "tempfile",
  "tokio",
  "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-bruno-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "workspace-hack",
 ]
 
@@ -5549,11 +5567,20 @@ dependencies = [
  "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
+ "sikemux-plugin-database-views",
  "sikemux-process",
  "tokio",
  "tokio-postgres",
  "tokio-rustls",
  "uuid",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-database-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "workspace-hack",
 ]
 
@@ -5599,10 +5626,19 @@ dependencies = [
  "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
+ "sikemux-plugin-jira-views",
  "sikemux-process",
  "time",
  "tokio",
  "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-jira-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "workspace-hack",
 ]
 
@@ -5616,8 +5652,17 @@ dependencies = [
  "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
+ "sikemux-plugin-linear-views",
  "tokio",
  "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-linear-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "workspace-hack",
 ]
 
@@ -5633,10 +5678,19 @@ dependencies = [
  "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
+ "sikemux-plugin-rundeck-views",
  "sikemux-process",
  "tokio",
  "url",
  "vte",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-rundeck-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "workspace-hack",
 ]
 
@@ -5649,10 +5703,20 @@ dependencies = [
  "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
+ "sikemux-plugin-signoz-views",
  "sikemux-process",
  "time",
  "tokio",
  "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-signoz-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
  "workspace-hack",
 ]
 
@@ -5667,9 +5731,18 @@ dependencies = [
  "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
+ "sikemux-plugin-slack-views",
  "sikemux-process",
  "time",
  "tokio",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-slack-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "workspace-hack",
 ]
 
@@ -5683,7 +5756,16 @@ dependencies = [
  "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
+ "sikemux-plugin-vercel-views",
  "tokio",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-vercel-views"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "workspace-hack",
 ]
 

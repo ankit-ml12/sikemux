@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use futures_util::future::join_all;
 use serde::Deserialize;
-use sikemux_plugin_api::database::{
+use sikemux_plugin_database_views::{
     Connection, Engine, Explorer, Fact, ForeignKeyRow, History, HistoryEntry, IndexRow, Schema,
     TableEntry, TableGroup, TableKind, TableView,
 };
@@ -204,7 +204,7 @@ fn entry(
     target: &Target,
     schema: &str,
     table: Table,
-    columns: Option<Vec<sikemux_plugin_api::database::Column>>,
+    columns: Option<Vec<sikemux_plugin_database_views::Column>>,
     failed: Option<String>,
 ) -> TableEntry {
     TableEntry {

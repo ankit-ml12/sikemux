@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "plugins/*"]
+members = ["crates/*", "plugins/*", "plugins/*/views"]
 resolver = "2"
 exclude = ["crates/sikemux-gpui"]
 

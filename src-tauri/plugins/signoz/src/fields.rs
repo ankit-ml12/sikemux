@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::client;
 use crate::error::{SignozError, SignozResult};
-pub use sikemux_plugin_api::signoz::FieldKey;
+pub use sikemux_plugin_signoz_views::FieldKey;
 
 const SUGGESTIONS: u32 = 50;
 

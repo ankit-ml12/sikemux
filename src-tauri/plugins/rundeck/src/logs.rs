@@ -6,8 +6,8 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serialize};
-pub use sikemux_plugin_api::rundeck::{OutputLine as LogEntry, OutputTick as LogTick};
 use sikemux_plugin_api::{reply, PluginResult, StreamSink};
+pub use sikemux_plugin_rundeck_views::{OutputLine as LogEntry, OutputTick as LogTick};
 use tokio::time::sleep;
 
 use crate::client::{get_json, Session};

@@ -14,7 +14,7 @@ use gpui_kit::{
     Styled, WeakEntity, Window,
 };
 use serde_json::json;
-use sikemux_wire::database::{Connection, CopyFormat, QueryOutcome, ResultSet};
+use sikemux_plugin_database_views::{Connection, CopyFormat, QueryOutcome, ResultSet};
 
 use super::{Database, Host, PluginPane};
 use crate::icons::Icon;

@@ -14,7 +14,7 @@ use gpui_kit::{
     Stateful, StatefulInteractiveElement, Styled, Subscription, Transformation, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::bruno::{
+use sikemux_plugin_bruno_views::{
     AuthMode, BodyMode, Collection, Env, HttpMethod, KeyPlacement, KnownWorkspaces, Request,
     RequestView, RunResult, TreeNode,
 };

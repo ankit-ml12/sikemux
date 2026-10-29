@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::Deserialize;
-use sikemux_plugin_api::signoz::{
+use sikemux_plugin_signoz_views::{
     Dashboard, DashboardSummary, LogPage, PanelData, Series, ServiceHealth, ServicePage,
     ServiceRow, ServiceSort, Services, Trace, TracePage, VolumeBucket,
 };

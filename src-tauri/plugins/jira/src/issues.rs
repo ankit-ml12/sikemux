@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sikemux_process::sync::Locked;
 
-use sikemux_plugin_api::jira::{
+use sikemux_plugin_jira_views::{
     Change, Comment, FieldChange, Filter, IssueSummary, Parent, Person, Project, Transition,
 };
 

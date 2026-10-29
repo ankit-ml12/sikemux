@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sikemux_plugin_api::database::{Engine, EngineChoice, ProfileDraft, ProfileForm, TlsChoice};
+use sikemux_plugin_database_views::{Engine, EngineChoice, ProfileDraft, ProfileForm, TlsChoice};
 
 use crate::engines::mysql::MYSQL_PORT;
 use crate::error::{DatabaseError, DatabaseResult};

@@ -16,7 +16,7 @@ use gpui_kit::{
 };
 use gpui_transcript::{Markdown, Pen};
 use serde_json::{json, Value};
-use sikemux_wire::jira::{
+use sikemux_plugin_jira_views::{
     Activity, BoardPage, Column, IssueList, IssueListKind, IssueSummary, IssueView, Parent, Person,
     Spaces,
 };

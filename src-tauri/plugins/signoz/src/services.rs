@@ -7,7 +7,7 @@ use crate::client;
 use crate::error::{SignozError, SignozResult};
 use crate::filter::Scope;
 use crate::query;
-pub use sikemux_plugin_api::signoz::{ErrorGroup, Operation, Overview, Point, ServiceHealth};
+pub use sikemux_plugin_signoz_views::{ErrorGroup, Operation, Overview, Point, ServiceHealth};
 
 const MAX_ROWS: u32 = 500;
 const MAX_OPERATIONS: u32 = 100;

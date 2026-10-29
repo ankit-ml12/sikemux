@@ -16,7 +16,7 @@ use gpui_kit::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
-use sikemux_wire::aws::{
+use sikemux_plugin_aws_views::{
     Account, AgentProfiles, Billing, BillingChange, BillingMonth, Ec2, EcsClusters, EcsServices,
     EcsTasks, Health, Lambda, LogLevel, LogLine, S3, Sqs,
 };
@@ -1170,7 +1170,7 @@ struct AccountView {
 #[derive(serde::Deserialize)]
 struct ProfileView {
     #[serde(flatten)]
-    profile: sikemux_wire::aws::AccountProfile,
+    profile: sikemux_plugin_aws_views::AccountProfile,
     #[serde(default)]
     kind: Option<String>,
 }

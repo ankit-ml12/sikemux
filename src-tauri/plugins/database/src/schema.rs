@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub use sikemux_plugin_api::database::{Column as ColumnInfo, TableKind};
+pub use sikemux_plugin_database_views::{Column as ColumnInfo, TableKind};
 
 /// A table's kind from PostgreSQL's `relkind` letter.
 pub fn postgres_kind(relkind: &str) -> TableKind {

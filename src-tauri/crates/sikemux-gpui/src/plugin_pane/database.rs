@@ -14,7 +14,7 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, Subscription, Transformation, WeakEntity, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::database::{
+use sikemux_plugin_database_views::{
     Connection, Explorer, History, HistoryEntry, Schema, TableEntry, TableGroup, TableKind,
     TableView,
 };

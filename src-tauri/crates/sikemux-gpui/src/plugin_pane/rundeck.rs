@@ -16,7 +16,7 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, Subscription, Task, UniformListScrollHandle, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::rundeck::{
+use sikemux_plugin_rundeck_views::{
     ActivityPage, DeployForm, DeployTarget, EnvTone, ExecutionPage, GroupNode, JobCatalog,
     JobOption, JobPage, JobRow, Jobs, LiveRun, OptionChoice, OptionKind, OutputLine, OutputTick,
     Plan, Run, RunCheck, RunNotice, RunStep, Section, StatusKind, StepState, TermColor, Tone, Tree,

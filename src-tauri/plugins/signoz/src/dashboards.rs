@@ -14,7 +14,7 @@ use crate::client;
 use crate::error::{SignozError, SignozResult};
 use crate::filter::Scope;
 use crate::query::View;
-pub use sikemux_plugin_api::signoz::{
+pub use sikemux_plugin_signoz_views::{
     Column, Dashboard, DashboardSummary, Layout, Panel, PanelData, Series, Variable,
 };
 

@@ -6,7 +6,7 @@ use std::path::Path;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use sikemux_plugin_api::vercel::{Deployment, Log, LogLine, Target};
+use sikemux_plugin_vercel_views::{Deployment, Log, LogLine, Target};
 
 use crate::client::{at, number, some_text, text, Session};
 use crate::error::{VercelError, VercelResult};
