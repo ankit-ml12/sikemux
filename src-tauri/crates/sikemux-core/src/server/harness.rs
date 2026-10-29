@@ -590,6 +590,7 @@ async fn dispatch(
         "agent.ask" => questions::ask(core, &request).await,
         "agent.read" => follow::read(core, &request).await,
         "agent.wait" => follow::wait(core, &request).await,
+        "agent.close" => messages::close(core, &request).await,
         "agent.wrote" => super::who_wrote::tool(core, &request).await,
         "board.add" => board::add(core, &request).await,
         "board.list" => board::list(core, &request).await,

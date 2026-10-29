@@ -894,6 +894,52 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
     .map_err(|error| error.to_string())
 }
 
+/// Closes agents the caller started, or that one of its workers started, as
+/// the person closing their tabs would. Their chats stay in Recent.
+pub(crate) async fn close(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
+    let caller = request
+        .agent_id
+        .clone()
+        .ok_or("agent_close needs the calling agent's id")?;
+    let wanted: Vec<String> = match request.params.get("agents") {
+        Some(Value::Array(agents)) if !agents.is_empty() => agents
+            .iter()
+            .map(|agent| agent.as_str().map(str::to_owned))
+            .collect::<Option<_>>()
+            .ok_or("agents must be names or ids")?,
+        _ => return Err("agents must list the agents to close".into()),
+    };
+    let (core, request) = (core.clone(), request.clone());
+    blocking(move || {
+        let project = caller_project(&core, &request);
+        let agents = listed(&core);
+        let mut closing = Vec::new();
+        for to in &wanted {
+            let target = resolve(&core, &agents, to, &project, &caller)?;
+            let name = target.name.clone().unwrap_or(target.agent_id.clone());
+            if target.reach == Reach::Remote {
+                return Err(format!(
+                    "{name} runs on another host; ask it to finish, and the person closes its tab"
+                )
+                .into());
+            }
+            if !core.names.leads(&caller, &target.agent_id) {
+                return Err(format!(
+                    "You did not start {name}, so closing it is the person's or its lead's to do"
+                )
+                .into());
+            }
+            closing.push((target.agent_id, name));
+        }
+        let ids: Vec<String> = closing.iter().map(|(id, _)| id.clone()).collect();
+        super::workspace::close(&core, &ids)?;
+        let closed: Vec<String> = closing.into_iter().map(|(_, name)| name).collect();
+        Ok(json!({ "closed": closed }))
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
 fn message_text(params: &Value) -> Result<String, String> {
     match params.get("text") {
         Some(Value::String(text)) if !text.trim().is_empty() && text.len() <= MAX_TEXT_BYTES => {

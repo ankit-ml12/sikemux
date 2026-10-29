@@ -1180,6 +1180,14 @@ agents' work before you can merge it. An agent you started reports to you by
 itself when its turn ends, so after `agent_spawn` carry on with your own work
 rather than waiting, and read its report when it arrives.
 
+### Closing agents
+
+`agent_close` takes `agents`, names or ids, and closes their tabs as the person
+would, stopping any that still work. Close only agents you started, or that one
+of them started, and only once their work is committed or handed on; their
+chats stay in Recent, and `agent_spawn` with `resume` reopens one. A worktree
+an agent leaves behind stays until you remove it.
+
 ### When an agent started you
 
 A prompt from your lead arrives as a message from it, and its note says it
