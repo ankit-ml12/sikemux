@@ -17,6 +17,8 @@ const CORE = "src-tauri/crates/sikemux-core/src";
 const PLUGIN_API = "src-tauri/crates/sikemux-plugin-api/src";
 const SOURCES = [
   `${WIRE}/protocol.rs`,
+  `${WIRE}/protocol/ask.rs`,
+  `${WIRE}/protocol/message.rs`,
   `${WIRE}/protocol/chats.rs`,
   `${WIRE}/protocol/agent.rs`,
   `${WIRE}/protocol/workspace.rs`,
@@ -217,14 +219,33 @@ const SWIFT_FIELDS = {
   AgentQuestion: "id text choices viaNote",
   QuestionChoice: "label",
   CatalogAgent: "type label",
+  Preferences: "notch",
+  "Response.ChatBegun": "agentId",
+  "Event.Changed": "topic",
 };
-const SWIFT_ROOTS = [
-  "DeviceView",
+const SWIFT_ROOTS = ["DeviceAccess"];
+/** The requests the notch sends, by their `ask` struct. */
+const SWIFT_REQUESTS = [
+  "WatchView",
   "RemoteStatus",
-  "DeviceAccess",
-  "AgentQuestion",
-  "CatalogAgent",
+  "FocusAgent",
+  "AcpPrompt",
+  "AcpSteer",
+  "AcpPermissionReply",
+  "AnswerPairing",
+  "StartChat",
 ];
+/** The core's calls the notch makes, by method. */
+const SWIFT_CALLS = [
+  "preferences",
+  "agentCatalog",
+  "questions",
+  "answerQuestion",
+];
+/** The events the notch reads; it ignores the rest. */
+const SWIFT_EVENTS = ["Changed", "Remote", "DeviceView"];
+/** Types the notch declares itself, from src-tauri/notch/settings.json. */
+const SWIFT_DECLARED = ["NotchSettings"];
 
 /** Types whose `Default` the app shows until the core has answered with its own values. */
 const DEFAULTS = ["Preferences", "ToolRow"];
@@ -583,8 +604,8 @@ function typeJson(name, fields) {
   }
 }
 
-/** A declaration as the clients see its JSON. */
-function parse(item) {
+/** A declaration as the clients see its JSON; of a tagged enum, only the variants in `wanted` when given. */
+function parse(item, wanted) {
   const where = `${item.name} in ${item.file}`;
   if (item.generics) fail(`${where} is generic`);
   const settings = serde(item.attrs, where);
@@ -604,7 +625,11 @@ function parse(item) {
   }
   if (item.kind !== "enum") fail(`${where} is a ${item.kind}`);
   if (settings.tag) {
-    const variants = splitTop(item.body.slice(1, -1)).map((member) => {
+    const members = splitTop(item.body.slice(1, -1)).filter(
+      (member) =>
+        !wanted || wanted.includes(/^\w+/.exec(readMember(member).rest)?.[0]),
+    );
+    const variants = members.map((member) => {
       const { docs, attrs, rest } = readMember(member);
       const match = /^(\w+)\s*(\{[\s\S]*\})?$/.exec(rest);
       if (!match) fail(`${where}::${rest} is not a unit or struct variant`);
@@ -684,10 +709,10 @@ function named(type) {
   return [];
 }
 
-/** The declarations `roots` need, each before the first that uses it. */
-function closure(roots, fieldsOf = () => undefined) {
+/** The declarations `roots` need, each before the first that uses it, but those in `declared`. */
+function closure(roots, fieldsOf = () => undefined, declared = []) {
   const order = [];
-  const seen = new Set();
+  const seen = new Set(declared);
   const visit = (name) => {
     if (seen.has(name)) return;
     seen.add(name);
@@ -843,6 +868,8 @@ function swift() {
         return `[String: ${swiftType(type.of)}]`;
       case "option":
         return `${swiftType(type.of)}?`;
+      case "null":
+        return "Nothing?";
       default:
         fail(`the notch cannot read ${type.kind}`);
     }
@@ -854,11 +881,9 @@ function swift() {
       const fields = d.fields.map((f) => {
         if (!/^[a-z]\w*$/.test(f.name))
           fail(`${d.name}.${f.name} is no Swift name`);
-        const type = swiftType(f.type);
-        const optional = f.mayBeAbsent && !type.endsWith("?") ? "?" : "";
-        return `${docs(f.docs, "    ")}    let ${f.name}: ${type}${optional}`;
+        return property(f, "    ", sent.has(d.name));
       });
-      return `${docs(d.docs, "")}struct ${d.name}: Codable, Hashable {\n${fields.join("\n")}\n}`;
+      return `${docs(d.docs, "")}struct ${d.name}: Codable, Hashable {${fields.length ? `\n${fields.join("\n")}\n` : ""}}`;
     }
     if (d.kind !== "strings") fail(`the notch cannot read ${d.name}`);
     const fallback = d.variants.find((v) => v.other);
@@ -880,6 +905,179 @@ ${cases.join("\n")}
     }
 }`;
   };
+  const pick = (fields, key) => {
+    const wanted = SWIFT_FIELDS[key]?.split(" ");
+    if (!wanted) return fields;
+    const missing = wanted.filter(
+      (name) => !fields.some((f) => f.name === name),
+    );
+    if (missing.length) fail(`${key} has no ${missing.join(", ")}`);
+    return fields.filter((field) => wanted.includes(field.name));
+  };
+  // What the notch sends may leave out what is optional.
+  const property = (f, indent, sending = false) => {
+    if (!/^[a-z]\w*$/.test(f.name)) fail(`${f.name} is no Swift name`);
+    const type = swiftType(f.type);
+    const optional = f.mayBeAbsent && !type.endsWith("?") ? "?" : "";
+    const empty =
+      { Bool: "false", Int: "0", Double: "0", String: '""' }[type] ??
+      (type.startsWith("[") ? "[]" : null);
+    const given =
+      sending && f.defaulted && !optional && !type.endsWith("?") && empty
+        ? ` = ${empty}`
+        : "";
+    const keyword =
+      sending && (optional || type.endsWith("?") || given) ? "var" : "let";
+    return `${docs(f.docs, indent)}${indent}${keyword} ${f.name}: ${type}${optional}${given}`;
+  };
+  // A type named like one of the structs around it is named by its module there.
+  const module = /Sources\/(\w+)\//.exec(OUTPUTS.notch)[1];
+  const outside = (type, nested) =>
+    nested.reduce(
+      (text, name) =>
+        text.replace(
+          new RegExp(`(?<![.\\w])${name}\\b`, "g"),
+          `${module}.${name}`,
+        ),
+      type,
+    );
+
+  const answered = askAnswers();
+  const response = parse(byClientName("Response"), [
+    ...new Set(SWIFT_REQUESTS.map((name) => answered.get(name))),
+  ]);
+  const variantOf = (rust) =>
+    response.variants.find((v) => v.name === renameAll(rust, "camelCase")) ??
+    fail(`Response has no ${rust}`);
+  const askFile = `${WIRE}/protocol/ask.rs`;
+  const requests = SWIFT_REQUESTS.map((name) => {
+    const item = sources[SOURCES.indexOf(askFile)].get(name);
+    const answer = answered.get(name) ?? fail(`ask::${name} has no answer`);
+    if (answer === "Called")
+      fail(`ask::${name} is a call; list its method in SWIFT_CALLS`);
+    const fields = item ? parse(item).fields : [];
+    return { name, docs: item?.docs ?? [], answer, fields };
+  });
+  const calls = coreCalls();
+  const notchCalls = SWIFT_CALLS.map(
+    (method) =>
+      calls.find((call) => call.method === method) ??
+      fail(`${method} names no params and answer in calls!`),
+  );
+  const event = parse(byClientName("Event"), SWIFT_EVENTS);
+  const events = SWIFT_EVENTS.map((rust) => {
+    const variant =
+      event.variants.find((v) => v.name === renameAll(rust, "camelCase")) ??
+      fail(`Event has no ${rust}`);
+    return { ...variant, fields: pick(variant.fields, `Event.${rust}`) };
+  });
+  const answers = [...new Set(requests.map((request) => request.answer))].map(
+    (rust) => ({
+      rust,
+      fields: pick(variantOf(rust).fields, `Response.${rust}`),
+    }),
+  );
+  const used = [
+    ...requests.flatMap((request) => request.fields),
+    ...answers.flatMap((answer) => answer.fields),
+    ...events.flatMap((variant) => variant.fields),
+  ]
+    .flatMap((field) => named(field.type))
+    .concat(
+      notchCalls.flatMap((call) => [
+        ...named(call.takes),
+        ...named(call.gives),
+      ]),
+    );
+
+  const sent = new Set(
+    closure(
+      [
+        ...requests.flatMap((request) => request.fields),
+        ...notchCalls.map((call) => ({ type: call.takes })),
+      ].flatMap((field) => named(field.type)),
+      () => undefined,
+      SWIFT_DECLARED,
+    ).map((declaration) => declaration.name),
+  );
+  const pascal = (name) => name[0].toUpperCase() + name.slice(1);
+  const callNames = SWIFT_CALLS.map(pascal);
+  const asks = `/// A request the notch sends the core, sent with its \`op\`, and what the core answers it with.
+protocol CoreAsk: Encodable {
+    associatedtype Answer: Decodable
+    static var op: String { get }
+}
+
+/// An answer that holds nothing, such as a call's \`()\`.
+struct Nothing: Codable, Hashable {}
+
+/// What the core answers the notch's requests with.
+enum CoreResponse {
+${answers
+  .map(
+    ({ rust, fields }) =>
+      `    struct ${rust}: Decodable {${fields.length ? `\n${fields.map((f) => property(f, "        ")).join("\n")}\n    ` : ""}}`,
+  )
+  .join("\n")}
+    struct Called<Result: Decodable>: Decodable {
+        let result: Result
+    }
+}
+
+/// The requests the notch sends, as the core's \`ask\` module declares them.
+enum CoreRequest {
+${requests
+  .map((request) =>
+    `${docs(request.docs, "    ")}    struct ${request.name}: CoreAsk {
+        static let op = ${JSON.stringify(renameAll(request.name, "camelCase"))}
+        typealias Answer = CoreResponse.${request.answer}
+${request.fields.map((f) => outside(property(f, "        ", true), SWIFT_REQUESTS)).join("\n")}
+    }`.replace(/\n\n    \}/, "\n    }"),
+  )
+  .join("\n\n")}
+}
+
+/// The core's calls the notch makes, each sent as a \`call\` request.
+enum CoreCall {
+${notchCalls
+  .map((call) => {
+    const empty =
+      call.takes.kind === "named" &&
+      parse(byClientName(call.takes.name)).fields?.length === 0;
+    return `    struct ${pascal(call.method)}: CoreAsk {
+        static let op = "call"
+        typealias Answer = CoreResponse.Called<${outside(swiftType(call.gives), callNames)}>
+        let method = ${JSON.stringify(call.method)}
+        let params${empty ? ` = ${outside(swiftType(call.takes), callNames)}()` : `: ${outside(swiftType(call.takes), callNames)}`}
+    }`;
+  })
+  .join("\n\n")}
+}
+
+${docs(event.docs, "")}enum Event: Decodable {
+${events.map((v) => `${docs(v.docs, "    ")}    case ${v.name}${v.fields.length ? `(${v.fields.map((f) => `${f.name}: ${swiftType(f.type)}`).join(", ")})` : ""}`).join("\n")}
+    /// One the notch does not read.
+    case other
+
+    private enum CodingKeys: String, CodingKey {
+        case ${[event.tag, ...new Set(events.flatMap((v) => v.fields.map((f) => f.name)))].join(", ")}
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(String.self, forKey: .${event.tag}) {
+${events
+  .map(
+    (v) =>
+      `        case ${JSON.stringify(v.name)}:\n            self = .${v.name}${v.fields.length ? `(${v.fields.map((f) => `${f.name}: try container.decode(${swiftType(f.type)}.self, forKey: .${f.name})`).join(", ")})` : ""}`,
+  )
+  .join("\n")}
+        default:
+            self = .other
+        }
+    }
+}`;
+
   const number = (name) =>
     constant(`${WIRE}/protocol.rs`, name)
       .split("*")
@@ -899,10 +1097,34 @@ enum WireProtocol {
     static let maxFrameBytes = ${number("MAX_FRAME_BYTES")}
 }
 
-${closure(SWIFT_ROOTS, (name) => SWIFT_FIELDS[name]?.split(" "))
+${asks}
+
+${closure(
+  [...SWIFT_ROOTS, ...used],
+  (name) => SWIFT_FIELDS[name]?.split(" "),
+  SWIFT_DECLARED,
+)
   .map(declare)
   .join("\n\n")}
 `;
+}
+
+/** The kind of Response each request in the core's `ask` module is answered with, by request. */
+function askAnswers() {
+  const text = texts[SOURCES.indexOf(`${WIRE}/protocol/ask.rs`)];
+  const block = (name) => {
+    const at = text.indexOf(`\n${name}! {`);
+    if (at < 0) fail(`ask.rs has no ${name}! table`);
+    const open = text.indexOf("{", at);
+    return text.slice(open + 1, balanced(text, open) - 1);
+  };
+  const answers = new Map();
+  for (const name of splitTop(block("done"))) answers.set(name, "Done");
+  for (const [, request, response] of block("answers").matchAll(
+    /^\s*(\w+)\s*->.*=>\s*(\w+)\s*\{/gm,
+  ))
+    answers.set(request, response);
+  return answers;
 }
 
 /** The text of `impl Default for name`'s `Self { .. }`, if the file has one. */

@@ -15,13 +15,14 @@ enum CoreLinkError: Error {
 /// One connection to the core, speaking its frames: a 4-byte big-endian length,
 /// a kind byte, then JSON for control frames. Callbacks arrive on the main queue.
 final class CoreLink {
-    typealias Reply = (Result<[String: Any], CoreLinkError>) -> Void
+    /// Reads the answer to one request out of the frame that carries it.
+    private typealias Reply = (Result<Data, CoreLinkError>) -> Void
 
     /// The kind byte and the core's largest payload.
     private static let maxFrameLength = 1 + WireProtocol.maxFrameBytes
 
     var onReady: (() -> Void)?
-    var onEvent: (([String: Any]) -> Void)?
+    var onEvent: ((Event) -> Void)?
     var onClose: ((String?) -> Void)?
 
     private let socketPath: String
@@ -59,12 +60,12 @@ final class CoreLink {
         source.resume()
         self.source = source
         queue.async {
-            self.write(["type": "hello", "protocol": WireProtocol.name, "version": WireProtocol.version])
+            self.write(Hello())
         }
         return true
     }
 
-    func request(_ request: [String: Any], reply: Reply? = nil) {
+    func request<A: CoreAsk>(_ request: A, reply: ((Result<A.Answer, CoreLinkError>) -> Void)? = nil) {
         queue.async {
             guard !self.closed else {
                 DispatchQueue.main.async { reply?(.failure(.closed)) }
@@ -72,8 +73,16 @@ final class CoreLink {
             }
             let id = self.nextRequest
             self.nextRequest += 1
-            if let reply { self.replies[id] = reply }
-            self.write(["type": "request", "requestId": id, "request": request])
+            if let reply {
+                self.replies[id] = { heard in
+                    let answer = heard.flatMap { payload in
+                        Result { try JSONDecoder().decode(Answered<A.Answer>.self, from: payload).response }
+                            .mapError { _ in CoreLinkError.refused("the core answered with something the notch cannot read") }
+                    }
+                    DispatchQueue.main.async { reply(answer) }
+                }
+            }
+            self.write(Sent(requestId: id, request: request))
         }
     }
 
@@ -81,8 +90,8 @@ final class CoreLink {
         queue.async { self.finish(nil) }
     }
 
-    private func write(_ message: [String: Any]) {
-        guard let json = try? JSONSerialization.data(withJSONObject: message) else { return }
+    private func write<Message: Encodable>(_ message: Message) {
+        guard let json = try? JSONEncoder().encode(message) else { return }
         var frame = [UInt8]()
         let length = UInt32(json.count + 1).bigEndian
         withUnsafeBytes(of: length) { frame.append(contentsOf: $0) }
@@ -123,28 +132,20 @@ final class CoreLink {
     }
 
     private func handle(_ payload: Data) {
-        guard let message = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any],
-              let type = message["type"] as? String
-        else { return }
-        switch type {
+        guard let message = try? JSONDecoder().decode(Incoming.self, from: payload) else { return }
+        switch message.type {
         case "helloAck":
             DispatchQueue.main.async { self.onReady?() }
         case "helloRejected":
-            finish(message["message"] as? String ?? "the core speaks another protocol version")
+            finish(message.message ?? "the core speaks another protocol version")
         case "response":
-            guard let id = (message["requestId"] as? NSNumber)?.uint64Value,
-                  let reply = replies.removeValue(forKey: id)
-            else { return }
-            let response = message["response"] as? [String: Any] ?? [:]
-            DispatchQueue.main.async { reply(.success(response)) }
+            guard let id = message.requestId, let reply = replies.removeValue(forKey: id) else { return }
+            reply(.success(payload))
         case "error":
-            let text = message["message"] as? String ?? "the core refused"
-            guard let id = (message["requestId"] as? NSNumber)?.uint64Value,
-                  let reply = replies.removeValue(forKey: id)
-            else { return }
-            DispatchQueue.main.async { reply(.failure(.refused(text))) }
+            guard let id = message.requestId, let reply = replies.removeValue(forKey: id) else { return }
+            reply(.failure(.refused(message.message ?? "the core refused")))
         case "event":
-            guard let event = message["event"] as? [String: Any] else { return }
+            guard let event = message.event else { return }
             DispatchQueue.main.async { self.onEvent?(event) }
         default:
             break
@@ -162,11 +163,46 @@ final class CoreLink {
         }
         let pending = replies
         replies.removeAll()
-        DispatchQueue.main.async {
-            for reply in pending.values { reply(.failure(.closed)) }
-            self.onClose?(reason)
-        }
+        for reply in pending.values { reply(.failure(.closed)) }
+        DispatchQueue.main.async { self.onClose?(reason) }
     }
+}
+
+private struct Hello: Encodable {
+    let type = "hello"
+    let `protocol` = WireProtocol.name
+    let version = WireProtocol.version
+}
+
+/// A request as the core reads it: the request's own fields beside its `op`.
+private struct Sent<A: CoreAsk>: Encodable {
+    let requestId: UInt64
+    let request: A
+
+    private enum Keys: String, CodingKey { case type, requestId, request }
+    private enum Op: String, CodingKey { case op }
+
+    func encode(to encoder: Encoder) throws {
+        var message = encoder.container(keyedBy: Keys.self)
+        try message.encode("request", forKey: .type)
+        try message.encode(requestId, forKey: .requestId)
+        let body = message.superEncoder(forKey: .request)
+        try request.encode(to: body)
+        var op = body.container(keyedBy: Op.self)
+        try op.encode(A.op, forKey: .op)
+    }
+}
+
+/// What the notch reads of every frame from the core; an answer is read again by the request that asked.
+private struct Incoming: Decodable {
+    let type: String
+    let requestId: UInt64?
+    let message: String?
+    let event: Event?
+}
+
+private struct Answered<Answer: Decodable>: Decodable {
+    let response: Answer
 }
 
 enum UnixAddress {

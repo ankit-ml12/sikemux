@@ -41,9 +41,9 @@ final class NotchStore {
     }
 
     private func readSettings() {
-        link?.request(["op": "call", "method": "preferences", "params": [String: Any]()]) { [weak self] result in
-            guard let self, case .success(let response) = result else { return }
-            let fresh = NotchSettings.of(preferences: response["result"])
+        link?.request(CoreCall.Preferences()) { [weak self] result in
+            guard let self, case .success(let answer) = result else { return }
+            let fresh = answer.result.notch
             Haptics.enabled = fresh.haptics
             guard fresh != self.settings else { return }
             self.settings = fresh
@@ -57,19 +57,16 @@ final class NotchStore {
         guard link == nil, waitForCore() else { return }
         let link = CoreLink(socket: options.socket)
         link.onReady = { [weak self, weak link] in
-            link?.request(["op": "call", "method": "agentCatalog", "params": [String: Any]()]) { result in
-                if case .success(let response) = result, let raw = response["result"],
-                   let data = try? JSONSerialization.data(withJSONObject: raw),
-                   let agents = try? JSONDecoder().decode([CatalogAgent].self, from: data)
-                {
-                    AgentCatalog.names = Dictionary(agents.map { ($0.type, $0.label) }, uniquingKeysWith: { _, last in last })
+            link?.request(CoreCall.AgentCatalog()) { result in
+                if case .success(let answer) = result {
+                    AgentCatalog.names = Dictionary(answer.result.map { ($0.type, $0.label) }, uniquingKeysWith: { _, last in last })
                 }
-                link?.request(["op": "watchView"])
+                link?.request(CoreRequest.WatchView())
             }
             self?.coreStopped = false
             self?.readSettings()
-            link?.request(["op": "remoteStatus"]) { result in
-                if case .success(let response) = result { self?.receiveRemote(response["status"]) }
+            link?.request(CoreRequest.RemoteStatus()) { result in
+                if case .success(let answer) = result { self?.apply(answer.status.pending) }
             }
             self?.error = nil
         }
@@ -102,24 +99,14 @@ final class NotchStore {
         return waiter != nil
     }
 
-    private func receive(_ event: [String: Any]) {
-        if event["kind"] as? String == "changed", event["topic"] as? String == "stopping" {
-            coreStopped = true
-            return
+    private func receive(_ event: Event) {
+        switch event {
+        case .changed(topic: .stopping): coreStopped = true
+        case .changed(topic: .preferences): readSettings()
+        case .remote(let status): apply(status.pending)
+        case .deviceView(let view): apply(view)
+        case .changed, .other: break
         }
-        if event["kind"] as? String == "changed", event["topic"] as? String == "preferences" {
-            readSettings()
-            return
-        }
-        if event["kind"] as? String == "remote" {
-            receiveRemote(event["status"])
-            return
-        }
-        guard event["kind"] as? String == "deviceView", let raw = event["view"],
-              let data = try? JSONSerialization.data(withJSONObject: raw),
-              let view = try? JSONDecoder().decode(DeviceView.self, from: data)
-        else { return }
-        apply(view)
     }
 
     func apply(_ view: DeviceView) {
@@ -138,12 +125,9 @@ final class NotchStore {
     }
 
     private func readQuestions() {
-        link?.request(["op": "call", "method": "questions", "params": [String: Any]()]) { [weak self] result in
-            guard case .success(let response) = result, let raw = response["result"],
-                  let data = try? JSONSerialization.data(withJSONObject: raw),
-                  let questions = try? JSONDecoder().decode([AgentQuestion].self, from: data)
-            else { return }
-            self?.apply(questions)
+        link?.request(CoreCall.Questions()) { [weak self] result in
+            guard case .success(let answer) = result else { return }
+            self?.apply(answer.result)
         }
     }
 
@@ -151,13 +135,6 @@ final class NotchStore {
         guard questions != self.questions else { return }
         self.questions = questions
         withAnimation(Motion.open) { entries = view.entries(questions) }
-    }
-
-    private func receiveRemote(_ raw: Any?) {
-        guard let raw, let data = try? JSONSerialization.data(withJSONObject: raw),
-              let status = try? JSONDecoder().decode(RemoteStatus.self, from: data)
-        else { return }
-        apply(status.pending)
     }
 
     /// Unlike an agent's request, a device already waiting when the notch connects still opens the island.
@@ -192,19 +169,15 @@ final class NotchStore {
 
     func answer(_ ask: Ask, agentId: String?, optionId: String) {
         guard let agentId else { return }
-        link?.request([
-            "op": "acpPermissionReply",
-            "agentId": agentId,
-            "requestId": ask.attentionId,
-            "optionId": optionId,
-        ]) { [weak self] result in
+        link?.request(CoreRequest.AcpPermissionReply(agentId: agentId, requestId: ask.attentionId, optionId: optionId)) {
+            [weak self] result in
             if case .failure(let error) = result { self?.fail(error.message) }
         }
     }
 
     /// Answers an agent's question with one of the answers it offered. The first answer anywhere wins.
     func answer(_ question: AgentQuestion, choice: Int) {
-        link?.request(["op": "call", "method": "answerQuestion", "params": ["id": question.id, "choice": choice]]) {
+        link?.request(CoreCall.AnswerQuestion(params: AnswerParams(id: question.id, choice: choice))) {
             [weak self] result in
             if case .failure(let error) = result { self?.fail(error.message) }
         }
@@ -212,16 +185,11 @@ final class NotchStore {
 
     /// Lets a waiting device in with `access`, or turns it away when that is nil.
     func answer(_ device: PendingDevice, access: DeviceAccess?) {
-        let request: [String: Any] = [
-            "op": "answerPairing",
-            "id": device.id,
-            "allow": access != nil,
-            "access": (access ?? .watch).rawValue,
-        ]
+        let request = CoreRequest.AnswerPairing(id: device.id, allow: access != nil, access: access ?? .watch)
         guard let link else { return fail(CoreLinkError.closed.message) }
         link.request(request) { [weak self] result in
             switch result {
-            case .success(let response): self?.receiveRemote(response["status"])
+            case .success(let answer): self?.apply(answer.status.pending)
             case .failure(let error): self?.fail(error.message)
             }
         }
@@ -243,7 +211,7 @@ final class NotchStore {
     func focus(_ agentId: String) {
         guard let link else { return }
         bringAppForward()
-        link.request(["op": "focusAgent", "agentId": agentId]) { [weak self] result in
+        link.request(CoreRequest.FocusAgent(agentId: agentId)) { [weak self] result in
             if case .failure = result { self?.openApp() }
         }
     }
@@ -294,18 +262,17 @@ final class NotchStore {
             done(false)
             return
         }
-        var request: [String: Any] = [
-            "op": "startChat",
-            "launcher": launcher.id,
-            "project": launch.project.id,
-            "permissionMode": launch.yolo ? "bypass" : "workspace-write",
-        ]
-        if let model = launch.model { request["model"] = model }
-        if let effort = launch.effort { request["effort"] = effort }
+        let request = CoreRequest.StartChat(
+            launcher: launcher.id,
+            project: launch.project.id,
+            permissionMode: launch.yolo ? .bypass : .workspaceWrite,
+            model: launch.model,
+            effort: launch.effort
+        )
         link.request(request) { [weak self] result in
             switch result {
-            case .success(let response):
-                guard let agentId = response["agentId"] as? String else { return done(false) }
+            case .success(let answer):
+                let agentId = answer.agentId
                 if !launch.text.isEmpty || !launch.paths.isEmpty {
                     self?.prompt(agentId, text: launch.text, paths: launch.paths)
                 }
@@ -322,9 +289,9 @@ final class NotchStore {
         guard let agentId = entry.item.agentId else { return }
         let text = paths.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ")
         if entry.item.kind == .working {
-            link?.request(["op": "acpSteer", "agentId": agentId, "text": text, "paths": paths, "context": [Any]()]) {
+            link?.request(CoreRequest.AcpSteer(agentId: agentId, text: text, paths: paths, context: [])) {
                 [weak self] result in
-                if case .success(let response) = result, response["outcome"] as? String == "promptRequired" {
+                if case .success(let answer) = result, answer.outcome == "promptRequired" {
                     self?.prompt(agentId, text: text, paths: paths)
                 }
             }
@@ -334,7 +301,7 @@ final class NotchStore {
     }
 
     private func prompt(_ agentId: String, text: String, paths: [String]) {
-        link?.request(["op": "acpPrompt", "agentId": agentId, "text": text, "paths": paths, "context": [Any]()]) {
+        link?.request(CoreRequest.AcpPrompt(agentId: agentId, text: text, paths: paths, context: [])) {
             [weak self] result in
             if case .failure(let error) = result { self?.fail(error.message) }
         }

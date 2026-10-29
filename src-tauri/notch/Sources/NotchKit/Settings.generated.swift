@@ -4,11 +4,11 @@ import Foundation
 
 /// The Notch section of the person's preferences, which the helper reads from
 /// the core and again whenever they change.
-struct NotchSettings: Decodable, Equatable {
-    enum Displays: String, Decodable { case all, builtIn, pointer }
-    enum OpenWith: String, Decodable { case hover, click }
-    enum FullScreen: String, Decodable { case needsYou, always, never }
-    enum Peeks: String, Decodable { case all, needsYou, never }
+struct NotchSettings: Codable, Hashable {
+    enum Displays: String, Codable, Hashable { case all, builtIn, pointer }
+    enum OpenWith: String, Codable, Hashable { case hover, click }
+    enum FullScreen: String, Codable, Hashable { case needsYou, always, never }
+    enum Peeks: String, Codable, Hashable { case all, needsYou, never }
 
     var displays: Displays = .all
     var openWith: OpenWith = .hover

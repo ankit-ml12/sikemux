@@ -10,6 +10,272 @@ enum WireProtocol {
     static let maxFrameBytes = 16777216
 }
 
+/// A request the notch sends the core, sent with its `op`, and what the core answers it with.
+protocol CoreAsk: Encodable {
+    associatedtype Answer: Decodable
+    static var op: String { get }
+}
+
+/// An answer that holds nothing, such as a call's `()`.
+struct Nothing: Codable, Hashable {}
+
+/// What the core answers the notch's requests with.
+enum CoreResponse {
+    struct Done: Decodable {}
+    struct Remote: Decodable {
+        let status: RemoteStatus
+    }
+    struct Steered: Decodable {
+        let outcome: String
+    }
+    struct ChatBegun: Decodable {
+        let agentId: String
+    }
+    struct Called<Result: Decodable>: Decodable {
+        let result: Result
+    }
+}
+
+/// The requests the notch sends, as the core's `ask` module declares them.
+enum CoreRequest {
+    struct WatchView: CoreAsk {
+        static let op = "watchView"
+        typealias Answer = CoreResponse.Done
+    }
+
+    struct RemoteStatus: CoreAsk {
+        static let op = "remoteStatus"
+        typealias Answer = CoreResponse.Remote
+    }
+
+    /// Asks the app's window to show this agent. Refused when no window is
+    /// open; a window that opens within a minute shows it then.
+    struct FocusAgent: CoreAsk {
+        static let op = "focusAgent"
+        typealias Answer = CoreResponse.Done
+        let agentId: String
+    }
+
+    struct AcpPrompt: CoreAsk {
+        static let op = "acpPrompt"
+        typealias Answer = CoreResponse.Done
+        let agentId: String
+        /// Names the message, so it can be edited later.
+        var messageId: String?
+        let text: String
+        let paths: [String]
+        let context: [ChatContext]
+    }
+
+    /// Puts a message into the running turn. Answered with `promptRequired`
+    /// when the turn ended first and the message should be a prompt instead.
+    struct AcpSteer: CoreAsk {
+        static let op = "acpSteer"
+        typealias Answer = CoreResponse.Steered
+        let agentId: String
+        let text: String
+        let paths: [String]
+        let context: [ChatContext]
+    }
+
+    struct AcpPermissionReply: CoreAsk {
+        static let op = "acpPermissionReply"
+        typealias Answer = CoreResponse.Done
+        let agentId: String
+        let requestId: String
+        var optionId: String?
+    }
+
+    /// The person's answer to a phone that came with a ticket from the
+    /// account.
+    struct AnswerPairing: CoreAsk {
+        static let op = "answerPairing"
+        typealias Answer = CoreResponse.Remote
+        let id: String
+        let allow: Bool
+        let access: DeviceAccess
+    }
+
+    /// Starts a chat agent the way the app would, in one of its projects.
+    struct StartChat: CoreAsk {
+        static let op = "startChat"
+        typealias Answer = CoreResponse.ChatBegun
+        let launcher: String
+        let project: String
+        var permissionMode: PermissionMode?
+        var model: String?
+        var effort: String?
+    }
+}
+
+/// The core's calls the notch makes, each sent as a `call` request.
+enum CoreCall {
+    struct Preferences: CoreAsk {
+        static let op = "call"
+        typealias Answer = CoreResponse.Called<NotchKit.Preferences>
+        let method = "preferences"
+        let params = NoParams()
+    }
+
+    struct AgentCatalog: CoreAsk {
+        static let op = "call"
+        typealias Answer = CoreResponse.Called<[CatalogAgent]>
+        let method = "agentCatalog"
+        let params = NoParams()
+    }
+
+    struct Questions: CoreAsk {
+        static let op = "call"
+        typealias Answer = CoreResponse.Called<[AgentQuestion]>
+        let method = "questions"
+        let params = NoParams()
+    }
+
+    struct AnswerQuestion: CoreAsk {
+        static let op = "call"
+        typealias Answer = CoreResponse.Called<Nothing?>
+        let method = "answerQuestion"
+        let params: AnswerParams
+    }
+}
+
+enum Event: Decodable {
+    /// What a client reads through `Call` under `topic` changed, for
+    /// `project` or for every project when it is absent, so the client reads
+    /// it again. `paths` names what moved inside it; absent means anything
+    /// may have. A client skips topics it does not know.
+    case changed(topic: CoreChangeTopic)
+    /// Sent only to clients on this host.
+    case remote(status: RemoteStatus)
+    /// Sent only to paired devices: what they show of this host, whole, when
+    /// they connect and whenever any of it changes.
+    case deviceView(view: DeviceView)
+    /// One the notch does not read.
+    case other
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, topic, status, view
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(String.self, forKey: .kind) {
+        case "changed":
+            self = .changed(topic: try container.decode(CoreChangeTopic.self, forKey: .topic))
+        case "remote":
+            self = .remote(status: try container.decode(RemoteStatus.self, forKey: .status))
+        case "deviceView":
+            self = .deviceView(view: try container.decode(DeviceView.self, forKey: .view))
+        default:
+            self = .other
+        }
+    }
+}
+
+/// What a paired device was approved to do.
+enum DeviceAccess: String, Codable, Hashable {
+    /// Everything a person at the host can do in a session.
+    case full
+    /// Read sessions and answer agents' permission requests.
+    case watch
+    /// One added after this build.
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
+}
+
+/// Something read elsewhere and handed to the agent whole, such as an issue.
+struct ChatContext: Codable, Hashable {
+    let uri: String
+    let title: String
+    let text: String
+}
+
+/// Whether a chat agent asks before it acts outside its workspace, or never asks.
+enum PermissionMode: String, Codable, Hashable {
+    case workspaceWrite = "workspace-write"
+    case bypass
+    /// One added after this build.
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
+}
+
+struct RemoteStatus: Codable, Hashable {
+    /// Phones that came with a ticket from the account and wait for the
+    /// person to answer.
+    let pending: [PendingDevice]
+}
+
+struct PendingDevice: Codable, Hashable {
+    /// Names this request in `AnswerPairing`.
+    let id: String
+    /// What the device calls itself. Nothing vouches for it.
+    let name: String
+    let platform: String
+    /// When the phone stops waiting for an answer, in milliseconds since the
+    /// Unix epoch.
+    let expiresAt: Int
+}
+
+/// What a client reads again, as `Event::Changed` names it.
+enum CoreChangeTopic: String, Codable, Hashable {
+    case activity
+    case agentAccounts
+    case agentSignIn
+    case agentStatus
+    case boards
+    case ci
+    case git
+    case ports
+    case runs
+    case shares
+    case skills
+    case tasks
+    case trust
+    /// How much of their plans the agent accounts have used.
+    case usage
+    /// The SSH config's hosts, or how a terminal reaches one.
+    case ssh
+    /// Which plugins are on, and whether each is signed in.
+    case plugins
+    /// The questions agents put to the person, and the assumptions they went on.
+    case questions
+    /// Who this host is signed in to Sikemux as.
+    case account
+    /// The hosts linked with this one, the SSH hosts a terminal is open to,
+    /// and how each is reached.
+    case hosts
+    /// A language server's diagnostics for the files in `paths` moved.
+    case lsp
+    /// How the person wants Sikemux to behave.
+    case preferences
+    /// What the person has typed and not sent yet; `paths` names the drafts' keys.
+    case drafts
+    /// A project's pull requests, runs, issues or releases on its code host.
+    case codeHost
+    /// What a plugin's pane shows; `paths` names each view as `plugin/method`.
+    case pluginView
+    /// Files clients have open moved on disk; `paths` names them as the clients did.
+    case files
+    /// Whether an update is out, and how installing it goes.
+    case update
+    /// What the account keeps in its Stash.
+    case stash
+    /// The core is stopping on purpose, so its clients do not start it again.
+    case stopping
+    /// One added after this build.
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
+}
+
 struct DeviceView: Codable, Hashable {
     let workspace: Workspace
     let sessions: [SessionInfo]
@@ -239,35 +505,21 @@ struct FaceStyle: Codable, Hashable {
     let motion: Bool
 }
 
-struct RemoteStatus: Codable, Hashable {
-    /// Phones that came with a ticket from the account and wait for the
-    /// person to answer.
-    let pending: [PendingDevice]
+/// What a call that takes nothing is sent; whatever a client sends reads as nothing.
+struct NoParams: Codable, Hashable {}
+
+/// How the person wants Sikemux to behave, the same in every app. A field
+/// left out reads as its default.
+struct Preferences: Codable, Hashable {
+    /// How the island over the MacBook notch behaves.
+    let notch: NotchSettings
 }
 
-struct PendingDevice: Codable, Hashable {
-    /// Names this request in `AnswerPairing`.
-    let id: String
-    /// What the device calls itself. Nothing vouches for it.
-    let name: String
-    let platform: String
-    /// When the phone stops waiting for an answer, in milliseconds since the
-    /// Unix epoch.
-    let expiresAt: Int
-}
-
-/// What a paired device was approved to do.
-enum DeviceAccess: String, Codable, Hashable {
-    /// Everything a person at the host can do in a session.
-    case full
-    /// Read sessions and answer agents' permission requests.
-    case watch
-    /// One added after this build.
-    case unknown
-
-    init(from decoder: Decoder) throws {
-        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
-    }
+/// An agent in the catalog, as clients read it.
+struct CatalogAgent: Codable, Hashable {
+    /// Its id, such as `claude`.
+    let type: String
+    let label: String
 }
 
 /// A question as the app, the notch and phones show it.
@@ -286,9 +538,12 @@ struct QuestionChoice: Codable, Hashable {
     let label: String
 }
 
-/// An agent in the catalog, as clients read it.
-struct CatalogAgent: Codable, Hashable {
-    /// Its id, such as `claude`.
-    let type: String
-    let label: String
+struct AnswerParams: Codable, Hashable {
+    let id: String
+    var answer: String?
+    var choice: Int?
+    /// The choices picked on a question that takes several.
+    var choices: [Int]?
+    /// The assumption the agent went on is right.
+    var fine: Bool = false
 }

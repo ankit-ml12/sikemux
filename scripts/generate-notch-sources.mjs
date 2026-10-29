@@ -138,12 +138,12 @@ import Foundation
 
 /// The Notch section of the person's preferences, which the helper reads from
 /// the core and again whenever they change.
-struct NotchSettings: Decodable, Equatable {
+struct NotchSettings: Codable, Hashable {
 ${helperReads
   .filter(([, setting]) => setting.choices)
   .map(
     ([key, setting]) =>
-      `    enum ${pascal(key)}: String, Decodable { case ${setting.choices.join(", ")} }`,
+      `    enum ${pascal(key)}: String, Codable, Hashable { case ${setting.choices.join(", ")} }`,
   )
   .join("\n")}
 
