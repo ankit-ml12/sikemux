@@ -1,4 +1,4 @@
-import type { InboxItem, ProjectInfo, Snapshot } from '@/core/protocol';
+import type { ProjectInfo, Snapshot } from '@/core/protocol';
 
 export function folder(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? path;
@@ -19,23 +19,12 @@ export function projectName(snapshot: Snapshot, where: string, path = where): st
   return projectAt(snapshot, where)?.name ?? folder(path);
 }
 
-export function inProject(project: ProjectInfo, path: string): boolean {
-  return path === project.path || path.startsWith(`${project.path}/`);
-}
-
-/** The id of the project the host keeps the agent in, which its worktree's folder does not show. */
+/** The id of the project the host says the open agent is in; none for one outside every project. */
 export function projectOf(snapshot: Snapshot, agentId: string): string | undefined {
-  return snapshot.workspace.agents?.find((agent) => agent.id === agentId)?.project;
+  return snapshot.inbox.agents.find((agent) => agent.agentId === agentId)?.project;
 }
 
-export function agentIn(snapshot: Snapshot, project: ProjectInfo, agentId: string, cwd: string): boolean {
-  const kept = projectOf(snapshot, agentId);
-  return kept ? kept === project.id : inProject(project, cwd);
-}
-
-/** The item's card is on `project`'s board, or its agent works there. */
-export function itemIn(snapshot: Snapshot, item: InboxItem, project: ProjectInfo): boolean {
-  if (!item.card && item.agentId && item.project !== undefined) return agentIn(snapshot, project, item.agentId, item.project);
-  const where = item.card?.project ?? item.project;
-  return where !== undefined && (where === project.id || inProject(project, where));
+/** How many things in `project` wait on the person, as the host counts them. */
+export function needsIn(snapshot: Snapshot, project: ProjectInfo): number {
+  return snapshot.inbox.needs[project.id] ?? 0;
 }
