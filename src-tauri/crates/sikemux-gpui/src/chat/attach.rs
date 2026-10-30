@@ -16,8 +16,8 @@ use gpui_kit::{
     PathPromptOptions, SharedString, Styled, StyledImage, WeakEntity, Window,
 };
 use gpui_transcript::FilePress;
-use sikemux_core::server::chat::prompt::MAX_ATTACHMENTS;
 use sikemux_core::protocol::MAX_ATTACHMENT_BYTES;
+use sikemux_core::server::chat::prompt::MAX_ATTACHMENTS;
 use sikemux_wire::chat::{ChatMessage, SentContext};
 use sikemux_wire::protocol::ChatContext;
 use tokio::sync::oneshot;
