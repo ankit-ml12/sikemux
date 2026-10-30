@@ -2758,7 +2758,7 @@ export interface ClosedAgent {
 }
 
 /** What a call that takes nothing is sent; whatever a client sends reads as nothing. */
-export interface NoParams {}
+export type NoParams = Record<string, never>;
 
 /** Messages waiting behind an agent's turn, by id. */
 export interface QueuedParams {

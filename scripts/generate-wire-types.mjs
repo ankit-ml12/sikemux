@@ -807,18 +807,20 @@ function typescript(roots, preamble) {
       .map((v) => `${tsDocs(v.docs, "  ")}  | { ${v.name}: ${tsType(v.type)} }`)
       .join("\n")};`;
   const declare = (d) =>
-    d.kind === "struct"
-      ? `${tsDocs(d.docs)}export interface ${d.name} {\n${d.fields.map(field).join("\n")}\n}`
-      : d.kind === "tagged"
-        ? tagged(d)
-        : d.kind === "wrapped"
-          ? wrapped(d)
-          : `${tsDocs(d.docs)}export type ${d.name} = ${[
-              ...d.variants
-                .filter((v) => !v.other)
-                .map((v) => JSON.stringify(v.name)),
-              ...(d.variants.some((v) => v.open) ? ["(string & {})"] : []),
-            ].join(" | ")};`;
+    d.kind === "struct" && d.fields.length === 0
+      ? `${tsDocs(d.docs)}export type ${d.name} = Record<string, never>;`
+      : d.kind === "struct"
+        ? `${tsDocs(d.docs)}export interface ${d.name} {\n${d.fields.map(field).join("\n")}\n}`
+        : d.kind === "tagged"
+          ? tagged(d)
+          : d.kind === "wrapped"
+            ? wrapped(d)
+            : `${tsDocs(d.docs)}export type ${d.name} = ${[
+                ...d.variants
+                  .filter((v) => !v.other)
+                  .map((v) => JSON.stringify(v.name)),
+                ...(d.variants.some((v) => v.open) ? ["(string & {})"] : []),
+              ].join(" | ")};`;
   const calls = coreCalls();
   const callMap = `/** The core's calls that name what they take and answer, by method. */\nexport interface CoreCalls {\n${calls
     .map(
