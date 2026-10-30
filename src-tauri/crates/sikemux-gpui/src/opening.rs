@@ -149,7 +149,7 @@ impl Workbench {
                 let path = params["path"].as_str().unwrap_or_default().to_owned();
                 let line = params["line"].as_u64().map(|line| line as u32);
                 let agent = request.agent_id.clone().unwrap_or_default();
-                self.open_file_on_desk(&agent, PathBuf::from(&path), line, None);
+                self.open_file_on_desk(&agent, PathBuf::from(&path), line, None, cx);
                 self.parts.redraw_stage(cx);
                 answer(Ok(json!({ "kind": kind, "agentId": agent, "path": path })));
             }
@@ -178,7 +178,7 @@ impl Workbench {
             "terminal"
                 if params["session"]
                     .as_u64()
-                    .is_some_and(|session| self.show_desk_terminal(session).is_some()) =>
+                    .is_some_and(|session| self.show_desk_terminal(session, cx).is_some()) =>
             {
                 self.parts.redraw_stage(cx);
                 answer(Ok(json!({ "kind": kind, "agentId": request.agent_id })));
@@ -212,8 +212,8 @@ impl Workbench {
                     return answer(Err("No preview URL is configured in sikemux.json".into()));
                 };
                 let shown = match focus {
-                    true => self.open_on_desk(agent, url),
-                    false => self.show_on_desk(agent, url),
+                    true => self.open_on_desk(agent, url, cx),
+                    false => self.show_on_desk(agent, url, cx),
                 };
                 match shown {
                     true => answer(Ok(json!({ "kind": kind, "agentId": agent, "url": url }))),

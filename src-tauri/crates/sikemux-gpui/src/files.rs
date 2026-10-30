@@ -562,7 +562,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 "file-rows",
                 count,
                 cx.processor(|bench: &mut Workbench, range: Range<usize>, window, cx| {
-                    let front = bench.front_file().or_else(|| bench.desk_file());
+                    let front = bench.front_file().or_else(|| bench.desk_file(cx));
                     let rows = bench.files.rows();
                     let naming = bench.files.naming_at(&rows);
                     range
@@ -1132,7 +1132,7 @@ impl Workbench {
     /// `to`, each tab in its own place in the strip, leaving the tab in front where it was.
     fn follow_rename(&mut self, from: &Path, to: &Path, cx: &mut Context<Self>) {
         crate::editor::renamed(self, &self.place(), from, to, cx);
-        self.rename_desk_files(from, to);
+        self.rename_desk_files(from, to, cx);
         let Some(strip) = self.strip() else {
             return;
         };

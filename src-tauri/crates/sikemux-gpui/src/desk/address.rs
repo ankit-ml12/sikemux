@@ -172,7 +172,7 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let shown = super::shown_address(self.front_url(&agent).unwrap_or_default());
+        let shown = super::shown_address(self.front_url(&agent, cx).unwrap_or_default());
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("Search or enter address")
@@ -191,7 +191,7 @@ impl Workbench {
             input.focus(window, cx);
             input.select_all(window, cx);
         });
-        self.desks.floating = Some(Floating {
+        let floating = Floating {
             agent,
             input,
             typed: String::new(),
@@ -200,75 +200,95 @@ impl Workbench {
             selected: None,
             _typing: typing,
             _asking: None,
-        });
+        };
+        self.desks
+            .update(cx, |desks, _| desks.floating = Some(floating));
         self.ask_address(window, cx);
     }
 
-    fn address_rows(&self) -> Vec<Suggested> {
-        let Some(floating) = &self.desks.floating else {
+    fn address_rows(&self, cx: &App) -> Vec<Suggested> {
+        let Some(floating) = &self.desks.read(cx).floating else {
             return Vec::new();
         };
-        floating.rows(self.front_url(&floating.agent).unwrap_or_default())
+        floating.rows(self.front_url(&floating.agent, cx).unwrap_or_default())
     }
 
     fn address_typed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(floating) = self.desks.floating.as_mut() else {
-            return;
-        };
-        let input = floating.input.read(cx);
-        let value = input.value().to_string();
-        floating.completing = input.cursor() == value.len() && value.len() > floating.typed.len();
-        floating.typed = value;
-        floating.selected = (!floating.idle()).then_some(0);
-        floating.finish(window, cx);
-        self.ask_address(window, cx);
+        let typed = self.desks.update(cx, |desks, cx| {
+            let floating = desks.floating.as_mut()?;
+            let input = floating.input.read(cx);
+            let value = input.value().to_string();
+            floating.completing =
+                input.cursor() == value.len() && value.len() > floating.typed.len();
+            floating.typed = value;
+            floating.selected = (!floating.idle()).then_some(0);
+            floating.finish(window, cx);
+            cx.notify();
+            Some(())
+        });
+        if typed.is_some() {
+            self.ask_address(window, cx);
+        }
     }
 
     /// Asks the browser's history what to offer for what is typed, off the window's thread.
     fn ask_address(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let (Some(engine), Some(floating)) =
-            (self.desks.engine.clone(), self.desks.floating.as_mut())
-        else {
+        let desks = self.desks.read(cx);
+        let (Some(engine), Some(query)) = (
+            desks.engine.clone(),
+            desks
+                .floating
+                .as_ref()
+                .map(|floating| floating.typed.clone()),
+        ) else {
             return;
         };
-        let query = floating.typed.clone();
-        floating._asking = Some(cx.spawn_in(window, async move |bench, cx| {
+        let asking = cx.spawn_in(window, async move |bench, cx| {
             let asked = query.clone();
             let Some(found) = super::run(async move { engine.suggest(&asked) }).await else {
                 return;
             };
             let _ = bench.update_in(cx, |bench, window, cx| {
-                let Some(floating) =
-                    (bench.desks.floating.as_mut()).filter(|floating| floating.typed == query)
-                else {
-                    return;
-                };
-                floating.found = Some(found);
-                floating.finish(window, cx);
-                bench.parts.redraw_stage(cx);
+                bench.desks.update(cx, |desks, cx| {
+                    let Some(floating) =
+                        (desks.floating.as_mut()).filter(|floating| floating.typed == query)
+                    else {
+                        return;
+                    };
+                    floating.found = Some(found);
+                    floating.finish(window, cx);
+                    cx.notify();
+                });
             });
-        }));
+        });
+        self.desks.update(cx, |desks, _| {
+            if let Some(floating) = desks.floating.as_mut() {
+                floating._asking = Some(asking);
+            }
+        });
     }
 
     fn step_address(&mut self, by: isize, cx: &mut Context<Self>) {
-        let rows = self.address_rows();
-        let Some(floating) = self.desks.floating.as_mut() else {
-            return;
-        };
-        if !floating.listed(&rows) {
-            return;
-        }
-        let first = if floating.idle() { -1 } else { 0 };
-        let at = floating.selected.map_or(-1, |at| at as isize);
-        let next = (at + by).clamp(first, rows.len() as isize - 1);
-        floating.selected = usize::try_from(next).ok();
-        self.parts.redraw_stage(cx);
+        let rows = self.address_rows(cx);
+        self.desks.update(cx, |desks, cx| {
+            let Some(floating) = desks.floating.as_mut() else {
+                return;
+            };
+            if !floating.listed(&rows) {
+                return;
+            }
+            let first = if floating.idle() { -1 } else { 0 };
+            let at = floating.selected.map_or(-1, |at| at as isize);
+            let next = (at + by).clamp(first, rows.len() as isize - 1);
+            floating.selected = usize::try_from(next).ok();
+            cx.notify();
+        });
     }
 
     /// Opens the row picked, else what the field holds, and hands the page the keys.
     fn go_address(&mut self, picked: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
-        let rows = self.address_rows();
-        let Some(floating) = self.desks.floating.as_ref() else {
+        let rows = self.address_rows(cx);
+        let Some(floating) = self.desks.read(cx).floating.as_ref() else {
             return;
         };
         let agent = floating.agent.clone();
@@ -280,26 +300,28 @@ impl Workbench {
             Some(Suggested {
                 to: Target::Page(url),
                 ..
-            }) => match self.front_url(&agent) {
-                Some(_) => self.with_engine(|engine| engine.navigate(&agent, &url).map(drop)),
+            }) => match self.front_url(&agent, cx) {
+                Some(_) => self.with_engine(cx, |engine| engine.navigate(&agent, &url).map(drop)),
                 None => {
-                    self.show_on_desk(&agent, &url);
+                    self.show_on_desk(&agent, &url, cx);
                 }
             },
-            _ => self.go_typed(&agent, &value),
+            _ => self.go_typed(&agent, &value, cx),
         }
         self.close_address(true, window, cx);
     }
 
     /// Closes the address, handing the keys to the page under it when `to_page`.
     fn close_address(&mut self, to_page: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(floating) = self.desks.floating.take() else {
-            return;
-        };
-        if let Some(page) = self.desks.pages.get(&floating.agent).filter(|_| to_page) {
-            page.focus.focus(window, cx);
+        let focus = self.desks.update(cx, |desks, cx| {
+            let floating = desks.floating.take()?;
+            cx.notify();
+            let page = desks.pages.get(&floating.agent).filter(|_| to_page)?;
+            Some(page.focus.clone())
+        });
+        if let Some(focus) = focus {
+            focus.focus(window, cx);
         }
-        self.parts.redraw_stage(cx);
     }
 }
 
@@ -309,9 +331,10 @@ pub(super) fn overlay(
     agent: &str,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
-    let floating = (bench.desks.floating.as_ref()).filter(|floating| floating.agent == agent)?;
+    let floating =
+        (bench.desks.read(cx).floating.as_ref()).filter(|floating| floating.agent == agent)?;
     let t = Tokens::get(cx).clone();
-    let rows = bench.address_rows();
+    let rows = bench.address_rows(cx);
     let listed = floating.listed(&rows);
     let typed = floating.typed.to_lowercase();
     let words: Vec<&str> = typed.split_whitespace().collect();
@@ -325,7 +348,7 @@ pub(super) fn overlay(
                 let selected = floating.selected == Some(at);
                 let mark = match (row.search, row.icon.as_deref()) {
                     (true, _) => ui::icon(Icon::Search, 13.).into_any_element(),
-                    (false, Some(icon)) => match bench.desks.favicon(icon) {
+                    (false, Some(icon)) => match bench.desks.read(cx).favicon(icon) {
                         Some(icon) => gpui_kit::img(icon).size(px(13.)).into_any_element(),
                         None => ui::icon(Icon::Globe, 13.).into_any_element(),
                     },

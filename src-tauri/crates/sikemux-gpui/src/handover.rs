@@ -37,7 +37,7 @@ pub fn follow(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     })
     .detach();
     cx.on_app_quit(move |bench, cx| {
-        if let Some(engine) = bench.desks.engine() {
+        if let Some(engine) = bench.desks.read(cx).engine() {
             engine.drain("Sikemux is quitting");
         }
         bench.voice.update(cx, |voice, _| voice.shutdown());
@@ -70,6 +70,7 @@ fn save(bench: &Workbench, cx: &App) -> std::io::Result<()> {
         saved_at: now(),
         browser: bench
             .desks
+            .read(cx)
             .engine()
             .map(|engine| engine.saved_strips())
             .unwrap_or_default(),
@@ -105,6 +106,7 @@ fn restore(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     };
     let tabs = bench
         .desks
+        .read(cx)
         .engine()
         .map(|engine| engine.reopen(handover.browser))
         .unwrap_or_default();
@@ -114,9 +116,11 @@ fn restore(bench: &mut Workbench, cx: &mut Context<Workbench>) {
         devices
     });
     for agent in &devices {
-        bench.show_simulator(agent);
+        bench.show_simulator(agent, cx);
     }
-    bench.desks.expect(tabs.into_iter().chain(devices));
+    bench
+        .desks
+        .update(cx, |desks, _| desks.expect(tabs.into_iter().chain(devices)));
 }
 
 /// A save too old or too damaged to restore still names the simulators the last run booted,

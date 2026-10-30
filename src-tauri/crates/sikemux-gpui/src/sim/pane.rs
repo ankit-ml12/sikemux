@@ -902,10 +902,7 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         match news {
-            SimNews::Attached(agent) => {
-                self.show_simulator(agent);
-                self.parts.redraw_stage(cx);
-            }
+            SimNews::Attached(agent) => self.show_simulator(agent, cx),
             SimNews::Shot => {
                 self.notify(crate::toast::success("Screenshot saved to the Desktop"), cx)
             }

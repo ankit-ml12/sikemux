@@ -217,7 +217,7 @@ fn open_on_desk(code: &SharedString, bench: &WeakEntity<Workbench>, agent: &str,
         return;
     }
     let _ = bench.update(cx, |bench, cx| {
-        bench.open_file_on_desk(agent, path, None, None);
+        bench.open_file_on_desk(agent, path, None, None, cx);
         bench.parts.redraw_stage(cx);
     });
 }

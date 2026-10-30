@@ -201,7 +201,8 @@ pub struct Workbench {
     pub(crate) window: AnyWindowHandle,
     pub parts: Parts,
     pub panes: crate::panes::Panes,
-    pub desks: crate::desk::Desks,
+    pub desks: Entity<crate::desk::Desks>,
+    _desk_ears: crate::desk::DeskEars,
     pub sims: Entity<crate::sim::pane::Simulators>,
     _sim_news: Subscription,
     _filtering: Option<Subscription>,
@@ -531,6 +532,7 @@ impl Workbench {
             }),
         ];
         let sims = cx.new(crate::sim::pane::Simulators::new);
+        let desks = cx.new(|cx| crate::desk::Desks::new(window, cx));
         let mut bench = Self {
             connection: crate::boot::Connection::default(),
             view: None,
@@ -665,13 +667,15 @@ impl Workbench {
             window: window.window_handle(),
             parts: Parts::new(cx),
             panes: crate::panes::Panes::default(),
-            desks: crate::desk::Desks::new(window, cx),
+            _desk_ears: crate::desk::listen(&desks, window, cx),
+            desks,
             _sim_news: cx.subscribe(&sims, Self::hear_sims),
             sims,
             _filtering: None,
             _older: None,
         };
         bench.parts.stage_follows(&bench.sims, cx);
+        bench.parts.stage_follows(&bench.desks, cx);
         bench.keys.focus.focus(window, cx);
         bench.wait_patiently(cx);
         crate::handover::follow(&mut bench, cx);
@@ -786,7 +790,7 @@ impl Workbench {
                     },
                     &self.asks,
                 );
-                crate::editor::keep(self);
+                crate::editor::keep(self, cx);
                 crate::agents::setup::settle(self, cx);
                 self.settle_open_waits();
                 crate::notifications::badge(self);
@@ -3756,7 +3760,7 @@ impl Workbench {
         paths: Option<&[String]>,
         cx: &mut Context<Self>,
     ) {
-        let desks = self.desk_plugin_panes();
+        let desks = self.desk_plugin_panes(cx);
         for pane in (self.plugin_panes.values())
             .chain(self.plugin_bars.values())
             .chain(&desks)
@@ -4876,9 +4880,9 @@ impl Render for Workbench {
             .on_action(cx.listener(|bench, _: &ToggleDesk, _, cx| bench.toggle_front_desk(cx)))
             .on_action(cx.listener(|bench, _: &NewPage, _, cx| bench.new_front_page(cx)))
             .on_action(cx.listener(|bench, _: &FocusAddress, _, cx| bench.focus_front_address(cx)))
-            .on_action(cx.listener(|bench, _: &ReloadPage, _, _| bench.reload_front_page()))
-            .on_action(cx.listener(|bench, _: &PageBack, _, _| bench.step_front_page(-1)))
-            .on_action(cx.listener(|bench, _: &PageForward, _, _| bench.step_front_page(1)))
+            .on_action(cx.listener(|bench, _: &ReloadPage, _, cx| bench.reload_front_page(cx)))
+            .on_action(cx.listener(|bench, _: &PageBack, _, cx| bench.step_front_page(-1, cx)))
+            .on_action(cx.listener(|bench, _: &PageForward, _, cx| bench.step_front_page(1, cx)))
             .on_action(cx.listener(|bench, _: &NewSimulator, _, cx| {
                 bench.front_simulator(cx);
                 bench.parts.redraw_stage(cx);

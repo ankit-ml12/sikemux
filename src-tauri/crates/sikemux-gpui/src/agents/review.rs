@@ -243,8 +243,8 @@ impl Render for AgentReview {
                             .icon(Icon::Globe)
                             .on_click(cx.listener(move |review, _, window, cx| {
                                 let (agent, url) = (review.agent.clone(), url.clone());
-                                review.then(window, cx, move |bench, _, _| {
-                                    bench.open_on_desk(&agent, &url);
+                                review.then(window, cx, move |bench, _, cx| {
+                                    bench.open_on_desk(&agent, &url, cx);
                                 });
                             })),
                     );

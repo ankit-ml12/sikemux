@@ -109,7 +109,7 @@ fn fetch(page: &PageRef, looks: &Looks, window: &mut Window, cx: &mut App) {
                         reader.update(cx, |_, cx| cx.notify());
                     }
                     PageEvent::Link(url) => {
-                        let _ = bench.update(cx, |bench, _| bench.open_on_desk(&agent, &url));
+                        let _ = bench.update(cx, |bench, cx| bench.open_on_desk(&agent, &url, cx));
                     }
                     PageEvent::Wheel(delta) => {
                         let _ = bench.update(cx, |bench, cx| {

@@ -287,7 +287,7 @@ pub fn view(
                     .hover(|link| link.underline())
                     .tooltip(ui::tooltip(pull.title.clone()))
                     .on_click(cx.listener(move |bench, _, _, cx| {
-                        bench.open_on_desk(&agent, &url);
+                        bench.open_on_desk(&agent, &url, cx);
                         bench.close_card(cx);
                     }))
             }));

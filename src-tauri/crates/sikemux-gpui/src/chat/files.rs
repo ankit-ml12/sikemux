@@ -425,7 +425,7 @@ fn open_on_desk(agent: &str, found: &PathRef, bench: &WeakEntity<Workbench>, cx:
                 }
                 bench.show_rail_page(crate::workbench::RailPage::Files, cx);
             }
-            bench.open_file_on_desk(agent, path, found.line, found.column);
+            bench.open_file_on_desk(agent, path, found.line, found.column, cx);
             bench.parts.redraw_stage(cx);
             bench.parts.redraw(&bench.parts.tabs, cx);
         })

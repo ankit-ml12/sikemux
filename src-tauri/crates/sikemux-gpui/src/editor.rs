@@ -1377,7 +1377,7 @@ fn keep_preview(bench: &Workbench, path: &Path) {
 }
 
 /// Every file a tab or desk shows, once for each view of it.
-fn shown(bench: &Workbench) -> Vec<FileKey> {
+fn shown(bench: &Workbench, cx: &App) -> Vec<FileKey> {
     let mut shown = Vec::new();
     let views = bench.view.iter().map(|view| (Host::This, view)).chain(
         bench
@@ -1399,7 +1399,7 @@ fn shown(bench: &Workbench) -> Vec<FileKey> {
     let place = bench.place();
     shown.extend(
         bench
-            .desk_files()
+            .desk_files(cx)
             .map(|path| FileKey::new(place.clone(), path.clone())),
     );
     shown
@@ -1413,7 +1413,7 @@ pub fn close_unsaved(
     close: impl Fn(&mut Workbench, &mut Context<Workbench>) + 'static,
     cx: &mut Context<Workbench>,
 ) {
-    let mut left = shown(bench);
+    let mut left = shown(bench, cx);
     for key in &closing {
         if let Some(at) = left.iter().position(|shown| shown == key) {
             left.swap_remove(at);
@@ -1451,7 +1451,7 @@ pub fn close_unsaved(
                 }
             }
             close(bench, cx);
-            keep(bench);
+            keep(bench, cx);
         },
         cx,
     );
@@ -1471,8 +1471,8 @@ fn name_of(path: &Path) -> String {
 }
 
 /// Lets go of every file with no unsaved edits that no tab shows any more.
-pub fn keep(bench: &mut Workbench) {
-    let shown = shown(bench);
+pub fn keep(bench: &mut Workbench, cx: &App) {
+    let shown = shown(bench, cx);
     let closed: Vec<FileKey> = bench
         .editors
         .viewers
