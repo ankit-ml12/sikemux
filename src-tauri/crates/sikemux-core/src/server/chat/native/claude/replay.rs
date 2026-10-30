@@ -953,7 +953,7 @@ pub fn replay(records: &[Value], session_id: &str, cwd: &Path) -> Vec<(String, V
                 Some(parent) => replay.announce(parent, &mut Vec::new()),
                 None => replay.root.clone(),
             };
-            let mut update = compaction(&uuid_of(record), true, "completed", None);
+            let mut update = compaction(uuid_of(record), true, "completed", None);
             let at = str_field(record, "timestamp").and_then(crate::accounts::live::parse_rfc3339);
             super::super::stamp_replayed(&mut update, at, false);
             replay.updates.push((target, update));

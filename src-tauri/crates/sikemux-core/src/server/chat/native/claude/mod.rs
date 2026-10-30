@@ -4,6 +4,7 @@
 mod config;
 mod control;
 mod failure;
+mod messages;
 mod permission;
 mod reader;
 mod replay;

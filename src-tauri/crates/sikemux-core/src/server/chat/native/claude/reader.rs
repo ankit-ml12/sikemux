@@ -1,7 +1,7 @@
 //! Reads what Claude Code writes on its output and tells the chat, as the
 //! ACP session updates the app reads from every agent.
 
-use sikemux_fold::update::{compaction, notice};
+use sikemux_fold::update::{agent_text, compaction, notice, thought};
 use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -23,6 +23,7 @@ use super::super::process::Reads;
 use super::super::session::{Sink, TurnEnd};
 use super::control::Control;
 use super::failure;
+use super::messages::{Delta, Message, StreamEvent, TurnResult};
 use super::permission;
 use super::tools::{self, TaskPlan};
 
@@ -318,8 +319,8 @@ fn host_zone() -> Option<String> {
     Some(link.to_str()?.split_once("zoneinfo/")?.1.to_owned())
 }
 
-fn stop_reason(result: &Value) -> &'static str {
-    match (text(result, "stop_reason"), text(result, "subtype")) {
+fn stop_reason(result: &TurnResult) -> &'static str {
+    match (result.stop_reason.as_deref(), result.subtype.as_deref()) {
         (Some("refusal"), _) => "refusal",
         (Some("max_tokens"), _) => "max_tokens",
         (
@@ -500,35 +501,39 @@ impl Reader {
             .map_or_else(|| self.data.session_id.clone(), Clone::clone)
     }
 
-    pub fn handle(&mut self, message: Value) {
-        match message.get("type").and_then(Value::as_str) {
-            Some("control_response") => {
-                if let Some((purpose, result)) = self.control.answered(&message) {
+    pub fn handle(&mut self, message: Message) {
+        match message {
+            Message::ControlResponse { response } => {
+                if let Some((purpose, result)) = self.control.answered(response) {
                     self.purpose_answered(&purpose, result);
                 }
             }
-            Some("control_request") => self.request(&message),
-            Some("control_cancel_request") => {
-                if let Some(id) = text(&message, "request_id") {
-                    self.asking.take_back(id);
-                }
-            }
-            Some("stream_event") => self.stream_event(&message),
-            Some("assistant") => self.assistant(&message),
-            Some("user") => self.user(&message),
-            Some("result") => self.result(&message),
-            Some("system") => self.system(&message),
-            Some("command_lifecycle") => {
-                let state = text(&message, "state");
-                if state == Some("queued") {
+            Message::ControlRequest {
+                request_id,
+                request,
+            } => self.request(request_id, request),
+            Message::ControlCancelRequest { request_id } => self.asking.take_back(&request_id),
+            Message::StreamEvent {
+                parent_tool_use_id,
+                event,
+            } => self.stream_event(parent_tool_use_id, event),
+            Message::Assistant(message) => self.assistant(&message),
+            Message::User(message) => self.user(&message),
+            Message::Result(result) => self.result(&result),
+            Message::System(message) => self.system(&message),
+            Message::CommandLifecycle {
+                state,
+                command_uuid,
+            } => {
+                if state.as_deref() == Some("queued") {
                     return;
                 }
                 let mut unread = None;
-                if let Some(uuid) = text(&message, "command_uuid") {
+                if let Some(uuid) = command_uuid {
                     if let Some(turn) = self.shared.locked().turn.as_mut() {
-                        turn.waiting.remove(uuid);
-                        let letter = turn.letters.remove(uuid);
-                        if matches!(state, Some("cancelled" | "dropped")) {
+                        turn.waiting.remove(&uuid);
+                        let letter = turn.letters.remove(&uuid);
+                        if matches!(state.as_deref(), Some("cancelled" | "dropped")) {
                             unread = letter;
                         }
                     }
@@ -537,19 +542,15 @@ impl Reader {
                     self.sink.letter_unread(letter);
                 }
             }
-            Some("conversation_reset") => {
+            Message::ConversationReset => {
                 self.data.task_plan.clear();
                 self.send(None, self.data.task_plan.plan());
             }
-            _ => {}
+            Message::Other => {}
         }
     }
 
-    fn request(&mut self, message: &Value) {
-        let Some(request_id) = text(message, "request_id").map(str::to_owned) else {
-            return;
-        };
-        let request = message.get("request").cloned().unwrap_or(Value::Null);
+    fn request(&mut self, request_id: String, request: Value) {
         match text(&request, "subtype") {
             Some("can_use_tool") => self.can_use_tool(request_id, request),
             Some("hook_callback") => self
@@ -634,53 +635,39 @@ impl Reader {
         }
     }
 
-    fn stream_event(&mut self, message: &Value) {
-        let parent = text(message, "parent_tool_use_id").map(str::to_owned);
-        let Some(event) = message.get("event") else {
-            return;
-        };
-        match text(event, "type") {
-            Some("message_start") => {
-                self.data.stream_message_id = event
-                    .pointer("/message/id")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned);
+    fn stream_event(&mut self, parent: Option<String>, event: StreamEvent) {
+        match event {
+            StreamEvent::MessageStart { message } => {
+                self.data.stream_message_id = message.id;
                 if parent.is_none() {
                     self.data.streamed.clear();
-                    if let Some(model) = event.pointer("/message/model").and_then(Value::as_str) {
-                        self.data.model = Some(model.to_owned());
-                        self.note_model(model);
+                    if let Some(model) = message.model {
+                        self.note_model(&model);
+                        self.data.model = Some(model);
                     }
-                    if let Some(used) = event.pointer("/message/usage").and_then(usage_total) {
+                    if let Some(used) = message.usage.as_ref().and_then(usage_total) {
                         self.data.used = Some(used);
                     }
                 }
             }
-            Some("content_block_start") => {
-                let Some(block) = event.get("content_block") else {
-                    return;
-                };
+            StreamEvent::ContentBlockStart { content_block } => {
                 if matches!(
-                    text(block, "type"),
+                    text(&content_block, "type"),
                     Some("tool_use" | "server_tool_use" | "mcp_tool_use")
                 ) {
-                    self.tool_use(block, parent.as_deref(), true);
+                    self.tool_use(&content_block, parent.as_deref(), true);
                 }
             }
-            Some("content_block_delta") => {
-                let Some(delta) = event.get("delta") else {
+            StreamEvent::ContentBlockDelta { index, delta } => {
+                let (kind, chunk) = match delta {
+                    Delta::Text { text } => ("text", text),
+                    Delta::Thinking { thinking } => ("thinking", thinking),
+                    Delta::Other => return,
+                };
+                if chunk.is_empty() {
                     return;
-                };
-                let (kind, chunk) = match text(delta, "type") {
-                    Some("text_delta") => ("text", text(delta, "text")),
-                    Some("thinking_delta") => ("thinking", text(delta, "thinking")),
-                    _ => return,
-                };
-                let Some(chunk) = chunk.map(str::to_owned) else {
-                    return;
-                };
+                }
                 if parent.is_none() {
-                    let index = event.get("index").and_then(Value::as_u64).unwrap_or(0);
                     match self.data.streamed.last_mut() {
                         Some((last, last_kind, streamed))
                             if *last == index && *last_kind == kind =>
@@ -693,29 +680,25 @@ impl Reader {
                             .push((index, kind.to_owned(), chunk.clone())),
                     }
                 }
-                let block = if kind == "text" {
-                    json!({ "type": "text", "text": chunk })
+                let message_id = self
+                    .data
+                    .stream_message_id
+                    .as_deref()
+                    .filter(|id| !id.is_empty());
+                let update = if kind == "text" {
+                    agent_text(&chunk, message_id)
                 } else {
-                    json!({ "type": "thinking", "thinking": chunk })
+                    thought(&chunk, message_id)
                 };
-                let message_id = self.data.stream_message_id.clone();
-                if let Some(update) =
-                    tools::content_chunk(&block, "assistant", message_id.as_deref())
-                {
-                    self.send(parent.as_deref(), update);
+                self.send(parent.as_deref(), update);
+            }
+            StreamEvent::MessageDelta { usage } if parent.is_none() => {
+                let output = usage.and_then(|usage| usage.output_tokens);
+                if let (Some(used), Some(output)) = (self.data.used, output) {
+                    self.data.used = Some(used.max(output));
                 }
             }
-            Some("message_delta") if parent.is_none() => {
-                if let Some(usage) = event.get("usage").filter(|usage| usage.is_object()) {
-                    if let (Some(used), Some(output)) = (
-                        self.data.used,
-                        usage.get("output_tokens").and_then(Value::as_u64),
-                    ) {
-                        self.data.used = Some(used.max(output));
-                    }
-                }
-            }
-            _ => {}
+            StreamEvent::MessageDelta { .. } | StreamEvent::Other => {}
         }
     }
 
@@ -935,10 +918,10 @@ impl Reader {
         );
     }
 
-    fn result(&mut self, result: &Value) {
+    fn result(&mut self, result: &TurnResult) {
         if let Some(size) = result
-            .get("modelUsage")
-            .and_then(Value::as_object)
+            .model_usage
+            .as_ref()
             .and_then(|usage| self.window_of(usage))
         {
             self.data.size = size;
@@ -946,14 +929,13 @@ impl Reader {
         let used = self.data.used;
         if let Some(used) = used {
             let mut update = json!({ "sessionUpdate": UpdateKind::UsageUpdate, "used": used, "size": self.data.size });
-            if let Some(cost) = result.get("total_cost_usd").and_then(Value::as_f64) {
+            if let Some(cost) = result.total_cost_usd {
                 update["cost"] = json!({ "amount": cost, "currency": "USD" });
             }
             self.sink.update(&self.data.session_id, update);
         }
-        let answers = text(result, "user_message_uuid");
-        // A turn that background work started, rather than a message, carries its origin.
-        let woken = result.get("origin").is_some();
+        let answers = result.user_message_uuid.as_deref();
+        let woken = result.origin.is_some();
         let ended = {
             let mut shared = self.shared.locked();
             let ends = shared.turn.as_ref().is_some_and(|turn| match answers {
@@ -986,20 +968,14 @@ impl Reader {
                 failure: self.offline(failure),
                 response: Some(json!({ "stopReason": "end_turn" })),
             }
-        } else if result.get("is_error").and_then(Value::as_bool) == Some(true) {
-            let said = text(result, "result")
-                .map(str::to_owned)
+        } else if result.is_error {
+            let said = result
+                .result
+                .clone()
                 .or_else(|| {
-                    result
-                        .get("errors")
-                        .and_then(Value::as_array)
-                        .map(|errors| {
-                            errors
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        })
+                    let errors: Vec<&str> =
+                        result.errors.iter().filter_map(Value::as_str).collect();
+                    (!errors.is_empty()).then(|| errors.join(", "))
                 })
                 .filter(|said| !said.is_empty())
                 .unwrap_or_else(|| "Claude could not finish this turn".to_owned());
@@ -1583,8 +1559,9 @@ impl Reader {
 impl Reads for Reader {
     /// A task the person stopped from the app.
     type Nudge = String;
+    type Message = Message;
 
-    fn message(&mut self, message: Value) {
+    fn message(&mut self, message: Message) {
         self.handle(message);
     }
 

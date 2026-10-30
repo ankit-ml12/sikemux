@@ -176,6 +176,7 @@ impl Driver {
 
 impl Reads for Driver {
     type Nudge = ();
+    type Message = Value;
 
     fn message(&mut self, message: Value) {
         match self.rpc.read(message) {

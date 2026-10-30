@@ -9,6 +9,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sikemux_process::sync::Locked;
@@ -485,9 +486,9 @@ impl Lines {
         }
     }
 
-    /// The next message, skipping lines that are not JSON. None once the
-    /// agent's output has closed.
-    pub async fn next(&mut self) -> Option<Value> {
+    /// The next message, skipping lines that are not one, with what is wrong
+    /// with them. None once the agent's output has closed.
+    pub async fn next<M: DeserializeOwned>(&mut self) -> Option<M> {
         loop {
             while let Some(line) = self.take_line() {
                 let trimmed = line.trim_ascii();
@@ -496,8 +497,8 @@ impl Lines {
                 }
                 match serde_json::from_slice(trimmed) {
                     Ok(message) => return Some(message),
-                    Err(_) => eprintln!(
-                        "sikemux core: an agent wrote a line that is not JSON: {}",
+                    Err(error) => eprintln!(
+                        "sikemux core: an agent wrote a line Sikemux cannot read ({error}): {}",
                         String::from_utf8_lossy(trimmed)
                             .chars()
                             .take(200)
@@ -520,8 +521,10 @@ impl Lines {
 pub(crate) trait Reads: Send + 'static {
     /// Something the chat's side hands the reader to act on between messages.
     type Nudge: Send + 'static;
+    /// What each line of the agent's output is read as.
+    type Message: DeserializeOwned;
 
-    fn message(&mut self, message: Value);
+    fn message(&mut self, message: Self::Message);
 
     fn nudged(&mut self, _nudge: Self::Nudge) {}
 

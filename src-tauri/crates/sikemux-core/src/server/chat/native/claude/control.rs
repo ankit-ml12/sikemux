@@ -9,6 +9,7 @@ use uuid::Uuid;
 use super::super::pending::{Answered, Pending, Purpose};
 use super::super::process::Writer;
 use super::super::rpc::{error_text, ANSWER_WAIT};
+use super::messages::ControlResponse;
 
 #[derive(Clone)]
 pub(crate) struct Control {
@@ -75,19 +76,17 @@ impl Control {
 
     /// Hands a `control_response` to the request waiting on it, or answers
     /// with the purpose of a request sent without waiting and its result.
-    pub fn answered(&self, message: &Value) -> Option<(Purpose, Answered)> {
-        let response = message.get("response")?;
-        let id = response.get("request_id").and_then(Value::as_str)?;
-        let result = match response.get("subtype").and_then(Value::as_str) {
+    pub fn answered(&self, response: ControlResponse) -> Option<(Purpose, Answered)> {
+        let result = match response.subtype.as_deref() {
             Some("error") => Err(json!({
                 "message": response
-                    .get("error")
-                    .and_then(Value::as_str)
+                    .error
+                    .as_deref()
                     .unwrap_or("Claude refused the request"),
             })),
-            _ => Ok(response.get("response").cloned().unwrap_or(Value::Null)),
+            _ => Ok(response.response.unwrap_or(Value::Null)),
         };
-        self.pending.settle(&id.to_owned(), result)
+        self.pending.settle(&response.request_id, result)
     }
 
     /// Answers one of Claude's own requests.
