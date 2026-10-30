@@ -1,7 +1,7 @@
 //! Reads what Claude Code writes on its output and tells the chat, as the
 //! ACP session updates the app reads from every agent.
 
-use sikemux_fold::update::{agent_text, compaction, notice, thought};
+use sikemux_fold::update::{agent_text, compaction, notice, text_content, thought};
 use sikemux_fold::UpdateKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -23,7 +23,7 @@ use super::super::process::Reads;
 use super::super::session::{Sink, TurnEnd};
 use super::control::Control;
 use super::failure;
-use super::messages::{Delta, Message, StreamEvent, TurnResult};
+use super::messages::{Delta, Message, StreamEvent, System, SystemEvent, TurnResult};
 use super::permission;
 use super::tools::{self, TaskPlan};
 
@@ -520,7 +520,7 @@ impl Reader {
             Message::Assistant(message) => self.assistant(&message),
             Message::User(message) => self.user(&message),
             Message::Result(result) => self.result(&result),
-            Message::System(message) => self.system(&message),
+            Message::System(message) => self.system(message),
             Message::CommandLifecycle {
                 state,
                 command_uuid,
@@ -1015,49 +1015,55 @@ impl Reader {
             .filter(|size| *size > 0)
     }
 
-    fn system(&mut self, message: &Value) {
-        if let Some(version) = text(message, "claude_code_version") {
-            self.sink.cli_version(version);
+    fn system(&mut self, message: System) {
+        if let Some(version) = message.claude_code_version {
+            self.sink.cli_version(&version);
         }
-        match text(message, "subtype") {
-            Some("session_state_changed") if text(message, "state") == Some("idle") => self.idle(),
-            // Claude Code opens every turn with this, including the ones background work starts.
-            Some("init") if !self.turn_running() => self.sink.work_started(),
-            Some("status") => self.status(message),
-            Some("api_retry") => self.retrying(message),
-            Some("compact_boundary") => {
-                if let Some(used) = message
-                    .pointer("/compact_metadata/post_tokens")
-                    .and_then(Value::as_u64)
-                {
+        match message.event {
+            SystemEvent::SessionStateChanged { state } if state.as_deref() == Some("idle") => {
+                self.idle()
+            }
+            SystemEvent::Init if !self.turn_running() => self.sink.work_started(),
+            SystemEvent::Status {
+                status,
+                uuid,
+                compact_result,
+                compact_error,
+            } => self.status(status, uuid, compact_result, compact_error),
+            SystemEvent::ApiRetry {
+                attempt,
+                error_status,
+            } => self.retrying(attempt.unwrap_or(1), error_status),
+            SystemEvent::CompactBoundary { compact_metadata } => {
+                if let Some(used) = compact_metadata.and_then(|metadata| metadata.post_tokens) {
                     self.data.used = Some(used);
                 }
                 self.compacted("completed", None);
             }
-            Some("task_started") => self.task_started(message),
-            Some("task_progress") => self.task_progress(message),
-            Some("task_updated") => {
-                let Some(id) = text(message, "task_id").map(str::to_owned) else {
-                    return;
-                };
-                let patch = message.get("patch").cloned().unwrap_or(Value::Null);
-                if patch.get("is_backgrounded").and_then(Value::as_bool) == Some(true) {
-                    self.backgrounded(&id);
+            SystemEvent::TaskStarted(message) => self.task_started(&message),
+            SystemEvent::TaskProgress(message) => self.task_progress(&message),
+            SystemEvent::TaskUpdated { task_id, patch } => {
+                if patch.is_backgrounded == Some(true) {
+                    self.backgrounded(&task_id);
                 }
-                if let Some(status) = text(&patch, "status") {
-                    self.task_ended(&id, status, None, text(&patch, "output_file"));
+                if let Some(status) = &patch.status {
+                    self.task_ended(&task_id, status, None, patch.output_file.as_deref());
                 }
             }
-            Some("task_notification") => {
-                let Some(id) = text(message, "task_id").map(str::to_owned) else {
-                    return;
-                };
-                let status = text(message, "status").unwrap_or("completed").to_owned();
-                let summary = text(message, "summary");
+            SystemEvent::TaskNotification {
+                task_id,
+                status,
+                summary,
+                output_file,
+            } => {
+                let status = status.unwrap_or_else(|| "completed".to_owned());
+                let summary = summary.as_deref();
                 // Work started outside any tracked task still wakes the agent.
-                if !self.data.tasks.contains_key(&id) && !self.data.subagents.contains_key(&id) {
+                if !self.data.tasks.contains_key(&task_id)
+                    && !self.data.subagents.contains_key(&task_id)
+                {
                     // A resumed session reports every task its last process left behind as stopped.
-                    if self.data.foreground.contains_key(&id)
+                    if self.data.foreground.contains_key(&task_id)
                         || states::outcome(&status) == Some(states::Outcome::Stopped)
                     {
                         return;
@@ -1067,22 +1073,16 @@ impl Reader {
                         .or(summary)
                         .unwrap_or("Background task")
                         .to_owned();
-                    self.task_notice(&id, &name, &status);
+                    self.task_notice(&task_id, &name, &status);
                     return;
                 }
-                self.task_ended(&id, &status, summary, text(message, "output_file"));
+                self.task_ended(&task_id, &status, summary, output_file.as_deref());
             }
-            Some("background_tasks_changed") => {
-                let live: HashSet<&str> = message
-                    .get("tasks")
-                    .and_then(Value::as_array)
-                    .map(|tasks| {
-                        tasks
-                            .iter()
-                            .filter_map(|task| text(task, "task_id"))
-                            .collect()
-                    })
-                    .unwrap_or_default();
+            SystemEvent::BackgroundTasksChanged { tasks } => {
+                let live: HashSet<&str> = tasks
+                    .iter()
+                    .filter_map(|task| task.task_id.as_deref())
+                    .collect();
                 let gone: Vec<String> = self
                     .data
                     .tasks
@@ -1094,55 +1094,52 @@ impl Reader {
                     self.task_ended(&id, "stopped", None, None);
                 }
             }
-            Some("informational") if text(message, "level") == Some("warning") => {
-                if let Some(content) = text(message, "content") {
-                    self.notice("warning", content);
-                }
-            }
-            Some("model_refusal_fallback") => {
-                let original = text(message, "original_model").unwrap_or("The model");
-                let fallback = text(message, "fallback_model").unwrap_or("another model");
+            SystemEvent::Informational {
+                level,
+                content: Some(content),
+            } if level.as_deref() == Some("warning") => self.notice("warning", &content),
+            SystemEvent::ModelRefusalFallback {
+                original_model,
+                fallback_model,
+            } => {
+                let original = original_model.as_deref().unwrap_or("The model");
+                let fallback = fallback_model.as_deref().unwrap_or("another model");
                 self.notice(
                     "warning",
                     &format!("{original} declined this request; retried with {fallback}."),
                 );
             }
-            Some("commands_changed") => {
-                if let Some(commands) = message.get("commands") {
-                    self.sink
-                        .update(&self.data.session_id, available_commands(commands));
-                }
-            }
-            Some("local_command_output") => {
-                if let Some(content) = text(message, "content") {
-                    self.send(
-                        None,
-                        json!({ "sessionUpdate": UpdateKind::AgentMessageChunk, "content": { "type": "text", "text": content } }),
-                    );
-                }
-            }
-            Some("permission_denied") => {
-                let Some(id) = text(message, "tool_use_id") else {
-                    return;
-                };
-                if !self.data.shown.contains(id) {
+            SystemEvent::CommandsChanged {
+                commands: Some(commands),
+            } => self
+                .sink
+                .update(&self.data.session_id, available_commands(&commands)),
+            SystemEvent::LocalCommandOutput {
+                content: Some(content),
+            } => self.send(None, agent_text(&content, None)),
+            SystemEvent::PermissionDenied {
+                tool_use_id,
+                decision_reason,
+                message,
+            } => {
+                if !self.data.shown.contains(&tool_use_id) {
                     return;
                 }
-                let reason = text(message, "decision_reason")
-                    .or_else(|| text(message, "message"))
-                    .unwrap_or("not allowed");
+                let reason = decision_reason
+                    .or(message)
+                    .unwrap_or_else(|| "not allowed".to_owned());
                 let session = self
                     .data
                     .tools
-                    .get(id)
+                    .get(&tool_use_id)
                     .map_or_else(|| self.data.session_id.clone(), |tool| tool.session.clone());
                 self.sink.update(
                     &session,
                     json!({
                         "sessionUpdate": UpdateKind::ToolCallUpdate,
-                        "toolCallId": id,
+                        "toolCallId": tool_use_id,
                         "status": "failed",
-                        "content": [{ "type": "content", "content": { "type": "text", "text": format!("Permission denied: {reason}") } }],
+                        "content": [text_content(&format!("Permission denied: {reason}"))],
                     }),
                 );
             }
@@ -1210,20 +1207,22 @@ impl Reader {
         }
     }
 
-    fn status(&mut self, message: &Value) {
-        if text(message, "status") == Some("compacting") && self.data.compaction.is_none() {
-            let id = text(message, "uuid")
-                .map(str::to_owned)
-                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    fn status(
+        &mut self,
+        status: Option<String>,
+        uuid: Option<String>,
+        compact_result: Option<String>,
+        compact_error: Option<String>,
+    ) {
+        if status.as_deref() == Some("compacting") && self.data.compaction.is_none() {
+            let id = uuid.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
             self.data.compaction = Some(id.clone());
             self.send(None, compaction(&id, true, "in_progress", None));
         }
-        match text(message, "compact_result") {
+        match compact_result.as_deref() {
             Some("success") => self.compacted("completed", None),
             Some("failed") => {
-                let error = text(message, "compact_error")
-                    .unwrap_or("unknown error")
-                    .to_owned();
+                let error = compact_error.as_deref().unwrap_or("unknown error");
                 self.compacted("failed", Some(format!("Compaction failed: {error}")));
             }
             _ => {}
@@ -1231,9 +1230,7 @@ impl Reader {
     }
 
     /// Claude Code retries a failed request on its own, for up to minutes.
-    fn retrying(&mut self, message: &Value) {
-        let attempt = message.get("attempt").and_then(Value::as_u64).unwrap_or(1);
-        let status = message.get("error_status").and_then(Value::as_u64);
+    fn retrying(&mut self, attempt: u64, status: Option<u64>) {
         let category = if status.is_none() {
             "connection"
         } else {

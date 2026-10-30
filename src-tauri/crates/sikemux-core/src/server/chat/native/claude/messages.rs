@@ -26,7 +26,7 @@ pub(crate) enum Message {
     Assistant(Value),
     User(Value),
     Result(TurnResult),
-    System(Value),
+    System(System),
     CommandLifecycle {
         state: Option<String>,
         command_uuid: Option<String>,
@@ -109,4 +109,92 @@ pub(crate) struct TurnResult {
     /// Each model the turn used, by name.
     #[serde(rename = "modelUsage")]
     pub model_usage: Option<Map<String, Value>>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct System {
+    pub claude_code_version: Option<String>,
+    #[serde(flatten)]
+    pub event: SystemEvent,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "subtype", rename_all = "snake_case")]
+pub(crate) enum SystemEvent {
+    SessionStateChanged {
+        state: Option<String>,
+    },
+    /// Claude Code opens every turn with this, including the ones background
+    /// work starts.
+    Init,
+    Status {
+        status: Option<String>,
+        uuid: Option<String>,
+        compact_result: Option<String>,
+        compact_error: Option<String>,
+    },
+    ApiRetry {
+        attempt: Option<u64>,
+        error_status: Option<u64>,
+    },
+    CompactBoundary {
+        compact_metadata: Option<CompactMetadata>,
+    },
+    /// Kept whole: a task started in the foreground is started again from it
+    /// once it moves to the background.
+    TaskStarted(Value),
+    TaskProgress(Value),
+    TaskUpdated {
+        task_id: String,
+        #[serde(default)]
+        patch: TaskPatch,
+    },
+    TaskNotification {
+        task_id: String,
+        status: Option<String>,
+        summary: Option<String>,
+        output_file: Option<String>,
+    },
+    BackgroundTasksChanged {
+        #[serde(default)]
+        tasks: Vec<LiveTask>,
+    },
+    Informational {
+        level: Option<String>,
+        content: Option<String>,
+    },
+    ModelRefusalFallback {
+        original_model: Option<String>,
+        fallback_model: Option<String>,
+    },
+    CommandsChanged {
+        commands: Option<Value>,
+    },
+    LocalCommandOutput {
+        content: Option<String>,
+    },
+    PermissionDenied {
+        tool_use_id: String,
+        decision_reason: Option<String>,
+        message: Option<String>,
+    },
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CompactMetadata {
+    pub post_tokens: Option<u64>,
+}
+
+#[derive(Default, Deserialize)]
+pub(crate) struct TaskPatch {
+    pub is_backgrounded: Option<bool>,
+    pub status: Option<String>,
+    pub output_file: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct LiveTask {
+    pub task_id: Option<String>,
 }
