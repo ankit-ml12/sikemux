@@ -83,13 +83,13 @@ await emit(
 );
 
 const cliSource = await readFile(
-  resolve(root, "src-tauri/crates/sikemux-host/src/cli_client.rs"),
+  resolve(root, "src-tauri/crates/sikemux-host/src/cli_client/mod.rs"),
   "utf8",
 );
 const help = cliSource.match(/const HELP: &str = r#"([\s\S]*?)"#;/)?.[1];
 if (!help)
   throw new Error(
-    "could not find the CLI help in src-tauri/crates/sikemux-host/src/cli_client.rs",
+    "could not find the CLI help in src-tauri/crates/sikemux-host/src/cli_client/mod.rs",
   );
 await emit(
   "cli.mdx",

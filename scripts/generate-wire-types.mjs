@@ -263,7 +263,7 @@ const LIMITS = [
   [`${WIRE}/protocol/prefs.rs`, "MIN_TEXT_SCALE"],
   [`${WIRE}/protocol/prefs.rs`, "MAX_TEXT_SCALE"],
   [`${WIRE}/protocol/prefs.rs`, "MAX_PROJECT_DEPTH"],
-  [`${CORE}/acp/mod.rs`, "MAX_ATTACHMENTS"],
+  [`${CORE}/server/chat/prompt.rs`, "MAX_ATTACHMENTS"],
 ];
 
 const OUTPUTS = {
