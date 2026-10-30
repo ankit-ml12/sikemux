@@ -3,6 +3,7 @@
 //! agent again under the chat.
 
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::os::fd::OwnedFd;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -561,7 +562,7 @@ pub(crate) async fn run<B: Backend>(
         account: launch.account.as_ref().map(|account| account.id.clone()),
         quiet: Arc::new(std::sync::atomic::AtomicBool::new(quiet)),
     };
-    let (mut backend, mut state, replay) = match opening {
+    let (backend, state, replay) = match opening {
         Begin::Start { rebind, notice } => {
             let first = rebind.is_none();
             chat.emit(ChatEventKind::Status, json!({ "state": "starting" }));
@@ -642,37 +643,18 @@ pub(crate) async fn run<B: Backend>(
     };
 
     let (stalled_tx, mut stalled_rx) = mpsc::unbounded_channel::<u64>();
-    if let Some(turn) = state.stopping.filter(|turn| *turn == state.turn) {
-        if chat.prompted() {
-            stall_later(turn, &stalled_tx);
-        }
-    }
-    if let Some(replay) = replay {
-        if replay.announce {
-            chat.feed.prompted(
-                replay.message_id.as_deref(),
-                &replay.text,
-                &replay.paths,
-                &replay.context,
-            );
-        }
-        state.turn += 1;
-        begin(&chat, &mut backend, state.turn, Prompt::from(&replay)).await;
-        state.last_prompt = Some(Replay {
-            announce: false,
-            ..replay
-        });
-    }
-
-    let mut letter_turn = false;
+    let mut running = Running {
+        chat,
+        launch: &launch,
+        provider: &provider,
+        backend,
+        state,
+        stalled: stalled_tx,
+        letter_turn: false,
+    };
+    running.opened(replay).await;
     let end = loop {
-        chat.keep(state.progress());
-        if !chat.prompted() {
-            if let Some(reach) = backend.reach() {
-                chat.feed.reached(&state.session_id, reach);
-            }
-        }
-        chat.at_rest.store(true, Ordering::Release);
+        running.rest();
         // What the agent already said is taken in before the next command,
         // so a turn's failure or end is never cut off by letting go of the
         // agent.
@@ -682,166 +664,236 @@ pub(crate) async fn run<B: Backend>(
             Some(failed) = failed_rx.recv() => Woke::Failed(failed),
             Some(stalled) = stalled_rx.recv() => Woke::Stalled(stalled),
             Some(settled) = settled_rx.recv() => Woke::Settled(settled),
-            reason = backend.closed() => Woke::Closed(reason),
+            reason = running.backend.closed() => Woke::Closed(reason),
             command = commands.recv() => Woke::Command(command),
         };
-        chat.at_rest.store(false, Ordering::Release);
-        let command = match woke {
-            Woke::Command(Some(command)) => command,
-            Woke::Command(None) => break Outcome::Ended(SessionEnd::Requested),
-            Woke::Closed(reason) => break stopped(&chat, &launch, &state, false, reason).await,
-            Woke::Broken(reason) => break stopped(&chat, &launch, &state, true, reason).await,
-            Woke::Failed(failed) => {
-                if failed.turn != state.turn {
-                    continue;
-                }
-                if let Some(switching) = state.switching.take() {
-                    chat.stop_running();
-                    if let Some(response) = failed.response {
-                        chat.emit(ChatEventKind::TurnCompleted, response);
-                    }
-                    if let Some(outcome) = switching.carry_out(&chat, &provider, &launch) {
-                        break outcome;
-                    }
-                    continue;
-                }
-                let current = launch.account.as_ref().map(|account| account.id.clone());
-                let retry = match failed.failure.kind {
-                    FailureKind::SignIn if state.reloadable && !state.signed_in_again => {
-                        chat.relaunch(&launch).map(|launch| Rebind {
-                            launch,
-                            replay: state.last_prompt.clone(),
-                            exhausted: state.exhausted.clone(),
-                            signed_in_again: true,
-                            notice: None,
-                        })
-                    }
-                    FailureKind::Limit if state.reloadable && switches_at_limit(&chat) => {
-                        let mut tried = state.exhausted.clone();
-                        tried.extend(current.clone());
-                        next_account(&provider, &launch, &tried).and_then(|next| {
-                            let notice = switch_notice(&launch, next, "limit");
-                            let moved = on_account(&provider, &launch, next);
-                            chat.relaunch(&moved).map(|launch| Rebind {
-                                launch,
-                                replay: state.last_prompt.clone(),
-                                exhausted: tried,
-                                signed_in_again: false,
-                                notice: Some(notice),
-                            })
-                        })
-                    }
-                    _ => None,
-                };
-                if let Some(rebind) = retry {
-                    break Outcome::Rebind(Box::new(rebind));
-                }
-                chat.stop_running();
-                let failure = failed.failure.payload(current.as_deref());
-                chat.turn_failing(&failure);
-                if let Some(response) = failed.response {
-                    chat.emit(ChatEventKind::TurnCompleted, response);
-                }
-                chat.emit(ChatEventKind::Error, failure);
-                if let (FailureKind::SignIn, Some(core)) =
-                    (failed.failure.kind, chat.core.upgrade())
-                {
-                    agent_accounts::chat_refused(&core, &provider, current.as_deref());
-                }
-                state.failed_prompt = state.last_prompt.take();
-                if failed.failure.kind == FailureKind::Network && state.failed_prompt.is_some() {
-                    chat.offline_failed.store(true, Ordering::Release);
-                }
-                if let (FailureKind::Limit, Some(prompt)) =
-                    (failed.failure.kind, state.failed_prompt.clone())
-                {
-                    reset::schedule(&chat, &launch, prompt, failed.failure.resets_at);
-                }
-                continue;
+        running.chat.at_rest.store(false, Ordering::Release);
+        let next = match woke {
+            Woke::Command(Some(ChatCommand::HandOver { reply })) => {
+                return Ok(running.hand_over(reply).await)
             }
-            Woke::Settled(settled) => {
-                if settled != state.turn {
-                    continue;
-                }
-                if let Some(switching) = state.switching.take() {
-                    if let Some(outcome) = switching.carry_out(&chat, &provider, &launch) {
-                        break outcome;
-                    }
-                }
-                continue;
-            }
-            Woke::Stalled(stalled) => {
-                if chat.prompted() && state.turn == stalled {
-                    if let Some(switching) = state.switching.take() {
-                        chat.stop_running();
-                        chat.emit(
-                            ChatEventKind::TurnCompleted,
-                            json!({ "stopReason": "cancelled" }),
-                        );
-                        if let Some(outcome) = switching.carry_out(&chat, &provider, &launch) {
-                            break outcome;
-                        }
-                        continue;
-                    }
-                    let why = "It was still at work a while after it was asked to stop.";
-                    if state.reloadable {
-                        chat.stop_running();
-                        chat.emit(
-                            ChatEventKind::TurnCompleted,
-                            json!({ "stopReason": "cancelled" }),
-                        );
-                    }
-                    let title = "This agent did not stop, so it was started again";
-                    if let Some(rebind) = restart(&chat, &launch, &state, false, title, why).await {
-                        break Outcome::Rebind(rebind);
-                    }
-                    let failure = error_message("The agent did not stop, so its session was ended");
-                    chat.turn_failing(&failure);
-                    chat.emit(ChatEventKind::Error, failure);
-                    break Outcome::Ended(SessionEnd::Exited);
-                }
-                continue;
-            }
+            Woke::Command(Some(command)) => running.command(command).await,
+            Woke::Command(None) => ControlFlow::Break(Outcome::Ended(SessionEnd::Requested)),
+            Woke::Closed(reason) => ControlFlow::Break(running.stopped(false, reason).await),
+            Woke::Broken(reason) => ControlFlow::Break(running.stopped(true, reason).await),
+            Woke::Failed(failed) => running.failed(failed),
+            Woke::Settled(settled) => running.settled(settled),
+            Woke::Stalled(stalled) => running.stalled(stalled).await,
         };
-        let mut by_letter = false;
-        let command = match command {
-            ChatCommand::Letter { text, reply } if !chat.prompted() => {
-                let _ = reply.send(Delivery::NewTurn);
-                by_letter = true;
-                ChatCommand::Prompt {
-                    message_id: None,
-                    text,
-                    paths: Vec::new(),
-                    context: Vec::new(),
-                    shown: false,
-                }
+        if let ControlFlow::Break(end) = next {
+            break end;
+        }
+    };
+    running.tell_reach();
+    Ok(end)
+}
+
+/// A chat's loop while its agent runs, which takes what woke it one at a time.
+struct Running<'a, B> {
+    chat: Arc<Chat>,
+    launch: &'a ChatLaunch,
+    provider: &'a str,
+    backend: B,
+    state: SessionState,
+    stalled: mpsc::UnboundedSender<u64>,
+    /// The running turn was started by another agent's message.
+    letter_turn: bool,
+}
+
+impl<B: Backend> Running<'_, B> {
+    /// Waits out a stop asked before this core took the chat over, and sends the prompt the
+    /// agent was started again to carry on with.
+    async fn opened(&mut self, replay: Option<Replay>) {
+        if let Some(turn) = self.state.stopping.filter(|turn| *turn == self.state.turn) {
+            if self.chat.prompted() {
+                stall_later(turn, &self.stalled);
             }
-            command => command,
+        }
+        if let Some(replay) = replay {
+            if replay.announce {
+                self.show(&replay);
+            }
+            self.send(replay).await;
+        }
+    }
+
+    /// Writes down where the chat stands before the loop waits for what comes next.
+    fn rest(&self) {
+        self.chat.keep(self.state.progress());
+        if !self.chat.prompted() {
+            self.tell_reach();
+        }
+        self.chat.at_rest.store(true, Ordering::Release);
+    }
+
+    fn tell_reach(&self) {
+        if let Some(reach) = self.backend.reach() {
+            self.chat.feed.reached(&self.state.session_id, reach);
+        }
+    }
+
+    fn show(&self, replay: &Replay) {
+        self.chat.feed.prompted(
+            replay.message_id.as_deref(),
+            &replay.text,
+            &replay.paths,
+            &replay.context,
+        );
+    }
+
+    /// Starts the next turn with `replay`, which is kept to go again should the agent be
+    /// started again under the chat, or says why it could not start.
+    async fn send(&mut self, replay: Replay) {
+        self.state.turn += 1;
+        self.chat.emit(ChatEventKind::TurnStarted, json!({}));
+        if let Err(error) = self
+            .backend
+            .prompt(self.state.turn, Prompt::from(&replay))
+            .await
+        {
+            self.chat.stop_running();
+            self.chat.emit(ChatEventKind::Error, error_message(error));
+        }
+        self.state.last_prompt = Some(Replay {
+            announce: false,
+            ..replay
+        });
+    }
+
+    async fn stopped(&self, broke: bool, reason: String) -> Outcome {
+        stopped(&self.chat, self.launch, &self.state, broke, reason).await
+    }
+
+    /// A turn failed: the agent is started again signed in anew or on another account when
+    /// that may fix it, else the chat says why.
+    fn failed(&mut self, failed: Failed) -> ControlFlow<Outcome> {
+        let chat = &self.chat;
+        let state = &mut self.state;
+        if failed.turn != state.turn {
+            return ControlFlow::Continue(());
+        }
+        if let Some(switching) = state.switching.take() {
+            chat.stop_running();
+            if let Some(response) = failed.response {
+                chat.emit(ChatEventKind::TurnCompleted, response);
+            }
+            return switching
+                .carry_out(chat, self.provider, self.launch)
+                .map_or(ControlFlow::Continue(()), ControlFlow::Break);
+        }
+        let current = self
+            .launch
+            .account
+            .as_ref()
+            .map(|account| account.id.clone());
+        let retry = match failed.failure.kind {
+            FailureKind::SignIn if state.reloadable && !state.signed_in_again => {
+                chat.relaunch(self.launch).map(|launch| Rebind {
+                    launch,
+                    replay: state.last_prompt.clone(),
+                    exhausted: state.exhausted.clone(),
+                    signed_in_again: true,
+                    notice: None,
+                })
+            }
+            FailureKind::Limit if state.reloadable && switches_at_limit(chat) => {
+                let mut tried = state.exhausted.clone();
+                tried.extend(current.clone());
+                next_account(self.provider, self.launch, &tried).and_then(|next| {
+                    let notice = switch_notice(self.launch, next, "limit");
+                    let moved = on_account(self.provider, self.launch, next);
+                    chat.relaunch(&moved).map(|launch| Rebind {
+                        launch,
+                        replay: state.last_prompt.clone(),
+                        exhausted: tried,
+                        signed_in_again: false,
+                        notice: Some(notice),
+                    })
+                })
+            }
+            _ => None,
         };
+        if let Some(rebind) = retry {
+            return ControlFlow::Break(Outcome::Rebind(Box::new(rebind)));
+        }
+        chat.stop_running();
+        let failure = failed.failure.payload(current.as_deref());
+        chat.turn_failing(&failure);
+        if let Some(response) = failed.response {
+            chat.emit(ChatEventKind::TurnCompleted, response);
+        }
+        chat.emit(ChatEventKind::Error, failure);
+        if let (FailureKind::SignIn, Some(core)) = (failed.failure.kind, chat.core.upgrade()) {
+            agent_accounts::chat_refused(&core, self.provider, current.as_deref());
+        }
+        state.failed_prompt = state.last_prompt.take();
+        if failed.failure.kind == FailureKind::Network && state.failed_prompt.is_some() {
+            chat.offline_failed.store(true, Ordering::Release);
+        }
+        if let (FailureKind::Limit, Some(prompt)) =
+            (failed.failure.kind, state.failed_prompt.clone())
+        {
+            reset::schedule(chat, self.launch, prompt, failed.failure.resets_at);
+        }
+        ControlFlow::Continue(())
+    }
+
+    /// Turn `settled` is over in the agent too, so a move to another account waiting on it
+    /// goes ahead.
+    fn settled(&mut self, settled: u64) -> ControlFlow<Outcome> {
+        if settled != self.state.turn {
+            return ControlFlow::Continue(());
+        }
+        self.state
+            .switching
+            .take()
+            .and_then(|switching| switching.carry_out(&self.chat, self.provider, self.launch))
+            .map_or(ControlFlow::Continue(()), ControlFlow::Break)
+    }
+
+    /// Turn `stalled` was asked to stop a while ago and is still at work.
+    async fn stalled(&mut self, stalled: u64) -> ControlFlow<Outcome> {
+        let chat = &self.chat;
+        if !chat.prompted() || self.state.turn != stalled {
+            return ControlFlow::Continue(());
+        }
+        if let Some(switching) = self.state.switching.take() {
+            chat.stop_running();
+            chat.emit(
+                ChatEventKind::TurnCompleted,
+                json!({ "stopReason": "cancelled" }),
+            );
+            return switching
+                .carry_out(chat, self.provider, self.launch)
+                .map_or(ControlFlow::Continue(()), ControlFlow::Break);
+        }
+        let why = "It was still at work a while after it was asked to stop.";
+        if self.state.reloadable {
+            chat.stop_running();
+            chat.emit(
+                ChatEventKind::TurnCompleted,
+                json!({ "stopReason": "cancelled" }),
+            );
+        }
+        let title = "This agent did not stop, so it was started again";
+        if let Some(rebind) = restart(chat, self.launch, &self.state, false, title, why).await {
+            return ControlFlow::Break(Outcome::Rebind(rebind));
+        }
+        let failure = error_message("The agent did not stop, so its session was ended");
+        chat.turn_failing(&failure);
+        chat.emit(ChatEventKind::Error, failure);
+        ControlFlow::Break(Outcome::Ended(SessionEnd::Exited))
+    }
+
+    async fn command(&mut self, command: ChatCommand) -> ControlFlow<Outcome> {
         match command {
-            ChatCommand::Letter { text, reply } => {
-                let prompt = Prompt {
-                    message_id: None,
-                    text,
-                    paths: Vec::new(),
-                    context: Vec::new(),
-                    letter: true,
-                    resent: false,
-                };
-                let steering = backend.steer(prompt.clone());
-                let chat = chat.clone();
-                tokio::spawn(async move {
-                    let delivery = match steering.await.as_deref() {
-                        Ok("injected") => {
-                            chat.feed.prompted(None, &prompt.text, &[], &[]);
-                            Delivery::Steered
-                        }
-                        Ok("promptRequired") => Delivery::TurnEnded,
-                        _ => Delivery::Refused,
-                    };
-                    let _ = reply.send(delivery);
-                });
+            ChatCommand::Letter { text, reply } if !self.chat.prompted() => {
+                let _ = reply.send(Delivery::NewTurn);
+                return self
+                    .prompt(None, text, Vec::new(), Vec::new(), false, true)
+                    .await;
             }
+            ChatCommand::Letter { text, reply } => self.letter(text, reply),
             ChatCommand::Prompt {
                 message_id,
                 text,
@@ -849,69 +901,9 @@ pub(crate) async fn run<B: Backend>(
                 context,
                 shown,
             } => {
-                if chat.start_prompted() {
-                    // Another agent's message can start a turn just as the
-                    // person sends one, so theirs goes next rather than lost.
-                    if letter_turn || shown {
-                        let held = ChatCommand::Prompt {
-                            message_id,
-                            text,
-                            paths,
-                            context,
-                            shown,
-                        };
-                        after_turn(chat.clone(), held);
-                    } else if !chat.feed.enqueue(super::super::queue::Queued::new(
-                        message_id, text, paths, context,
-                    )) {
-                        chat.emit(
-                            ChatEventKind::Error,
-                            error_message("too many messages are waiting for this turn"),
-                        );
-                    }
-                    continue;
-                }
-                letter_turn = by_letter;
-                state.fresh_turn(&chat);
-                let replay = Replay {
-                    announce: true,
-                    message_id,
-                    text,
-                    paths,
-                    context,
-                };
-                // A sign-in made elsewhere since the agent started is only
-                // read by a new agent process.
-                let changed = sign_in::signed_in(&provider, &launch.env);
-                if state.reloadable
-                    && changed.is_some()
-                    && state.signed_in_at_start.is_some()
-                    && changed != state.signed_in_at_start
-                {
-                    if let Some(launch) = chat.relaunch(&launch) {
-                        break Outcome::Rebind(Box::new(Rebind {
-                            launch,
-                            replay: Some(replay),
-                            exhausted: Vec::new(),
-                            signed_in_again: false,
-                            notice: None,
-                        }));
-                    }
-                }
-                if !shown {
-                    chat.feed.prompted(
-                        replay.message_id.as_deref(),
-                        &replay.text,
-                        &replay.paths,
-                        &replay.context,
-                    );
-                }
-                state.turn += 1;
-                begin(&chat, &mut backend, state.turn, Prompt::from(&replay)).await;
-                state.last_prompt = Some(Replay {
-                    announce: false,
-                    ..replay
-                });
+                return self
+                    .prompt(message_id, text, paths, context, shown, false)
+                    .await
             }
             ChatCommand::Edit {
                 message_id,
@@ -919,201 +911,331 @@ pub(crate) async fn run<B: Backend>(
                 paths,
                 context,
                 reply,
-            } => {
-                if chat.prompted() {
-                    let _ =
-                        reply.send(Err("Stop the current turn before editing a message".into()));
-                    continue;
-                }
-                let moved = match backend.rewind(&message_id).await {
-                    Ok(moved) => moved,
-                    Err(error) => {
-                        let _ = reply.send(Err(error));
-                        continue;
-                    }
-                };
-                chat.feed.rewound(&message_id);
-                if let Some(moved) = moved {
-                    state.session_id = moved;
-                    let start = state.start();
-                    chat.mark_ready(start.clone());
-                    chat.emit(ChatEventKind::Ready, json!(start));
-                }
-                let _ = reply.send(Ok(()));
-                state.fresh_turn(&chat);
-                let replay = Replay {
-                    announce: false,
-                    message_id: Some(message_id),
-                    text,
-                    paths,
-                    context,
-                };
-                chat.feed.prompted(
-                    replay.message_id.as_deref(),
-                    &replay.text,
-                    &replay.paths,
-                    &replay.context,
-                );
-                chat.start_prompted();
-                letter_turn = false;
-                state.turn += 1;
-                begin(&chat, &mut backend, state.turn, Prompt::from(&replay)).await;
-                state.last_prompt = Some(replay);
-            }
-            ChatCommand::SwitchAccount { account } => {
-                if !state.reloadable {
-                    chat.emit(
-                        ChatEventKind::Error,
-                        error_message("This agent cannot carry a chat to another account"),
-                    );
-                    continue;
-                }
-                if chat.prompted() {
-                    let moves = launch
-                        .account
-                        .as_ref()
-                        .is_none_or(|current| current.id != account.id);
-                    if moves && state.switching.is_none() {
-                        state.stopping = Some(state.turn);
-                        let sent = backend.cancel().await;
-                        chat.cancel_sent(sent, state.turn, &stalled_tx);
-                    }
-                    if moves {
-                        let carry_on = state.switching.as_ref().is_none_or(|was| was.carry_on);
-                        state.switching = Some(Switching { account, carry_on });
-                    }
-                    continue;
-                }
-                let replay = state
-                    .failed_prompt
-                    .take()
-                    .or_else(|| chat.unprompted().then(Switching::carry_on_prompt));
-                if let Some(outcome) = switch_to(&chat, &provider, &launch, &account, replay) {
-                    break outcome;
-                }
-            }
+            } => self.edit(message_id, text, paths, context, reply).await,
+            ChatCommand::SwitchAccount { account } => return self.switch_account(account).await,
             ChatCommand::SetPermissionMode { mode, reply } => {
-                let result = if chat.prompted() {
-                    Err("Stop the current turn before changing permissions".into())
-                } else {
-                    backend.set_permission_mode(mode).await
-                };
-                if result.is_ok() {
-                    chat.set_permission_mode(mode);
-                }
-                let _ = reply.send(result);
+                self.set_permission_mode(mode, reply).await
             }
             ChatCommand::SetConfig {
                 config_id,
                 value,
                 reply,
-            } => {
-                let result = if chat.prompted() {
-                    Err("Stop the current turn before changing the model".into())
-                } else {
-                    backend.set_config(&config_id, &value).await
-                };
-                if let Ok(options) = &result {
-                    state.setup["configOptions"] = options.clone();
-                    chat.feed.set_setup(&state.setup);
-                }
-                let _ = reply.send(result.map(|options| json!({ "configOptions": options })));
-            }
+            } => self.set_config(config_id, value, reply).await,
             ChatCommand::Steer {
                 text,
                 paths,
                 context,
                 reply,
-            } => {
-                if !chat.prompted() {
-                    let _ = reply.send(Ok("promptRequired".to_owned()));
-                    continue;
-                }
-                let prompt = Prompt {
-                    message_id: None,
-                    text,
-                    paths,
-                    context,
-                    letter: false,
-                    resent: false,
-                };
-                let steering = backend.steer(prompt.clone());
-                let chat = chat.clone();
-                tokio::spawn(async move {
-                    let result = steering.await;
-                    if result.as_deref() == Ok("injected") {
-                        chat.feed
-                            .prompted(None, &prompt.text, &prompt.paths, &prompt.context);
-                    }
-                    let _ = reply.send(result);
-                });
-            }
+            } => self.steer(text, paths, context, reply),
             ChatCommand::StopTask { task_id } => {
-                if let Err(error) = backend.stop_task(&task_id).await {
-                    chat.emit(ChatEventKind::Error, error_message(error));
+                if let Err(error) = self.backend.stop_task(&task_id).await {
+                    self.chat.emit(ChatEventKind::Error, error_message(error));
                 }
             }
             ChatCommand::Resume { prompt } => {
-                if chat.start_prompted() {
-                    continue;
+                if !self.chat.start_prompted() {
+                    self.again(prompt).await;
                 }
-                letter_turn = false;
-                state.fresh_turn(&chat);
-                state.turn += 1;
-                begin(&chat, &mut backend, state.turn, Prompt::from(&prompt)).await;
-                state.last_prompt = Some(prompt);
             }
-            ChatCommand::RetryFailed => {
-                let Some(prompt) = state.failed_prompt.take() else {
-                    continue;
-                };
-                if chat.start_prompted() {
-                    state.failed_prompt = Some(prompt);
-                    continue;
-                }
-                letter_turn = false;
-                state.fresh_turn(&chat);
-                state.turn += 1;
-                begin(&chat, &mut backend, state.turn, Prompt::from(&prompt)).await;
-                state.last_prompt = Some(prompt);
-            }
+            ChatCommand::RetryFailed => self.retry_failed().await,
             ChatCommand::Authenticate { method_id, reply } => {
-                let _ = reply.send(backend.authenticate(&method_id).await);
+                let _ = reply.send(self.backend.authenticate(&method_id).await);
             }
             ChatCommand::DiscardFailed => {
-                state.failed_prompt = None;
-                reset::cancel(&chat);
+                self.state.failed_prompt = None;
+                reset::cancel(&self.chat);
             }
-            ChatCommand::Cancel => {
-                if let Some(switching) = state.switching.as_mut() {
-                    switching.carry_on = false;
+            ChatCommand::Cancel => self.cancel().await,
+            ChatCommand::HandOver { .. } => unreachable!("the loop hands the chat over itself"),
+        }
+        ControlFlow::Continue(())
+    }
+
+    /// Another agent's message goes into the running turn.
+    fn letter(&mut self, text: String, reply: tokio::sync::oneshot::Sender<Delivery>) {
+        let prompt = Prompt {
+            message_id: None,
+            text,
+            paths: Vec::new(),
+            context: Vec::new(),
+            letter: true,
+            resent: false,
+        };
+        let steering = self.backend.steer(prompt.clone());
+        let chat = self.chat.clone();
+        tokio::spawn(async move {
+            let delivery = match steering.await.as_deref() {
+                Ok("injected") => {
+                    chat.feed.prompted(None, &prompt.text, &[], &[]);
+                    Delivery::Steered
                 }
-                if chat.prompted() {
-                    state.stopping = Some(state.turn);
-                }
-                let sent = backend.cancel().await;
-                chat.cancel_sent(sent, state.turn, &stalled_tx);
+                Ok("promptRequired") => Delivery::TurnEnded,
+                _ => Delivery::Refused,
+            };
+            let _ = reply.send(delivery);
+        });
+    }
+
+    /// Starts a turn with what was sent, or holds it for after the running turn. `by_letter`
+    /// when another agent's message starts it.
+    async fn prompt(
+        &mut self,
+        message_id: Option<String>,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+        shown: bool,
+        by_letter: bool,
+    ) -> ControlFlow<Outcome> {
+        let chat = &self.chat;
+        if chat.start_prompted() {
+            // Another agent's message can start a turn just as the
+            // person sends one, so theirs goes next rather than lost.
+            if self.letter_turn || shown {
+                let held = ChatCommand::Prompt {
+                    message_id,
+                    text,
+                    paths,
+                    context,
+                    shown,
+                };
+                after_turn(chat.clone(), held);
+            } else if !chat.feed.enqueue(super::super::queue::Queued::new(
+                message_id, text, paths, context,
+            )) {
+                chat.emit(
+                    ChatEventKind::Error,
+                    error_message("too many messages are waiting for this turn"),
+                );
             }
-            ChatCommand::HandOver { reply } => {
-                let released = backend.release().await;
-                let handed = released.map(|(backend, released)| Handed {
-                    session: state,
-                    backend,
-                    released,
-                });
-                // Nobody waits for it any more, so the agent is stopped
-                // rather than left running unread.
-                if let Err(Ok(handed)) = reply.send(handed) {
-                    super::process::kill_and_reap(handed.released.pid);
-                }
-                return Ok(Outcome::Released);
+            return ControlFlow::Continue(());
+        }
+        self.letter_turn = by_letter;
+        self.state.fresh_turn(chat);
+        let replay = Replay {
+            announce: true,
+            message_id,
+            text,
+            paths,
+            context,
+        };
+        // A sign-in made elsewhere since the agent started is only
+        // read by a new agent process.
+        let changed = sign_in::signed_in(self.provider, &self.launch.env);
+        if self.state.reloadable
+            && changed.is_some()
+            && self.state.signed_in_at_start.is_some()
+            && changed != self.state.signed_in_at_start
+        {
+            if let Some(launch) = chat.relaunch(self.launch) {
+                return ControlFlow::Break(Outcome::Rebind(Box::new(Rebind {
+                    launch,
+                    replay: Some(replay),
+                    exhausted: Vec::new(),
+                    signed_in_again: false,
+                    notice: None,
+                })));
             }
         }
-    };
-    if let Some(reach) = backend.reach() {
-        chat.feed.reached(&state.session_id, reach);
+        if !shown {
+            self.show(&replay);
+        }
+        self.send(replay).await;
+        ControlFlow::Continue(())
     }
-    Ok(end)
+
+    /// Takes the conversation back to before the person's message `message_id` and sends
+    /// its new text in its place.
+    async fn edit(
+        &mut self,
+        message_id: String,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+        reply: tokio::sync::oneshot::Sender<Result<(), String>>,
+    ) {
+        if self.chat.prompted() {
+            let _ = reply.send(Err("Stop the current turn before editing a message".into()));
+            return;
+        }
+        let moved = match self.backend.rewind(&message_id).await {
+            Ok(moved) => moved,
+            Err(error) => {
+                let _ = reply.send(Err(error));
+                return;
+            }
+        };
+        self.chat.feed.rewound(&message_id);
+        if let Some(moved) = moved {
+            self.state.session_id = moved;
+            let start = self.state.start();
+            self.chat.mark_ready(start.clone());
+            self.chat.emit(ChatEventKind::Ready, json!(start));
+        }
+        let _ = reply.send(Ok(()));
+        self.state.fresh_turn(&self.chat);
+        let replay = Replay {
+            announce: false,
+            message_id: Some(message_id),
+            text,
+            paths,
+            context,
+        };
+        self.show(&replay);
+        self.chat.start_prompted();
+        self.letter_turn = false;
+        self.send(replay).await;
+    }
+
+    /// Moves the chat to `account`, once the running turn has stopped.
+    async fn switch_account(&mut self, account: ChatAccount) -> ControlFlow<Outcome> {
+        let chat = &self.chat;
+        if !self.state.reloadable {
+            chat.emit(
+                ChatEventKind::Error,
+                error_message("This agent cannot carry a chat to another account"),
+            );
+            return ControlFlow::Continue(());
+        }
+        if chat.prompted() {
+            let moves = self
+                .launch
+                .account
+                .as_ref()
+                .is_none_or(|current| current.id != account.id);
+            if moves && self.state.switching.is_none() {
+                self.state.stopping = Some(self.state.turn);
+                let sent = self.backend.cancel().await;
+                chat.cancel_sent(sent, self.state.turn, &self.stalled);
+            }
+            if moves {
+                let carry_on = self.state.switching.as_ref().is_none_or(|was| was.carry_on);
+                self.state.switching = Some(Switching { account, carry_on });
+            }
+            return ControlFlow::Continue(());
+        }
+        let replay = self
+            .state
+            .failed_prompt
+            .take()
+            .or_else(|| chat.unprompted().then(Switching::carry_on_prompt));
+        switch_to(chat, self.provider, self.launch, &account, replay)
+            .map_or(ControlFlow::Continue(()), ControlFlow::Break)
+    }
+
+    async fn set_permission_mode(
+        &mut self,
+        mode: PermissionMode,
+        reply: tokio::sync::oneshot::Sender<Result<(), String>>,
+    ) {
+        let result = if self.chat.prompted() {
+            Err("Stop the current turn before changing permissions".into())
+        } else {
+            self.backend.set_permission_mode(mode).await
+        };
+        if result.is_ok() {
+            self.chat.set_permission_mode(mode);
+        }
+        let _ = reply.send(result);
+    }
+
+    async fn set_config(
+        &mut self,
+        config_id: String,
+        value: String,
+        reply: tokio::sync::oneshot::Sender<Result<Value, String>>,
+    ) {
+        let result = if self.chat.prompted() {
+            Err("Stop the current turn before changing the model".into())
+        } else {
+            self.backend.set_config(&config_id, &value).await
+        };
+        if let Ok(options) = &result {
+            self.state.setup["configOptions"] = options.clone();
+            self.chat.feed.set_setup(&self.state.setup);
+        }
+        let _ = reply.send(result.map(|options| json!({ "configOptions": options })));
+    }
+
+    /// The person's message goes into the running turn.
+    fn steer(
+        &mut self,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+        reply: tokio::sync::oneshot::Sender<Result<String, String>>,
+    ) {
+        if !self.chat.prompted() {
+            let _ = reply.send(Ok("promptRequired".to_owned()));
+            return;
+        }
+        let prompt = Prompt {
+            message_id: None,
+            text,
+            paths,
+            context,
+            letter: false,
+            resent: false,
+        };
+        let steering = self.backend.steer(prompt.clone());
+        let chat = self.chat.clone();
+        tokio::spawn(async move {
+            let result = steering.await;
+            if result.as_deref() == Ok("injected") {
+                chat.feed
+                    .prompted(None, &prompt.text, &prompt.paths, &prompt.context);
+            }
+            let _ = reply.send(result);
+        });
+    }
+
+    /// Sends a prompt that ran before as a new turn.
+    async fn again(&mut self, prompt: Replay) {
+        self.letter_turn = false;
+        self.state.fresh_turn(&self.chat);
+        self.send(prompt).await;
+    }
+
+    async fn retry_failed(&mut self) {
+        let Some(prompt) = self.state.failed_prompt.take() else {
+            return;
+        };
+        if self.chat.start_prompted() {
+            self.state.failed_prompt = Some(prompt);
+            return;
+        }
+        self.again(prompt).await;
+    }
+
+    async fn cancel(&mut self) {
+        if let Some(switching) = self.state.switching.as_mut() {
+            switching.carry_on = false;
+        }
+        if self.chat.prompted() {
+            self.state.stopping = Some(self.state.turn);
+        }
+        let sent = self.backend.cancel().await;
+        self.chat.cancel_sent(sent, self.state.turn, &self.stalled);
+    }
+
+    /// Lets go of the agent for a core that takes the chat over.
+    async fn hand_over(
+        self,
+        reply: tokio::sync::oneshot::Sender<Result<Handed, String>>,
+    ) -> Outcome {
+        let released = self.backend.release().await;
+        let handed = released.map(|(backend, released)| Handed {
+            session: self.state,
+            backend,
+            released,
+        });
+        // Nobody waits for it any more, so the agent is stopped
+        // rather than left running unread.
+        if let Err(Ok(handed)) = reply.send(handed) {
+            super::process::kill_and_reap(handed.released.pid);
+        }
+        Outcome::Released
+    }
 }
 
 impl Switching {
@@ -1273,15 +1395,6 @@ async fn restart(
         signed_in_again: false,
         notice: Some(super::super::restart_notice(title, why)),
     }))
-}
-
-/// Starts turn `turn`, or says why it could not start.
-async fn begin<B: Backend>(chat: &Arc<Chat>, backend: &mut B, turn: u64, prompt: Prompt) {
-    chat.emit(ChatEventKind::TurnStarted, json!({}));
-    if let Err(error) = backend.prompt(turn, prompt).await {
-        chat.stop_running();
-        chat.emit(ChatEventKind::Error, error_message(error));
-    }
 }
 
 #[cfg(test)]
