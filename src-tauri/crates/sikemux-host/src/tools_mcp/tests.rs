@@ -320,7 +320,7 @@ fn an_unreadable_answer_is_refused() {
     let app = fake_sikemux(json!({ "status": "accepted" }));
     assert_eq!(
         app.relay("workspace.inspect", json!({})),
-        Err("Unexpected harness response".into())
+        Err("Sikemux sent an invalid CLI response".into())
     );
 }
 
