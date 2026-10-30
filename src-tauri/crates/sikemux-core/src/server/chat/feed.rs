@@ -3124,7 +3124,7 @@ mod tests {
         let retry = |attempt: u64| {
             update(
                 "s",
-                crate::acp::account::retrying("t:retry", "connection", attempt, "x"),
+                crate::server::chat::failure::retrying("t:retry", "connection", attempt, "x"),
             )
         };
         replay.push(ChatEventKind::SessionUpdate, &retry(1));
@@ -3137,7 +3137,12 @@ mod tests {
         replay.push(ChatEventKind::SessionUpdate, &update("s", chunk));
         assert_eq!(replay.reconnecting, None);
 
-        let busy = crate::acp::account::retrying("t:retry", "service", 4, "Anthropic answered 529");
+        let busy = crate::server::chat::failure::retrying(
+            "t:retry",
+            "service",
+            4,
+            "Anthropic answered 529",
+        );
         replay.push(ChatEventKind::SessionUpdate, &update("s", busy));
         assert_eq!(replay.reconnecting, None);
 

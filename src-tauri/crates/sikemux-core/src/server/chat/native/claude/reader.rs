@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sikemux_process::sync::Locked;
 
-use crate::acp::account::{Failure, FailureKind};
+use crate::server::chat::failure::{Failure, FailureKind};
 
 use super::super::super::feed;
 use super::super::super::reset::{month_day, WallClock, Zone};
@@ -1180,7 +1180,8 @@ impl Reader {
     /// was retrying with no answer from Anthropic, or Claude's words say so.
     fn offline(&self, failure: Failure) -> Failure {
         let networked = failure.kind == FailureKind::Other
-            && (self.data.offline_retries || crate::acp::account::sounds_offline(&failure.title));
+            && (self.data.offline_retries
+                || crate::server::chat::failure::sounds_offline(&failure.title));
         if networked {
             Failure::lost_connection(failure.title)
         } else {
@@ -1243,7 +1244,8 @@ impl Reader {
             None => "No answer from Anthropic".to_owned(),
         };
         self.data.offline_retries |= status.is_none();
-        let update = crate::acp::account::retrying("api_retry", category, attempt, &detail);
+        let update =
+            crate::server::chat::failure::retrying("api_retry", category, attempt, &detail);
         self.sink.update(&self.data.session_id, update);
     }
 

@@ -16,7 +16,7 @@ mod callers;
 mod calls;
 mod catalog;
 mod changed;
-mod chat;
+pub mod chat;
 mod cli_install;
 pub(crate) mod codehost;
 mod collisions;

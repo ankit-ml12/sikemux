@@ -97,3 +97,20 @@ pub fn current_choice(setup: &Value, config_id: &str) -> Option<String> {
         .as_str()
         .map(str::to_owned)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_current_choice_is_read_from_the_config_options() {
+        let setup = json!({ "configOptions": [
+            { "id": "model", "currentValue": "fast" },
+            { "id": "effort", "currentValue": "high" },
+        ] });
+        assert_eq!(current_choice(&setup, "model").as_deref(), Some("fast"));
+        assert_eq!(current_choice(&setup, "effort").as_deref(), Some("high"));
+        assert_eq!(current_choice(&setup, "thinking"), None);
+        assert_eq!(current_choice(&json!({}), "model"), None);
+    }
+}

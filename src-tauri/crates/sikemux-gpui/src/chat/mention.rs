@@ -286,7 +286,7 @@ impl Composing {
                 context.push(item.clone());
             }
         }
-        paths.truncate(sikemux_core::acp::MAX_ATTACHMENTS);
+        paths.truncate(sikemux_core::server::chat::prompt::MAX_ATTACHMENTS);
         (paths, context)
     }
 }

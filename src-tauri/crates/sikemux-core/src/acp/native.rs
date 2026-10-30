@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use crate::agent_catalog::{self, ChatDriver};
 use crate::git_guard::shim;
 
-use super::pickers::{self, config_option};
+use crate::server::chat::pickers::{self, config_option};
 
 /// The arguments that put the agent's own binary into ACP mode, when it has
 /// one. Grok's `--no-leader` keeps a chat's approval choices off the

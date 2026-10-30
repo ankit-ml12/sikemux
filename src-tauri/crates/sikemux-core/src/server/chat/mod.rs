@@ -2,6 +2,7 @@
 //! Protocol with, so a turn keeps going while the window is closed and a
 //! permission request waits for the person to come back.
 
+pub(crate) mod failure;
 pub(crate) mod feed;
 pub(crate) mod find;
 mod history;
@@ -9,6 +10,9 @@ mod kept;
 pub(crate) mod mentions;
 mod native;
 pub(crate) mod offered;
+pub(crate) mod permission;
+pub(crate) mod pickers;
+pub mod prompt;
 pub(crate) mod queue;
 mod rebind;
 pub(crate) mod reset;
@@ -28,12 +32,15 @@ use serde_json::Value;
 use sikemux_process::sync::Locked;
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::acp::{bounded_text, current_choice, native as acp_native, permission, SessionEnd};
+use crate::acp::native as acp_native;
 use crate::launch::PermissionMode;
 use crate::protocol::{
     ask, AgentState, Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatInfo,
     ChatLaunch, ChatMark, ChatStart, ChatState, Event, RequestId,
 };
+use native::{ended_status, SessionEnd};
+use pickers::current_choice;
+use prompt::bounded_text;
 
 use super::activity::Activity;
 use super::connection::{ClientConn, ClientId};
@@ -1685,10 +1692,7 @@ fn launch(
         ending.feed.close();
         ending.report_end(&owner, &result);
         let started = ending.is_ready();
-        ending.emit(
-            ChatEventKind::Status,
-            crate::acp::ended_status(&result, started),
-        );
+        ending.emit(ChatEventKind::Status, ended_status(&result, started));
         if let Err(error) = &result {
             ending.emit(
                 ChatEventKind::Error,
@@ -2393,8 +2397,8 @@ pub(crate) fn accounts(
         .filter(|other| {
             let env = rebind::on_account(provider, &launch, other).env;
             matches!(
-                crate::acp::account::signed_in(provider, &env),
-                Some(crate::acp::account::SignIn::Account(_))
+                crate::agent_accounts::sign_in::signed_in(provider, &env),
+                Some(crate::agent_accounts::sign_in::SignIn::Account(_))
             )
         })
         .cloned()
@@ -2649,7 +2653,7 @@ fn keep_model_choice(core: &Core, agent_id: &str, options: &Value) {
     let Some(agent) = core.workspaces.agent(agent_id) else {
         return;
     };
-    let (model, effort) = crate::acp::pickers::pickers(options);
+    let (model, effort) = crate::server::chat::pickers::pickers(options);
     let model = model
         .map(|model| model.current)
         .filter(|model| !model.is_empty());

@@ -14,8 +14,11 @@ use uuid::Uuid;
 
 use crate::launch::PermissionMode;
 
-use crate::acp::account::{self, Failure, FailureKind, SignIn};
-use crate::acp::{permission, SessionEnd};
+use crate::agent_accounts::sign_in::{self, SignIn};
+use crate::server::chat::failure::{Failure, FailureKind};
+use crate::server::chat::permission;
+
+use super::SessionEnd;
 use crate::protocol::{ChatAccount, ChatContext, ChatLaunch, ChatStart};
 use sikemux_fold::ChatEventKind;
 
@@ -562,7 +565,7 @@ pub(crate) async fn run<B: Backend>(
         Begin::Start { rebind, notice } => {
             let first = rebind.is_none();
             chat.emit(ChatEventKind::Status, json!({ "state": "starting" }));
-            let signed_in_at_start = account::signed_in(&provider, &launch.env);
+            let signed_in_at_start = sign_in::signed_in(&provider, &launch.env);
             let Carried {
                 replay,
                 exhausted,
@@ -879,7 +882,7 @@ pub(crate) async fn run<B: Backend>(
                 };
                 // A sign-in made elsewhere since the agent started is only
                 // read by a new agent process.
-                let changed = account::signed_in(&provider, &launch.env);
+                let changed = sign_in::signed_in(&provider, &launch.env);
                 if state.reloadable
                     && changed.is_some()
                     && state.signed_in_at_start.is_some()

@@ -13,7 +13,7 @@ static OFFERED: LazyLock<Mutex<HashMap<String, ConfigPicker>>> = LazyLock::new(M
 
 /// Keeps the model choice a chat of `agent` started with.
 pub(crate) fn remember(agent: &str, setup: &Value) {
-    if let (Some(model), _) = crate::acp::pickers::pickers(&setup["configOptions"]) {
+    if let (Some(model), _) = crate::server::chat::pickers::pickers(&setup["configOptions"]) {
         OFFERED.locked().insert(agent.to_owned(), model);
     }
 }

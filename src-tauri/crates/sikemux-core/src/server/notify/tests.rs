@@ -5,12 +5,12 @@ use serde_json::json;
 
 use super::*;
 use crate::accounts::protocol::PushResult;
-use crate::acp::permission;
 use crate::protocol::{
     AgentState, AttentionKind, DeviceAccess, DeviceInfo, NotificationState, NotifyMute, NotifyPrefs,
 };
 use crate::push::NotificationKey;
 use crate::server::access::Peer;
+use crate::server::chat::permission;
 use crate::server::connection::ClientConn;
 
 const T: u64 = 1_791_000_000_000;

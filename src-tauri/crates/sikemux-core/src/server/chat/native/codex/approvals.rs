@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use sikemux_wire::chat::PermissionKind;
 
 use super::items::strip_shell;
-use crate::acp::permission::{allow_first, for_session, kind_of, option};
+use crate::server::chat::permission::{allow_first, for_session, kind_of, option};
 use sikemux_fold::update::text_content;
 
 fn request(

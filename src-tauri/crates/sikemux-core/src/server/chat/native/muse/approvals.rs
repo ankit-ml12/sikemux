@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use sikemux_wire::chat::PermissionKind;
 
 use super::super::json::{text, text_or_empty};
-use crate::acp::permission::{allow_first, for_session, option};
+use crate::server::chat::permission::{allow_first, for_session, option};
 
 /// One stage of an approval the person is asked about, and how to tell Muse
 /// what they chose.

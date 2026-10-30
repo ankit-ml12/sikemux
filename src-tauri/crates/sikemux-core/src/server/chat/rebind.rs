@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_fold::UpdateKind;
 
-use crate::acp::account::{self, SignIn};
-use crate::acp::SessionEnd;
+use crate::agent_accounts::sign_in::{self, SignIn};
+
+use super::native::SessionEnd;
 use crate::protocol::{ChatAccount, ChatContext, ChatLaunch};
 
 use super::super::Core;
@@ -127,7 +128,7 @@ pub(super) fn next_account<'a>(
 ) -> Option<&'a ChatAccount> {
     launch.fallbacks.iter().find(|fallback| {
         !exhausted.contains(&fallback.id)
-            && account::signed_in(provider, &on_account(provider, launch, fallback).env)
+            && sign_in::signed_in(provider, &on_account(provider, launch, fallback).env)
                 != Some(SignIn::SignedOut)
     })
 }

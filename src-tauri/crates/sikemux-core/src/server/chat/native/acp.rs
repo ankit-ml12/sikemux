@@ -18,10 +18,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 
-use crate::acp::account::{self, Failure};
-use crate::acp::{air, native, permission_mode_id, prompt_blocks};
+use crate::acp::{air, native, permission_mode_id};
 use crate::launch::PermissionMode;
 use crate::protocol::ChatLaunch;
+use crate::server::chat::failure::Failure;
+use crate::server::chat::prompt::prompt_blocks;
 
 use super::super::Respond;
 use super::pending::{Answered, Purpose};
@@ -106,7 +107,7 @@ impl Driver {
     /// Settles turn `turn` with the agent's answer to its prompt.
     fn answered(&self, turn: u64, answer: Result<Value, Value>) {
         let end = match answer {
-            Ok(response) => match response.get("_meta").and_then(account::failure) {
+            Ok(response) => match response.get("_meta").and_then(air::failure) {
                 Some(failure) => TurnEnd::Failed {
                     failure,
                     response: Some(response),

@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use sikemux_wire::chat::PermissionKind;
 
 use super::tools;
-use crate::acp::permission::{kind_of, option};
+use crate::server::chat::permission::{kind_of, option};
 
 const ALLOW: &str = "allow-once";
 const ALLOW_ALWAYS: &str = "allow-always";

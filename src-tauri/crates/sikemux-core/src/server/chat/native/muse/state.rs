@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use serde_json::{json, Value};
 
-use crate::acp::account::{Failure, FailureKind};
+use crate::server::chat::failure::{Failure, FailureKind};
 
 use super::super::super::states::{self, Outcome, Subagent};
 use super::super::json::{text, text_or_empty};

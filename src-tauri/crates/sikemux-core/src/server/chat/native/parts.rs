@@ -33,7 +33,7 @@ pub(super) enum Part {
 
 /// `prompt` checked and split into its parts.
 pub(super) fn parts(prompt: &Prompt) -> Result<Vec<Part>, String> {
-    let blocks = crate::acp::prompt_blocks(
+    let blocks = crate::server::chat::prompt::prompt_blocks(
         prompt.text.clone(),
         prompt.paths.clone(),
         prompt.context.clone(),

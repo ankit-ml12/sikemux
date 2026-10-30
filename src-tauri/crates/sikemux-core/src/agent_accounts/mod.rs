@@ -6,6 +6,7 @@
 
 pub mod defaults;
 pub mod folders;
+pub mod sign_in;
 pub mod status;
 pub mod usage;
 

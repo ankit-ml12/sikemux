@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_fold::UpdateKind;
 
-use crate::acp::account::Failure;
+use crate::server::chat::failure::Failure;
 
 use super::super::states::{Outcome, Subagent};
 use super::session::TurnEnd;
