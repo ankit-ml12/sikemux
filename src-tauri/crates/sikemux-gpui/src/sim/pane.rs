@@ -14,9 +14,10 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, img, px, relative, AnyElement, Context, FocusHandle, FontWeight,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
+    canvas, div, img, px, relative, AnyElement, Context, Entity, EventEmitter, FocusHandle,
+    FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, SharedString, StatefulInteractiveElement, Styled,
+    Window,
 };
 use serde_json::{json, Map, Value};
 #[cfg(target_os = "macos")]
@@ -152,7 +153,7 @@ impl Host for WindowHost {
 }
 
 impl Simulators {
-    pub fn new(cx: &mut Context<Workbench>) -> Self {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         let (heard, mut hearing) = mpsc::unbounded_channel();
         let engine = SimulatorManager::new(Arc::new(WindowHost {
             heard: heard.clone(),
@@ -160,7 +161,7 @@ impl Simulators {
         }));
         let task = cx.spawn(async move |this, cx| {
             while let Some(heard) = hearing.recv().await {
-                let heard = this.update(cx, |bench, cx| bench.hear_simulator(heard, cx));
+                let heard = this.update(cx, |sims, cx| sims.hear(heard, cx));
                 if heard.is_err() {
                     break;
                 }
@@ -248,60 +249,56 @@ impl Simulators {
     pub fn offer_to_agents(&self, offered: bool) {
         sikemux_simulator::set_enabled(offered);
     }
-}
 
-impl Workbench {
-    fn hear_simulator(&mut self, heard: Heard, cx: &mut Context<Self>) {
+    fn hear(&mut self, heard: Heard, cx: &mut Context<Self>) {
         match heard {
             Heard::Attached(agent, device) => {
-                self.sims.picked.remove(&agent);
+                self.picked.remove(&agent);
                 self.stop_screen(&agent);
-                self.sims.attached.insert(agent.clone(), device);
-                self.show_simulator(&agent);
+                self.attached.insert(agent.clone(), device);
+                cx.emit(SimNews::Attached(agent));
             }
             Heard::Detached(agent) => {
-                self.sims.picked.remove(&agent);
-                self.sims.attached.remove(&agent);
-                self.sims.acting.remove(&agent);
+                self.picked.remove(&agent);
+                self.attached.remove(&agent);
+                self.acting.remove(&agent);
                 self.stop_screen(&agent);
             }
             Heard::Acting(agent, acting) => {
                 if acting {
-                    self.sims.acting.insert(agent);
+                    self.acting.insert(agent);
                 } else {
-                    self.sims.acting.remove(&agent);
+                    self.acting.remove(&agent);
                 }
             }
             Heard::Progress(fraction) => {
-                self.sims.progress = (fraction < 1.).then_some(fraction);
-                return cx.notify();
+                self.progress = (fraction < 1.).then_some(fraction);
             }
             Heard::Frame => {
-                for screen in self.sims.screens.values() {
+                for screen in self.screens.values() {
                     screen.fresh.store(false, Ordering::SeqCst);
                 }
             }
             Heard::Ended(id) => {
                 let ended: Vec<String> = self
-                    .sims
                     .screens
                     .iter()
                     .filter(|(_, screen)| screen.watch.load(Ordering::SeqCst) == id)
                     .map(|(agent, _)| agent.clone())
                     .collect();
                 for agent in ended {
-                    self.sims.screens.remove(&agent);
+                    self.screens.remove(&agent);
                 }
             }
         }
-        self.parts.redraw_stage(cx);
+        cx.notify();
     }
 
     /// Lets go of the agent's device: the one it attached, or the one the person picked for it.
     pub(crate) fn let_go_device(&mut self, agent: &str) {
-        self.sims.engine.forget_agent(agent);
-        if self.sims.picked.remove(agent) {
-            self.sims.attached.remove(agent);
+        self.engine.forget_agent(agent);
+        if self.picked.remove(agent) {
+            self.attached.remove(agent);
             self.stop_screen(agent);
         }
     }
@@ -309,11 +306,11 @@ impl Workbench {
     /// Puts a device on a desk that has none, once the devices are listed: one already running,
     /// else an iPhone.
     pub(crate) fn pick_device_for(&mut self, agent: &str, cx: &mut Context<Self>) {
-        if self.sims.holds(agent) {
+        if self.holds(agent) {
             return;
         }
-        let Some(devices) = &self.sims.devices else {
-            if self.sims.problem.is_none() {
+        let Some(devices) = &self.devices else {
+            if self.problem.is_none() {
                 self.list_devices(cx);
             }
             return;
@@ -334,25 +331,25 @@ impl Workbench {
 
     /// Lists the iOS devices this Mac has, for the desks' pickers.
     pub(crate) fn list_devices(&mut self, cx: &mut Context<Self>) {
-        if self.sims.listing {
+        if self.listing {
             return;
         }
-        self.sims.listing = true;
-        let engine = Arc::clone(&self.sims.engine);
-        cx.spawn(async move |bench, cx| {
+        self.listing = true;
+        let engine = Arc::clone(&self.engine);
+        cx.spawn(async move |sims, cx| {
             let asked = Map::from_iter([("type".to_owned(), Value::from("devices"))]);
             let answer = crate::desk::run(async move { engine.window_call(asked).await }).await;
-            let _ = bench.update(cx, |bench, cx| {
-                bench.sims.listing = false;
+            let _ = sims.update(cx, |sims, cx| {
+                sims.listing = false;
                 match answer {
                     Some(Ok(answer)) => {
-                        bench.sims.problem = None;
-                        bench.sims.devices = Some(ios_devices(&answer));
+                        sims.problem = None;
+                        sims.devices = Some(ios_devices(&answer));
                     }
-                    Some(Err(error)) => bench.sims.problem = Some(error.into()),
+                    Some(Err(error)) => sims.problem = Some(error.into()),
                     None => {}
                 }
-                bench.parts.redraw_stage(cx);
+                cx.notify();
             });
         })
         .detach();
@@ -361,106 +358,66 @@ impl Workbench {
     /// Shows `device` on the agent's desk. An agent that attached one moves to it; one that has
     /// not takes it when it attaches.
     pub(crate) fn choose_device(&mut self, agent: &str, device: Device, cx: &mut Context<Self>) {
-        let attached = self.sims.attached_by(agent);
+        let attached = self.attached_by(agent);
         if !attached {
             self.stop_screen(agent);
-            self.sims.picked.insert(agent.to_owned());
-            self.sims.attached.insert(agent.to_owned(), device.clone());
+            self.picked.insert(agent.to_owned());
+            self.attached.insert(agent.to_owned(), device.clone());
         }
-        let (engine, agent) = (Arc::clone(&self.sims.engine), agent.to_owned());
-        cx.spawn(async move |bench, cx| {
+        let (engine, agent) = (Arc::clone(&self.engine), agent.to_owned());
+        cx.spawn(async move |sims, cx| {
             let udid = device.udid.clone();
             let chose = {
                 let agent = agent.clone();
                 crate::desk::run(async move { engine.set_desk_device(&agent, &udid).await }).await
             };
             if let Some(Err(error)) = chose {
-                let _ = bench.update(cx, |bench, cx| {
-                    bench.notify(crate::toast::error(error), cx);
-                });
+                let _ = sims.update(cx, |_, cx| cx.emit(SimNews::Failed(error.into())));
             }
         })
         .detach();
-        self.parts.redraw_stage(cx);
+        cx.notify();
     }
 
     /// Starts the device on the agent's desk.
     fn boot_device(&mut self, agent: &str, cx: &mut Context<Self>) {
-        let Some(udid) = self
-            .sims
-            .attached
-            .get(agent)
-            .map(|device| device.udid.clone())
-        else {
+        let Some(udid) = self.attached.get(agent).map(|device| device.udid.clone()) else {
             return;
         };
-        if !self.sims.booting.insert(udid.clone()) {
+        if !self.booting.insert(udid.clone()) {
             return;
         }
-        let engine = Arc::clone(&self.sims.engine);
-        cx.spawn(async move |bench, cx| {
+        let engine = Arc::clone(&self.engine);
+        cx.spawn(async move |sims, cx| {
             let asked = request("boot", &udid, Map::new());
             let booted = crate::desk::run(async move { engine.window_call(asked).await }).await;
-            let _ = bench.update(cx, |bench, cx| {
-                bench.sims.booting.remove(&udid);
+            let _ = sims.update(cx, |sims, cx| {
+                sims.booting.remove(&udid);
                 match booted {
                     Some(Ok(_)) => {
-                        for device in bench.sims.attached.values_mut() {
+                        for device in sims.attached.values_mut() {
                             if device.udid == udid {
                                 device.booted = true;
                             }
                         }
-                        bench.list_devices(cx);
-                        bench.sims.problem = None;
+                        sims.list_devices(cx);
+                        sims.problem = None;
                     }
-                    Some(Err(error)) => bench.sims.problem = Some(error.into()),
+                    Some(Err(error)) => sims.problem = Some(error.into()),
                     None => {}
                 }
-                bench.parts.redraw_stage(cx);
+                cx.notify();
             });
         })
         .detach();
-        self.parts.redraw_stage(cx);
-    }
-
-    /// Shuts down the device on the agent's desk, asking first when an agent is using it.
-    fn shut_down_device(&mut self, agent: &str, cx: &mut Context<Self>) {
-        let Some(device) = self.sims.attached.get(agent).cloned() else {
-            return;
-        };
-        let holder = self
-            .sims
-            .engine
-            .attachments()
-            .into_iter()
-            .find(|held| held.udid == device.udid);
-        let Some(holder) = holder else {
-            return self.shut_down(device.udid, cx);
-        };
-        let who = self
-            .agent_by_id(&holder.agent_id)
-            .and_then(|row| row.name)
-            .unwrap_or_else(|| "An agent".to_owned());
-        self.confirm(
-            format!("Shut down {}?", device.name),
-            format!("{who} is using this device."),
-            "Shut down",
-            true,
-            move |bench, yes, _, cx| {
-                if yes {
-                    bench.shut_down(device.udid.clone(), cx);
-                }
-            },
-            cx,
-        );
+        cx.notify();
     }
 
     fn shut_down(&mut self, udid: String, cx: &mut Context<Self>) {
-        if !self.sims.stopping.insert(udid.clone()) {
+        if !self.stopping.insert(udid.clone()) {
             return;
         }
         let showing: Vec<String> = self
-            .sims
             .attached
             .iter()
             .filter(|(_, device)| device.udid == udid)
@@ -469,47 +426,45 @@ impl Workbench {
         for agent in &showing {
             self.stop_screen(agent);
         }
-        let engine = Arc::clone(&self.sims.engine);
-        cx.spawn(async move |bench, cx| {
+        let engine = Arc::clone(&self.engine);
+        cx.spawn(async move |sims, cx| {
             let asked = request("shutdown", &udid, Map::new());
             let stopped = crate::desk::run(async move { engine.window_call(asked).await }).await;
-            let _ = bench.update(cx, |bench, cx| {
-                bench.sims.stopping.remove(&udid);
+            let _ = sims.update(cx, |sims, cx| {
+                sims.stopping.remove(&udid);
                 match stopped {
                     Some(Ok(_)) => {
-                        for device in bench.sims.attached.values_mut() {
+                        for device in sims.attached.values_mut() {
                             if device.udid == udid {
                                 device.booted = false;
                             }
                         }
-                        bench.list_devices(cx);
-                        bench.sims.problem = None;
+                        sims.list_devices(cx);
+                        sims.problem = None;
                     }
-                    Some(Err(error)) => bench.notify(crate::toast::error(error), cx),
+                    Some(Err(error)) => cx.emit(SimNews::Failed(error.into())),
                     None => {}
                 }
-                bench.parts.redraw_stage(cx);
+                cx.notify();
             });
         })
         .detach();
-        self.parts.redraw_stage(cx);
+        cx.notify();
     }
 
     /// Saves the device's screen as a picture on the Desktop.
     fn screenshot(&self, agent: &str, cx: &mut Context<Self>) {
-        let Some(device) = self.sims.attached.get(agent) else {
+        let Some(device) = self.attached.get(agent) else {
             return;
         };
         let path = screenshot_path(&device.name);
         let asked = request("screenshot", &device.udid, fields([("path", path.into())]));
-        let engine = Arc::clone(&self.sims.engine);
-        cx.spawn(async move |bench, cx| {
+        let engine = Arc::clone(&self.engine);
+        cx.spawn(async move |sims, cx| {
             let saved = crate::desk::run(async move { engine.window_call(asked).await }).await;
-            let _ = bench.update(cx, |bench, cx| match saved {
-                Some(Ok(_)) => {
-                    bench.notify(crate::toast::success("Screenshot saved to the Desktop"), cx)
-                }
-                Some(Err(error)) => bench.notify(crate::toast::error(error), cx),
+            let _ = sims.update(cx, |_, cx| match saved {
+                Some(Ok(_)) => cx.emit(SimNews::Shot),
+                Some(Err(error)) => cx.emit(SimNews::Failed(error.into())),
                 None => {}
             });
         })
@@ -517,14 +472,14 @@ impl Workbench {
     }
 
     fn stop_screen(&mut self, agent: &str) {
-        let Some(screen) = self.sims.screens.remove(agent) else {
+        let Some(screen) = self.screens.remove(agent) else {
             return;
         };
         let id = screen.watch.load(Ordering::SeqCst);
         if id == 0 {
             return;
         }
-        let engine = Arc::clone(&self.sims.engine);
+        let engine = Arc::clone(&self.engine);
         crate::desk::spawn(async move {
             let _ = engine.sim().unwatch(&**engine.host(), id).await;
         });
@@ -534,7 +489,6 @@ impl Workbench {
     /// stream and decode every frame out of sight.
     pub(crate) fn stop_screens_hidden(&mut self, shown: &[String]) {
         let hidden: Vec<String> = self
-            .sims
             .screens
             .keys()
             .filter(|agent| !shown.contains(agent))
@@ -547,13 +501,13 @@ impl Workbench {
 
     /// Starts showing the agent's device: its screen streams, and its size is read for touches.
     pub(crate) fn start_screen(&mut self, agent: &str, cx: &mut Context<Self>) {
-        let Some(device) = self.sims.attached.get(agent).cloned() else {
+        let Some(device) = self.attached.get(agent).cloned() else {
             return;
         };
-        if self.sims.screens.contains_key(agent) {
+        if self.screens.contains_key(agent) {
             return;
         }
-        let engine = Arc::clone(&self.sims.engine);
+        let engine = Arc::clone(&self.engine);
         let picture: Picture = Arc::new(Mutex::new(None));
         let watch = Arc::new(AtomicU64::new(0));
         let (input, mut inputs) = mpsc::unbounded_channel::<Input>();
@@ -589,7 +543,7 @@ impl Workbench {
                 Arc::clone(&turn),
                 device.udid.clone(),
             );
-            let (fresh, heard) = (Arc::clone(&fresh), self.sims.heard.clone());
+            let (fresh, heard) = (Arc::clone(&fresh), self.heard.clone());
             crate::desk::spawn(async move {
                 let host = Arc::clone(engine.host());
                 let sim = engine.sim().clone();
@@ -622,7 +576,7 @@ impl Workbench {
         {
             let (engine, udid, agent) =
                 (Arc::clone(&engine), device.udid.clone(), agent.to_owned());
-            cx.spawn(async move |bench, cx| {
+            cx.spawn(async move |sims, cx| {
                 let ask = |kind: &str| {
                     let (engine, asked) = (Arc::clone(&engine), request(kind, &udid, Map::new()));
                     crate::desk::run(async move { engine.window_call(asked).await })
@@ -635,16 +589,16 @@ impl Workbench {
                         mask.as_ref().and_then(|mask| mask["mask"].as_str()),
                     )
                 });
-                let _ = bench.update(cx, |bench, cx| {
-                    if let Some(screen) = bench.sims.screens.get_mut(&agent) {
+                let _ = sims.update(cx, |sims, cx| {
+                    if let Some(screen) = sims.screens.get_mut(&agent) {
                         screen.chrome = read.map(Rc::new);
                     }
-                    bench.parts.redraw_stage(cx);
+                    cx.notify();
                 });
             })
             .detach();
         }
-        self.sims.screens.insert(
+        self.screens.insert(
             agent.to_owned(),
             Screen {
                 picture,
@@ -666,12 +620,12 @@ impl Workbench {
 
     /// Reads how large the agent's device is and which way it is held, for touches and its frame.
     fn read_screen(&self, agent: &str, cx: &mut Context<Self>) {
-        let Some(device) = self.sims.attached.get(agent) else {
+        let Some(device) = self.attached.get(agent) else {
             return;
         };
-        let (engine, agent) = (Arc::clone(&self.sims.engine), agent.to_owned());
+        let (engine, agent) = (Arc::clone(&self.engine), agent.to_owned());
         let asked = request("screen", &device.udid, Map::new());
-        cx.spawn(async move |bench, cx| {
+        cx.spawn(async move |sims, cx| {
             let answer = crate::desk::run(async move { engine.window_call(asked).await }).await;
             let Some(Ok(screen)) = answer else {
                 return;
@@ -684,8 +638,8 @@ impl Workbench {
                 .as_str()
                 .unwrap_or_default()
                 .to_owned();
-            let _ = bench.update(cx, |bench, cx| {
-                if let Some(screen) = bench.sims.screens.get_mut(&agent) {
+            let _ = sims.update(cx, |sims, cx| {
+                if let Some(screen) = sims.screens.get_mut(&agent) {
                     screen.size =
                         Some(measured).filter(|(width, height)| *width > 0. && *height > 0.);
                     screen
@@ -693,7 +647,7 @@ impl Workbench {
                         .store(frame::turn_degrees(&orientation), Ordering::Relaxed);
                     screen.orientation = orientation;
                 }
-                bench.parts.redraw_stage(cx);
+                cx.notify();
             });
         })
         .detach();
@@ -701,16 +655,11 @@ impl Workbench {
 
     /// Turns the agent's device to the next way of holding it, then reads its screen again.
     fn turn_device(&self, agent: &str, cx: &mut Context<Self>) {
-        let Some(udid) = self
-            .sims
-            .attached
-            .get(agent)
-            .map(|device| device.udid.clone())
-        else {
+        let Some(udid) = self.attached.get(agent).map(|device| device.udid.clone()) else {
             return;
         };
-        let (engine, agent) = (Arc::clone(&self.sims.engine), agent.to_owned());
-        cx.spawn(async move |bench, cx| {
+        let (engine, agent) = (Arc::clone(&self.engine), agent.to_owned());
+        cx.spawn(async move |sims, cx| {
             let turned = crate::desk::run(async move {
                 let now = engine.orientation(&udid, None).await.unwrap_or_default();
                 let next = match now.as_str() {
@@ -723,14 +672,14 @@ impl Workbench {
             })
             .await;
             if turned.is_some() {
-                let _ = bench.update(cx, |bench, cx| bench.read_screen(&agent, cx));
+                let _ = sims.update(cx, |sims, cx| sims.read_screen(&agent, cx));
             }
         })
         .detach();
     }
 
     /// Presses or lets go of one of the device's side buttons, as the frame shows them.
-    fn side_button(&mut self, agent: &str, name: &str, down: bool) {
+    fn side_button(&mut self, agent: &str, name: &str, down: bool, cx: &mut Context<Self>) {
         let button = match name {
             "action" => "action",
             "volume-up" => "volumeUp",
@@ -738,11 +687,11 @@ impl Workbench {
             "power" => "lock",
             _ => return,
         };
-        let Some(screen) = self.sims.screens.get_mut(agent) else {
+        let Some(screen) = self.screens.get_mut(agent) else {
             return;
         };
         match down {
-            true if self.sims.acting.contains(agent) => return,
+            true if self.acting.contains(agent) => return,
             true => screen.held = Some(name.to_owned()),
             false if screen.held.as_deref() != Some(name) => return,
             false => screen.held = None,
@@ -753,17 +702,18 @@ impl Workbench {
             "button",
             fields([("button", button.into()), ("phase", phase.into())]),
         );
+        cx.notify();
     }
 
     /// Sends one request about the agent's device in turn with the person's earlier input.
     fn send_input(&self, agent: &str, input: Input) {
-        if let Some(screen) = self.sims.screens.get(agent) {
+        if let Some(screen) = self.screens.get(agent) {
             let _ = screen.input.send(input);
         }
     }
 
     fn device_request(&self, agent: &str, kind: &str, fields: Map<String, Value>) {
-        if let Some(device) = self.sims.attached.get(agent) {
+        if let Some(device) = self.attached.get(agent) {
             self.send_input(agent, Input::Request(request(kind, &device.udid, fields)));
         }
     }
@@ -775,7 +725,7 @@ impl Workbench {
         position: Point<Pixels>,
         clamp: bool,
     ) -> Option<(f32, f32)> {
-        let screen = self.sims.screens.get(agent)?;
+        let screen = self.screens.get(agent)?;
         let (width, height) = screen.size?;
         let drawn = screen.drawn.get();
         if drawn.size.width <= px(0.) || drawn.size.height <= px(0.) {
@@ -796,24 +746,19 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.sims.acting(agent) {
+        if self.acting(agent) {
             return;
         }
-        if let Some(screen) = self.sims.screens.get(agent) {
+        if let Some(screen) = self.screens.get(agent) {
             screen.focus.focus(window, cx);
         }
-        let Some(udid) = self
-            .sims
-            .attached
-            .get(agent)
-            .map(|device| device.udid.clone())
-        else {
+        let Some(udid) = self.attached.get(agent).map(|device| device.udid.clone()) else {
             return;
         };
         let Some((x, y)) = self.device_point(agent, event.position, false) else {
             return;
         };
-        if let Some(screen) = self.sims.screens.get_mut(agent) {
+        if let Some(screen) = self.screens.get_mut(agent) {
             screen.pressed = Some((x, y));
         }
         self.send_input(agent, Input::Request(touch(&udid, "down", x, y)));
@@ -821,7 +766,6 @@ impl Workbench {
 
     fn drag(&mut self, agent: &str, event: &MouseMoveEvent) {
         if self
-            .sims
             .screens
             .get(agent)
             .and_then(|screen| screen.pressed)
@@ -832,7 +776,7 @@ impl Workbench {
         let Some((x, y)) = self.device_point(agent, event.position, true) else {
             return;
         };
-        if let Some(screen) = self.sims.screens.get_mut(agent) {
+        if let Some(screen) = self.screens.get_mut(agent) {
             screen.pressed = Some((x, y));
         }
         self.send_input(agent, Input::Move(x, y));
@@ -840,19 +784,13 @@ impl Workbench {
 
     fn lift(&mut self, agent: &str, position: Option<Point<Pixels>>) {
         let Some((last_x, last_y)) = self
-            .sims
             .screens
             .get_mut(agent)
             .and_then(|screen| screen.pressed.take())
         else {
             return;
         };
-        let Some(udid) = self
-            .sims
-            .attached
-            .get(agent)
-            .map(|device| device.udid.clone())
-        else {
+        let Some(udid) = self.attached.get(agent).map(|device| device.udid.clone()) else {
             return;
         };
         let (x, y) = position
@@ -863,26 +801,17 @@ impl Workbench {
 
     /// A trackpad scroll over the screen is a finger dragging it, lifted when the scroll stops.
     fn scroll(&mut self, agent: &str, event: &ScrollEvent) {
-        if self.sims.acting(agent) {
+        if self.acting(agent) {
             return;
         }
-        let Some(udid) = self
-            .sims
-            .attached
-            .get(agent)
-            .map(|device| device.udid.clone())
-        else {
+        let Some(udid) = self.attached.get(agent).map(|device| device.udid.clone()) else {
             return;
         };
         let delta = match event.delta {
             ScrollDelta::Pixels(delta) => (f32::from(delta.x), f32::from(delta.y)),
             ScrollDelta::Lines(delta) => (delta.x * 16., delta.y * 16.),
         };
-        let pressed = self
-            .sims
-            .screens
-            .get(agent)
-            .and_then(|screen| screen.pressed);
+        let pressed = self.screens.get(agent).and_then(|screen| screen.pressed);
         let at = match pressed {
             Some(at) => at,
             None => {
@@ -896,18 +825,17 @@ impl Workbench {
                 start
             }
         };
-        let Some((width, height)) = self.sims.screens.get(agent).and_then(|screen| screen.size)
-        else {
+        let Some((width, height)) = self.screens.get(agent).and_then(|screen| screen.size) else {
             return;
         };
-        let drawn = self.sims.screens[agent].drawn.get();
+        let drawn = self.screens[agent].drawn.get();
         let scale = width / f32::from(drawn.size.width).max(1.);
         let next = (
             (at.0 + delta.0 * scale).clamp(0., width),
             (at.1 + delta.1 * scale).clamp(0., height),
         );
         let ended = event.touch_phase == TouchPhase::Ended;
-        if let Some(screen) = self.sims.screens.get_mut(agent) {
+        if let Some(screen) = self.screens.get_mut(agent) {
             screen.pressed = (!ended).then_some(next);
         }
         if ended {
@@ -918,7 +846,7 @@ impl Workbench {
     }
 
     fn type_into(&mut self, agent: &str, event: &KeyDownEvent, cx: &mut Context<Self>) {
-        if self.sims.acting(agent) {
+        if self.acting(agent) {
             return;
         }
         let keystroke = &event.keystroke;
@@ -952,6 +880,72 @@ impl Workbench {
         {
             self.device_request(agent, "text", fields([("text", text.as_str().into())]));
         }
+    }
+}
+
+/// What the simulators tell the window, which owns the desks and the toasts.
+pub enum SimNews {
+    /// An agent attached a device, so its desk turns to it.
+    Attached(String),
+    /// A screenshot was saved to the Desktop.
+    Shot,
+    Failed(SharedString),
+}
+
+impl EventEmitter<SimNews> for Simulators {}
+
+impl Workbench {
+    pub(crate) fn hear_sims(
+        &mut self,
+        _: Entity<Simulators>,
+        news: &SimNews,
+        cx: &mut Context<Self>,
+    ) {
+        match news {
+            SimNews::Attached(agent) => {
+                self.show_simulator(agent);
+                self.parts.redraw_stage(cx);
+            }
+            SimNews::Shot => {
+                self.notify(crate::toast::success("Screenshot saved to the Desktop"), cx)
+            }
+            SimNews::Failed(error) => self.notify(crate::toast::error(error.clone()), cx),
+        }
+    }
+
+    /// Shuts down the device on the agent's desk, asking first when an agent is using it.
+    fn shut_down_device(&mut self, agent: &str, cx: &mut Context<Self>) {
+        let sims = self.sims.read(cx);
+        let Some(device) = sims.attached.get(agent).cloned() else {
+            return;
+        };
+        let holder = sims
+            .engine
+            .attachments()
+            .into_iter()
+            .find(|held| held.udid == device.udid);
+        let Some(holder) = holder else {
+            return self
+                .sims
+                .update(cx, |sims, cx| sims.shut_down(device.udid, cx));
+        };
+        let who = self
+            .agent_by_id(&holder.agent_id)
+            .and_then(|row| row.name)
+            .unwrap_or_else(|| "An agent".to_owned());
+        self.confirm(
+            format!("Shut down {}?", device.name),
+            format!("{who} is using this device."),
+            "Shut down",
+            true,
+            move |bench, yes, _, cx| {
+                if yes {
+                    let udid = device.udid.clone();
+                    bench.sims.update(cx, |sims, cx| sims.shut_down(udid, cx));
+                }
+            },
+            cx,
+        );
     }
 }
 
@@ -998,7 +992,8 @@ fn device_group(device: &Device) -> Group {
 /// The device's name, which opens the list of devices to show on the desk instead.
 pub fn picker(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let t = crate::theme::Tokens::get(cx).clone();
-    let name = bench.sims.device_name(agent)?.to_owned();
+    let sims = bench.sims.read(cx);
+    let name = sims.device_name(agent)?.to_owned();
     let trigger = Button::new("sim-device")
         .ghost()
         .compact()
@@ -1007,15 +1002,11 @@ pub fn picker(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
         .gap(SPACE_1)
         .child(ui::text(name, TEXT_XS, FontWeight::MEDIUM).text_color(t.text_secondary))
         .child(ui::icon(Icon::Chevron, 10.).text_color(t.text_tertiary));
-    let Some(devices) = bench.sims.devices.clone() else {
+    let Some(devices) = sims.devices.clone() else {
         return Some(trigger.into_any_element());
     };
-    let (this, agent) = (cx.entity().downgrade(), agent.to_owned());
-    let current = bench
-        .sims
-        .attached
-        .get(&agent)
-        .map(|device| device.udid.clone());
+    let (this, agent) = (bench.sims.downgrade(), agent.to_owned());
+    let current = sims.attached.get(&agent).map(|device| device.udid.clone());
     Some(
         trigger
             .dropdown_menu_with_anchor(
@@ -1038,8 +1029,8 @@ pub fn picker(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
                                 .icon(Icon::Phone)
                                 .checked(current.as_deref() == Some(device.udid.as_str()))
                                 .on_click(move |_, _, cx| {
-                                    let _ = this.update(cx, |bench, cx| {
-                                        bench.choose_device(&agent, chosen.clone(), cx)
+                                    let _ = this.update(cx, |sims, cx| {
+                                        sims.choose_device(&agent, chosen.clone(), cx)
                                     });
                                 }),
                         );
@@ -1089,20 +1080,24 @@ fn touch(udid: &str, phase: &str, x: f32, y: f32) -> Map<String, Value> {
 
 /// The buttons over the agent's device: Home, Lock and turning it.
 pub fn tools(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyElement {
-    let acting = bench.sims.acting(agent) || !bench.sims.live(agent);
+    let sims = bench.sims.read(cx);
+    let acting = sims.acting(agent) || !sims.live(agent);
     let button = |id: &'static str,
                   icon: Icon,
                   label: &'static str,
                   kind: &'static str,
                   more: Map<String, Value>,
-                  cx: &mut Context<Workbench>| {
+                  cx: &Context<Workbench>| {
         let agent = agent.to_owned();
         IconButton::new(id, icon, label)
             .glyph(13.)
             .disabled(acting)
-            .on_click(
-                cx.listener(move |bench, _, _, _| bench.device_request(&agent, kind, more.clone())),
-            )
+            .on_click(cx.listener(move |bench, _, _, cx| {
+                bench
+                    .sims
+                    .read(cx)
+                    .device_request(&agent, kind, more.clone())
+            }))
     };
     div()
         .flex()
@@ -1129,25 +1124,29 @@ pub fn tools(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Any
             IconButton::new("sim-rotate", Icon::Rotate, "Turn the device")
                 .glyph(13.)
                 .disabled(acting)
-                .on_click(cx.listener(move |bench, _, _, cx| bench.turn_device(&turning, cx)))
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    bench
+                        .sims
+                        .update(cx, |sims, cx| sims.turn_device(&turning, cx))
+                }))
         })
         .child({
             let shooting = agent.to_owned();
             IconButton::new("sim-screenshot", Icon::Camera, "Screenshot to the Desktop")
                 .glyph(13.)
-                .disabled(!bench.sims.live(agent))
-                .on_click(cx.listener(move |bench, _, _, cx| bench.screenshot(&shooting, cx)))
+                .disabled(!sims.live(agent))
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    bench
+                        .sims
+                        .update(cx, |sims, cx| sims.screenshot(&shooting, cx))
+                }))
         })
         .child(div().w(px(6.)))
         .child({
-            let udid = bench
-                .sims
-                .attached
-                .get(agent)
-                .map(|device| device.udid.as_str());
-            let starting = udid.is_some_and(|udid| bench.sims.booting.contains(udid));
-            let stopping = udid.is_some_and(|udid| bench.sims.stopping.contains(udid));
-            let live = bench.sims.live(agent);
+            let udid = sims.attached.get(agent).map(|device| device.udid.as_str());
+            let starting = udid.is_some_and(|udid| sims.booting.contains(udid));
+            let stopping = udid.is_some_and(|udid| sims.stopping.contains(udid));
+            let live = sims.live(agent);
             let label = match (starting, stopping, live) {
                 (true, _, _) => "Starting…",
                 (_, true, _) => "Shutting down…",
@@ -1158,12 +1157,14 @@ pub fn tools(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Any
             IconButton::new("sim-power", Icon::Power, label)
                 .glyph(13.)
                 .disabled(udid.is_none() || starting || stopping)
-                .on_click(
-                    cx.listener(move |bench, _, _, cx| match bench.sims.live(&switching) {
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    match bench.sims.read(cx).live(&switching) {
                         true => bench.shut_down_device(&switching, cx),
-                        false => bench.boot_device(&switching, cx),
-                    }),
-                )
+                        false => bench
+                            .sims
+                            .update(cx, |sims, cx| sims.boot_device(&switching, cx)),
+                    }
+                }))
         })
         .into_any_element()
 }
@@ -1171,6 +1172,7 @@ pub fn tools(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Any
 /// The agent's device, live: its screen fitted to the desk, taking the person's touches and keys.
 pub fn body(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyElement {
     let t = crate::theme::Tokens::get(cx).clone();
+    let sims = bench.sims.read(cx);
     let says = |message: String| {
         div()
             .size_full()
@@ -1182,33 +1184,35 @@ pub fn body(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyE
             .text_color(t.text_tertiary)
             .child(ui::text(message, TEXT_XS_H, FontWeight::NORMAL))
     };
-    if let Some(fraction) = bench.sims.progress {
+    if let Some(fraction) = sims.progress {
         let percent = (fraction * 100.).round();
         return says(format!("Getting the simulator ready… {percent}%")).into_any_element();
     }
-    let Some(device) = bench.sims.attached.get(agent) else {
-        let message = match (&bench.sims.problem, &bench.sims.devices) {
+    let Some(device) = sims.attached.get(agent) else {
+        let message = match (&sims.problem, &sims.devices) {
             (Some(problem), _) => problem.to_string(),
             (None, Some(devices)) if devices.is_empty() => {
                 "No iPhone or iPad simulators are installed. Add one in Xcode.".into()
             }
             _ => "Finding devices…".into(),
         };
-        let failed = bench.sims.problem.is_some();
+        let failed = sims.problem.is_some();
         return says(message)
             .when(failed, |column| {
                 column.child(Button::new("sim-list-again").label("Try again").on_click(
                     cx.listener(|bench, _, _, cx| {
-                        bench.sims.problem = None;
-                        bench.list_devices(cx);
+                        bench.sims.update(cx, |sims, cx| {
+                            sims.problem = None;
+                            sims.list_devices(cx);
+                        })
                     }),
                 ))
             })
             .into_any_element();
     };
     if !device.booted {
-        let booting = bench.sims.booting.contains(&device.udid);
-        let message = match (&bench.sims.problem, booting) {
+        let booting = sims.booting.contains(&device.udid);
+        let message = match (&sims.problem, booting) {
             (_, true) => format!("Starting {}…", device.name),
             (Some(problem), false) => problem.to_string(),
             (None, false) => format!("{} is off.", device.name),
@@ -1216,15 +1220,17 @@ pub fn body(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyE
         let agent = agent.to_owned();
         return says(message)
             .when(!booting, |column| {
-                column.child(
-                    Button::new("sim-boot").label("Start").on_click(
-                        cx.listener(move |bench, _, _, cx| bench.boot_device(&agent, cx)),
-                    ),
-                )
+                column.child(Button::new("sim-boot").label("Start").on_click(cx.listener(
+                    move |bench, _, _, cx| {
+                        bench
+                            .sims
+                            .update(cx, |sims, cx| sims.boot_device(&agent, cx))
+                    },
+                )))
             })
             .into_any_element();
     }
-    let Some(screen) = bench.sims.screens.get(agent) else {
+    let Some(screen) = sims.screens.get(agent) else {
         return div().into_any_element();
     };
     #[cfg(target_os = "macos")]
@@ -1256,21 +1262,37 @@ pub fn body(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyE
         .bg(gpui::black())
         .on_mouse_down(
             MouseButton::Left,
-            cx.listener(move |bench, event, window, cx| bench.press(&down, event, window, cx)),
+            cx.listener(move |bench, event, window, cx| {
+                bench
+                    .sims
+                    .update(cx, |sims, cx| sims.press(&down, event, window, cx))
+            }),
         )
-        .on_mouse_move(cx.listener(move |bench, event, _, _| bench.drag(&moved, event)))
+        .on_mouse_move(cx.listener(move |bench, event, _, cx| {
+            bench.sims.update(cx, |sims, _| sims.drag(&moved, event))
+        }))
         .on_mouse_up(
             MouseButton::Left,
-            cx.listener(move |bench, event: &MouseUpEvent, _, _| {
-                bench.lift(&up, Some(event.position))
+            cx.listener(move |bench, event: &MouseUpEvent, _, cx| {
+                bench
+                    .sims
+                    .update(cx, |sims, _| sims.lift(&up, Some(event.position)))
             }),
         )
         .on_mouse_up_out(
             MouseButton::Left,
-            cx.listener(move |bench, _, _, _| bench.lift(&out, None)),
+            cx.listener(move |bench, _, _, cx| {
+                bench.sims.update(cx, |sims, _| sims.lift(&out, None))
+            }),
         )
-        .on_scroll(cx.listener(move |bench, event, _, _| bench.scroll(&wheel, event)))
-        .on_key_down(cx.listener(move |bench, event, _, cx| bench.type_into(&keys, event, cx)))
+        .on_scroll(cx.listener(move |bench, event, _, cx| {
+            bench.sims.update(cx, |sims, _| sims.scroll(&wheel, event))
+        }))
+        .on_key_down(cx.listener(move |bench, event, _, cx| {
+            bench
+                .sims
+                .update(cx, |sims, cx| sims.type_into(&keys, event, cx))
+        }))
         .child(
             canvas(move |bounds, _, _| drawn.set(bounds), |_, _, _, _| {})
                 .absolute()
@@ -1288,7 +1310,7 @@ pub fn body(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyE
             live,
             &frame,
             screen.held.as_deref(),
-            bench.sims.acting(agent),
+            sims.acting(agent),
             cx,
         ),
         None => live
@@ -1327,7 +1349,7 @@ fn framed_device(
     frame: &frame::Turned,
     held: Option<&str>,
     acting: bool,
-    cx: &mut Context<Workbench>,
+    cx: &Context<Workbench>,
 ) -> AnyElement {
     let size = frame.size;
     let buttons = frame.buttons.iter().map(|button| {
@@ -1355,22 +1377,25 @@ fn framed_device(
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |bench, _, _, cx| {
-                        bench.side_button(&press.0, &press.1, true);
-                        bench.parts.redraw_stage(cx);
+                        bench.sims.update(cx, |sims, cx| {
+                            sims.side_button(&press.0, &press.1, true, cx)
+                        })
                     }),
                 )
                 .on_mouse_up(
                     MouseButton::Left,
                     cx.listener(move |bench, _, _, cx| {
-                        bench.side_button(&lift.0, &lift.1, false);
-                        bench.parts.redraw_stage(cx);
+                        bench
+                            .sims
+                            .update(cx, |sims, cx| sims.side_button(&lift.0, &lift.1, false, cx))
                     }),
                 )
                 .on_mouse_up_out(
                     MouseButton::Left,
                     cx.listener(move |bench, _, _, cx| {
-                        bench.side_button(&gone.0, &gone.1, false);
-                        bench.parts.redraw_stage(cx);
+                        bench
+                            .sims
+                            .update(cx, |sims, cx| sims.side_button(&gone.0, &gone.1, false, cx))
                     }),
                 )
                 .child({

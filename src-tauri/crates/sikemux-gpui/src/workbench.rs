@@ -202,7 +202,8 @@ pub struct Workbench {
     pub parts: Parts,
     pub panes: crate::panes::Panes,
     pub desks: crate::desk::Desks,
-    pub sims: crate::sim::pane::Simulators,
+    pub sims: Entity<crate::sim::pane::Simulators>,
+    _sim_news: Subscription,
     _filtering: Option<Subscription>,
     pub(crate) _older: Option<Task<()>>,
 }
@@ -529,6 +530,7 @@ impl Workbench {
                 }
             }),
         ];
+        let sims = cx.new(crate::sim::pane::Simulators::new);
         let mut bench = Self {
             connection: crate::boot::Connection::default(),
             view: None,
@@ -664,10 +666,12 @@ impl Workbench {
             parts: Parts::new(cx),
             panes: crate::panes::Panes::default(),
             desks: crate::desk::Desks::new(window, cx),
-            sims: crate::sim::pane::Simulators::new(cx),
+            _sim_news: cx.subscribe(&sims, Self::hear_sims),
+            sims,
             _filtering: None,
             _older: None,
         };
+        bench.parts.stage_follows(&bench.sims, cx);
         bench.keys.focus.focus(window, cx);
         bench.wait_patiently(cx);
         crate::handover::follow(&mut bench, cx);
@@ -760,7 +764,7 @@ impl Workbench {
             Update::View(view) => {
                 crate::ui::moving_face::set_on(view.face_style.motion, cx);
                 self.view = Some(*view);
-                self.forget_departed();
+                self.forget_departed(cx);
                 self.settle_closing();
                 // The core finds its agents a moment after it starts, so the plan limits are
                 // read once it lists them.
@@ -953,7 +957,9 @@ impl Workbench {
                     if self.rails.keeping.is_none() {
                         self.follow_rails(&preferences);
                     }
-                    self.sims.offer_to_agents(preferences.ios_simulator);
+                    self.sims
+                        .read(cx)
+                        .offer_to_agents(preferences.ios_simulator);
                     let on = preferences.voice_dictation;
                     self.voice.update(cx, |voice, cx| voice.follow(on, cx));
                     let scale = preferences.chat_text_scale as f32;
@@ -4439,7 +4445,7 @@ pub struct Part {
     bench: WeakEntity<Workbench>,
     draw: fn(&mut Workbench, &mut Window, &mut Context<Workbench>) -> AnyElement,
     column: bool,
-    _store: Subscription,
+    stores: Vec<Subscription>,
 }
 
 impl Render for Part {
@@ -4531,7 +4537,7 @@ impl Parts {
                     bench: bench.downgrade(),
                     draw,
                     column,
-                    _store: cx.observe(&bench, |_, _, cx| cx.notify()),
+                    stores: vec![cx.observe(&bench, |_, _, cx| cx.notify())],
                 })
             };
         Self {
@@ -4599,6 +4605,13 @@ impl Parts {
 
     pub fn redraw(&self, part: &Entity<Part>, cx: &mut App) {
         part.update(cx, |_, cx| cx.notify());
+    }
+
+    /// Draws the stage again whenever `store` says it changed.
+    pub fn stage_follows<T: 'static>(&self, store: &Entity<T>, cx: &mut App) {
+        self.stage.update(cx, |part, cx| {
+            part.stores.push(cx.observe(store, |_, _, cx| cx.notify()))
+        });
     }
 
     /// Draws the stage again, and what is over the window, which shows some of the stage's

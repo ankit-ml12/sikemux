@@ -497,7 +497,7 @@ impl Workbench {
 
     /// Closes the pages and lets go of the device of each agent that left the view, and lets go
     /// of the device of each agent that went to sleep, so another agent can take it up.
-    pub(crate) fn forget_departed(&mut self) {
+    pub(crate) fn forget_departed(&mut self, cx: &mut Context<Self>) {
         let Some(view) = &self.view else {
             return;
         };
@@ -505,7 +505,7 @@ impl Workbench {
         let present: HashSet<String> = agents.iter().map(|agent| agent.id.clone()).collect();
         let asleep: Vec<String> = agents
             .iter()
-            .filter(|agent| agent.asleep && self.sims.attached_by(&agent.id))
+            .filter(|agent| agent.asleep && self.sims.read(cx).attached_by(&agent.id))
             .map(|agent| agent.id.clone())
             .collect();
         let departed: Vec<String> = self.desks.present.difference(&present).cloned().collect();
@@ -517,7 +517,7 @@ impl Workbench {
             self.desks.forget(agent);
         }
         for agent in departed.iter().chain(&asleep) {
-            self.let_go_device(agent);
+            self.sims.update(cx, |sims, _| sims.let_go_device(agent));
         }
     }
 
@@ -1430,15 +1430,19 @@ pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Work
             .map(|view| view.target.clone())
             .collect()
     });
-    bench.stop_screens_hidden(&agents);
-    for agent in &agents {
-        if bench.desks.kinds.get(agent) == Some(&DeskKind::Simulator) {
-            match bench.sims.live(agent) {
-                true => bench.start_screen(agent, cx),
-                false => bench.pick_device_for(agent, cx),
+    let simulated: Vec<&String> = agents
+        .iter()
+        .filter(|agent| bench.desks.kinds.get(*agent) == Some(&DeskKind::Simulator))
+        .collect();
+    bench.sims.update(cx, |sims, cx| {
+        sims.stop_screens_hidden(&agents);
+        for agent in simulated {
+            match sims.live(agent) {
+                true => sims.start_screen(agent, cx),
+                false => sims.pick_device_for(agent, cx),
             }
         }
-    }
+    });
     let Some(engine) = bench.desks.engine.clone() else {
         return;
     };
@@ -2434,7 +2438,7 @@ fn simulator_desk(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -
         .pl(px(SWITCH_W + GAP - 1. + 6.))
         .pr(SPACE_1H)
         .children(crate::sim::pane::picker(bench, agent, cx))
-        .when(bench.sims.acting(agent), |head| {
+        .when(bench.sims.read(cx).acting(agent), |head| {
             head.child(ui::icon(Icon::Pointer, 11.).text_color(t.accent))
         })
         .child(div().flex_1())
@@ -2493,7 +2497,7 @@ impl Workbench {
         }
         let run: Box<dyn FnOnce() -> Result<Value, String> + Send> =
             if is_sim_method(&request.method) {
-                let engine = Arc::clone(self.sims.engine());
+                let engine = Arc::clone(self.sims.read(cx).engine());
                 Box::new(move || sikemux_simulator::tools::execute(&engine, &request))
             } else if let Some(engine) = self
                 .desks

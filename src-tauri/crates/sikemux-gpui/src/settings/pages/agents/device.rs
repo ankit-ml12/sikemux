@@ -25,7 +25,7 @@ pub struct Fields {
 
 /// Asks whether the simulator can run here and, when it can, what it would run with.
 pub fn read_simulator(bench: &Workbench, cx: &mut Context<Workbench>) {
-    let status = bench.sims.status();
+    let status = bench.sims.read(cx).status();
     cx.spawn(async move |bench, cx| {
         let status = status
             .await
@@ -34,7 +34,9 @@ pub fn read_simulator(bench: &Workbench, cx: &mut Context<Workbench>) {
             .as_ref()
             .is_some_and(|status| status["supported"] == true && status["reason"].is_null());
         let setup = match usable {
-            true => bench.update(cx, |bench, _| bench.sims.setup()).ok(),
+            true => bench
+                .update(cx, |bench, cx| bench.sims.read(cx).setup())
+                .ok(),
             false => None,
         };
         let setup = match setup {

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use gpui_kit::Context;
+use gpui_kit::{App, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sikemux_browser::SavedStrip;
@@ -29,11 +29,11 @@ struct Handover {
 
 /// Takes back what the last run handed over, and keeps this run's for the next.
 pub fn follow(bench: &mut Workbench, cx: &mut Context<Workbench>) {
-    restore(bench);
+    restore(bench, cx);
     let handed_over = Rc::new(Cell::new(false));
     cx.on_app_restart({
         let handed_over = handed_over.clone();
-        move |bench, _| handed_over.set(save(bench).is_ok())
+        move |bench, cx| handed_over.set(save(bench, cx).is_ok())
     })
     .detach();
     cx.on_app_quit(move |bench, cx| {
@@ -41,7 +41,7 @@ pub fn follow(bench: &mut Workbench, cx: &mut Context<Workbench>) {
             engine.drain("Sikemux is quitting");
         }
         bench.voice.update(cx, |voice, _| voice.shutdown());
-        let simulators = bench.sims.engine();
+        let simulators = bench.sims.read(cx).engine();
         if handed_over.get() {
             simulators.step_aside();
         } else {
@@ -65,7 +65,7 @@ fn now() -> u64 {
 
 /// Without the save, the simulators left running would have nobody to shut them down, so a
 /// failure lets them go as a plain quit does.
-fn save(bench: &Workbench) -> std::io::Result<()> {
+fn save(bench: &Workbench, cx: &App) -> std::io::Result<()> {
     let handover = Handover {
         saved_at: now(),
         browser: bench
@@ -73,7 +73,7 @@ fn save(bench: &Workbench) -> std::io::Result<()> {
             .engine()
             .map(|engine| engine.saved_strips())
             .unwrap_or_default(),
-        simulators: bench.sims.engine().saved(),
+        simulators: bench.sims.read(cx).engine().saved(),
     };
     let path = path().ok_or_else(|| std::io::Error::other("no config folder"))?;
     let write = || {
@@ -91,7 +91,7 @@ fn save(bench: &Workbench) -> std::io::Result<()> {
     })
 }
 
-fn restore(bench: &mut Workbench) {
+fn restore(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     let Some(path) = path() else { return };
     let Ok(bytes) = std::fs::read(&path) else {
         return;
@@ -101,15 +101,18 @@ fn restore(bench: &mut Workbench) {
         .ok()
         .filter(|handover| now().saturating_sub(handover.saved_at) <= FRESH_FOR.as_secs());
     let Some(handover) = fresh else {
-        return adopt_booted(bench, &bytes);
+        return adopt_booted(bench, &bytes, cx);
     };
     let tabs = bench
         .desks
         .engine()
         .map(|engine| engine.reopen(handover.browser))
         .unwrap_or_default();
-    let devices = bench.sims.engine().restore(handover.simulators);
-    bench.sims.restored();
+    let devices = bench.sims.update(cx, |sims, _| {
+        let devices = sims.engine().restore(handover.simulators);
+        sims.restored();
+        devices
+    });
     for agent in &devices {
         bench.show_simulator(agent);
     }
@@ -118,7 +121,7 @@ fn restore(bench: &mut Workbench) {
 
 /// A save too old or too damaged to restore still names the simulators the last run booted,
 /// which nobody else will ever shut down.
-fn adopt_booted(bench: &Workbench, bytes: &[u8]) {
+fn adopt_booted(bench: &Workbench, bytes: &[u8], cx: &App) {
     let Ok(saved) = serde_json::from_slice::<Value>(bytes) else {
         return;
     };
@@ -128,5 +131,5 @@ fn adopt_booted(bench: &Workbench, bytes: &[u8]) {
         .flatten()
         .filter_map(|udid| udid.as_str().map(str::to_owned))
         .collect();
-    bench.sims.engine().adopt_booted(booted);
+    bench.sims.read(cx).engine().adopt_booted(booted);
 }
