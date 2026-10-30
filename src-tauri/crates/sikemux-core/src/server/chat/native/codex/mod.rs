@@ -7,6 +7,7 @@ mod commands;
 mod config;
 mod history;
 mod items;
+mod notifications;
 mod state;
 mod subagents;
 

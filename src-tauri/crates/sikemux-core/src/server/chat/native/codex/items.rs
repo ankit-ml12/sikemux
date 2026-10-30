@@ -11,6 +11,7 @@ use serde_json::{json, Map, Value};
 use super::super::file_link;
 use super::super::json::text_or_empty as text;
 use super::super::patch;
+use super::notifications::PlanStep;
 
 fn status(item: &Value) -> &'static str {
     match text(item, "status") {
@@ -645,25 +646,22 @@ impl Items {
 }
 
 /// A turn's plan as the chat shows it.
-pub(super) fn plan(params: &Value) -> Value {
-    let entries: Vec<Value> = params["plan"]
-        .as_array()
-        .into_iter()
-        .flatten()
+pub(super) fn plan(steps: &[PlanStep]) -> Value {
+    let entries: Vec<Value> = steps
+        .iter()
         .map(|step| {
-            let status = match text(step, "status") {
+            let status = match step.status.as_str() {
                 "inProgress" => "in_progress",
                 other => other,
             };
-            json!({ "content": step["step"], "status": status, "priority": "medium" })
+            json!({ "content": step.step, "status": status, "priority": "medium" })
         })
         .collect();
     json!({ "sessionUpdate": UpdateKind::Plan, "entries": entries })
 }
 
 /// The context window filling up, when Codex says how full it is.
-pub(super) fn usage(params: &Value) -> Option<Value> {
-    let usage = &params["tokenUsage"];
+pub(super) fn usage(usage: &Value) -> Option<Value> {
     let used = usage["last"]["totalTokens"].as_u64()?;
     let size = usage["modelContextWindow"].as_u64()?;
     Some(json!({ "sessionUpdate": UpdateKind::UsageUpdate, "used": used, "size": size }))
@@ -901,17 +899,19 @@ mod tests {
 
     #[test]
     fn plans_usage_and_user_inputs_take_the_adapters_shapes() {
-        let update = plan(&json!({
+        let updated: super::super::notifications::PlanUpdated = serde_json::from_value(json!({
             "explanation": "x",
             "plan": [{ "step": "Read", "status": "completed" }, { "step": "Fix", "status": "inProgress" }],
-        }));
+        }))
+        .unwrap();
+        let update = plan(&updated.plan);
         assert_eq!(
             update["entries"][1],
             json!({ "content": "Fix", "status": "in_progress", "priority": "medium" })
         );
         assert_eq!(
             usage(
-                &json!({ "tokenUsage": { "last": { "totalTokens": 900 }, "total": {}, "modelContextWindow": 200000 } })
+                &json!({ "last": { "totalTokens": 900 }, "total": {}, "modelContextWindow": 200000 })
             ),
             Some(json!({ "sessionUpdate": "usage_update", "used": 900, "size": 200000 }))
         );

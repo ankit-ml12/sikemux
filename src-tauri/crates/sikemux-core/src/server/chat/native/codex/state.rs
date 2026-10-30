@@ -18,6 +18,7 @@ use super::super::session::TurnEnd;
 use super::super::turns::{self, Ended, Prompted, Started, Turns};
 use super::approvals::{self, Question};
 use super::items::{self, Items};
+use super::notifications::{self, EndedTurn, Notification};
 use super::subagents::{Route, Subagents};
 
 /// What one notification does to the chat.
@@ -62,7 +63,7 @@ pub(super) struct Session {
     pub thread_id: String,
     pub turns: Turns,
     /// The last turn that ended outside a prompt, should a prompt be told it.
-    last_ended: Option<Value>,
+    last_ended: Option<EndedTurn>,
     waiting: Option<(u64, Value)>,
     errors: HashMap<String, Value>,
     /// How many times Codex has retried each turn's request.
@@ -207,7 +208,7 @@ impl Session {
         if cancelled {
             effects.push(Effect::Interrupt(id.to_owned()));
         }
-        if let Some(ended) = self.last_ended.take().filter(|turn| turn["id"] == id) {
+        if let Some(ended) = self.last_ended.take().filter(|turn| turn.id == id) {
             if let Ended::Prompted(turn) = self.turns.completed(id) {
                 effects.extend(self.finish_prompted(turn, &ended));
             }
@@ -234,7 +235,12 @@ impl Session {
     pub fn interrupted(&mut self, id: &str) -> Vec<Effect> {
         match self.turns.interrupted(id) {
             Ended::Prompted(turn) => {
-                self.finish_prompted(turn, &json!({ "id": id, "status": "interrupted" }))
+                let ended = EndedTurn {
+                    id: id.to_owned(),
+                    status: "interrupted".to_owned(),
+                    error: None,
+                };
+                self.finish_prompted(turn, &ended)
             }
             Ended::Unprompted => {
                 let mut effects = self.finish_subagents(Subagent::Cancelled);
@@ -278,15 +284,15 @@ impl Session {
         payload
     }
 
-    fn finish_prompted(&mut self, mut turn: Prompted, ended: &Value) -> Vec<Effect> {
-        let error = self.errors.remove(text(ended, "id"));
+    fn finish_prompted(&mut self, mut turn: Prompted, ended: &EndedTurn) -> Vec<Effect> {
+        let error = self.errors.remove(&ended.id);
         let mut effects: Vec<Effect> = self
             .turns
             .title(&mut turn)
             .map(|title| Effect::Update(self.thread_id.clone(), title))
             .into_iter()
             .collect();
-        let outcome = states::outcome(text(ended, "status")).unwrap_or(Outcome::Failed);
+        let outcome = states::outcome(&ended.status).unwrap_or(Outcome::Failed);
         if outcome == Outcome::Completed && self.subagents.outstanding() {
             self.waiting = Some((turn.number, self.payload("end_turn")));
             effects.push(Effect::AwaitSubagents(turn.number));
@@ -294,7 +300,7 @@ impl Session {
         }
         let (subagents, end) = turns::prompted_end(outcome, self.payload("end_turn"), || {
             let error = error
-                .or_else(|| Some(ended["error"].clone()).filter(|error| !error.is_null()))
+                .or_else(|| ended.error.clone().filter(|error| !error.is_null()))
                 .unwrap_or_else(|| json!({ "message": "Turn failed", "codexErrorInfo": null }));
             failure(&error)
         });
@@ -305,14 +311,14 @@ impl Session {
         effects
     }
 
-    fn turn_completed(&mut self, ended: &Value) -> Vec<Effect> {
-        let id = text(ended, "id");
+    fn turn_completed(&mut self, ended: &EndedTurn) -> Vec<Effect> {
+        let id = ended.id.as_str();
         self.retries.remove(id);
         let unnamed = self.turns.unnamed();
         match self.turns.completed(id) {
             Ended::Unprompted => {
                 self.errors.remove(id);
-                let outcome = states::outcome(text(ended, "status")).unwrap_or(Outcome::Failed);
+                let outcome = states::outcome(&ended.status).unwrap_or(Outcome::Failed);
                 let (subagents, reason) = turns::unprompted_end(outcome);
                 let mut effects = subagents
                     .map(|state| self.finish_subagents(state))
@@ -350,15 +356,25 @@ impl Session {
                 let stale = params["turnId"]
                     .as_str()
                     .is_some_and(|turn| self.turns.is_stale(turn));
-                if root {
-                    effects.extend(self.root_notification(method, params));
-                }
-                if !(root && stale) {
-                    effects.extend(
-                        self.updates(method, params)
-                            .into_iter()
-                            .map(|update| Effect::Update(session.clone(), update)),
-                    );
+                match notifications::read(method, params) {
+                    Some(Notification::Unreadable { method, error }) => {
+                        if root {
+                            effects.extend(self.unreadable(method, error));
+                        }
+                    }
+                    Some(notification) => {
+                        if root {
+                            effects.extend(self.root_notification(&notification));
+                        }
+                        if !(root && stale) {
+                            effects.extend(
+                                self.updates(&notification)
+                                    .into_iter()
+                                    .map(|update| Effect::Update(session.clone(), update)),
+                            );
+                        }
+                    }
+                    None => {}
                 }
             }
         }
@@ -370,10 +386,10 @@ impl Session {
         effects
     }
 
-    fn root_notification(&mut self, method: &str, params: &Value) -> Vec<Effect> {
-        match method {
-            "turn/started" => {
-                let id = text(&params["turn"], "id");
+    fn root_notification(&mut self, notification: &Notification) -> Vec<Effect> {
+        match notification {
+            Notification::TurnStarted(started) => {
+                let id = started.turn.id;
                 self.latest_turn = Some(id.to_owned());
                 match self.turns.began(id) {
                     Started::Prompted { cancelled: true } => vec![Effect::Interrupt(id.to_owned())],
@@ -381,19 +397,19 @@ impl Session {
                     Started::Prompted { .. } | Started::Neither => Vec::new(),
                 }
             }
-            "turn/completed" => self.turn_completed(&params["turn"]),
-            "error" if params["willRetry"] == true => {
-                let turn = params["turnId"].as_str().unwrap_or_default().to_owned();
+            Notification::TurnCompleted(completed) => self.turn_completed(&completed.turn),
+            Notification::Error(notice) if notice.will_retry => {
+                let turn = notice.turn_id.unwrap_or_default().to_owned();
                 if self.turns.is_stale(&turn) {
                     return Vec::new();
                 }
                 let attempt = self.retries.entry(turn.clone()).or_default();
                 *attempt += 1;
-                let category = match failure_kind(&params["error"]["codexErrorInfo"]) {
+                let category = match failure_kind(&notice.error["codexErrorInfo"]) {
                     FailureKind::Network => "connection",
                     _ => "service",
                 };
-                let detail = params["error"]["message"]
+                let detail = notice.error["message"]
                     .as_str()
                     .unwrap_or("Codex is retrying");
                 let update = crate::server::chat::failure::retrying(
@@ -404,32 +420,31 @@ impl Session {
                 );
                 vec![Effect::Update(self.thread_id.clone(), update)]
             }
-            "error" => {
-                if let Some(turn) = params["turnId"].as_str() {
-                    self.errors.insert(turn.to_owned(), params["error"].clone());
+            Notification::Error(notice) => {
+                if let Some(turn) = notice.turn_id {
+                    self.errors.insert(turn.to_owned(), notice.error.clone());
                 }
                 Vec::new()
             }
-            "thread/tokenUsage/updated" => {
-                self.token_usage = Some(params["tokenUsage"].clone());
+            Notification::TokenUsage(usage) => {
+                self.token_usage = Some(usage.token_usage.clone());
                 Vec::new()
             }
-            "thread/name/updated" => {
+            Notification::ThreadNamed(_) => {
                 self.turns.titled = true;
                 Vec::new()
             }
-            "mcpServer/startupStatus/updated" => {
-                let name = text(params, "name");
-                let status = text(params, "status");
-                if !matches!(status, "ready" | "failed" | "cancelled")
+            Notification::McpServerStatus(server) => {
+                let name = server.name;
+                if !matches!(server.status, "ready" | "failed" | "cancelled")
                     || !self.starting_servers.remove(name)
                 {
                     return Vec::new();
                 }
-                let said = match status {
+                let said = match server.status {
                     "failed" => format!(
                         "[codex-acp forwarded startup error] MCP server `{name}` failed to start: {}",
-                        params["error"].as_str().unwrap_or("unknown MCP startup error")
+                        server.error.unwrap_or("unknown MCP startup error")
                     ),
                     "cancelled" => {
                         format!("[codex-acp forwarded startup error] MCP server `{name}` startup was cancelled.")
@@ -452,81 +467,113 @@ impl Session {
         }
     }
 
+    /// A turn whose end Codex sent unreadably ends for the chat as failed,
+    /// rather than leaving it waiting on an end it cannot read.
+    fn unreadable(&mut self, method: &str, error: String) -> Vec<Effect> {
+        if method != "turn/completed" {
+            return Vec::new();
+        }
+        let Some(mut turn) = self.turns.give_up() else {
+            return Vec::new();
+        };
+        let mut effects: Vec<Effect> = self
+            .turns
+            .title(&mut turn)
+            .map(|title| Effect::Update(self.thread_id.clone(), title))
+            .into_iter()
+            .collect();
+        effects.extend(self.finish_subagents(Subagent::Failed));
+        let failure = Failure {
+            kind: FailureKind::Other,
+            title: "Codex ended the turn in a way Sikemux could not read".to_owned(),
+            details: Some(error),
+            resets_at: None,
+        };
+        effects.push(Effect::End(
+            turn.number,
+            TurnEnd::Failed {
+                failure,
+                response: Some(self.payload("end_turn")),
+            },
+        ));
+        effects
+    }
+
     /// The session updates a notification makes, in whichever session it is for.
-    fn updates(&mut self, method: &str, params: &Value) -> Vec<Value> {
-        let item_id = text(params, "itemId");
-        match method {
-            "item/agentMessage/delta" => {
-                vec![self.items.message_delta(item_id, text(params, "delta"))]
+    fn updates(&mut self, notification: &Notification) -> Vec<Value> {
+        match notification {
+            Notification::MessageDelta(delta) => {
+                vec![self.items.message_delta(delta.item_id, delta.delta)]
             }
-            "item/reasoning/summaryTextDelta" | "item/reasoning/textDelta" => {
-                vec![self.items.thought_delta(item_id, text(params, "delta"))]
+            Notification::ReasoningDelta(delta) => {
+                vec![self.items.thought_delta(delta.item_id, delta.delta)]
             }
-            "item/reasoning/summaryPartAdded" => vec![self.items.thought_delta(item_id, "\n\n")],
-            "item/started" => {
-                let item = &params["item"];
-                let id = text(item, "id").to_owned();
-                match text(item, "type") {
+            Notification::ReasoningPartAdded(part) => {
+                vec![self.items.thought_delta(part.item_id, "\n\n")]
+            }
+            Notification::ItemStarted(started) => {
+                let head = &started.item;
+                match head.kind {
                     "fileChange" => {
-                        self.edits.insert(id, item.clone());
+                        self.edits.insert(head.id.to_owned(), started.whole.clone());
                     }
                     "mcpToolCall" => {
                         let key = (
-                            text(params, "threadId").to_owned(),
-                            text(item, "server").to_owned(),
+                            started.thread_id.unwrap_or_default().to_owned(),
+                            head.server.unwrap_or_default().to_owned(),
                         );
-                        self.tool_calls.entry(key).or_default().push(id);
+                        self.tool_calls
+                            .entry(key)
+                            .or_default()
+                            .push(head.id.to_owned());
                     }
                     _ => {}
                 }
-                self.items.started(item)
+                self.items.started(started.whole)
             }
-            "item/completed" => {
-                let item = &params["item"];
-                let id = text(item, "id");
-                self.edits.remove(id);
+            Notification::ItemCompleted(completed) => {
+                let head = &completed.item;
+                self.edits.remove(head.id);
                 let key = (
-                    text(params, "threadId").to_owned(),
-                    text(item, "server").to_owned(),
+                    completed.thread_id.unwrap_or_default().to_owned(),
+                    head.server.unwrap_or_default().to_owned(),
                 );
                 if let Some(calls) = self.tool_calls.get_mut(&key) {
-                    calls.retain(|call| call != id);
+                    calls.retain(|call| call != head.id);
                     if calls.is_empty() {
                         self.tool_calls.remove(&key);
                     }
                 }
-                self.items.completed(item)
+                self.items.completed(completed.whole)
             }
-            "turn/completed" => {
-                let thread = text(params, "threadId");
+            Notification::TurnCompleted(completed) => {
+                let thread = completed.thread_id.unwrap_or_default();
                 self.tool_calls.retain(|(owner, _), _| owner != thread);
                 Vec::new()
             }
-            "turn/plan/updated" => vec![items::plan(params)],
-            "thread/tokenUsage/updated" => items::usage(params).into_iter().collect(),
-            "thread/name/updated" => vec![json!({
+            Notification::PlanUpdated(updated) => vec![items::plan(&updated.plan)],
+            Notification::TokenUsage(usage) => {
+                items::usage(&usage.token_usage).into_iter().collect()
+            }
+            Notification::ThreadNamed(named) => vec![json!({
                 "sessionUpdate": UpdateKind::SessionInfoUpdate,
-                "title": params["threadName"],
+                "title": named.thread_name,
             })],
-            "model/rerouted" => vec![thought(
+            Notification::ModelRerouted(rerouted) => vec![thought(
                 &format!(
                     "Model rerouted from {} to {} ({}).\n\n",
-                    text(params, "fromModel"),
-                    text(params, "toModel"),
-                    text(params, "reason")
+                    rerouted.from_model, rerouted.to_model, rerouted.reason
                 ),
                 None,
             )],
-            "thread/compacted" => vec![agent_text(
+            Notification::Compacted => vec![agent_text(
                 "*Context compacted to fit the model's context window.*\n\n",
                 None,
             )],
-            "warning" => vec![notice("warning", text(params, "message"), None)],
-            "configWarning" => vec![notice(
-                "warning",
-                text(params, "summary"),
-                params["details"].as_str(),
-            )],
+            Notification::Warning(warning) => vec![notice("warning", warning.message, None)],
+            Notification::ConfigWarning(warning) => {
+                vec![notice("warning", warning.summary, warning.details)]
+            }
             _ => Vec::new(),
         }
     }
